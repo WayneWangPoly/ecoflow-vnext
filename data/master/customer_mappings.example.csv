@@ -1,0 +1,2 @@
+external_customer_id,external_customer_name,customer_code,is_active
+OM-CUST-TEST,Ordermentum Test Customer,ORDERMENTUM-TEST-CUSTOMER,true

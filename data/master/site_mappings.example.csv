@@ -1,0 +1,2 @@
+external_site_id,external_site_name,customer_site_code,is_active
+OM-SITE-TEST,Ordermentum Test Site,ORDERMENTUM-TEST-SITE,true

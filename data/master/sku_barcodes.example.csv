@@ -1,0 +1,5 @@
+sku_code,barcode_value,barcode_type,unit_level,quantity_in_base_unit,is_primary,is_active
+JP-PBS-6X197-ARTBOX,19344062036170,carton,carton,10,true,true
+JP-PBS-6X197-ARTBOX,9344062033639,sleeve,sleeve,1,false,true
+CCSPW16-90,07579531135548,carton,carton,20,true,true
+CCSPW16-90,07579531136521,sleeve,sleeve,1,false,true
