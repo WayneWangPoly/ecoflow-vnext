@@ -1,0 +1,3 @@
+sku_code,display_name,category,can_sell_by_carton,can_sell_by_sleeve,sleeves_per_carton,pieces_per_sleeve,default_storage_unit,default_pick_unit,package_weight,can_mix_pack,setup_status
+JP-PBS-6X197-ARTBOX,BioPak 6x197mm Paper Straw Art Series,Straws,true,true,10,,carton,sleeve,,true,trial_ready
+CCSPW16-90,ComPak PLA Compostable Single Wall Coffee Cup Plain White 16oz 90mm,Coffee Cup,true,true,20,,carton,sleeve,,true,needs_location

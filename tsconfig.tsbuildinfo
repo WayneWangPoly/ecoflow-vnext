@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/vite-env.d.ts","./src/app/app.tsx","./src/data/ordermentumsnapshot.ts","./src/data/repositories/ordermentumrepository.ts","./src/domain/ecoflowdata.ts","./src/domain/orderbuckets.ts","./src/domain/syncmodel.ts","./src/domain/types.ts"],"version":"6.0.3"}

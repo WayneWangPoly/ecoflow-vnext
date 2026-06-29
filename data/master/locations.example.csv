@@ -1,0 +1,2 @@
+warehouse_code,location_code,zone,bay,level,side,barcode_value,location_type,sort_order,is_pickable,is_staging,is_active,assigned_sku_code
+MAIN,A1-01-02A,A1,01,02,A,LOC-A1-01-02A,rack,10102,true,false,true,JP-PBS-6X197-ARTBOX
