@@ -76,10 +76,33 @@ export type SupabaseSyncHealthRow = {
   last_synced_at: string | null;
 };
 
+
+export type SupabaseOrderLineRow = {
+  external_order_id: string | null;
+  order_number: string | null;
+  invoice_number: string | null;
+  line_id: string | null;
+  product_id: string | null;
+  variant_id: string | null;
+  sku: string | null;
+  name: string | null;
+  quantity: number | string | null;
+  unit: string | null;
+  uom: string | null;
+  packing_unit: number | string | null;
+  price: number | string | null;
+  rate_price: number | string | null;
+  subtotal: number | string | null;
+  gst: number | string | null;
+  tax: number | string | null;
+  total: number | string | null;
+};
+
 export type SupabaseOrdermentumViews = {
   inbox: SupabaseInboxRow[];
   exceptions: SupabaseExceptionRow[];
   health: SupabaseSyncHealthRow | null;
+  lines: SupabaseOrderLineRow[];
 };
 
 const tierSequence: PriceTier[] = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5'];
@@ -146,6 +169,37 @@ function changeImpact(row: SupabaseInboxRow): OrderChangeImpact {
   return 'NO_CHANGE';
 }
 
+function unitForLine(unit: string | null | undefined, uom: string | null | undefined): 'sleeve' | 'carton' {
+  const normalized = String(unit || uom || '').toLowerCase();
+  if (normalized.includes('sleeve')) return 'sleeve';
+  return 'carton';
+}
+
+function makeBarcode(seed: string | null | undefined, index: number) {
+  const digits = String(seed || index + 1000000000).replace(/\D/g, '').slice(0, 10).padEnd(10, String(index % 10));
+  return `93${digits}`;
+}
+
+function buildLineMap(lines: SupabaseOrderLineRow[]) {
+  const byOrder = new Map<string, OrderLine[]>();
+  lines.forEach((line, index) => {
+    const keys = [line.external_order_id, line.order_number].filter((value): value is string => Boolean(value));
+    const qty = Math.max(1, numberValue(line.quantity, 1));
+    const orderLine: OrderLine = {
+      sku: textValue(line.sku, `OM-LINE-${String(line.line_id || index + 1).slice(0, 8)}`),
+      name: textValue(line.name, 'Ordermentum line item'),
+      qty,
+      unit: unitForLine(line.unit, line.uom),
+      stock: qty + 8,
+      location: locationSequence[index % locationSequence.length],
+      barcode: makeBarcode(line.sku || line.line_id, index),
+      source: 'order-detail'
+    };
+    keys.forEach((key) => byOrder.set(key, [...(byOrder.get(key) || []), orderLine]));
+  });
+  return byOrder;
+}
+
 function lineFor(row: SupabaseInboxRow, index: number): OrderLine {
   const qty = Math.max(1, numberValue(row.total_units, numberValue(row.line_count, 1)));
   const invoiceMissing = Boolean(row.invoice_detail_missing || row.line_items_missing);
@@ -161,13 +215,15 @@ function lineFor(row: SupabaseInboxRow, index: number): OrderLine {
   };
 }
 
-function buildOrders(rows: SupabaseInboxRow[], businessDay: string): ImportedOrder[] {
+function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = new Map<string, OrderLine[]>()): ImportedOrder[] {
   return rows.map((row, index) => {
     const orderNo = textValue(row.order_number, textValue(row.external_order_number, `OM-RAW-${index + 1}`));
     const invoiceNo = textValue(row.invoice_number, textValue(row.external_invoice_number, 'invoice pending'));
     const amount = numberValue(row.invoice_total, numberValue(row.order_items_total, 0));
     const status = orderStatus(row);
-    const itemLine = lineFor(row, index);
+    const fallbackLine = lineFor(row, index);
+    const actualLines = lineMap.get(textValue(row.external_order_id, '')) || lineMap.get(orderNo) || [];
+    const itemLines = actualLines.length ? actualLines : [fallbackLine];
     const store = 'Ordermentum retailer';
     const businessReceived = row.received_business_day || businessDateFromIso(row.first_seen_at || row.order_created_at || row.raw_created_at || new Date().toISOString());
     const businessUpdated = row.updated_business_day || businessDateFromIso(row.order_updated_at || row.raw_updated_at || row.last_seen_at || new Date().toISOString());
@@ -189,7 +245,7 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string): ImportedOrd
       selected: status === 'RELEASE_READY',
       sequence: index + 1,
       amount,
-      packageCount: Math.max(1, numberValue(row.line_count, 1)),
+      packageCount: Math.max(1, actualLines.length || numberValue(row.line_count, 1)),
       podStatus: 'missing',
       mappingNotes: [
         row.invoice_detail_missing ? 'Invoice detail missing from om_invoices.' : '',
@@ -212,7 +268,7 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string): ImportedOrd
       changeImpact: changeImpact(row),
       changeSummary: row.invoice_detail_missing ? 'Invoice detail missing' : row.line_items_missing ? 'Line items missing' : textValue(row.order_status, 'Ordermentum update'),
       openExceptionCount: Number(row.invoice_detail_missing || row.line_items_missing),
-      lines: [itemLine]
+      lines: itemLines
     };
   });
 }
@@ -301,20 +357,30 @@ async function supabaseFetch<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function optionalSupabaseFetch<T>(path: string, fallback: T): Promise<T> {
+  try {
+    return await supabaseFetch<T>(path);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
-  const [inbox, exceptions, healthRows] = await Promise.all([
+  const [inbox, exceptions, healthRows, lines] = await Promise.all([
     supabaseFetch<SupabaseInboxRow[]>('v_ecoflow_ordermentum_inbox?select=*&order=order_updated_at.desc'),
     supabaseFetch<SupabaseExceptionRow[]>('v_ecoflow_ordermentum_exceptions?select=*&order=detected_at.desc'),
-    supabaseFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*')
+    supabaseFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*'),
+    optionalSupabaseFetch<SupabaseOrderLineRow[]>('v_ecoflow_ordermentum_order_lines?select=*&order=order_number.asc', [])
   ]);
-  return { inbox, exceptions, health: healthRows[0] || null };
+  return { inbox, exceptions, health: healthRows[0] || null, lines };
 }
 
 export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: SupabaseOrdermentumViews): EcoFlowDataSet {
   const anchorIso = maxIso([views.health?.last_order_updated_at, ...views.inbox.map((row) => row.order_updated_at)]);
   const businessDay = businessDateFromIso(anchorIso);
-  const orders = buildOrders(views.inbox, businessDay);
+  const lineMap = buildLineMap(views.lines || []);
+  const orders = buildOrders(views.inbox, businessDay, lineMap);
   const stores = buildStores(orders);
   const mappingExceptions = buildExceptions(views.exceptions, orders);
   const enrichedOrders = orders.map((order) => ({
@@ -349,7 +415,7 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
       label: 'Supabase Ordermentum raw inbox',
       connected: true,
       loadedAt: views.health?.last_synced_at || anchorIso,
-      sourceFiles: ['v_ecoflow_ordermentum_inbox', 'v_ecoflow_ordermentum_exceptions', 'v_ecoflow_ordermentum_sync_health'],
+      sourceFiles: ['v_ecoflow_ordermentum_inbox', 'v_ecoflow_ordermentum_order_lines', 'v_ecoflow_ordermentum_exceptions', 'v_ecoflow_ordermentum_sync_health'],
       counts: {
         ...base.repositoryStatus.counts,
         recentOrders: enrichedOrders.length
