@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
+import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/supabaseOrdermentumViews';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import type {
@@ -740,10 +741,26 @@ export function App() {
     const stored = window.localStorage.getItem('ecoflow-role') as Role | null;
     return stored && roleOptions.some((item) => item.role === stored) ? stored : null;
   });
+  const [data, setData] = useState<EcoFlowDataSet>(initialData);
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
-  const [stock] = useState<StockRow[]>(initialData.stock);
-  const [stores] = useState<StoreProfile[]>(initialData.stores);
-  const [logs] = useState<Activity[]>(initialData.logs);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    loadSupabaseOrdermentumViews()
+      .then((views) => {
+        if (!active || !views) return;
+        const nextData = applySupabaseOrdermentumViews(initialData, views);
+        setData(nextData);
+        setOrders(nextData.orders);
+        setLoadError('');
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
+      });
+    return () => { active = false; };
+  }, []);
 
   function logout() {
     window.localStorage.removeItem('ecoflow-role');
@@ -752,8 +769,8 @@ export function App() {
 
   if (!role) return <LoginScreen onLogin={setRole} />;
 
-  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} setOrders={setOrders} stock={stock} />;
+  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} setOrders={setOrders} stock={data.stock} />;
   if (role === 'driver') return <DriverWorkspace orders={orders} setOrders={setOrders} />;
 
-  return <DesktopWorkspace role={role} data={initialData} orders={orders} setOrders={setOrders} stock={stock} stores={stores} logs={logs} onLogout={logout} />;
+  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} />;
 }
