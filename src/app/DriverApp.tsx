@@ -404,8 +404,8 @@ function mapPixel(point: MapPoint) {
   };
 }
 
-function RouteMap({ rows, currentId, onSelect }: { rows: StopWithProgress[]; currentId?: string; onSelect: (orderId: string) => void }) {
-  const warehousePx = mapPixel(WAREHOUSE.mapPoint);
+function RouteMap({ rows, currentId, warehousePoint, onSelect }: { rows: StopWithProgress[]; currentId?: string; warehousePoint: MapPoint; onSelect: (orderId: string) => void }) {
+  const warehousePx = mapPixel(warehousePoint);
   const points = rows.map((row) => ({ row, ...mapPixel(row.stop.mapPoint) }));
 
   const segments = points.map((to, index) => {
@@ -512,11 +512,11 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   // First look at the day: seed the driving order with the optimised route from the warehouse.
   useEffect(() => {
     if (!run.stops.length) return;
-    setDay((current) => current.stopOrder ? current : { ...current, stopOrder: optimiseStopOrder(run.stops) });
+    setDay((current) => current.stopOrder ? current : { ...current, stopOrder: optimiseStopOrder(run.stops, run.warehousePoint) });
   }, [run.stops]);
 
   const orderIds = useMemo(
-    () => day.stopOrder ? reconcileStopOrder(day.stopOrder, run.stops) : optimiseStopOrder(run.stops),
+    () => day.stopOrder ? reconcileStopOrder(day.stopOrder, run.stops) : optimiseStopOrder(run.stops, run.warehousePoint),
     [day.stopOrder, run.stops]
   );
 
@@ -699,7 +699,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
     const openStops = rows.filter((row) => !isClosed(row.progress.status)).map((row) => row.stop);
     const startPoint = closedRowsInOrder.length
       ? closedRowsInOrder[closedRowsInOrder.length - 1].stop.mapPoint
-      : WAREHOUSE.mapPoint;
+      : run.warehousePoint;
     const nextOrder = [
       ...closedRowsInOrder.map((row) => row.stop.orderId),
       ...optimiseStopOrder(openStops, startPoint)
@@ -938,7 +938,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
       {stopsView === 'map' ? (
         <>
           <section className="route-map-card">
-            <RouteMap rows={rows} currentId={currentRow?.stop.orderId} onSelect={setActiveStopId} />
+            <RouteMap rows={rows} currentId={currentRow?.stop.orderId} warehousePoint={run.warehousePoint} onSelect={setActiveStopId} />
             <div className="map-start-line"><WarehouseIcon size={14} /> Start: {WAREHOUSE.address}</div>
           </section>
           <div className="stop-list">

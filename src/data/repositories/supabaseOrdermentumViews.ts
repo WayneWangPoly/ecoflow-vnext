@@ -126,10 +126,46 @@ export type SupabaseDraftRow = {
 export type SupabaseOmOrderRow = {
   id: string | null;
   order_number: string | null;
+  retailer_id: string | null;
   retailer_name: string | null;
   delivery_date: string | null;
   due_at: string | null;
   total_quantity: number | string | null;
+};
+
+/** v_ecoflow_app_sku_master — the app-facing SKU master (service flag, pick level, location, barcodes). */
+export type SupabaseSkuMasterRow = {
+  external_sku_code: string | null;
+  classification: string | null;
+  is_service_item: boolean | null;
+  pick_level: string | null;
+  warehouse_location: string | null;
+  status: string | null;
+  internal_sku_id: string | null;
+  carton_barcode: string | null;
+  carton_barcode_status: string | null;
+  each_barcode: string | null;
+  each_barcode_status: string | null;
+};
+
+/** ecoflow_store_sites — the delivery-address master seeded from Ordermentum raw orders. */
+export type SupabaseStoreSiteRow = {
+  retailer_id: string | null;
+  purchaser_id: string | null;
+  store_name: string | null;
+  street1: string | null;
+  street2: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+  formatted_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  contact_phone: string | null;
+  delivery_instructions: string | null;
+  price_group_id: string | null;
+  source: string | null;
+  verified: boolean | null;
 };
 
 export type SupabaseReleaseSummaryRow = {
@@ -168,6 +204,8 @@ export type SupabaseOrdermentumViews = {
   lines: SupabaseOrderLineRow[];
   drafts: SupabaseDraftRow[];
   omOrders: SupabaseOmOrderRow[];
+  skuMaster: SupabaseSkuMasterRow[];
+  storeSites: SupabaseStoreSiteRow[];
   releaseSummary: SupabaseReleaseSummaryRow | null;
   skuMappingCandidates: SupabaseSkuMappingCandidateRow[];
 };
@@ -269,19 +307,29 @@ function unitForLine(unit: string | null | undefined, uom: string | null | undef
   return 'carton';
 }
 
-function buildLineMap(lines: SupabaseOrderLineRow[]) {
+/** The SKU master overrides order text: pick level drives loose/carton, plus location, barcode and service flag. */
+function buildLineMap(lines: SupabaseOrderLineRow[], skuMaster = new Map<string, SupabaseSkuMasterRow>()) {
   const byOrder = new Map<string, OrderLine[]>();
   lines.forEach((line, index) => {
     const keys = [line.source_order_id, line.order_number].filter((value): value is string => Boolean(value));
     const qty = Math.max(1, numberValue(line.quantity, 1));
+    const sku = textValue(line.external_sku_code, `OM-LINE-${String(line.source_line_id || index + 1).slice(0, 8)}`);
+    const master = skuMaster.get(sku.toUpperCase());
+    const pickLevel = String(master?.pick_level || '').toUpperCase();
+    const unit: 'sleeve' | 'carton' = master
+      ? (pickLevel === 'EACH' || pickLevel === 'SLEEVE' ? 'sleeve' : 'carton')
+      : unitForLine(line.unit, line.uom);
     const orderLine: OrderLine = {
-      sku: textValue(line.external_sku_code, `OM-LINE-${String(line.source_line_id || index + 1).slice(0, 8)}`),
+      sku,
       name: textValue(line.external_product_name, 'Ordermentum line item'),
       qty,
-      unit: unitForLine(line.unit, line.uom),
+      unit,
       stock: qty,
-      location: '',
-      barcode: undefined,
+      location: textValue(master?.warehouse_location, ''),
+      barcode: unit === 'sleeve'
+        ? textValue(master?.each_barcode, textValue(master?.carton_barcode, '')) || undefined
+        : textValue(master?.carton_barcode, '') || undefined,
+      isService: master ? Boolean(master.is_service_item) : undefined,
       source: 'order-detail'
     };
     keys.forEach((key) => byOrder.set(key, [...(byOrder.get(key) || []), orderLine]));
@@ -304,19 +352,31 @@ function lineFor(row: SupabaseInboxRow, index: number): OrderLine {
   };
 }
 
-function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = new Map<string, OrderLine[]>(), draftMap = new Map<string, SupabaseDraftRow>(), omMap = new Map<string, SupabaseOmOrderRow>()): ImportedOrder[] {
+function buildOrders(
+  rows: SupabaseInboxRow[],
+  businessDay: string,
+  lineMap = new Map<string, OrderLine[]>(),
+  draftMap = new Map<string, SupabaseDraftRow>(),
+  omMap = new Map<string, SupabaseOmOrderRow>(),
+  siteMap = new Map<string, SupabaseStoreSiteRow>(),
+  priceGroupNames = new Map<string, string>()
+): ImportedOrder[] {
   return rows.map((row, index) => {
     const orderNo = textValue(row.order_number, textValue(row.external_order_number, `OM-RAW-${index + 1}`));
     const invoiceNo = textValue(row.invoice_number, textValue(row.external_invoice_number, 'invoice pending'));
     const amount = numberValue(row.invoice_total, numberValue(row.order_items_total, 0));
     const draft = draftMap.get(textValue(row.external_order_id, '')) || draftMap.get(orderNo);
     const om = omMap.get(textValue(row.external_order_id, '')) || omMap.get(textValue(row.om_order_id, '')) || omMap.get(orderNo);
+    const site = om?.retailer_id ? siteMap.get(om.retailer_id) : undefined;
     const status = draft ? statusFromDraft(draft) : orderStatus(row);
     const gateStatus = draft ? gateStatusFromDraft(draft) : (status === 'MAPPING_EXCEPTION' ? 'BLOCKED_DATA' : 'READY_TO_RELEASE');
     const fallbackLine = lineFor(row, index);
     const actualLines = lineMap.get(textValue(row.external_order_id, '')) || lineMap.get(orderNo) || [];
     const itemLines = actualLines.length ? actualLines : [fallbackLine];
-    const store = textValue(om?.retailer_name, 'Ordermentum retailer');
+    const store = textValue(site?.store_name, textValue(om?.retailer_name, 'Ordermentum retailer'));
+    const siteAddress = textValue(site?.formatted_address,
+      site?.street1 ? [site.street1, site.street2, site.suburb, site.state, site.postcode].filter(Boolean).join(', ') : '');
+    const priceTier = site?.price_group_id ? (priceGroupNames.get(site.price_group_id) || UNMAPPED_TIER) : UNMAPPED_TIER;
     const businessReceived = row.received_business_day || businessDateFromIso(row.first_seen_at || row.order_created_at || row.raw_created_at || new Date().toISOString());
     const businessUpdated = row.updated_business_day || businessDateFromIso(row.order_updated_at || row.raw_updated_at || row.last_seen_at || new Date().toISOString());
     const firstSeenAt = row.first_seen_at || row.order_created_at || row.raw_created_at || new Date().toISOString();
@@ -328,9 +388,13 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = ne
       invoiceNo,
       store,
       account: store,
-      priceTier: UNMAPPED_TIER,
-      address: 'Address pending from customer/site master',
-      suburb: 'Adelaide',
+      priceTier,
+      address: siteAddress || 'Address pending from customer/site master',
+      suburb: textValue(site?.suburb, 'Adelaide'),
+      phone: textValue(site?.contact_phone, '') || undefined,
+      lat: typeof site?.latitude === 'number' ? site.latitude : undefined,
+      lng: typeof site?.longitude === 'number' ? site.longitude : undefined,
+      deliveryNote: textValue(site?.delivery_instructions, '') || undefined,
       eta: formatTime(row.invoice_due_at || row.order_updated_at, index),
       status,
       paymentStatus: paymentStatus(row.payment_status || row.invoice_payment_status),
@@ -373,22 +437,28 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = ne
   });
 }
 
-function buildStores(orders: ImportedOrder[]): StoreProfile[] {
+function buildStores(orders: ImportedOrder[], sitesByName = new Map<string, SupabaseStoreSiteRow>()): StoreProfile[] {
   const byStore = new Map<string, ImportedOrder[]>();
   orders.forEach((order) => byStore.set(order.store, [...(byStore.get(order.store) || []), order]));
-  return Array.from(byStore.entries()).map(([store, rows], index) => ({
-    id: `supabase-store-${index + 1}`,
-    name: store,
-    account: store,
-    suburb: rows[0]?.suburb || 'Adelaide',
-    priceTier: rows[0]?.priceTier || UNMAPPED_TIER,
-    paymentTerms: 'Ordermentum payment status',
-    ordermentumId: `retained-orders:${rows.length}`,
-    statementGroup: store,
-    status: 'NEEDS_ADDRESS',
-    orderCount: rows.length,
-    totalValue: rows.reduce((sum, order) => sum + order.amount, 0)
-  }));
+  return Array.from(byStore.entries()).map(([store, rows], index) => {
+    const site = sitesByName.get(store);
+    const hasAddress = Boolean(rows[0]?.address && !rows[0].address.startsWith('Address pending'));
+    return {
+      id: site?.retailer_id || `supabase-store-${index + 1}`,
+      name: store,
+      account: store,
+      suburb: rows[0]?.suburb || 'Adelaide',
+      priceTier: rows[0]?.priceTier || UNMAPPED_TIER,
+      paymentTerms: site?.verified ? 'Site master verified (Ordermentum)' : 'Ordermentum payment status',
+      ordermentumId: site?.retailer_id || `retained-orders:${rows.length}`,
+      statementGroup: store,
+      status: hasAddress ? 'OK' : 'NEEDS_ADDRESS',
+      address: hasAddress ? rows[0].address : undefined,
+      phone: rows[0]?.phone,
+      orderCount: rows.length,
+      totalValue: rows.reduce((sum, order) => sum + order.amount, 0)
+    };
+  });
 }
 
 function buildExceptions(rows: SupabaseExceptionRow[], orders: ImportedOrder[]): MappingException[] {
@@ -502,17 +572,19 @@ async function supabaseFetchAll<T>(path: string, pageSize = 1000, maxPages = 6):
 
 export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
-  const [inbox, exceptions, healthRows, lines, drafts, omOrders, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
+  const [inbox, exceptions, healthRows, lines, drafts, omOrders, skuMaster, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
     supabaseFetchAll<SupabaseInboxRow>('v_ecoflow_ordermentum_inbox?select=*&order=order_updated_at.desc'),
     supabaseFetch<SupabaseExceptionRow[]>('v_ecoflow_ordermentum_exceptions?select=*&order=detected_at.desc'),
     supabaseFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*'),
     supabaseFetchAll<SupabaseOrderLineRow>('v_ecoflow_ordermentum_order_lines?select=*&order=order_number.asc'),
     supabaseFetchAll<SupabaseDraftRow>('v_ecoflow_ordermentum_internal_order_drafts_v3?select=*&order=last_synced_at.desc'),
-    supabaseFetchAll<SupabaseOmOrderRow>('om_orders?select=id,order_number,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc'),
+    supabaseFetchAll<SupabaseOmOrderRow>('om_orders?select=id,order_number,retailer_id,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc'),
+    supabaseFetchAll<SupabaseSkuMasterRow>('v_ecoflow_app_sku_master?select=*'),
+    supabaseFetchAll<SupabaseStoreSiteRow>('ecoflow_store_sites?select=*'),
     optionalSupabaseFetch<SupabaseReleaseSummaryRow[]>('v_ecoflow_ordermentum_release_summary_v2?select=*', []),
     optionalSupabaseFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc', [])
   ]);
-  return { inbox, exceptions, health: healthRows[0] || null, lines, drafts, omOrders, releaseSummary: releaseSummaryRows[0] || null, skuMappingCandidates };
+  return { inbox, exceptions, health: healthRows[0] || null, lines, drafts, omOrders, skuMaster, storeSites, releaseSummary: releaseSummaryRows[0] || null, skuMappingCandidates };
 }
 
 export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: SupabaseOrdermentumViews): EcoFlowDataSet {
@@ -520,7 +592,19 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
   // The operational day is the real Adelaide today — never the last order-update date,
   // otherwise day-state keys and buckets jump whenever a sync lands.
   const businessDay = businessDateFromIso(new Date().toISOString());
-  const lineMap = buildLineMap(views.lines || []);
+  const skuMasterMap = new Map<string, SupabaseSkuMasterRow>();
+  (views.skuMaster || []).forEach((row) => {
+    if (row.external_sku_code) skuMasterMap.set(row.external_sku_code.toUpperCase(), row);
+  });
+  const siteMap = new Map<string, SupabaseStoreSiteRow>();
+  const sitesByName = new Map<string, SupabaseStoreSiteRow>();
+  (views.storeSites || []).forEach((site) => {
+    if (site.retailer_id) siteMap.set(site.retailer_id, site);
+    if (site.store_name) sitesByName.set(site.store_name, site);
+  });
+  const priceGroupNames = new Map<string, string>();
+  base.priceGroups.forEach((group) => priceGroupNames.set(group.id, String(group.name)));
+  const lineMap = buildLineMap(views.lines || [], skuMasterMap);
   const draftMap = new Map<string, SupabaseDraftRow>();
   (views.drafts || []).forEach((draft) => {
     if (draft.external_order_id) draftMap.set(draft.external_order_id, draft);
@@ -531,8 +615,8 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
     if (om.id) omMap.set(om.id, om);
     if (om.order_number) omMap.set(om.order_number, om);
   });
-  const orders = buildOrders(views.inbox, businessDay, lineMap, draftMap, omMap);
-  const stores = buildStores(orders);
+  const orders = buildOrders(views.inbox, businessDay, lineMap, draftMap, omMap, siteMap, priceGroupNames);
+  const stores = buildStores(orders, sitesByName);
   const mappingExceptions = buildExceptions(views.exceptions, orders);
   const enrichedOrders = orders.map((order) => ({
     ...order,

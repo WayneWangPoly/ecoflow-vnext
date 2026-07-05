@@ -4,7 +4,8 @@ export type WarehouseTab = 'receive' | 'pick' | 'stock';
 export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
 export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CLOSED' | 'CANCELLED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'OVERDUE' | 'CREDIT_HOLD';
-export type PriceTier = 'Tier 1' | 'Tier 2' | 'Tier 3' | 'Tier 4' | 'Tier 5' | 'Unmapped';
+/** Real Ordermentum price-group names flow through here; 'Unmapped' when no group is linked. */
+export type PriceTier = string;
 
 export type OrderSyncStatus = 'NEW' | 'UPDATED' | 'UNCHANGED';
 export type OrderChangeImpact = 'SAFE_UPDATE' | 'REVIEW_REQUIRED' | 'RECONCILIATION_VARIANCE' | 'NO_CHANGE';
@@ -52,6 +53,8 @@ export type OrderLine = {
   location: string;
   /** Undefined means no verified barcode — never fabricate one in live mode. */
   barcode?: string;
+  /** From the SKU master: freight/service lines are invoiced but never picked. */
+  isService?: boolean;
   source?: 'order-detail' | 'catalog-sample' | 'fallback';
 };
 
@@ -74,6 +77,10 @@ export type ImportedOrder = {
   podStatus: 'missing' | 'captured';
   mappingNotes: string[];
   deliveryNote?: string;
+  /** From the store-site master. */
+  phone?: string;
+  lat?: number;
+  lng?: number;
   dueAt?: string;
   deliveryDate?: string;
   ordermentumUpdatedAt?: string;
@@ -112,6 +119,8 @@ export type StoreProfile = {
   ordermentumId: string;
   statementGroup: string;
   status: 'OK' | 'MISSING_TIER' | 'CREDIT_HOLD' | 'NEEDS_ADDRESS';
+  address?: string;
+  phone?: string;
   orderCount?: number;
   totalValue?: number;
 };
