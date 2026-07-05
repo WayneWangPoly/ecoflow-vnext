@@ -1,55 +1,89 @@
 name: EcoFlow Ordermentum Cloud Sync
 
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Sync mode'
+        description: "Sync mode to run manually"
         required: true
-        default: 'standard'
+        default: "orders_only"
         type: choice
         options:
+          - orders_only
+          - master_only
           - standard
           - catchup
-          - master_only
-          - orders_only
+  schedule:
+    # Orders are time-sensitive: run every hour.
+    - cron: "17 * * * *"
+    # Master data changes slower: run once per day around early Adelaide morning.
+    - cron: "43 16 * * *"
 
 concurrency:
   group: ordermentum-cloud-sync
   cancel-in-progress: false
 
 jobs:
-  sync:
+  ordermentum-cloud-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
       ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
       ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
-      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL || 'https://app.ordermentum.com' }}
-      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL || 'https://app.ordermentum.com' }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
       ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
-      ORDERMENTUM_MASTER_RESOURCES: products,variants,purchasers,price_groups,invoices,leads
-      NODE_OPTIONS: --dns-result-order=ipv4first
-      ORDERMENTUM_FETCH_TIMEOUT_MS: '60000'
-      SUPABASE_FETCH_TIMEOUT_MS: '60000'
-      ORDERMENTUM_FETCH_RETRIES: '3'
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
+      ORDERMENTUM_FETCH_TIMEOUT_MS: "60000"
+      SUPABASE_FETCH_TIMEOUT_MS: "60000"
+      ORDERMENTUM_FETCH_RETRIES: "3"
+
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Resolve sync mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "17 * * * *" ]; then
+              echo "SYNC_MODE=orders_only" >> "$GITHUB_ENV"
+              echo "Scheduled hourly run: orders_only"
+            else
+              echo "SYNC_MODE=master_only" >> "$GITHUB_ENV"
+              echo "Scheduled daily run: master_only"
+            fi
+          else
+            echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
+            echo "Manual run: ${{ inputs.mode }}"
+          fi
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID ORDERMENTUM_BASE_URL ORDERMENTUM_API_BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret/env: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Run Ordermentum cloud sync
-        run: node scripts/ordermentum-cloud-sync.mjs --mode=${{ github.event.inputs.mode || 'standard' }}
+        run: node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE"
