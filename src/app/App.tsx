@@ -685,14 +685,14 @@ function StoresPanel({ stores, priceGroups }: { stores: StoreProfile[]; priceGro
       <section className="panel">
         <div className="panel-head"><h2>Store and price tier control</h2><span>derived from recent order retailers, linked to Ordermentum price groups</span></div>
         <div className="table-like stores-table">
-          <div className="table-head"><span>Store</span><span>Ordermentum ID</span><span>Tier</span><span>Terms</span><span>Statement group</span></div>
+          <div className="table-head"><span>Store</span><span>Delivery address</span><span>Tier</span><span>Contact</span><span>Site status</span></div>
           {stores.map((store) => (
             <div className="table-row" key={store.id}>
-              <span><strong>{store.name}</strong><small>{store.account} · {store.suburb} · {store.orderCount ?? 0} orders</small></span>
-              <span>{store.ordermentumId}</span>
-              <span><Pill tone={store.status === 'NEEDS_ADDRESS' ? 'warn' : 'blue'}>{store.priceTier}</Pill></span>
-              <span>{store.paymentTerms}</span>
-              <span>{store.statementGroup}</span>
+              <span><strong>{store.name}</strong><small>{store.suburb} · {store.orderCount ?? 0} orders</small></span>
+              <span>{store.address || <em className="missing-cell">no verified address</em>}</span>
+              <span><Pill tone={store.priceTier === 'Unmapped' ? 'warn' : 'blue'}>{store.priceTier}</Pill></span>
+              <span>{store.phone || '—'}</span>
+              <span><Pill tone={store.status === 'NEEDS_ADDRESS' ? 'warn' : 'good'}>{store.status === 'NEEDS_ADDRESS' ? 'NEEDS ADDRESS' : 'SITE OK'}</Pill></span>
             </div>
           ))}
         </div>

@@ -96,9 +96,10 @@ function isLooseUnit(unit: string) {
 
 /**
  * Freight / service lines are invoiced but never picked, boxed or labelled.
- * Interim keyword check until the SKU master's is_service_item drives this.
+ * The SKU master's is_service_item is authoritative; keywords only cover unmastered SKUs.
  */
-export function isServiceLine(line: { sku: string; name: string }): boolean {
+export function isServiceLine(line: { sku: string; name: string; isService?: boolean }): boolean {
+  if (line.isService !== undefined) return line.isService;
   const sku = line.sku.toUpperCase();
   const name = line.name.toLowerCase();
   if (sku.startsWith('FC') && sku.length <= 6) return true;

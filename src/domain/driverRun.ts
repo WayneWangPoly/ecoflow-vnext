@@ -37,6 +37,9 @@ export const WAREHOUSE = {
   name: 'EcoFlow Warehouse',
   address: 'Unit 12/88 Exeter Terrace, Dudley Park SA 5008',
   suburb: 'Dudley Park',
+  lat: -34.8746,
+  lng: 138.5626,
+  /** Fallback schematic position when no stop has real coordinates. */
   mapPoint: { x: 0.08, y: 0.5 } as MapPoint
 };
 
@@ -61,7 +64,7 @@ export type StopException = {
   recordedAt: string;
 };
 
-export type RunStopLine = { sku: string; name: string; qty: number; unit: string; location: string; barcode?: string };
+export type RunStopLine = { sku: string; name: string; qty: number; unit: string; location: string; barcode?: string; isService?: boolean };
 
 export type RunStop = {
   orderId: string;
@@ -76,6 +79,8 @@ export type RunStop = {
   eta: string;
   deliveryNote?: string;
   phone?: string;
+  lat?: number;
+  lng?: number;
   lines: RunStopLine[];
   warehouseReady: boolean;
   orderStatus: OrderStatus;
@@ -89,6 +94,10 @@ export type DriverRun = {
   stops: RunStop[];
   totalCartons: number;
   readyStops: number;
+  /** Warehouse position in the same normalised space as stop mapPoints. */
+  warehousePoint: MapPoint;
+  /** True when at least one stop is placed from real coordinates. */
+  geoProjected: boolean;
 };
 
 export type StopProgress = {
@@ -245,9 +254,41 @@ export function reconcileStopOrder(saved: string[] | undefined, stops: RunStop[]
   return [...kept, ...stopIds.filter((id) => !keptSet.has(id))];
 }
 
+/**
+ * Places stops with real coordinates by geographic projection (north up, warehouse
+ * included in the frame); stops without coordinates keep their schematic hash point.
+ */
+function projectRunGeometry(stops: RunStop[]): { stops: RunStop[]; warehousePoint: MapPoint; geoProjected: boolean } {
+  const located = stops.filter((stop) => typeof stop.lat === 'number' && typeof stop.lng === 'number');
+  if (!located.length) return { stops, warehousePoint: WAREHOUSE.mapPoint, geoProjected: false };
+
+  const lats = [...located.map((stop) => stop.lat as number), WAREHOUSE.lat];
+  const lngs = [...located.map((stop) => stop.lng as number), WAREHOUSE.lng];
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latSpan = Math.max(maxLat - minLat, 0.01);
+  const lngSpan = Math.max(maxLng - minLng, 0.01);
+  const span = Math.max(latSpan, lngSpan);
+  const pad = 0.08;
+  const project = (lat: number, lng: number): MapPoint => ({
+    x: clamp(pad + ((lng - minLng) / span) * (1 - pad * 2), 0.03, 0.97),
+    y: clamp(pad + ((maxLat - lat) / span) * (1 - pad * 2), 0.03, 0.97)
+  });
+
+  return {
+    stops: stops.map((stop) => (typeof stop.lat === 'number' && typeof stop.lng === 'number'
+      ? { ...stop, mapPoint: project(stop.lat, stop.lng) }
+      : stop)),
+    warehousePoint: project(WAREHOUSE.lat, WAREHOUSE.lng),
+    geoProjected: true
+  };
+}
+
 export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>): DriverRun {
   const releasedIds = releasedOrders && Object.keys(releasedOrders).length ? releasedOrders : null;
-  const stops = [...orders]
+  const rawStops = [...orders]
     .filter((order) => releasedIds
       ? Boolean(releasedIds[order.id]) && order.status !== 'CANCELLED'
       : RUN_STATUSES.includes(order.status))
@@ -266,12 +307,16 @@ export function buildDriverRun(orders: ImportedOrder[], businessDay: string, rel
       cartons: Math.max(1, order.packageCount),
       eta: order.eta,
       deliveryNote: order.deliveryNote,
-      phone: undefined,
-      lines: order.lines.map((line) => ({ sku: line.sku, name: line.name, qty: line.qty, unit: line.unit, location: line.location, barcode: line.barcode })),
+      phone: order.phone,
+      lat: order.lat,
+      lng: order.lng,
+      lines: order.lines.map((line) => ({ sku: line.sku, name: line.name, qty: line.qty, unit: line.unit, location: line.location, barcode: line.barcode, isService: line.isService })),
       warehouseReady: READY_STATUSES.includes(order.status),
       orderStatus: order.status,
       mapPoint: mapPointForStop(index, `${order.id}:${order.store}`)
     }));
+
+  const { stops, warehousePoint, geoProjected } = projectRunGeometry(rawStops);
 
   return {
     id: `RUN-${businessDay.replace(/-/g, '')}-A`,
@@ -279,7 +324,9 @@ export function buildDriverRun(orders: ImportedOrder[], businessDay: string, rel
     businessDay,
     stops,
     totalCartons: stops.reduce((sum, stop) => sum + stop.cartons, 0),
-    readyStops: stops.filter((stop) => stop.warehouseReady).length
+    readyStops: stops.filter((stop) => stop.warehouseReady).length,
+    warehousePoint,
+    geoProjected
   };
 }
 
