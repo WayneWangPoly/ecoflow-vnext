@@ -166,11 +166,19 @@ function ShortSheet({ task, onSave, onClose }: {
 
 type PickView = 'bulk' | 'sort' | 'stops';
 
-export function PickBoard({ orders, businessDay, day, setDay }: {
+export type PickBoardSyncStatus = 'off' | 'connecting' | 'live' | 'error';
+
+function SyncChip({ status }: { status: PickBoardSyncStatus }) {
+  const label = status === 'live' ? 'Live sync' : status === 'connecting' ? 'Connecting…' : status === 'error' ? 'Sync error' : 'Local only';
+  return <span className={cls('sync-chip', `sync-chip-${status}`)}>{label}</span>;
+}
+
+export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off' }: {
   orders: ImportedOrder[];
   businessDay: BusinessDay;
   day: DriverDayState;
   setDay: React.Dispatch<React.SetStateAction<DriverDayState>>;
+  syncStatus?: PickBoardSyncStatus;
 }) {
   const [view, setView] = useState<PickView>('bulk');
   const [labelsOpen, setLabelsOpen] = useState(false);
@@ -411,6 +419,7 @@ export function PickBoard({ orders, businessDay, day, setDay }: {
         <div className="run-progress-head">
           <strong>{pickedCount}/{tasks.length} SKUs picked</strong>
           <span>{stagedCount}/{stops.length} stops staged</span>
+          <SyncChip status={syncStatus} />
         </div>
         <div className="run-progress-track">
           <div className="run-progress-fill" style={{ width: tasks.length ? `${(pickedCount / tasks.length) * 100}%` : '0%' }} />

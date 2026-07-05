@@ -328,12 +328,15 @@ button:disabled { opacity: .46; cursor: not-allowed; }
   min-height: 100dvh;
   margin: 0 auto;
   background: #f4fbf3;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   border-left: 1px solid #d3e5d8;
   border-right: 1px solid #d3e5d8;
   position: relative;
 }
+.driver-content { flex: 1; }
+.sync-error-banner { background: #a62818; color: #fff; font-weight: 850; font-size: 12.5px; line-height: 1.45; padding: 8px 12px; }
+.desktop-error-banner { border-radius: 12px; margin-bottom: 16px; font-size: 14px; }
 .driver-topbar { height: 66px; background: #073c2a; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; position: sticky; top: 0; z-index: 8; }
 .driver-topbar-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .driver-topbar-brand strong { display: block; font-size: 19px; letter-spacing: -.03em; }
@@ -602,6 +605,11 @@ button:disabled { opacity: .46; cursor: not-allowed; }
 .picker-add input { width: 84px; min-height: 34px; border: 1.5px solid #dce8e0; border-radius: 999px; padding: 0 12px; font-size: 13px; font-weight: 800; background: #fff; }
 .picker-add button { border: 1.5px solid #d5e4da; background: #fff; color: #0e4c36; border-radius: 999px; width: 34px; height: 34px; display: grid; place-items: center; padding: 0; }
 .pick-view-toggle { width: 100%; }
+.sync-chip { border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 950; white-space: nowrap; }
+.sync-chip-live { background: #e4faed; color: #077647; }
+.sync-chip-connecting { background: #e3f0ff; color: #155eb4; }
+.sync-chip-error { background: #fde6df; color: #a43324; }
+.sync-chip-off { background: #eef1f4; color: #44546a; }
 .pick-view-toggle button { flex: 1; justify-content: center; }
 .pick-stack { display: grid; gap: 10px; }
 .pick-trip { display: grid; gap: 10px; }

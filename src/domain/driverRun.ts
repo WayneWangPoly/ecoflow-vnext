@@ -131,7 +131,7 @@ export function stopsInLockedOrder(stops: RunStop[], pick: PickState): RunStop[]
   }));
 }
 
-const RUN_STATUSES: OrderStatus[] = ['PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
+const RUN_STATUSES: OrderStatus[] = ['RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const READY_STATUSES: OrderStatus[] = ['STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const BOX_CODES = ['A', 'B', 'C', 'D', 'E', 'F'];
 const MAX_RUN_STOPS = 12;

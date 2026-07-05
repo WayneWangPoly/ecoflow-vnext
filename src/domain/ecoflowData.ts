@@ -249,7 +249,7 @@ function catalogLineForOrder(orderIndex: number, totalQty: number, catalog: Cata
     sku: row.sku,
     name: row.name,
     qty,
-    unit: row.unit.toLowerCase().includes('sleeve') || orderIndex % 3 === 2 ? 'sleeve' : 'carton',
+    unit: row.unit.toLowerCase().includes('sleeve') ? 'sleeve' : 'carton',
     stock,
     location: locationSequence[orderIndex % locationSequence.length],
     barcode: makeBarcode(row.sku, orderIndex),

@@ -8,6 +8,13 @@ import { BrandMark } from './Brand';
 import { DriverApp } from './DriverApp';
 import { PickBoard } from './PickBoard';
 import { loadDriverDayState, saveDriverDayState } from '@/domain/driverRun';
+import { usePickSync } from './usePickSync';
+import { AuthCallbackScreen } from '@/features/auth/AuthCallbackScreen';
+import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
+import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
+import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTypes';
+import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
+import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
 import type {
   Activity,
   CatalogRow,
@@ -63,6 +70,21 @@ function statusLabel(status: OrderStatus) {
 
 function roleLabel(role: Role) {
   return roleOptions.find((item) => item.role === role)?.label ?? role;
+}
+
+function roleFromAppRole(appRole: EcoFlowAppRole): Role {
+  if (appRole === 'WAREHOUSE') return 'warehouse';
+  if (appRole === 'DRIVER') return 'driver';
+  if (appRole === 'ACCOUNT') return 'account';
+  return 'owner';
+}
+
+function canManageTeam(profile?: EcoFlowAuthProfile | null) {
+  return profile?.is_active === true && (profile.app_role === 'OWNER' || profile.app_role === 'ADMIN');
+}
+
+function appRoleDisplay(profile?: EcoFlowAuthProfile | null) {
+  return profile ? `${profile.app_role}${profile.email ? ` · ${profile.email}` : ''}` : 'Legacy local role';
 }
 
 function syncTone(status: ImportedOrder['syncStatus']): 'good' | 'blue' | 'neutral' {
@@ -131,6 +153,43 @@ function LoginScreen({ onLogin }: { onLogin: (role: Role) => void }) {
         <input id="passcode" type="password" inputMode="numeric" value={passcode} autoFocus onChange={(event) => setPasscode(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && submit()} />
         {error ? <div className="error-message">{error}</div> : null}
         <button className="primary-button" type="button" onClick={submit}>Enter</button>
+      </section>
+    </main>
+  );
+}
+
+function LoadingScreen({ message = 'Loading secure session…' }: { message?: string }) {
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand-row">
+          <BrandMark large />
+          <div>
+            <div className="login-brand-name">EcoFlow</div>
+            <div className="login-brand-subtitle">SECURE ACCESS</div>
+          </div>
+        </div>
+        <h1>{message}</h1>
+        <p>Please wait while EcoFlow checks your account and role.</p>
+      </section>
+    </main>
+  );
+}
+
+function AccessPendingScreen({ profile, onLogout }: { profile?: EcoFlowAuthProfile | null; onLogout: () => void }) {
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand-row">
+          <BrandMark large />
+          <div>
+            <div className="login-brand-name">EcoFlow</div>
+            <div className="login-brand-subtitle">ACCESS REVIEW</div>
+          </div>
+        </div>
+        <h1>Access is not active yet</h1>
+        <p>{profile?.email ?? 'This account'} is signed in, but the team profile is missing, suspended, or waiting for approval.</p>
+        <button className="primary-button" type="button" onClick={onLogout}>Logout</button>
       </section>
     </main>
   );
@@ -638,7 +697,7 @@ function LogsPanel({ logs }: { logs: Activity[] }) {
   );
 }
 
-function SettingsPanel({ summary, dataQuality }: { summary: EcoFlowDataSet['summary']; dataQuality: DataQualityItem[] }) {
+function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlowDataSet['summary']; dataQuality: DataQualityItem[]; authProfile?: EcoFlowAuthProfile | null }) {
   const blocking = dataQuality.filter((item) => item.severity === 'danger' || item.severity === 'warn').length;
   return (
     <section className="workspace-stack">
@@ -658,11 +717,36 @@ function SettingsPanel({ summary, dataQuality }: { summary: EcoFlowDataSet['summ
           <div><strong>{summary.priceGroupCount}</strong><span>price groups detected</span></div>
         </div>
       </section>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Secure access</h2>
+          <Pill tone={authProfile ? 'good' : 'warn'}>{authProfile ? authProfile.app_role : 'LEGACY'}</Pill>
+        </div>
+        <div className="readiness-grid">
+          <div><strong>{authProfile?.display_name ?? authProfile?.email ?? 'Local fallback'}</strong><span>signed-in user</span></div>
+          <div><strong>{appRoleDisplay(authProfile)}</strong><span>application role</span></div>
+          <div><strong>{authProfile?.team_status ?? 'legacy passcode'}</strong><span>team status</span></div>
+          <div><strong>{authProfile?.is_active ? 'Active' : authProfile ? 'Inactive' : 'Not connected'}</strong><span>access state</span></div>
+        </div>
+      </section>
+      {authProfile && canManageTeam(authProfile) && supabase ? (
+        <TeamInviteSettingsPanel supabase={supabase} />
+      ) : authProfile ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Team access</h2><Pill tone="neutral">Owner/Admin only</Pill></div>
+          <p>Your account can use EcoFlow, but only OWNER or ADMIN can invite employees or change team roles.</p>
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="panel-head"><h2>Team access</h2><Pill tone="warn">Supabase Auth not active</Pill></div>
+          <p>The old role/passcode fallback is still running because VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are not available to the browser.</p>
+        </section>
+      )}
     </section>
   );
 }
 
-function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout }: {
+function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile }: {
   role: Role;
   data: EcoFlowDataSet;
   orders: ImportedOrder[];
@@ -671,10 +755,13 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   stores: StoreProfile[];
   logs: Activity[];
   onLogout: () => void;
+  loadError?: string;
+  authProfile?: EcoFlowAuthProfile | null;
 }) {
   const [tab, setTab] = useState<DesktopTab>('dashboard');
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout} onUndo={() => undefined}>
+      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load — the data below is fallback/demo, not live. {loadError}</div> : null}
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={orders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(orders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={orders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={orders} setOrders={setOrders} /> : null}
@@ -683,7 +770,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
       {tab === 'stores' ? <StoresPanel stores={stores} priceGroups={data.priceGroups} /> : null}
       {tab === 'reconciliation' ? <ReconciliationPanel orders={orders} summary={data.summary} /> : null}
       {tab === 'logs' ? <LogsPanel logs={logs} /> : null}
-      {tab === 'settings' ? <SettingsPanel summary={data.summary} dataQuality={data.dataQuality} /> : null}
+      {tab === 'settings' ? <SettingsPanel summary={data.summary} dataQuality={data.dataQuality} authProfile={authProfile} /> : null}
     </DesktopShell>
   );
 }
@@ -700,20 +787,22 @@ function MobileShell({ role, onLogout, children }: { role: Role; onLogout: () =>
   );
 }
 
-function WarehouseWorkspace({ orders, stock, businessDay }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay'] }) {
+function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay']; loadError?: string; onLogout?: () => void }) {
   const [tab, setTab] = useState<WarehouseTab>('pick');
   const [day, setDay] = useState(() => loadDriverDayState(businessDay.date));
   useEffect(() => saveDriverDayState(day), [day]);
+  const syncStatus = usePickSync(businessDay.date, day, setDay, 'Warehouse');
 
   return (
-    <MobileShell role="warehouse" onLogout={() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); }}>
+    <MobileShell role="warehouse" onLogout={onLogout ?? (() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); })}>
       <section className="mobile-content">
+        {loadError ? <div className="sync-error-banner">Supabase orders failed to load — showing fallback data. {loadError}</div> : null}
         <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick and stock control.</p></div>
         <nav className="mobile-tabs">
           {(['receive', 'pick', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
         </nav>
         {tab === 'receive' ? <div className="mobile-card"><h2>Inbound receiving</h2><p>Confirm received stock and put away to mapped locations.</p><button className="primary-button">Scan receiving dock</button></div> : null}
-        {tab === 'pick' ? <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} /> : null}
+        {tab === 'pick' ? <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} syncStatus={syncStatus} /> : null}
         {tab === 'stock' ? <div className="mobile-stack">{stock.slice(0, 18).map((row) => <article className="mobile-card" key={row.sku}><strong>{row.sku}</strong><span>{row.location}</span><span>On hand {row.onHand} · reserved {row.reserved}</span></article>)}</div> : null}
       </section>
     </MobileShell>
@@ -721,13 +810,80 @@ function WarehouseWorkspace({ orders, stock, businessDay }: { orders: ImportedOr
 }
 
 export function App() {
-  const [role, setRole] = useState<Role | null>(() => {
+  const authEnabled = hasSupabaseAuthClient() && Boolean(supabase);
+  const [legacyRole, setLegacyRole] = useState<Role | null>(() => {
+    if (authEnabled) return null;
     const stored = window.localStorage.getItem('ecoflow-role') as Role | null;
     return stored && roleOptions.some((item) => item.role === stored) ? stored : null;
   });
+  const [authChecked, setAuthChecked] = useState(!authEnabled);
+  const [authProfile, setAuthProfile] = useState<EcoFlowAuthProfile | null>(null);
+  const [authError, setAuthError] = useState('');
   const [data, setData] = useState<EcoFlowDataSet>(initialData);
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
   const [loadError, setLoadError] = useState('');
+
+  async function refreshAuthProfile() {
+    if (!supabase) return null;
+    const { data: currentUser, error } = await supabase
+      .from('v_ecoflow_current_user')
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      setAuthError(error.message);
+      setAuthProfile(null);
+      return null;
+    }
+
+    const profile = (currentUser ?? null) as EcoFlowAuthProfile | null;
+    setAuthProfile(profile);
+    setAuthError('');
+    return profile;
+  }
+
+  useEffect(() => {
+    if (!authEnabled || !supabase) return;
+
+    const client = supabase;
+    let active = true;
+
+    async function initialiseAuth(authClient: NonNullable<typeof supabase>) {
+      const { data: sessionResult, error } = await authClient.auth.getSession();
+      if (!active) return;
+
+      if (error) {
+        setAuthError(error.message);
+        setAuthChecked(true);
+        return;
+      }
+
+      if (sessionResult.session) {
+        await refreshAuthProfile();
+      } else {
+        setAuthProfile(null);
+      }
+
+      if (active) setAuthChecked(true);
+    }
+
+    const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (session) {
+        void refreshAuthProfile().finally(() => setAuthChecked(true));
+      } else {
+        setAuthProfile(null);
+        setAuthChecked(true);
+      }
+    });
+
+    void initialiseAuth(client);
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, [authEnabled]);
 
   useEffect(() => {
     let active = true;
@@ -744,17 +900,33 @@ export function App() {
         setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
       });
     return () => { active = false; };
-  }, []);
+  }, [authProfile?.user_id]);
 
-  function logout() {
+  async function logout() {
     window.localStorage.removeItem('ecoflow-role');
-    setRole(null);
+    if (supabase) await supabase.auth.signOut();
+    setLegacyRole(null);
+    setAuthProfile(null);
   }
 
-  if (!role) return <LoginScreen onLogin={setRole} />;
+  const path = window.location.pathname;
+  if (authEnabled && supabase && path === '/auth/callback') return <AuthCallbackScreen supabase={supabase} />;
+  if (authEnabled && supabase && path === '/auth/set-password') return <SetPasswordScreen supabase={supabase} />;
 
-  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} />;
-  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} />;
+  if (!authEnabled) {
+    if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
+    if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
+    if (legacyRole === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
+    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} />;
+  }
 
-  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} />;
+  if (!authChecked) return <LoadingScreen />;
+  if (!authProfile) return <EmailLoginScreen supabase={supabase!} authError={authError} onSignedIn={() => void refreshAuthProfile()} />;
+  if (!authProfile.is_active || authProfile.team_status === 'SUSPENDED' || authProfile.team_status === 'DISABLED') return <AccessPendingScreen profile={authProfile} onLogout={() => void logout()} />;
+
+  const role = roleFromAppRole(authProfile.app_role);
+  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
+  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
+
+  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} />;
 }

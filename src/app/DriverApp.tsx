@@ -59,6 +59,7 @@ import { stopsInLockedOrder } from '@/domain/driverRun';
 import { BoxChip, BrandMark } from './Brand';
 import { LabelSheet } from './LabelSheet';
 import { PickBoard } from './PickBoard';
+import { usePickSync } from './usePickSync';
 import type {
   DriverDayState,
   GeoPoint,
@@ -475,11 +476,12 @@ function RouteMap({ rows, currentId, onSelect }: { rows: StopWithProgress[]; cur
   );
 }
 
-export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
+export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError }: {
   orders: ImportedOrder[];
   setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>;
   businessDay: BusinessDay;
   onLogout: () => void;
+  loadError?: string;
 }) {
   const run = useMemo(() => buildDriverRun(orders, businessDay.date), [orders, businessDay.date]);
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(businessDay.date));
@@ -500,6 +502,8 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const pickSyncStatus = usePickSync(businessDay.date, day, setDay, 'Driver');
 
   // First look at the day: seed the driving order with the optimised route from the warehouse.
   useEffect(() => {
@@ -760,7 +764,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
         <div className="driver-hero-metrics">
           <div><strong>{rows.length}</strong><span>stops</span></div>
           <div><strong>{run.totalCartons}</strong><span>cartons</span></div>
-          <div><strong>{run.readyStops}/{rows.length}</strong><span>ready</span></div>
+          <div><strong>{routeLocked ? stagedCount : run.readyStops}/{rows.length}</strong><span>{routeLocked ? 'staged' : 'ready'}</span></div>
         </div>
       </section>
 
@@ -1036,8 +1040,8 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
           <div className="detail-chip-row">
             <span className="detail-chip">{activeRow.stop.cartons} carton{activeRow.stop.cartons === 1 ? '' : 's'}</span>
             <span className="detail-chip">ETA {activeRow.stop.eta}</span>
-            <span className={cls('detail-chip', !activeRow.stop.warehouseReady && 'detail-chip-warn')}>
-              {activeRow.stop.warehouseReady ? 'Warehouse ready' : 'Still packing'}
+            <span className={cls('detail-chip', !(activeRow.stop.warehouseReady || day.pick?.stagedStops[activeRow.stop.orderId]) && 'detail-chip-warn')}>
+              {activeRow.stop.warehouseReady || day.pick?.stagedStops[activeRow.stop.orderId] ? 'Warehouse ready' : 'Still packing'}
             </span>
           </div>
           {activeRow.stop.deliveryNote ? (
@@ -1104,7 +1108,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
   ) : null;
 
   const pickScreen = routeLocked ? (
-    <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} />
+    <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} syncStatus={pickSyncStatus} />
   ) : (
     <section className="driver-card">
       <div className="driver-card-head"><h2><ClipboardList size={18} /> Picking</h2></div>
@@ -1133,6 +1137,8 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout }: {
         </div>
         <button type="button" className="driver-topbar-logout" onClick={onLogout}>Logout</button>
       </header>
+
+      {loadError ? <div className="sync-error-banner">Supabase orders failed to load — showing fallback data. {loadError}</div> : null}
 
       <section className="driver-content">
         {tab === 'today' ? todayScreen : null}
