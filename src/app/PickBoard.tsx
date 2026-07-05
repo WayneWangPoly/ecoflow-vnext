@@ -185,7 +185,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
   const [scanSku, setScanSku] = useState<string | null>(null);
   const [shortSku, setShortSku] = useState<string | null>(null);
 
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date), [orders, businessDay.date]);
+  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders), [orders, businessDay.date, day.releasedOrders]);
   const pick = day.pick;
   const stops: RunStop[] = useMemo(() => (pick ? stopsInLockedOrder(run.stops, pick) : []), [run.stops, pick]);
   const tasks = useMemo(() => buildBulkTasks(stops), [stops]);
@@ -298,7 +298,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
             return (
               <article key={task.sku} className="pick-task">
                 <div className="pick-task-top">
-                  <span className="pick-location">{task.location}</span>
+                  <span className={cls('pick-location', !task.location && 'pick-location-missing')}>{task.location || 'NO LOC'}</span>
                   <div className="pick-task-copy">
                     <strong>{task.sku}</strong>
                     <span>{task.name}</span>

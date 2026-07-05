@@ -41,11 +41,13 @@ import {
   formatDuration,
   formatGeoPoint,
   googleMapsUrl,
+  hasVerifiedAddress,
   initialStopProgress,
   lastEventOfType,
   loadDriverDayState,
   optimiseStopOrder,
   reconcileStopOrder,
+  RUN_SIZE_WARNING,
   saveDriverDayState,
   shiftEventLabel,
   shiftStatusFromEvents,
@@ -54,6 +56,7 @@ import {
   WAREHOUSE,
   wazeUrl
 } from '@/domain/driverRun';
+import { uploadPodAsset } from '@/data/repositories/pickSync';
 import { allStopsStaged, buildRunCartons } from '@/domain/pickPlan';
 import { stopsInLockedOrder } from '@/domain/driverRun';
 import { BoxChip, BrandMark } from './Brand';
@@ -476,15 +479,16 @@ function RouteMap({ rows, currentId, onSelect }: { rows: StopWithProgress[]; cur
   );
 }
 
-export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError }: {
+export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError, actorLabel }: {
   orders: ImportedOrder[];
   setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>;
   businessDay: BusinessDay;
   onLogout: () => void;
   loadError?: string;
+  actorLabel?: string;
 }) {
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date), [orders, businessDay.date]);
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(businessDay.date));
+  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders), [orders, businessDay.date, day.releasedOrders]);
   const [tab, setTab] = useState<DriverTab>('today');
   const [stopsView, setStopsView] = useState<'map' | 'list'>('map');
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
@@ -503,7 +507,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError 
     return () => window.clearInterval(timer);
   }, []);
 
-  const pickSyncStatus = usePickSync(businessDay.date, day, setDay, 'Driver');
+  const pickSyncStatus = usePickSync(businessDay.date, day, setDay, actorLabel || 'Driver');
 
   // First look at the day: seed the driving order with the optimised route from the warehouse.
   useEffect(() => {
@@ -599,12 +603,35 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError 
     patchStop(row.stop.orderId, { status: 'ARRIVED', arrivedAt: nowIso(), arrivedLocation: location });
   }
 
-  function completeDelivery(row: StopWithProgress, pod: PodRecord) {
+  async function completeDelivery(row: StopWithProgress, pod: PodRecord) {
+    // Record locally first (offline-safe), then upload assets and sync the storage paths.
     patchStop(row.stop.orderId, { status: 'DELIVERED', completedAt: pod.capturedAt, pod });
     setOrderStatus(row.stop.orderId, 'DELIVERED', true);
     setPodOpen(false);
     setActiveStopId(null);
     setTab('stops');
+    const stamp = pod.capturedAt.replace(/[:.]/g, '-');
+    const prefix = `${businessDay.date}/${row.stop.orderId}`;
+    const [photoPath, signaturePath] = await Promise.all([
+      pod.photo ? uploadPodAsset(`${prefix}/photo-${stamp}.jpg`, pod.photo) : Promise.resolve(null),
+      pod.signature ? uploadPodAsset(`${prefix}/signature-${stamp}.png`, pod.signature) : Promise.resolve(null)
+    ]);
+    if (photoPath || signaturePath) {
+      setDay((current) => {
+        const progress = current.stopProgress[row.stop.orderId];
+        if (!progress?.pod || progress.pod.capturedAt !== pod.capturedAt) return current;
+        return {
+          ...current,
+          stopProgress: {
+            ...current.stopProgress,
+            [row.stop.orderId]: {
+              ...progress,
+              pod: { ...progress.pod, photoPath: photoPath ?? progress.pod.photoPath, signaturePath: signaturePath ?? progress.pod.signaturePath }
+            }
+          }
+        };
+      });
+    }
   }
 
   function failDelivery(row: StopWithProgress, exception: StopException) {
@@ -770,6 +797,10 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError 
 
       {shiftCard}
 
+      {rows.length > RUN_SIZE_WARNING ? (
+        <p className="driver-inline-hint">{rows.length} stops in one run — consider splitting into Run A / Run B from the office before locking.</p>
+      ) : null}
+
       <section className="driver-card">
         <div className="driver-card-head">
           <h2><Truck size={18} /> Route</h2>
@@ -779,7 +810,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError 
         </div>
 
         {!rows.length ? (
-          <p className="driver-card-meta">No stops assigned yet. The warehouse hasn’t released today’s run.</p>
+          <p className="driver-card-meta">No orders released into today’s run yet — the office releases orders from the Ordermentum tab first.</p>
         ) : routeStatus === 'NOT_STARTED' && !routeLocked ? (
           <>
             <p className="driver-card-meta">Step 1 · Review the stop order, then lock the route — locking fixes the A–F box letters and generates the pick plan and labels.</p>
@@ -1051,11 +1082,15 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError 
 
         <section className="detail-section">
           <h3>Navigate</h3>
-          <div className="nav-links-row">
-            <a className="nav-link-button" href={googleMapsUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><Navigation size={17} /> Google</a>
-            <a className="nav-link-button" href={appleMapsUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><MapPin size={17} /> Apple</a>
-            <a className="nav-link-button" href={wazeUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><Navigation size={17} /> Waze</a>
-          </div>
+          {hasVerifiedAddress(activeRow.stop.address) ? (
+            <div className="nav-links-row">
+              <a className="nav-link-button" href={googleMapsUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><Navigation size={17} /> Google</a>
+              <a className="nav-link-button" href={appleMapsUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><MapPin size={17} /> Apple</a>
+              <a className="nav-link-button" href={wazeUrl(activeRow.stop.address)} target="_blank" rel="noreferrer"><Navigation size={17} /> Waze</a>
+            </div>
+          ) : (
+            <div className="driver-callout"><AlertTriangle size={15} /> No verified delivery address for this store yet — navigation is disabled until the site master has one.</div>
+          )}
           {activeRow.stop.phone ? (
             <a className="nav-link-button phone-link" href={`tel:${activeRow.stop.phone}`}><Phone size={17} /> Call {activeRow.stop.store}</a>
           ) : null}

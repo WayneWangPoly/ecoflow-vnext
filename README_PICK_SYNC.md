@@ -1,13 +1,17 @@
-# EcoFlow Pick State Sync (multi-device picking progress)
+# EcoFlow shared day state (multi-device operational facts)
 
-Driver and Warehouse devices share the same pick board state through Supabase:
-route lock, bulk task progress, sort allocations and staged stops sync within ~4 seconds.
+Driver, Warehouse and Office share one operational fact source through Supabase:
+release-to-run, route lock, pick progress, staging, delivery status, POD and shift
+events sync across devices within ~4 seconds. The office Delivery board reads the
+same rows the driver writes.
 
 ## Apply
 
 1. Run `supabase/migrations/20260705_ecoflow_pick_state_sync.sql` in the Supabase SQL Editor.
+   It creates `public.ecoflow_day_state`, the `pod-photos` Storage bucket + policies,
+   and grants the app access to the `ecoflow_internalise_ordermentum_orders` RPC.
 
-2. Give the front end its Supabase keys (if not already set). Create `.env.local` in the project root:
+2. Give the front end its Supabase keys (if not already set). Create `.env.local`:
 
 ```
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
@@ -18,17 +22,30 @@ The anon public key is in Supabase Dashboard → Settings → API → `anon` `pu
 Never put the service role key in a VITE_ variable — it would ship inside the browser bundle.
 
 3. `npm run dev` (or redeploy). The pick board header shows the sync state:
-   - `Live sync` — connected, polling every 4 s
-   - `Connecting…` — first fetch in flight
-   - `Sync error` — table missing or network problem (the app keeps working locally)
-   - `Local only` — no Supabase keys configured
+   `Live sync` / `Connecting…` / `Sync error` / `Local only`.
 
-## How it works
+## Scopes in ecoflow_day_state
 
-- One row per `(business_day, scope)` in `public.ecoflow_pick_state`; each pick action
-  upserts only its own scope row, so two devices working different SKUs never conflict.
-- Devices poll rows with `updated_at` greater than their cursor and merge them in;
-  `updated_at` is set by a database trigger, so device clock skew doesn't matter.
-- Locking the route on the driver phone makes the pick plan appear on the warehouse
-  device on the next poll; unlocking propagates the same way (meta row with `lockedAt: null`).
-- Driver-personal state (shift clock, POD, delivery progress) intentionally stays local.
+| scope | payload | written by |
+|---|---|---|
+| `release:<orderId>` | `{ releasedAt }` | office (Release to run) |
+| `meta` | `{ lockedAt, stopOrder, boxCodes }` | driver (route lock; lockedAt null = unlock) |
+| `task:<sku>` | PickTaskState | picker |
+| `alloc:<sku>\|<orderId>` | `{ done }` | picker (sort phase) |
+| `stage:<orderId>` | `{ stagedAt }` | picker (seal & stage) |
+| `stop:<orderId>` | StopProgress (POD as Storage paths) | driver |
+| `route` | `{ startedAt, endedAt }` | driver |
+| `shift` | `{ events: [...] }` | driver |
+
+- `updated_at` is set by a DB trigger — device clock skew never corrupts ordering.
+- POD photos/signatures upload to the `pod-photos` bucket; only paths travel in scope rows;
+  the local data-URL stays as an offline cache on the capturing device.
+- The formal internal-order creation goes through the `ecoflow_internalise_ordermentum_orders`
+  RPC (the "Internalise eligible" button) — the front end never flips release state itself.
+
+## Known limits (next batch)
+
+- Push has no retry queue yet: if a push fails mid-outage, the change stays local until the
+  next action re-diffs it. An outbox queue is planned.
+- Simultaneous route locks are last-write-wins; a lock guard is planned.
+- `updated_by` carries the signed-in name/email when Supabase Auth is enabled, otherwise a role label.

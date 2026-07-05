@@ -1,5 +1,5 @@
 import { getOrderBucketCounts } from '@/domain/orderBuckets';
-import { businessDateFromIso, makeSyncBatch } from '@/domain/syncModel';
+import { businessDateFromIso, makeBusinessDay, makeSyncBatch } from '@/domain/syncModel';
 import type {
   Activity,
   DataQualityItem,
@@ -172,8 +172,8 @@ export type SupabaseOrdermentumViews = {
   skuMappingCandidates: SupabaseSkuMappingCandidateRow[];
 };
 
-const tierSequence: PriceTier[] = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5'];
-const locationSequence = ['A1-01-01A', 'A2-02-01B', 'B1-03-02A', 'B2-01-02B', 'C1-04-01A', 'C2-02-03B', 'D1-01-01A', 'E1-03-01B'];
+/** Live mode never fabricates operational facts: no fake tiers, locations, barcodes or stock. */
+const UNMAPPED_TIER: PriceTier = 'Unmapped';
 
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
@@ -264,14 +264,9 @@ function blockersFromDraft(draft: SupabaseDraftRow): string {
 }
 
 function unitForLine(unit: string | null | undefined, uom: string | null | undefined): 'sleeve' | 'carton' {
-  const normalized = String(unit || uom || '').toLowerCase();
-  if (normalized.includes('sleeve')) return 'sleeve';
+  const normalized = String(unit || uom || '').toLowerCase().trim();
+  if (normalized.includes('sleeve') || normalized === 'unit' || normalized === 'each' || normalized === 'ea') return 'sleeve';
   return 'carton';
-}
-
-function makeBarcode(seed: string | null | undefined, index: number) {
-  const digits = String(seed || index + 1000000000).replace(/\D/g, '').slice(0, 10).padEnd(10, String(index % 10));
-  return `93${digits}`;
 }
 
 function buildLineMap(lines: SupabaseOrderLineRow[]) {
@@ -284,9 +279,9 @@ function buildLineMap(lines: SupabaseOrderLineRow[]) {
       name: textValue(line.external_product_name, 'Ordermentum line item'),
       qty,
       unit: unitForLine(line.unit, line.uom),
-      stock: qty + 8,
-      location: locationSequence[index % locationSequence.length],
-      barcode: makeBarcode(line.external_sku_code || line.source_line_id, index),
+      stock: qty,
+      location: '',
+      barcode: undefined,
       source: 'order-detail'
     };
     keys.forEach((key) => byOrder.set(key, [...(byOrder.get(key) || []), orderLine]));
@@ -302,10 +297,10 @@ function lineFor(row: SupabaseInboxRow, index: number): OrderLine {
     name: invoiceMissing ? 'Invoice detail required before warehouse release' : `${numberValue(row.line_count, 1)} Ordermentum lines`,
     qty,
     unit: 'carton',
-    stock: invoiceMissing ? 0 : qty + 8,
-    location: locationSequence[index % locationSequence.length],
-    barcode: `93${String(index + 1000000000).slice(0, 10)}`,
-    source: 'catalog-sample'
+    stock: 0,
+    location: '',
+    barcode: undefined,
+    source: 'fallback'
   };
 }
 
@@ -333,7 +328,7 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = ne
       invoiceNo,
       store,
       account: store,
-      priceTier: tierSequence[index % tierSequence.length],
+      priceTier: UNMAPPED_TIER,
       address: 'Address pending from customer/site master',
       suburb: 'Adelaide',
       eta: formatTime(row.invoice_due_at || row.order_updated_at, index),
@@ -386,7 +381,7 @@ function buildStores(orders: ImportedOrder[]): StoreProfile[] {
     name: store,
     account: store,
     suburb: rows[0]?.suburb || 'Adelaide',
-    priceTier: rows[0]?.priceTier || tierSequence[index % tierSequence.length],
+    priceTier: rows[0]?.priceTier || UNMAPPED_TIER,
     paymentTerms: 'Ordermentum payment status',
     ordermentumId: `retained-orders:${rows.length}`,
     statementGroup: store,
@@ -522,7 +517,9 @@ export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentu
 
 export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: SupabaseOrdermentumViews): EcoFlowDataSet {
   const anchorIso = maxIso([views.health?.last_order_updated_at, ...views.inbox.map((row) => row.order_updated_at)]);
-  const businessDay = businessDateFromIso(anchorIso);
+  // The operational day is the real Adelaide today — never the last order-update date,
+  // otherwise day-state keys and buckets jump whenever a sync lands.
+  const businessDay = businessDateFromIso(new Date().toISOString());
   const lineMap = buildLineMap(views.lines || []);
   const draftMap = new Map<string, SupabaseDraftRow>();
   (views.drafts || []).forEach((draft) => {
@@ -553,16 +550,19 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
   const logs = buildLogs(views.health, views);
   const invoiceTotal = enrichedOrders.reduce((sum, order) => sum + order.amount, 0);
 
+  const operationalDay = makeBusinessDay(new Date().toISOString());
+
   return {
     ...base,
     orders: enrichedOrders,
     stores,
+    stock: [],
     logs,
     dataQuality,
     mappingExceptions,
     syncBatch,
-    businessDay: syncBatch.businessDay,
-    bucketCounts: getOrderBucketCounts(enrichedOrders, syncBatch.businessDay.date),
+    businessDay: operationalDay,
+    bucketCounts: getOrderBucketCounts(enrichedOrders, operationalDay.date),
     repositoryStatus: {
       ...base.repositoryStatus,
       mode: 'supabase',
