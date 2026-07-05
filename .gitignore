@@ -5,3 +5,17 @@ dist
 .env.production
 .DS_Store
 .vscode
+
+set-local-env.ps1
+
+# Local secrets
+set-local-env.ps1
+.env
+.env.*
+!.env.example
+
+# Local sync outputs
+logs/
+exports/
+*.log
+*.csv

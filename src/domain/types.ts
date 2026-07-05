@@ -1,8 +1,8 @@
 export type Role = 'owner' | 'account' | 'warehouse' | 'driver';
 export type DesktopTab = 'dashboard' | 'ordermentum' | 'orders' | 'delivery' | 'inventory' | 'stores' | 'reconciliation' | 'logs' | 'settings';
-export type WarehouseTab = 'receive' | 'pick' | 'pack' | 'stock';
-export type DriverTab = 'run' | 'route' | 'pod' | 'issues';
-export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CLOSED' | 'CANCELLED';
+export type WarehouseTab = 'receive' | 'pick' | 'stock';
+export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
+export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CLOSED' | 'CANCELLED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'OVERDUE' | 'CREDIT_HOLD';
 export type PriceTier = 'Tier 1' | 'Tier 2' | 'Tier 3' | 'Tier 4' | 'Tier 5';
 
@@ -10,6 +10,7 @@ export type OrderSyncStatus = 'NEW' | 'UPDATED' | 'UNCHANGED';
 export type OrderChangeImpact = 'SAFE_UPDATE' | 'REVIEW_REQUIRED' | 'RECONCILIATION_VARIANCE' | 'NO_CHANGE';
 export type OrderBucketKey = 'newToday' | 'updatedToday' | 'carryOver' | 'dueToday' | 'future' | 'exceptions' | 'all';
 export type SyncBatchStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED';
+export type ReleaseGateStatus = 'READY_TO_RELEASE' | 'REVIEW_PAYMENT' | 'BLOCKED_DATA' | 'BLOCKED_MAPPING' | 'BLOCKED_STOCK';
 
 export type BusinessDay = {
   date: string;
@@ -88,6 +89,14 @@ export type ImportedOrder = {
   changeImpact: OrderChangeImpact;
   changeSummary: string;
   openExceptionCount: number;
+  releaseGateStatus?: ReleaseGateStatus;
+  releaseBlockers?: string;
+  mappedLineCount?: number;
+  unmappedLineCount?: number;
+  stockShortageCount?: number;
+  requiredQuantity?: number;
+  mappedAvailableQuantity?: number;
+  canCreateInternalOrder?: boolean;
   lines: OrderLine[];
 };
 

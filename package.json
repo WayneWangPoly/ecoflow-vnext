@@ -8,7 +8,13 @@
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "import:master-data": "node scripts/import-master-data.mjs",
-    "audit:ordermentum": "node scripts/audit-ordermentum-operational-readiness.mjs"
+    "audit:ordermentum": "node scripts/audit-ordermentum-operational-readiness.mjs",
+    "audit:release-gate": "node scripts/audit-ordermentum-release-gate.mjs",
+    "audit:import-control": "node scripts/audit-ordermentum-import-control.mjs",
+    "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
+    "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",
+    "import:ordermentum:missing-invoices": "node scripts/refresh-ordermentum-missing-invoices.mjs",
+    "test:ordermentum-auth": "node scripts/test-ordermentum-auth-and-orders.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.0.2",

@@ -12,6 +12,7 @@ import type {
   OrderSyncStatus,
   PaymentStatus,
   PriceTier,
+  ReleaseGateStatus,
   StoreProfile
 } from '@/domain/types';
 
@@ -98,11 +99,70 @@ export type SupabaseOrderLineRow = {
   total: number | string | null;
 };
 
+export type SupabaseReleaseGateRow = {
+  raw_order_id: string | null;
+  external_order_id: string | null;
+  external_order_number: string | null;
+  external_invoice_number: string | null;
+  order_number: string | null;
+  invoice_number: string | null;
+  payment_status: string | null;
+  invoice_total: number | string | null;
+  total_due: number | string | null;
+  data_release_status: string | null;
+  line_count: number | string | null;
+  required_quantity: number | string | null;
+  mapped_line_count: number | string | null;
+  unmapped_line_count: number | string | null;
+  mapped_available_quantity: number | string | null;
+  stock_shortage_count: number | string | null;
+  operational_release_status: string | null;
+  operational_blockers: string | null;
+  can_create_internal_order: boolean | null;
+};
+
+export type SupabaseReleaseSummaryRow = {
+  total_orders: number | string | null;
+  ready_to_release: number | string | null;
+  review_payment: number | string | null;
+  blocked_data: number | string | null;
+  blocked_mapping: number | string | null;
+  blocked_stock: number | string | null;
+  line_count: number | string | null;
+  required_quantity: number | string | null;
+  mapped_line_count: number | string | null;
+  unmapped_line_count: number | string | null;
+  stock_shortage_count: number | string | null;
+  invoice_total: number | string | null;
+  total_due: number | string | null;
+  latest_order_update: string | null;
+  last_synced_at: string | null;
+};
+
+export type SupabaseSkuMappingCandidateRow = {
+  external_sku_code: string | null;
+  external_product_name: string | null;
+  order_count: number | string | null;
+  line_count: number | string | null;
+  total_required_quantity: number | string | null;
+  total_value: number | string | null;
+  mapping_id: string | null;
+  internal_sku_id: string | null;
+  internal_sku_code: string | null;
+  internal_sku_name: string | null;
+  default_unit_level: string | null;
+  confidence: string | null;
+  mapping_status: string | null;
+};
+
 export type SupabaseOrdermentumViews = {
   inbox: SupabaseInboxRow[];
   exceptions: SupabaseExceptionRow[];
   health: SupabaseSyncHealthRow | null;
   lines: SupabaseOrderLineRow[];
+  releaseGate: SupabaseReleaseGateRow[];
+  releaseSummary: SupabaseReleaseSummaryRow | null;
+  skuMappingCandidates: SupabaseSkuMappingCandidateRow[];
 };
 
 const tierSequence: PriceTier[] = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5'];
@@ -169,6 +229,18 @@ function changeImpact(row: SupabaseInboxRow): OrderChangeImpact {
   return 'NO_CHANGE';
 }
 
+function releaseGateStatus(value: string | null | undefined, fallback: ReleaseGateStatus): ReleaseGateStatus {
+  if (value === 'READY_TO_RELEASE' || value === 'REVIEW_PAYMENT' || value === 'BLOCKED_DATA' || value === 'BLOCKED_MAPPING' || value === 'BLOCKED_STOCK') return value;
+  return fallback;
+}
+
+function statusFromReleaseGate(gate: SupabaseReleaseGateRow | undefined, row: SupabaseInboxRow): OrderStatus {
+  const gateStatus = releaseGateStatus(gate?.operational_release_status, row.invoice_detail_missing || row.line_items_missing ? 'BLOCKED_DATA' : 'READY_TO_RELEASE');
+  if (gateStatus === 'READY_TO_RELEASE') return 'RELEASE_READY';
+  if (gateStatus === 'REVIEW_PAYMENT') return 'IMPORTED';
+  return 'MAPPING_EXCEPTION';
+}
+
 function unitForLine(unit: string | null | undefined, uom: string | null | undefined): 'sleeve' | 'carton' {
   const normalized = String(unit || uom || '').toLowerCase();
   if (normalized.includes('sleeve')) return 'sleeve';
@@ -215,12 +287,14 @@ function lineFor(row: SupabaseInboxRow, index: number): OrderLine {
   };
 }
 
-function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = new Map<string, OrderLine[]>()): ImportedOrder[] {
+function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = new Map<string, OrderLine[]>(), gateMap = new Map<string, SupabaseReleaseGateRow>()): ImportedOrder[] {
   return rows.map((row, index) => {
     const orderNo = textValue(row.order_number, textValue(row.external_order_number, `OM-RAW-${index + 1}`));
     const invoiceNo = textValue(row.invoice_number, textValue(row.external_invoice_number, 'invoice pending'));
     const amount = numberValue(row.invoice_total, numberValue(row.order_items_total, 0));
-    const status = orderStatus(row);
+    const gate = gateMap.get(textValue(row.external_order_id, '')) || gateMap.get(orderNo);
+    const status = gate ? statusFromReleaseGate(gate, row) : orderStatus(row);
+    const gateStatus = releaseGateStatus(gate?.operational_release_status, status === 'MAPPING_EXCEPTION' ? 'BLOCKED_DATA' : 'READY_TO_RELEASE');
     const fallbackLine = lineFor(row, index);
     const actualLines = lineMap.get(textValue(row.external_order_id, '')) || lineMap.get(orderNo) || [];
     const itemLines = actualLines.length ? actualLines : [fallbackLine];
@@ -266,8 +340,16 @@ function buildOrders(rows: SupabaseInboxRow[], businessDay: string, lineMap = ne
       lastUpdatedBusinessDay: businessUpdated,
       syncStatus: syncStatus(row, businessDay),
       changeImpact: changeImpact(row),
-      changeSummary: row.invoice_detail_missing ? 'Invoice detail missing' : row.line_items_missing ? 'Line items missing' : textValue(row.order_status, 'Ordermentum update'),
-      openExceptionCount: Number(row.invoice_detail_missing || row.line_items_missing),
+      changeSummary: gate?.operational_blockers || (row.invoice_detail_missing ? 'Invoice detail missing' : row.line_items_missing ? 'Line items missing' : textValue(row.order_status, 'Ordermentum update')),
+      openExceptionCount: gateStatus === 'READY_TO_RELEASE' ? 0 : 1,
+      releaseGateStatus: gateStatus,
+      releaseBlockers: gate?.operational_blockers || '',
+      mappedLineCount: numberValue(gate?.mapped_line_count, actualLines.length),
+      unmappedLineCount: numberValue(gate?.unmapped_line_count, Number(row.invoice_detail_missing || row.line_items_missing)),
+      stockShortageCount: numberValue(gate?.stock_shortage_count, 0),
+      requiredQuantity: numberValue(gate?.required_quantity, numberValue(row.total_units, 0)),
+      mappedAvailableQuantity: numberValue(gate?.mapped_available_quantity, 0),
+      canCreateInternalOrder: Boolean(gate?.can_create_internal_order ?? status === 'RELEASE_READY'),
       lines: itemLines
     };
   });
@@ -293,7 +375,7 @@ function buildStores(orders: ImportedOrder[]): StoreProfile[] {
 
 function buildExceptions(rows: SupabaseExceptionRow[], orders: ImportedOrder[]): MappingException[] {
   const byOrder = new Map(orders.map((order) => [order.orderNo, order]));
-  return rows.map((row, index) => {
+  const importExceptions = rows.map((row, index): MappingException => {
     const orderNo = textValue(row.order_number, textValue(row.external_order_number, `OM-EX-${index + 1}`));
     const order = byOrder.get(orderNo);
     return {
@@ -308,11 +390,29 @@ function buildExceptions(rows: SupabaseExceptionRow[], orders: ImportedOrder[]):
       action: row.exception_type === 'INVOICE_DETAIL_MISSING' ? 'Fetch invoice detail' : 'Open import record'
     };
   });
+  const releaseGateExceptions = orders
+    .filter((order) => order.releaseGateStatus && order.releaseGateStatus !== 'READY_TO_RELEASE' && !rows.some((row) => row.order_number === order.orderNo || row.external_order_number === order.orderNo))
+    .map((order): MappingException => ({
+      id: `${order.id}-${order.releaseGateStatus}`,
+      orderId: order.id,
+      orderNo: order.orderNo,
+      store: order.store,
+      category: order.releaseGateStatus === 'REVIEW_PAYMENT' ? 'PAYMENT' : order.releaseGateStatus === 'BLOCKED_STOCK' ? 'STOCK_SHORTAGE' : 'SKU_MAPPING',
+      severity: order.releaseGateStatus === 'REVIEW_PAYMENT' ? 'warn' : 'danger',
+      summary: String(order.releaseGateStatus).replace(/_/g, ' '),
+      detail: order.releaseBlockers || 'Release gate requires review before internal order creation.',
+      action: order.releaseGateStatus === 'BLOCKED_MAPPING' ? 'Map SKUs' : order.releaseGateStatus === 'BLOCKED_STOCK' ? 'Review stock' : 'Review order'
+    }));
+  return [...importExceptions, ...releaseGateExceptions];
 }
 
-function buildDataQuality(health: SupabaseSyncHealthRow | null, rowCount: number): DataQualityItem[] {
+function buildDataQuality(health: SupabaseSyncHealthRow | null, rowCount: number, releaseSummary: SupabaseReleaseSummaryRow | null, skuCandidates: SupabaseSkuMappingCandidateRow[]): DataQualityItem[] {
   const invoiceMissing = numberValue(health?.invoice_detail_missing, 0);
   const linesMissing = numberValue(health?.line_items_missing, 0);
+  const blockedMapping = numberValue(releaseSummary?.blocked_mapping, 0);
+  const blockedStock = numberValue(releaseSummary?.blocked_stock, 0);
+  const readyToRelease = numberValue(releaseSummary?.ready_to_release, 0);
+  const unmappedSkuCount = skuCandidates.filter((item) => item.mapping_status !== 'MAPPED').length;
   return [
     {
       severity: rowCount ? 'good' : 'danger',
@@ -331,6 +431,12 @@ function buildDataQuality(health: SupabaseSyncHealthRow | null, rowCount: number
       area: 'Line item coverage',
       message: `${linesMissing} orders need item lines.`,
       detail: 'Orders without lines stay out of warehouse release until detail is available.'
+    },
+    {
+      severity: readyToRelease ? 'good' : blockedMapping || blockedStock ? 'warn' : 'info',
+      area: 'Release gate',
+      message: `${readyToRelease} orders can create internal orders.`,
+      detail: `${blockedMapping} blocked by SKU mapping, ${blockedStock} blocked by stock, ${unmappedSkuCount} SKU candidates need review.`
     }
   ];
 }
@@ -367,20 +473,28 @@ async function optionalSupabaseFetch<T>(path: string, fallback: T): Promise<T> {
 
 export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
-  const [inbox, exceptions, healthRows, lines] = await Promise.all([
+  const [inbox, exceptions, healthRows, lines, releaseGate, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
     supabaseFetch<SupabaseInboxRow[]>('v_ecoflow_ordermentum_inbox?select=*&order=order_updated_at.desc'),
     supabaseFetch<SupabaseExceptionRow[]>('v_ecoflow_ordermentum_exceptions?select=*&order=detected_at.desc'),
     supabaseFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*'),
-    optionalSupabaseFetch<SupabaseOrderLineRow[]>('v_ecoflow_ordermentum_order_lines?select=*&order=order_number.asc', [])
+    optionalSupabaseFetch<SupabaseOrderLineRow[]>('v_ecoflow_ordermentum_order_lines?select=*&order=order_number.asc', []),
+    optionalSupabaseFetch<SupabaseReleaseGateRow[]>('v_ecoflow_ordermentum_release_gate_v2?select=*&order=order_updated_at.desc', []),
+    optionalSupabaseFetch<SupabaseReleaseSummaryRow[]>('v_ecoflow_ordermentum_release_summary_v2?select=*', []),
+    optionalSupabaseFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc', [])
   ]);
-  return { inbox, exceptions, health: healthRows[0] || null, lines };
+  return { inbox, exceptions, health: healthRows[0] || null, lines, releaseGate, releaseSummary: releaseSummaryRows[0] || null, skuMappingCandidates };
 }
 
 export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: SupabaseOrdermentumViews): EcoFlowDataSet {
   const anchorIso = maxIso([views.health?.last_order_updated_at, ...views.inbox.map((row) => row.order_updated_at)]);
   const businessDay = businessDateFromIso(anchorIso);
   const lineMap = buildLineMap(views.lines || []);
-  const orders = buildOrders(views.inbox, businessDay, lineMap);
+  const gateMap = new Map<string, SupabaseReleaseGateRow>();
+  (views.releaseGate || []).forEach((gate) => {
+    if (gate.external_order_id) gateMap.set(gate.external_order_id, gate);
+    if (gate.order_number) gateMap.set(gate.order_number, gate);
+  });
+  const orders = buildOrders(views.inbox, businessDay, lineMap, gateMap);
   const stores = buildStores(orders);
   const mappingExceptions = buildExceptions(views.exceptions, orders);
   const enrichedOrders = orders.map((order) => ({
@@ -395,7 +509,7 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
     unchanged: enrichedOrders.filter((order) => order.syncStatus === 'UNCHANGED').length,
     failed: views.exceptions.length
   });
-  const dataQuality = buildDataQuality(views.health, views.inbox.length);
+  const dataQuality = buildDataQuality(views.health, views.inbox.length, views.releaseSummary, views.skuMappingCandidates || []);
   const logs = buildLogs(views.health, views);
   const invoiceTotal = enrichedOrders.reduce((sum, order) => sum + order.amount, 0);
 
@@ -415,7 +529,7 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
       label: 'Supabase Ordermentum raw inbox',
       connected: true,
       loadedAt: views.health?.last_synced_at || anchorIso,
-      sourceFiles: ['v_ecoflow_ordermentum_inbox', 'v_ecoflow_ordermentum_order_lines', 'v_ecoflow_ordermentum_exceptions', 'v_ecoflow_ordermentum_sync_health'],
+      sourceFiles: ['v_ecoflow_ordermentum_inbox', 'v_ecoflow_ordermentum_release_gate_v2', 'v_ecoflow_ordermentum_sku_mapping_candidates', 'v_ecoflow_ordermentum_exceptions', 'v_ecoflow_ordermentum_sync_health'],
       counts: {
         ...base.repositoryStatus.counts,
         recentOrders: enrichedOrders.length
@@ -429,7 +543,7 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Supab
       detailRetailerName: enrichedOrders[0]?.store || base.summary.detailRetailerName,
       detailLineCount: enrichedOrders[0]?.packageCount || base.summary.detailLineCount,
       invoiceTotal,
-      invoiceStatus: `${views.exceptions.length} open import exceptions`,
+      invoiceStatus: views.releaseSummary ? `${numberValue(views.releaseSummary.ready_to_release, 0)} ready / ${numberValue(views.releaseSummary.blocked_mapping, 0)} mapping blockers` : `${views.exceptions.length} open import exceptions`,
       supplierName: 'EcoFlow Packaging',
       sourceFiles: ['Supabase views']
     }

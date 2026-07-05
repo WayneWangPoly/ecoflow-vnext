@@ -4,12 +4,15 @@ import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/supabaseOrdermentumViews';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
+import { BrandMark } from './Brand';
+import { DriverApp } from './DriverApp';
+import { PickBoard } from './PickBoard';
+import { loadDriverDayState, saveDriverDayState } from '@/domain/driverRun';
 import type {
   Activity,
   CatalogRow,
   DataQualityItem,
   DesktopTab,
-  DriverTab,
   EcoFlowDataSet,
   ImportedOrder,
   OrderBucketCount,
@@ -75,21 +78,23 @@ function impactTone(impact: ImportedOrder['changeImpact']): 'good' | 'warn' | 'd
   return 'neutral';
 }
 
+function releaseGateTone(status: ImportedOrder['releaseGateStatus']): 'good' | 'warn' | 'danger' | 'neutral' | 'blue' {
+  if (status === 'READY_TO_RELEASE') return 'good';
+  if (status === 'REVIEW_PAYMENT') return 'warn';
+  if (status === 'BLOCKED_DATA' || status === 'BLOCKED_MAPPING' || status === 'BLOCKED_STOCK') return 'danger';
+  return 'neutral';
+}
+
+function releaseGateLabel(status: ImportedOrder['releaseGateStatus']) {
+  return status ? status.replace(/_/g, ' ') : 'RELEASE CHECK';
+}
+
 function sourceLabel(source: CatalogRow['source'] | OrderLine['source']) {
   if (source === 'order-detail') return 'order detail';
   if (source === 'variant') return 'variant';
   if (source === 'product') return 'product';
   if (source === 'catalog-sample') return 'catalog';
   return 'fallback';
-}
-
-function BrandMark({ large = false }: { large?: boolean }) {
-  return (
-    <div className={cls('brand-logo', large && 'brand-logo-large')} aria-label="EcoFlow Packaging">
-      <span className="brand-monogram">EF</span>
-      <span className="brand-tag">PACK</span>
-    </div>
-  );
 }
 
 function LoginScreen({ onLogin }: { onLogin: (role: Role) => void }) {
@@ -146,7 +151,7 @@ function MetricCard({ label, value, tone = 'green', helper }: { label: string; v
 }
 
 function StatusPill({ status }: { status: OrderStatus }) {
-  const tone = status === 'DELIVERED' || status === 'CLOSED' ? 'good' : status === 'MAPPING_EXCEPTION' ? 'danger' : status === 'OUT_FOR_DELIVERY' || status === 'PACKED' || status === 'STAGED' ? 'blue' : status === 'RELEASE_READY' ? 'warn' : 'neutral';
+  const tone = status === 'DELIVERED' || status === 'CLOSED' ? 'good' : status === 'MAPPING_EXCEPTION' || status === 'FAILED' ? 'danger' : status === 'OUT_FOR_DELIVERY' || status === 'PACKED' || status === 'STAGED' ? 'blue' : status === 'RELEASE_READY' ? 'warn' : 'neutral';
   return <Pill tone={tone}>{statusLabel(status)}</Pill>;
 }
 
@@ -294,9 +299,10 @@ function OrderListItem({ order, selectable, onToggle }: { order: ImportedOrder; 
     <article className="order-list-item">
       {selectable ? <input type="checkbox" checked={order.selected} onChange={onToggle} aria-label={`select ${order.orderNo}`} /> : null}
       <div className="order-main-copy">
-        <div className="order-title-line"><strong>{order.orderNo}</strong><StatusPill status={order.status} /><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill></div>
+        <div className="order-title-line"><strong>{order.orderNo}</strong><StatusPill status={order.status} /><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill>{order.releaseGateStatus ? <Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill> : null}</div>
         <span>{order.store} · {order.suburb} · {order.priceTier}</span>
         <small>{order.lines.map((line) => `${line.sku} × ${line.qty} ${line.unit}`).join(' · ')}</small>
+        {order.releaseBlockers ? <small className="release-blockers">{order.releaseBlockers}</small> : null}
       </div>
       <div className="order-side-copy">
         <strong>{money(order.amount)}</strong>
@@ -314,7 +320,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
     const order = orders.find((item) => item.id === exception.orderId);
     return order ? order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0 : true;
   });
-  const ready = orders.filter((order) => order.status === 'RELEASE_READY');
+  const ready = orders.filter((order) => order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false);
   const selectedReady = ready.filter((order) => order.selected).length;
 
   function releaseSelected() {
@@ -344,6 +350,13 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
           <div><strong>{data.syncBatch.unchanged}</strong><span>Unchanged</span></div>
           <div><strong>{data.syncBatch.failed}</strong><span>Failed</span></div>
         </div>
+        <div className="release-gate-strip">
+          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE').length}</strong><span>ready to internalise</span></div>
+          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_MAPPING').length}</strong><span>mapping blocked</span></div>
+          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_STOCK').length}</strong><span>stock blocked</span></div>
+          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'REVIEW_PAYMENT').length}</strong><span>payment review</span></div>
+          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_DATA').length}</strong><span>data blocked</span></div>
+        </div>
       </section>
 
       <section className="panel inbox-panel">
@@ -355,7 +368,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
           })}
         </nav>
         <div className="table-like inbox-table-like">
-          <div className="table-head"><span>Order</span><span>Store</span><span>Received</span><span>Updated</span><span>Due</span><span>Sync</span><span>Impact</span><span>Action</span></div>
+          <div className="table-head"><span>Order</span><span>Store</span><span>Received</span><span>Updated</span><span>Due</span><span>Sync</span><span>Release</span><span>Action</span></div>
           {bucketRows.map((order) => (
             <div className="table-row" key={order.id}>
               <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
@@ -364,10 +377,10 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
               <span>{formatDateTime(order.lastSeenAt)}<small>{order.changeSummary}</small></span>
               <span>{formatBusinessDate(order.deliveryDate || order.dueAt)}<small>{order.requestedDeliveryBusinessDay}</small></span>
               <span><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill></span>
-              <span><Pill tone={impactTone(order.changeImpact)}>{changeImpactLabel(order.changeImpact)}</Pill></span>
+              <span><Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill><small>{order.unmappedLineCount ? `${order.unmappedLineCount} unmapped` : order.stockShortageCount ? `${order.stockShortageCount} stock short` : changeImpactLabel(order.changeImpact)}</small></span>
               <span className="row-actions">
                 {order.status === 'MAPPING_EXCEPTION' ? <button className="soft-button" type="button" onClick={() => clearException(order.id)}>Resolve</button> : null}
-                {order.status === 'RELEASE_READY' ? <button className="soft-button" type="button" onClick={() => releaseOrder(order.id)}>Release</button> : null}
+                {order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false ? <button className="soft-button" type="button" onClick={() => releaseOrder(order.id)}>Release</button> : null}
                 {order.status !== 'MAPPING_EXCEPTION' && order.status !== 'RELEASE_READY' ? <StatusPill status={order.status} /> : null}
               </span>
             </div>
@@ -687,50 +700,21 @@ function MobileShell({ role, onLogout, children }: { role: Role; onLogout: () =>
   );
 }
 
-function WarehouseWorkspace({ orders, setOrders, stock }: { orders: ImportedOrder[]; setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>; stock: StockRow[] }) {
+function WarehouseWorkspace({ orders, stock, businessDay }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay'] }) {
   const [tab, setTab] = useState<WarehouseTab>('pick');
-  const pickable = orders.filter((order) => ['RELEASED', 'PICKING'].includes(order.status));
-  const packed = orders.filter((order) => ['PACKED', 'STAGED'].includes(order.status));
-
-  function markPicked(orderId: string) {
-    setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status: 'PACKED' } : order));
-  }
+  const [day, setDay] = useState(() => loadDriverDayState(businessDay.date));
+  useEffect(() => saveDriverDayState(day), [day]);
 
   return (
     <MobileShell role="warehouse" onLogout={() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); }}>
       <section className="mobile-content">
-        <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick, pack and stock control.</p></div>
+        <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick and stock control.</p></div>
         <nav className="mobile-tabs">
-          {(['receive', 'pick', 'pack', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
+          {(['receive', 'pick', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
         </nav>
         {tab === 'receive' ? <div className="mobile-card"><h2>Inbound receiving</h2><p>Confirm received stock and put away to mapped locations.</p><button className="primary-button">Scan receiving dock</button></div> : null}
-        {tab === 'pick' ? <div className="mobile-stack"><div className="mobile-card"><h2>A / B / C / D pick wave</h2><p>Released orders become A / B / C / D pick waves. Box letter stays visible on each label.</p></div>{pickable.slice(0, 12).map((order, index) => <article className="mobile-card" key={order.id}><strong>{String.fromCharCode(65 + index)} · {order.orderNo}</strong><span>{order.store}</span><span>{order.lines[0].location} · {order.lines[0].sku}</span><button className="primary-button" onClick={() => markPicked(order.id)} type="button">Confirm picked / packed</button></article>)}{!pickable.length ? <div className="empty-state">No released orders.</div> : null}</div> : null}
-        {tab === 'pack' ? <div className="mobile-stack">{packed.slice(0, 12).map((order) => <article className="mobile-card" key={order.id}><strong>{order.orderNo}</strong><span>{order.packageCount} labels · {order.store}</span><button className="primary-button" type="button">Print labels</button></article>)}</div> : null}
+        {tab === 'pick' ? <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} /> : null}
         {tab === 'stock' ? <div className="mobile-stack">{stock.slice(0, 18).map((row) => <article className="mobile-card" key={row.sku}><strong>{row.sku}</strong><span>{row.location}</span><span>On hand {row.onHand} · reserved {row.reserved}</span></article>)}</div> : null}
-      </section>
-    </MobileShell>
-  );
-}
-
-function DriverWorkspace({ orders, setOrders }: { orders: ImportedOrder[]; setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>> }) {
-  const [tab, setTab] = useState<DriverTab>('run');
-  const runOrders = [...orders].sort((a, b) => a.sequence - b.sequence).filter((order) => order.status !== 'CLOSED').slice(0, 12);
-
-  function markDelivered(orderId: string) {
-    setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status: 'DELIVERED', podStatus: 'captured' } : order));
-  }
-
-  return (
-    <MobileShell role="driver" onLogout={() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); }}>
-      <section className="mobile-content">
-        <div className="mobile-title"><h1>Driver Run</h1><p>Load, route, POD and issues.</p></div>
-        <nav className="mobile-tabs">
-          {(['run', 'route', 'pod', 'issues'] as DriverTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
-        </nav>
-        {tab === 'run' ? <div className="mobile-stack">{runOrders.map((order) => <article className="mobile-card" key={order.id}><strong>{order.sequence}. {order.store}</strong><span>{order.orderNo} · {order.packageCount} packages</span><span>{order.address}</span><StatusPill status={order.status} /></article>)}</div> : null}
-        {tab === 'route' ? <div className="mobile-card"><h2>Navigation</h2><p>{runOrders.length} stops from EcoFlow warehouse. Navigation queue.</p><div className="route-map mobile-route-map">{runOrders.map((order, index) => <div key={order.id} className="map-pin" style={{ left: `${20 + index * 17}%`, top: `${28 + (index % 2) * 22}%` }}>{index + 1}</div>)}</div></div> : null}
-        {tab === 'pod' ? <div className="mobile-stack">{runOrders.filter((order) => order.status === 'OUT_FOR_DELIVERY' || order.status === 'PACKED' || order.status === 'STAGED').map((order) => <article className="mobile-card" key={order.id}><strong>{order.store}</strong><span>{order.orderNo}</span><button className="primary-button" type="button" onClick={() => markDelivered(order.id)}>Take POD photo / mark delivered</button></article>)}</div> : null}
-        {tab === 'issues' ? <div className="mobile-card"><h2>Delivery issue</h2><p>Record failed delivery, partial delivery, missing contact, or payment dispute.</p><button className="primary-button" type="button">Create issue note</button></div> : null}
       </section>
     </MobileShell>
   );
@@ -769,8 +753,8 @@ export function App() {
 
   if (!role) return <LoginScreen onLogin={setRole} />;
 
-  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} setOrders={setOrders} stock={data.stock} />;
-  if (role === 'driver') return <DriverWorkspace orders={orders} setOrders={setOrders} />;
+  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} />;
+  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} />;
 
   return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} />;
 }

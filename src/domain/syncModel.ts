@@ -2,7 +2,7 @@ import type { BusinessDay, ImportedOrder, OrderChangeImpact, OrderStatus, OrderS
 
 const ADELAIDE_TIME_ZONE = 'Australia/Adelaide' as const;
 const DEFAULT_CUTOFF_TIME = '22:00';
-const ACTIVE_STATUS: OrderStatus[] = ['IMPORTED', 'MAPPING_EXCEPTION', 'RELEASE_READY', 'RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY'];
+const ACTIVE_STATUS: OrderStatus[] = ['IMPORTED', 'MAPPING_EXCEPTION', 'RELEASE_READY', 'RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'FAILED'];
 const LOCKED_STATUS: OrderStatus[] = ['PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY'];
 const FINAL_STATUS: OrderStatus[] = ['DELIVERED', 'CLOSED', 'CANCELLED'];
 
