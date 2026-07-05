@@ -84,14 +84,32 @@ export function allocKey(sku: string, orderId: string) {
   return `${sku}|${orderId}`;
 }
 
+/**
+ * Loose items go into the stop's MIXED carton. Real Ordermentum units observed:
+ * Carton / Box (full cartons), unit (single items), sleeve. Until the SKU master
+ * drives this, 'unit'/'each'/'sleeve' count as loose.
+ */
 function isLooseUnit(unit: string) {
-  return unit.toLowerCase().includes('sleeve');
+  const normalized = unit.toLowerCase().trim();
+  return normalized.includes('sleeve') || normalized === 'unit' || normalized === 'each' || normalized === 'ea';
+}
+
+/**
+ * Freight / service lines are invoiced but never picked, boxed or labelled.
+ * Interim keyword check until the SKU master's is_service_item drives this.
+ */
+export function isServiceLine(line: { sku: string; name: string }): boolean {
+  const sku = line.sku.toUpperCase();
+  const name = line.name.toLowerCase();
+  if (sku.startsWith('FC') && sku.length <= 6) return true;
+  return name.includes('freight') || name.includes('delivery fee') || name.includes('surcharge') || name.includes('service charge');
 }
 
 /** Full-carton lines become one carton per unit; all loose lines merge into a single MIXED carton. */
 export function cartonsForStop(stop: RunStop): CartonSpec[] {
-  const fullLines = stop.lines.filter((line) => !isLooseUnit(line.unit));
-  const looseLines = stop.lines.filter((line) => isLooseUnit(line.unit));
+  const physicalLines = stop.lines.filter((line) => !isServiceLine(line));
+  const fullLines = physicalLines.filter((line) => !isLooseUnit(line.unit));
+  const looseLines = physicalLines.filter((line) => isLooseUnit(line.unit));
   const cartons: CartonSpec[] = [];
 
   fullLines.forEach((line) => {
@@ -144,6 +162,7 @@ export function buildBulkTasks(stops: RunStop[]): BulkPickTask[] {
 
   stops.forEach((stop) => {
     stop.lines.forEach((line) => {
+      if (isServiceLine(line)) return;
       const loose = isLooseUnit(line.unit);
       const task = bySku.get(line.sku) ?? {
         sku: line.sku,
@@ -176,7 +195,12 @@ export function buildBulkTasks(stops: RunStop[]): BulkPickTask[] {
     });
   });
 
-  return Array.from(bySku.values()).sort((a, b) => a.location.localeCompare(b.location));
+  return Array.from(bySku.values()).sort((a, b) => {
+    if (!a.location && !b.location) return a.sku.localeCompare(b.sku);
+    if (!a.location) return 1;
+    if (!b.location) return -1;
+    return a.location.localeCompare(b.location);
+  });
 }
 
 export function taskStateFor(pick: PickState, sku: string): PickTaskState {

@@ -6,7 +6,7 @@ import {
   mergeRowsIntoDay,
   pickSyncAvailable,
   pushPickRows,
-  scopesFromPick
+  scopesFromDay
 } from '@/data/repositories/pickSync';
 import type { ScopeMap } from '@/data/repositories/pickSync';
 
@@ -62,7 +62,7 @@ export function usePickSync(
 
   useEffect(() => {
     if (!pickSyncAvailable() || !hydrated.current) return;
-    const current = scopesFromPick(day.pick);
+    const current = scopesFromDay(day);
     const changes = diffScopes(lastKnown.current, current);
     if (!changes.length) return;
     changes.forEach((change) => {
@@ -71,7 +71,7 @@ export function usePickSync(
     pushPickRows(businessDay, changes, deviceLabel)
       .then(() => setStatus('live'))
       .catch(() => setStatus('error'));
-  }, [day.pick, businessDay, deviceLabel, status]);
+  }, [day, businessDay, deviceLabel, status]);
 
   return status;
 }

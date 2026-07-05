@@ -1,4 +1,4 @@
-import type { DriverDayState } from '@/domain/driverRun';
+import type { DriverDayState, PodRecord, StopProgress } from '@/domain/driverRun';
 import type { PickState, PickTaskState } from '@/domain/pickPlan';
 
 export type PickSyncRow = {
@@ -12,6 +12,9 @@ export type PickSyncRow = {
 /** scope -> serialized payload; used to diff local state against what the server knows. */
 export type ScopeMap = Record<string, string>;
 
+const TABLE = 'ecoflow_day_state';
+const POD_BUCKET = 'pod-photos';
+
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
 }
@@ -20,14 +23,17 @@ export function pickSyncAvailable(): boolean {
   return Boolean(envValue('VITE_SUPABASE_URL') && envValue('VITE_SUPABASE_ANON_KEY'));
 }
 
+function baseHeaders(): Record<string, string> {
+  const anonKey = envValue('VITE_SUPABASE_ANON_KEY');
+  return { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+}
+
 async function rest<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
-  const anonKey = envValue('VITE_SUPABASE_ANON_KEY');
   const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
+      ...baseHeaders(),
       Accept: 'application/json',
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers
@@ -41,7 +47,7 @@ async function rest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function fetchPickRows(businessDay: string, afterIso: string): Promise<PickSyncRow[]> {
   const filter = `business_day=eq.${businessDay}&updated_at=gt.${encodeURIComponent(afterIso)}`;
-  return rest<PickSyncRow[]>(`ecoflow_pick_state?${filter}&order=updated_at.asc&select=*`);
+  return rest<PickSyncRow[]>(`${TABLE}?${filter}&order=updated_at.asc&select=*`);
 }
 
 export async function pushPickRows(
@@ -50,7 +56,7 @@ export async function pushPickRows(
   updatedBy: string
 ): Promise<void> {
   if (!entries.length) return;
-  await rest<void>('ecoflow_pick_state?on_conflict=business_day,scope', {
+  await rest<void>(`${TABLE}?on_conflict=business_day,scope`, {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(entries.map((entry) => ({
@@ -62,23 +68,92 @@ export async function pushPickRows(
   });
 }
 
-export function scopesFromPick(pick: PickState | undefined): ScopeMap {
+/** Uploads a data-URL image to Storage; returns the object path or null on failure. */
+export async function uploadPodAsset(path: string, dataUrl: string): Promise<string | null> {
+  if (!pickSyncAvailable()) return null;
+  try {
+    const [meta, base64] = dataUrl.split(',');
+    if (!base64) return null;
+    const mime = /data:(.*?)[;,]/.exec(meta)?.[1] || 'image/jpeg';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/storage/v1/object/${POD_BUCKET}/${path}`, {
+      method: 'POST',
+      headers: { ...baseHeaders(), 'Content-Type': mime, 'x-upsert': 'true' },
+      body: bytes
+    });
+    return response.ok ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+export function podAssetUrl(path: string): string {
+  const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
+  return `${baseUrl}/storage/v1/object/public/${POD_BUCKET}/${path}`;
+}
+
+export type InternaliseResultRow = {
+  raw_order_id: string | null;
+  order_number: string | null;
+  action: string | null;
+  internal_order_id: string | null;
+  account_release_status: string | null;
+  warehouse_gate_status: string | null;
+};
+
+/** Formal internal-order creation through the database RPC (never a front-end status flip). */
+export async function callInternaliseOrders(limit = 50, dryRun = false): Promise<InternaliseResultRow[]> {
+  return rest<InternaliseResultRow[]>('rpc/ecoflow_internalise_ordermentum_orders', {
+    method: 'POST',
+    body: JSON.stringify({ p_limit: limit, p_dry_run: dryRun, p_include_payment_review: false })
+  });
+}
+
+/** POD data-URLs never travel through day state — only storage paths do. */
+function stripPod(pod: PodRecord | undefined): PodRecord | undefined {
+  if (!pod) return undefined;
+  const { photo: _photo, signature: _signature, ...rest } = pod;
+  return rest;
+}
+
+function serializeStop(progress: StopProgress): string {
+  return JSON.stringify({ ...progress, pod: stripPod(progress.pod) });
+}
+
+export function scopesFromDay(day: DriverDayState): ScopeMap {
   const map: ScopeMap = {};
-  if (!pick) return map;
-  map['meta'] = JSON.stringify({ lockedAt: pick.lockedAt, stopOrder: pick.stopOrder, boxCodes: pick.boxCodes });
-  Object.entries(pick.taskState).forEach(([sku, state]) => {
-    map[`task:${sku}`] = JSON.stringify(state);
+  const pick = day.pick;
+  if (pick) {
+    map['meta'] = JSON.stringify({ lockedAt: pick.lockedAt, stopOrder: pick.stopOrder, boxCodes: pick.boxCodes });
+    Object.entries(pick.taskState).forEach(([sku, state]) => {
+      map[`task:${sku}`] = JSON.stringify(state);
+    });
+    Object.entries(pick.allocDone).forEach(([key, done]) => {
+      map[`alloc:${key}`] = JSON.stringify({ done });
+    });
+    Object.entries(pick.stagedStops).forEach(([orderId, stagedAt]) => {
+      map[`stage:${orderId}`] = JSON.stringify({ stagedAt });
+    });
+  }
+  Object.entries(day.releasedOrders).forEach(([orderId, releasedAt]) => {
+    map[`release:${orderId}`] = JSON.stringify({ releasedAt });
   });
-  Object.entries(pick.allocDone).forEach(([key, done]) => {
-    map[`alloc:${key}`] = JSON.stringify({ done });
+  Object.entries(day.stopProgress).forEach(([orderId, progress]) => {
+    map[`stop:${orderId}`] = serializeStop(progress);
   });
-  Object.entries(pick.stagedStops).forEach(([orderId, stagedAt]) => {
-    map[`stage:${orderId}`] = JSON.stringify({ stagedAt });
-  });
+  if (day.routeStartedAt || day.routeEndedAt) {
+    map['route'] = JSON.stringify({ startedAt: day.routeStartedAt ?? null, endedAt: day.routeEndedAt ?? null });
+  }
+  if (day.shiftEvents.length) {
+    map['shift'] = JSON.stringify({ events: day.shiftEvents });
+  }
   return map;
 }
 
-/** Changed scopes plus tombstones for scopes that disappeared (unstage, unlock). */
+/** Changed scopes plus tombstones for scopes that disappeared (unstage, un-release, unlock). */
 export function diffScopes(previous: ScopeMap, current: ScopeMap): { scope: string; payload: unknown }[] {
   const changes: { scope: string; payload: unknown }[] = [];
   Object.entries(current).forEach(([scope, json]) => {
@@ -95,6 +170,8 @@ export function diffScopes(previous: ScopeMap, current: ScopeMap): { scope: stri
       changes.push({ scope, payload: { stagedAt: null } });
     } else if (scope.startsWith('alloc:')) {
       changes.push({ scope, payload: { done: false } });
+    } else if (scope.startsWith('release:')) {
+      changes.push({ scope, payload: { releasedAt: null } });
     }
   });
   return changes;
@@ -107,6 +184,11 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
   if (!rows.length) return day;
   let pick = day.pick;
   let stopOrder = day.stopOrder;
+  let releasedOrders = day.releasedOrders;
+  let stopProgress = day.stopProgress;
+  let shiftEvents = day.shiftEvents;
+  let routeStartedAt = day.routeStartedAt;
+  let routeEndedAt = day.routeEndedAt;
   const sorted = [...rows].sort((a, b) => a.updated_at.localeCompare(b.updated_at));
 
   sorted.forEach((row) => {
@@ -114,11 +196,7 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
       const meta = row.payload as MetaPayload;
       if (meta?.lockedAt) {
         if (pick && pick.lockedAt === meta.lockedAt) {
-          pick = {
-            ...pick,
-            stopOrder: meta.stopOrder ?? pick.stopOrder,
-            boxCodes: meta.boxCodes ?? pick.boxCodes
-          };
+          pick = { ...pick, stopOrder: meta.stopOrder ?? pick.stopOrder, boxCodes: meta.boxCodes ?? pick.boxCodes };
         } else {
           pick = {
             lockedAt: meta.lockedAt,
@@ -133,6 +211,37 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
       } else {
         pick = undefined;
       }
+      return;
+    }
+    if (row.scope.startsWith('release:')) {
+      const orderId = row.scope.slice('release:'.length);
+      const releasedAt = (row.payload as { releasedAt?: string | null }).releasedAt;
+      const next = { ...releasedOrders };
+      if (releasedAt) next[orderId] = releasedAt;
+      else delete next[orderId];
+      releasedOrders = next;
+      return;
+    }
+    if (row.scope.startsWith('stop:')) {
+      const orderId = row.scope.slice('stop:'.length);
+      const incoming = row.payload as StopProgress;
+      const local = stopProgress[orderId];
+      // Keep this device's photo cache when it is the same capture the path refers to.
+      const pod = incoming.pod && local?.pod && incoming.pod.capturedAt === local.pod.capturedAt
+        ? { ...incoming.pod, photo: local.pod.photo, signature: local.pod.signature }
+        : incoming.pod;
+      stopProgress = { ...stopProgress, [orderId]: { ...incoming, pod } };
+      return;
+    }
+    if (row.scope === 'route') {
+      const route = row.payload as { startedAt?: string | null; endedAt?: string | null };
+      routeStartedAt = route.startedAt ?? undefined;
+      routeEndedAt = route.endedAt ?? undefined;
+      return;
+    }
+    if (row.scope === 'shift') {
+      const shift = row.payload as { events?: DriverDayState['shiftEvents'] };
+      if (shift.events && shift.events.length >= shiftEvents.length) shiftEvents = shift.events;
       return;
     }
     if (!pick) return;
@@ -152,5 +261,5 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
     }
   });
 
-  return { ...day, pick, stopOrder };
+  return { ...day, pick, stopOrder, releasedOrders, stopProgress, shiftEvents, routeStartedAt, routeEndedAt };
 }

@@ -4,7 +4,7 @@ export type WarehouseTab = 'receive' | 'pick' | 'stock';
 export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
 export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CLOSED' | 'CANCELLED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'OVERDUE' | 'CREDIT_HOLD';
-export type PriceTier = 'Tier 1' | 'Tier 2' | 'Tier 3' | 'Tier 4' | 'Tier 5';
+export type PriceTier = 'Tier 1' | 'Tier 2' | 'Tier 3' | 'Tier 4' | 'Tier 5' | 'Unmapped';
 
 export type OrderSyncStatus = 'NEW' | 'UPDATED' | 'UNCHANGED';
 export type OrderChangeImpact = 'SAFE_UPDATE' | 'REVIEW_REQUIRED' | 'RECONCILIATION_VARIANCE' | 'NO_CHANGE';
@@ -48,8 +48,10 @@ export type OrderLine = {
   qty: number;
   unit: 'sleeve' | 'carton';
   stock: number;
+  /** Empty string means no verified warehouse location — never fabricate one in live mode. */
   location: string;
-  barcode: string;
+  /** Undefined means no verified barcode — never fabricate one in live mode. */
+  barcode?: string;
   source?: 'order-detail' | 'catalog-sample' | 'fallback';
 };
 

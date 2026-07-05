@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/supabaseOrdermentumViews';
+import { callInternaliseOrders, podAssetUrl } from '@/data/repositories/pickSync';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import { BrandMark } from './Brand';
 import { DriverApp } from './DriverApp';
 import { PickBoard } from './PickBoard';
-import { loadDriverDayState, saveDriverDayState } from '@/domain/driverRun';
+import { applyDayStateToOrders, buildDriverRun, formatClockTime, loadDriverDayState, saveDriverDayState, stopsInLockedOrder } from '@/domain/driverRun';
+import type { DriverDayState } from '@/domain/driverRun';
 import { usePickSync } from './usePickSync';
 import { AuthCallbackScreen } from '@/features/auth/AuthCallbackScreen';
 import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
@@ -371,27 +373,59 @@ function OrderListItem({ order, selectable, onToggle }: { order: ImportedOrder; 
   );
 }
 
-function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orders: ImportedOrder[]; setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>; data: EcoFlowDataSet; mappingExceptions: MappingException[] }) {
+function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, setDay, onReload }: {
+  orders: ImportedOrder[];
+  setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>;
+  data: EcoFlowDataSet;
+  mappingExceptions: MappingException[];
+  day: DriverDayState;
+  setDay: React.Dispatch<React.SetStateAction<DriverDayState>>;
+  onReload: () => Promise<void>;
+}) {
   const [bucket, setBucket] = useState<OrderBucketKey>('newToday');
+  const [internalising, setInternalising] = useState(false);
+  const [internaliseResult, setInternaliseResult] = useState('');
   const bucketCounts = getOrderBucketCounts(orders, data.businessDay.date);
   const bucketRows = sortOrdersForOperations(bucketOrders(orders, bucket, data.businessDay.date));
   const visibleExceptions = mappingExceptions.filter((exception) => {
     const order = orders.find((item) => item.id === exception.orderId);
     return order ? order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0 : true;
   });
-  const ready = orders.filter((order) => order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false);
+  const ready = orders.filter((order) => order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false && !day.releasedOrders[order.id]);
   const selectedReady = ready.filter((order) => order.selected).length;
+  const releasedCount = Object.keys(day.releasedOrders).length;
+
+  // Formal internal-order creation lives in the database RPC — never a front-end status flip.
+  async function internaliseEligible() {
+    setInternalising(true);
+    setInternaliseResult('');
+    try {
+      const rows = await callInternaliseOrders(50, false);
+      const created = rows.filter((row) => row.internal_order_id).length;
+      setInternaliseResult(`${created} internal orders created/updated via RPC.`);
+      await onReload();
+    } catch (error) {
+      setInternaliseResult(error instanceof Error ? `RPC failed: ${error.message}` : 'RPC failed.');
+    } finally {
+      setInternalising(false);
+    }
+  }
+
+  /** Adds the order to today's shared run — synced to every device through day state. */
+  function releaseToRun(orderId: string) {
+    setDay((current) => ({ ...current, releasedOrders: { ...current.releasedOrders, [orderId]: new Date().toISOString() } }));
+    setOrders((current) => current.map((order) => order.id === orderId ? { ...order, selected: false } : order));
+  }
 
   function releaseSelected() {
-    setOrders((current) => current.map((order) => order.status === 'RELEASE_READY' && order.selected ? { ...order, status: 'RELEASED' } : order));
-  }
-
-  function clearException(orderId: string) {
-    setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status: 'RELEASE_READY', selected: true, mappingNotes: [], openExceptionCount: 0 } : order));
-  }
-
-  function releaseOrder(orderId: string) {
-    setOrders((current) => current.map((order) => order.id === orderId && order.status === 'RELEASE_READY' ? { ...order, status: 'RELEASED', selected: false } : order));
+    const now = new Date().toISOString();
+    const ids = ready.filter((order) => order.selected).map((order) => order.id);
+    void now;
+    setDay((current) => ({
+      ...current,
+      releasedOrders: { ...current.releasedOrders, ...Object.fromEntries(ids.map((id, index) => [id, new Date(Date.now() + index).toISOString()])) }
+    }));
+    setOrders((current) => current.map((order) => ids.includes(order.id) ? { ...order, selected: false } : order));
   }
 
   return (
@@ -412,9 +446,15 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
         <div className="release-gate-strip">
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE').length}</strong><span>ready to internalise</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_MAPPING').length}</strong><span>mapping blocked</span></div>
-          <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_STOCK').length}</strong><span>stock blocked</span></div>
+          <div><strong>{releasedCount}</strong><span>in today’s run</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'REVIEW_PAYMENT').length}</strong><span>payment review</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_DATA').length}</strong><span>data blocked</span></div>
+        </div>
+        <div className="internalise-row">
+          <button className="primary-small" type="button" disabled={internalising} onClick={() => void internaliseEligible()}>
+            {internalising ? 'Internalising…' : 'Internalise eligible (RPC)'}
+          </button>
+          {internaliseResult ? <span className="internalise-result">{internaliseResult}</span> : null}
         </div>
       </section>
 
@@ -438,9 +478,10 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
               <span><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill></span>
               <span><Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill><small>{order.unmappedLineCount ? `${order.unmappedLineCount} unmapped` : order.stockShortageCount ? `${order.stockShortageCount} stock short` : changeImpactLabel(order.changeImpact)}</small></span>
               <span className="row-actions">
-                {order.status === 'MAPPING_EXCEPTION' ? <button className="soft-button" type="button" onClick={() => clearException(order.id)}>Resolve</button> : null}
-                {order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false ? <button className="soft-button" type="button" onClick={() => releaseOrder(order.id)}>Release</button> : null}
-                {order.status !== 'MAPPING_EXCEPTION' && order.status !== 'RELEASE_READY' ? <StatusPill status={order.status} /> : null}
+                {day.releasedOrders[order.id] ? <Pill tone="good">IN RUN</Pill>
+                  : order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false
+                    ? <button className="soft-button" type="button" onClick={() => releaseToRun(order.id)}>Release to run</button>
+                    : <StatusPill status={order.status} />}
               </span>
             </div>
           ))}
@@ -456,8 +497,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
               <article className="exception-card" key={exception.id}>
                 <div><strong>{exception.orderNo}</strong><span>{exception.store} · {exception.category.replace(/_/g, ' ')}</span></div>
                 <p>{exception.summary}</p>
-                <small>{exception.detail}</small>
-                <button className="soft-button" type="button" onClick={() => clearException(exception.orderId)}>{exception.action}</button>
+                <small>{exception.detail} Fix the underlying data (mapping / invoice detail) — exceptions clear on the next sync.</small>
               </article>
             ))}
             {!visibleExceptions.length ? <div className="empty-state">No open exception.</div> : null}
@@ -495,22 +535,13 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions }: { orde
   );
 }
 
-function OrdersPanel({ orders, setOrders }: { orders: ImportedOrder[]; setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>> }) {
-  function advance(orderId: string) {
-    const flow: OrderStatus[] = ['RELEASE_READY', 'RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CLOSED'];
-    setOrders((current) => current.map((order) => {
-      if (order.id !== orderId) return order;
-      const index = flow.indexOf(order.status);
-      if (index < 0 || index >= flow.length - 1) return order;
-      return { ...order, status: flow[index + 1], podStatus: flow[index + 1] === 'DELIVERED' ? 'captured' : order.podStatus };
-    }));
-  }
-
+function OrdersPanel({ orders }: { orders: ImportedOrder[] }) {
+  // Read-only: status changes only happen through release, picking and delivery actions.
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum</span></div>
+      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum · status follows the real workflow</span></div>
       <div className="table-like">
-        <div className="table-head"><span>Order</span><span>Store</span><span>Tier</span><span>Status</span><span>Value</span><span>Action</span></div>
+        <div className="table-head"><span>Order</span><span>Store</span><span>Tier</span><span>Status</span><span>Value</span><span>POD</span></div>
         {orders.map((order) => (
           <div className="table-row" key={order.id}>
             <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
@@ -518,7 +549,7 @@ function OrdersPanel({ orders, setOrders }: { orders: ImportedOrder[]; setOrders
             <span>{order.priceTier}</span>
             <span><StatusPill status={order.status} /></span>
             <span>{money(order.amount)}</span>
-            <span><button className="soft-button" type="button" onClick={() => advance(order.id)}>Next</button></span>
+            <span>{order.podStatus}</span>
           </div>
         ))}
       </div>
@@ -526,28 +557,64 @@ function OrdersPanel({ orders, setOrders }: { orders: ImportedOrder[]; setOrders
   );
 }
 
-function DeliveryPanel({ orders }: { orders: ImportedOrder[] }) {
-  const routeOrders = [...orders].sort((a, b) => a.sequence - b.sequence).slice(0, 12);
+function stopStatusLabelDesk(status: string) {
+  return status.charAt(0) + status.slice(1).toLowerCase();
+}
+
+function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; day: DriverDayState; businessDay: EcoFlowDataSet['businessDay'] }) {
+  const run = buildDriverRun(orders, businessDay.date, day.releasedOrders);
+  const stops = day.pick ? stopsInLockedOrder(run.stops, day.pick) : run.stops;
+  const stagedCount = day.pick ? stops.filter((stop) => day.pick?.stagedStops[stop.orderId]).length : 0;
+  const progressFor = (orderId: string) => day.stopProgress[orderId];
+  const deliveredCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'DELIVERED').length;
+  const failedCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'FAILED').length;
+
   return (
-    <section className="split-grid delivery-layout">
-      <div className="panel">
-        <div className="panel-head"><h2>Today run</h2><Pill tone="blue">{routeOrders.length} stops</Pill></div>
-        <div className="route-map">
-          {routeOrders.map((order, index) => <div key={order.id} className="map-pin" style={{ left: `${18 + index * 16}%`, top: `${26 + (index % 3) * 18}%` }}>{index + 1}</div>)}
-        </div>
-      </div>
-      <div className="panel">
-        <div className="panel-head"><h2>Stop order</h2><span>Driver run order</span></div>
+    <section className="workspace-stack">
+      <section className="quick-stats">
+        <MetricCard label="RELEASED TO RUN" value={stops.length} tone="green" helper={businessDay.label} />
+        <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Not locked'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'driver locks remotely'} />
+        <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
+        <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
+      </section>
+      <section className="panel">
+        <div className="panel-head"><h2>Run board</h2><span>shared facts — same data the driver and warehouse see</span></div>
         <div className="list-stack">
-          {routeOrders.map((order) => (
-            <article className="stop-row" key={order.id}>
-              <b>{order.sequence}</b>
-              <div><strong>{order.store}</strong><span>{order.address}</span></div>
-              <StatusPill status={order.status} />
-            </article>
-          ))}
+          {stops.map((stop) => {
+            const progress = progressFor(stop.orderId);
+            const staged = day.pick?.stagedStops[stop.orderId];
+            const status = progress?.status === 'DELIVERED' ? 'DELIVERED'
+              : progress?.status === 'FAILED' ? 'FAILED'
+              : progress?.status === 'ARRIVED' ? 'ARRIVED'
+              : day.routeStartedAt ? 'ON THE WAY'
+              : staged ? 'STAGED'
+              : day.pick ? 'PICKING'
+              : 'RELEASED';
+            const pod = progress?.pod;
+            return (
+              <article className="stop-row" key={stop.orderId}>
+                <b>{stop.stopNumber}</b>
+                <div>
+                  <strong>{stop.boxCode} · {stop.store}</strong>
+                  <span>
+                    {stop.cartons} ctn · {stopStatusLabelDesk(status)}
+                    {progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}
+                    {pod?.receiverName ? ` · received by ${pod.receiverName}` : ''}
+                  </span>
+                  {pod?.photoPath || pod?.signaturePath ? (
+                    <span className="pod-links">
+                      {pod.photoPath ? <a href={podAssetUrl(pod.photoPath)} target="_blank" rel="noreferrer">POD photo</a> : null}
+                      {pod.signaturePath ? <a href={podAssetUrl(pod.signaturePath)} target="_blank" rel="noreferrer">signature</a> : null}
+                    </span>
+                  ) : pod ? <span className="pod-links">POD captured on driver device</span> : null}
+                </div>
+                <Pill tone={status === 'DELIVERED' ? 'good' : status === 'FAILED' ? 'danger' : status === 'STAGED' || status === 'ON THE WAY' || status === 'ARRIVED' ? 'blue' : 'neutral'}>{status}</Pill>
+              </article>
+            );
+          })}
+          {!stops.length ? <div className="empty-state">No orders released into today’s run yet — release them from the Ordermentum tab.</div> : null}
         </div>
-      </div>
+      </section>
     </section>
   );
 }
@@ -555,6 +622,12 @@ function DeliveryPanel({ orders }: { orders: ImportedOrder[] }) {
 function InventoryPanel({ stock, catalog, summary }: { stock: StockRow[]; catalog: CatalogRow[]; summary: EcoFlowDataSet['summary'] }) {
   return (
     <section className="workspace-stack">
+      {!stock.length ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Stock ledger not connected</h2><Pill tone="warn">NO LIVE STOCK</Pill></div>
+          <p className="panel-note">Real stock levels need the inventory ledger (receive / reserve / pick movements). Until then this page will not show fabricated numbers.</p>
+        </section>
+      ) : null}
       <section className="quick-stats">
         <MetricCard label="STOCK ROWS" value={stock.length} tone="green" />
         <MetricCard label="CATALOG COVERAGE" value={catalog.length} tone="blue" />
@@ -746,7 +819,7 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
   );
 }
 
-function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile }: {
+function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload }: {
   role: Role;
   data: EcoFlowDataSet;
   orders: ImportedOrder[];
@@ -757,18 +830,26 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   onLogout: () => void;
   loadError?: string;
   authProfile?: EcoFlowAuthProfile | null;
+  onReload: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<DesktopTab>('dashboard');
+  const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(data.businessDay.date));
+  useEffect(() => saveDriverDayState(day), [day]);
+  usePickSync(data.businessDay.date, day, setDay, authProfile?.display_name || authProfile?.email || 'Office');
+
+  // Shared day facts (release, staging, delivery, POD) projected onto orders for every panel.
+  const effectiveOrders = useMemo(() => applyDayStateToOrders(orders, day), [orders, day]);
+
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout} onUndo={() => undefined}>
       {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load — the data below is fallback/demo, not live. {loadError}</div> : null}
-      {tab === 'dashboard' ? <HeroDashboard role={role} orders={orders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(orders, data.businessDay.date)} /> : null}
-      {tab === 'ordermentum' ? <OrdermentumPanel orders={orders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} /> : null}
-      {tab === 'orders' ? <OrdersPanel orders={orders} setOrders={setOrders} /> : null}
-      {tab === 'delivery' ? <DeliveryPanel orders={orders} /> : null}
+      {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
+      {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
+      {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
+      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} businessDay={data.businessDay} /> : null}
       {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} summary={data.summary} /> : null}
       {tab === 'stores' ? <StoresPanel stores={stores} priceGroups={data.priceGroups} /> : null}
-      {tab === 'reconciliation' ? <ReconciliationPanel orders={orders} summary={data.summary} /> : null}
+      {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} summary={data.summary} /> : null}
       {tab === 'logs' ? <LogsPanel logs={logs} /> : null}
       {tab === 'settings' ? <SettingsPanel summary={data.summary} dataQuality={data.dataQuality} authProfile={authProfile} /> : null}
     </DesktopShell>
@@ -787,11 +868,11 @@ function MobileShell({ role, onLogout, children }: { role: Role; onLogout: () =>
   );
 }
 
-function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay']; loadError?: string; onLogout?: () => void }) {
+function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout, actorLabel }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay']; loadError?: string; onLogout?: () => void; actorLabel?: string }) {
   const [tab, setTab] = useState<WarehouseTab>('pick');
   const [day, setDay] = useState(() => loadDriverDayState(businessDay.date));
   useEffect(() => saveDriverDayState(day), [day]);
-  const syncStatus = usePickSync(businessDay.date, day, setDay, 'Warehouse');
+  const syncStatus = usePickSync(businessDay.date, day, setDay, actorLabel || 'Warehouse');
 
   return (
     <MobileShell role="warehouse" onLogout={onLogout ?? (() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); })}>
@@ -885,22 +966,22 @@ export function App() {
     };
   }, [authEnabled]);
 
+  const reloadViews = useCallback(async () => {
+    try {
+      const views = await loadSupabaseOrdermentumViews();
+      if (!views) return;
+      const nextData = applySupabaseOrdermentumViews(initialData, views);
+      setData(nextData);
+      setOrders(nextData.orders);
+      setLoadError('');
+    } catch (error: unknown) {
+      setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
+    }
+  }, []);
+
   useEffect(() => {
-    let active = true;
-    loadSupabaseOrdermentumViews()
-      .then((views) => {
-        if (!active || !views) return;
-        const nextData = applySupabaseOrdermentumViews(initialData, views);
-        setData(nextData);
-        setOrders(nextData.orders);
-        setLoadError('');
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
-      });
-    return () => { active = false; };
-  }, [authProfile?.user_id]);
+    void reloadViews();
+  }, [reloadViews, authProfile?.user_id]);
 
   async function logout() {
     window.localStorage.removeItem('ecoflow-role');
@@ -917,7 +998,7 @@ export function App() {
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
     if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
     if (legacyRole === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
-    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} />;
+    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
   }
 
   if (!authChecked) return <LoadingScreen />;
@@ -925,8 +1006,8 @@ export function App() {
   if (!authProfile.is_active || authProfile.team_status === 'SUSPENDED' || authProfile.team_status === 'DISABLED') return <AccessPendingScreen profile={authProfile} onLogout={() => void logout()} />;
 
   const role = roleFromAppRole(authProfile.app_role);
-  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
-  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
+  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
+  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} />;
 
-  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} />;
+  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;
 }

@@ -41,8 +41,13 @@ export const WAREHOUSE = {
 };
 
 export type PodRecord = {
+  /** Local data URL cache — device-only, stripped before sync. */
   photo?: string;
+  /** Local data URL cache — device-only, stripped before sync. */
   signature?: string;
+  /** Supabase Storage path once uploaded — the shared source of truth. */
+  photoPath?: string;
+  signaturePath?: string;
   receiverName?: string;
   note?: string;
   location?: GeoPoint;
@@ -104,6 +109,8 @@ export type ShiftEvent = { type: ShiftEventType; at: string; location?: GeoPoint
 export type DriverDayState = {
   version: 1;
   businessDay: string;
+  /** orderId -> release timestamp; the shared fact of which orders are in today's run. */
+  releasedOrders: Record<string, string>;
   stopProgress: Record<string, StopProgress>;
   shiftEvents: ShiftEvent[];
   stopOrder?: string[];
@@ -134,7 +141,18 @@ export function stopsInLockedOrder(stops: RunStop[], pick: PickState): RunStop[]
 const RUN_STATUSES: OrderStatus[] = ['RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const READY_STATUSES: OrderStatus[] = ['STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const BOX_CODES = ['A', 'B', 'C', 'D', 'E', 'F'];
-const MAX_RUN_STOPS = 12;
+/** Soft guidance only — the run is never silently truncated. */
+export const RUN_SIZE_WARNING = 16;
+
+const ADDRESS_PLACEHOLDER = 'Address pending';
+
+/** True when the stop has a usable street address (never navigate to placeholders). */
+export function hasVerifiedAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const trimmed = address.trim();
+  if (!trimmed || trimmed.startsWith(ADDRESS_PLACEHOLDER)) return false;
+  return trimmed.length > 8;
+}
 
 export function boxCodeForStop(index: number): string {
   return BOX_CODES[index % BOX_CODES.length];
@@ -227,11 +245,15 @@ export function reconcileStopOrder(saved: string[] | undefined, stops: RunStop[]
   return [...kept, ...stopIds.filter((id) => !keptSet.has(id))];
 }
 
-export function buildDriverRun(orders: ImportedOrder[], businessDay: string): DriverRun {
+export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>): DriverRun {
+  const releasedIds = releasedOrders && Object.keys(releasedOrders).length ? releasedOrders : null;
   const stops = [...orders]
-    .filter((order) => RUN_STATUSES.includes(order.status))
-    .sort((a, b) => a.sequence - b.sequence)
-    .slice(0, MAX_RUN_STOPS)
+    .filter((order) => releasedIds
+      ? Boolean(releasedIds[order.id]) && order.status !== 'CANCELLED'
+      : RUN_STATUSES.includes(order.status))
+    .sort((a, b) => releasedIds
+      ? String(releasedIds[a.id]).localeCompare(String(releasedIds[b.id])) || a.sequence - b.sequence
+      : a.sequence - b.sequence)
     .map((order, index): RunStop => ({
       orderId: order.id,
       stopNumber: index + 1,
@@ -274,7 +296,7 @@ function storageKey(businessDay: string) {
 }
 
 export function emptyDriverDayState(businessDay: string): DriverDayState {
-  return { version: 1, businessDay, stopProgress: {}, shiftEvents: [] };
+  return { version: 1, businessDay, releasedOrders: {}, stopProgress: {}, shiftEvents: [] };
 }
 
 export function loadDriverDayState(businessDay: string): DriverDayState {
@@ -282,11 +304,36 @@ export function loadDriverDayState(businessDay: string): DriverDayState {
     const raw = window.localStorage.getItem(storageKey(businessDay));
     if (!raw) return emptyDriverDayState(businessDay);
     const parsed = JSON.parse(raw) as DriverDayState;
-    if (parsed && parsed.version === 1 && parsed.businessDay === businessDay) return parsed;
+    if (parsed && parsed.version === 1 && parsed.businessDay === businessDay) {
+      return { ...parsed, releasedOrders: parsed.releasedOrders ?? {} };
+    }
   } catch {
     // corrupted or unavailable storage falls through to a clean day
   }
   return emptyDriverDayState(businessDay);
+}
+
+/**
+ * Projects the shared day facts (release, staging, delivery, POD) onto orders so
+ * every role sees the same lifecycle regardless of which device produced it.
+ */
+export function applyDayStateToOrders(orders: ImportedOrder[], day: DriverDayState): ImportedOrder[] {
+  const anyFacts = Object.keys(day.releasedOrders).length || Object.keys(day.stopProgress).length || day.pick;
+  if (!anyFacts) return orders;
+  return orders.map((order) => {
+    const released = day.releasedOrders[order.id];
+    const progress = day.stopProgress[order.id];
+    const staged = day.pick?.stagedStops?.[order.id];
+    let status = order.status;
+    if (released && (status === 'IMPORTED' || status === 'RELEASE_READY' || status === 'MAPPING_EXCEPTION')) status = 'RELEASED';
+    if (released && staged) status = 'STAGED';
+    if (released && day.routeStartedAt && (!progress || progress.status === 'PENDING' || progress.status === 'ARRIVED' || progress.status === 'SKIPPED')) status = 'OUT_FOR_DELIVERY';
+    if (progress?.status === 'DELIVERED') status = 'DELIVERED';
+    if (progress?.status === 'FAILED') status = 'FAILED';
+    const podStatus = progress?.pod ? 'captured' as const : order.podStatus;
+    if (status === order.status && podStatus === order.podStatus) return order;
+    return { ...order, status, podStatus };
+  });
 }
 
 export function saveDriverDayState(state: DriverDayState) {
