@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import './styles.css';
+import './fieldMode.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
