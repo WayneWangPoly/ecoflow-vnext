@@ -1,0 +1,33 @@
+button,
+a.primary-button,
+a.warehouse-map-back {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform .08s ease, filter .08s ease, box-shadow .08s ease, border-color .08s ease, background .08s ease;
+}
+
+button:active,
+a.primary-button:active,
+a.warehouse-map-back:active {
+  transform: translateY(1px) scale(.985);
+  filter: brightness(.96);
+}
+
+button:focus-visible,
+a.primary-button:focus-visible,
+a.warehouse-map-back:focus-visible {
+  outline: 4px solid rgba(15, 125, 81, .24);
+  outline-offset: 2px;
+}
+
+.mobile-title p,
+.mobile-card > p,
+.panel-note {
+  display: none;
+}
+
+.mobile-card .primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
