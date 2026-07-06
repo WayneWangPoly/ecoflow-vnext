@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import './WarehouseMapPage.css';
+import './WarehouseMapInteractions.css';
 
 type RackSide = 'left' | 'right' | 'front';
 type RackMode = 'double' | 'single' | 'area';
@@ -205,6 +206,7 @@ export function WarehouseMapPage() {
   const [query, setQuery] = useState('');
   const [receiveDraft, setReceiveDraft] = useState<ReceiveDraft>({ locationKey: selectedKey, barcode: '', qty: '', note: '' });
   const [localMovements, setLocalMovements] = useState<string[]>([]);
+  const [tapFeedback, setTapFeedback] = useState('');
 
   const activeRack = RACKS.find((rack) => rack.id === activeRackId) ?? RACKS[0];
   const detailSide: RackSide = activeRack.mode === 'double' ? activeSide : 'front';
@@ -232,10 +234,17 @@ export function WarehouseMapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
+  function flash(message: string) {
+    setTapFeedback(message);
+    window.setTimeout(() => setTapFeedback(''), 900);
+  }
+
   function openRack(rack: RackDefinition, side: RackSide = 'front') {
+    const nextSide = rack.mode === 'double' ? side : 'front';
     setActiveRackId(rack.id);
-    setActiveSide(rack.mode === 'double' ? side : 'front');
-    const firstSlot = locations.find((slot) => slot.rackId === rack.id && slot.side === (rack.mode === 'double' ? side : 'front'));
+    setActiveSide(nextSide);
+    flash(`${rack.id} ${SIDE_LABEL[nextSide]}`);
+    const firstSlot = locations.find((slot) => slot.rackId === rack.id && slot.side === nextSide);
     if (firstSlot) {
       setSelectedKey(firstSlot.key);
       setReceiveDraft((current) => ({ ...current, locationKey: firstSlot.key }));
@@ -249,44 +258,49 @@ export function WarehouseMapPage() {
     setActiveSide(rack.mode === 'double' ? slot.side : 'front');
     setSelectedKey(slot.key);
     setReceiveDraft((current) => ({ ...current, locationKey: slot.key }));
+    flash(`Selected ${slot.code}`);
+  }
+
+  function useSelectedLocation() {
+    setReceiveDraft((current) => ({ ...current, locationKey: selectedLocation.key }));
+    flash(`Location ${selectedLocation.code}`);
   }
 
   function submitReceive() {
     const location = locations.find((slot) => slot.key === receiveDraft.locationKey);
     const qty = Number(receiveDraft.qty);
     if (!location || !receiveDraft.barcode.trim() || !Number.isFinite(qty) || qty <= 0) {
-      setLocalMovements((current) => ['Receive draft rejected — scan/enter barcode, positive qty and location first.', ...current].slice(0, 8));
+      setLocalMovements((current) => ['Rejected · barcode, qty and location required.', ...current].slice(0, 8));
+      flash('Not saved');
       return;
     }
     const known = locations.flatMap((slot) => slot.items).find((item) => item.barcode.toLowerCase() === receiveDraft.barcode.trim().toLowerCase());
-    const target = known ? location.code : 'TEMP / quarantine review';
-    setLocalMovements((current) => [`RECEIVE ${qty} · ${receiveDraft.barcode.trim()} → ${target}${known ? ` · ${known.sku}` : ' · unknown barcode pending'}`, ...current].slice(0, 8));
+    const target = known ? location.code : 'TEMP';
+    setLocalMovements((current) => [`RECEIVE ${qty} · ${receiveDraft.barcode.trim()} → ${target}${known ? ` · ${known.sku}` : ' · unknown barcode'}`, ...current].slice(0, 8));
     setReceiveDraft((current) => ({ ...current, barcode: '', qty: '', note: '' }));
+    flash('Receive drafted');
   }
 
   return (
     <main className="warehouse-map-page">
-      <header className="warehouse-map-header">
+      {tapFeedback ? <div className="tap-feedback" aria-live="polite">{tapFeedback}</div> : null}
+      <header className="warehouse-map-header compact">
         <div>
-          <span className="warehouse-map-eyebrow">ECOFLOW WAREHOUSE MAP V1 · DRAFT LAYOUT</span>
-          <h1>Location master, rack search and receive skeleton</h1>
-          <p>Fixed layout based on the current sketch. Colours are reserved for SKU stock-waterline only; rack/area shapes stay neutral.</p>
+          <span className="warehouse-map-eyebrow">ECOFLOW WAREHOUSE MAP</span>
+          <h1>Warehouse map</h1>
         </div>
-        <a className="warehouse-map-back" href="/">Back to EcoFlow</a>
+        <a className="warehouse-map-back tactile" href="/">Back</a>
       </header>
 
       <section className="warehouse-map-grid">
         <section className="warehouse-map-card warehouse-map-overview-card">
-          <div className="warehouse-map-card-head">
-            <div>
-              <h2>Overview</h2>
-              <span>Click left/right half of double-sided racks. C1 and B3 are single-sided.</span>
-            </div>
+          <div className="warehouse-map-card-head compact-head">
+            <h2>Overview</h2>
             <strong>{activeRack.title} · {SIDE_LABEL[detailSide]}</strong>
           </div>
           <div className="warehouse-search-row">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU, name, barcode, category or location code" />
-            <button type="button" onClick={() => searchResults[0] && openLocation(searchResults[0])}>Find</button>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU / barcode / location" />
+            <button className="tactile" type="button" onClick={() => searchResults[0] && openLocation(searchResults[0])}>Find</button>
           </div>
           <div className="warehouse-floorplan" aria-label="Warehouse draft floorplan">
             {RACKS.map((rack) => {
@@ -295,15 +309,15 @@ export function WarehouseMapPage() {
               if (rack.mode === 'double') {
                 return (
                   <div key={rack.id} className={`floor-rack floor-rack-double ${active ? 'active' : ''}`} style={style}>
-                    <button type="button" onClick={() => openRack(rack, 'left')} aria-label={`${rack.id} left view`}><span>{rack.id}</span><small>left</small></button>
-                    <button type="button" onClick={() => openRack(rack, 'right')} aria-label={`${rack.id} right view`}><span>{rack.id}</span><small>right</small></button>
+                    <button className="tactile" type="button" onClick={() => openRack(rack, 'left')} aria-label={`${rack.id} left view`}><span>{rack.id}</span><small>left</small></button>
+                    <button className="tactile" type="button" onClick={() => openRack(rack, 'right')} aria-label={`${rack.id} right view`}><span>{rack.id}</span><small>right</small></button>
                   </div>
                 );
               }
               return (
-                <button key={rack.id} type="button" className={`floor-rack floor-rack-${rack.mode} ${active ? 'active' : ''}`} style={style} onClick={() => openRack(rack)}>
+                <button key={rack.id} type="button" className={`floor-rack floor-rack-${rack.mode} tactile ${active ? 'active' : ''}`} style={style} onClick={() => openRack(rack)}>
                   <span>{rack.id}</span>
-                  <small>{rack.title === 'TEMP' ? 'temporary holding' : 'single side'}</small>
+                  <small>{rack.title === 'TEMP' ? 'TEMP' : 'front'}</small>
                 </button>
               );
             })}
@@ -314,9 +328,9 @@ export function WarehouseMapPage() {
           {searchResults.length ? (
             <div className="warehouse-search-results">
               {searchResults.slice(0, 8).map((slot) => (
-                <button key={slot.key} type="button" className={slot.key === selectedKey ? 'active' : ''} onClick={() => openLocation(slot)}>
+                <button key={slot.key} type="button" className={`tactile ${slot.key === selectedKey ? 'active' : ''}`} onClick={() => openLocation(slot)}>
                   <strong>{slot.code}</strong>
-                  <span>{slot.rackTitle} · {SIDE_LABEL[slot.side]}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ' · empty draft slot'}</span>
+                  <span>{slot.rackTitle} · {SIDE_LABEL[slot.side]}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ''}</span>
                 </button>
               ))}
             </div>
@@ -324,16 +338,13 @@ export function WarehouseMapPage() {
         </section>
 
         <section className="warehouse-map-card warehouse-rack-card">
-          <div className="warehouse-map-card-head">
-            <div>
-              <h2>{activeRack.title} detail</h2>
-              <span>{activeRack.mode === 'double' ? 'Double-sided rack · code does not add L/R suffix' : activeRack.id === 'B3' ? 'Single long shelf per level' : 'Single-sided rack / area'}</span>
-            </div>
+          <div className="warehouse-map-card-head compact-head">
+            <h2>{activeRack.title}</h2>
             <div className="rack-side-buttons">
               {activeRack.mode === 'double' ? (
                 <>
-                  <button type="button" className={detailSide === 'left' ? 'active' : ''} onClick={() => openRack(activeRack, 'left')}>Left</button>
-                  <button type="button" className={detailSide === 'right' ? 'active' : ''} onClick={() => openRack(activeRack, 'right')}>Right</button>
+                  <button type="button" className={`tactile ${detailSide === 'left' ? 'active' : ''}`} onClick={() => openRack(activeRack, 'left')}>Left</button>
+                  <button type="button" className={`tactile ${detailSide === 'right' ? 'active' : ''}`} onClick={() => openRack(activeRack, 'right')}>Right</button>
                 </>
               ) : <span>{SIDE_LABEL[detailSide]}</span>}
             </div>
@@ -345,34 +356,34 @@ export function WarehouseMapPage() {
 
       <section className="warehouse-map-grid warehouse-bottom-grid">
         <section className="warehouse-map-card">
-          <div className="warehouse-map-card-head"><h2>Location detail</h2><span>{selectedLocation.confidence}</span></div>
+          <div className="warehouse-map-card-head compact-head"><h2>Location</h2><span>{selectedLocation.confidence}</span></div>
           <div className="location-detail-block">
             <strong>{selectedLocation.code}</strong>
             <span>{selectedLocation.rackTitle} · {SIDE_LABEL[selectedLocation.side]} · {selectedLocation.displayLevel}</span>
             {selectedLocation.items.length ? selectedLocation.items.map((item) => (
               <article key={`${selectedLocation.key}-${item.sku}`} className="location-item-card">
                 <div><strong>{item.sku}</strong><span>{item.name}</span></div>
-                <div><span>Qty here</span><b>{item.qty}</b></div>
-                <div><span>Total SKU qty</span><b>{skuTotals[item.sku] ?? item.qty}</b></div>
+                <div><span>Here</span><b>{item.qty}</b></div>
+                <div><span>Total</span><b>{skuTotals[item.sku] ?? item.qty}</b></div>
                 <div><span>Barcode</span><b>{item.barcode}</b></div>
                 <small>{item.recent}</small>
               </article>
-            )) : <p className="empty-location-note">No SKU assigned yet. Click + later to keep the same boss location code but visually split the slot into two halves.</p>}
+            )) : <p className="empty-location-note">Empty slot</p>}
           </div>
         </section>
 
         <section className="warehouse-map-card">
-          <div className="warehouse-map-card-head"><h2>Receive skeleton</h2><span>local draft only</span></div>
+          <div className="warehouse-map-card-head compact-head"><h2>Receive</h2><span>{selectedLocation.code}</span></div>
           <div className="receive-form-grid">
             <label><span>Location</span><select value={receiveDraft.locationKey} onChange={(event) => setReceiveDraft((current) => ({ ...current, locationKey: event.target.value }))}>{locations.map((slot) => <option key={slot.key} value={slot.key}>{slot.code} · {slot.rackTitle} · {SIDE_LABEL[slot.side]}</option>)}</select></label>
             <label><span>Barcode</span><input value={receiveDraft.barcode} onChange={(event) => setReceiveDraft((current) => ({ ...current, barcode: event.target.value }))} placeholder="scan or type barcode" /></label>
-            <label><span>Qty</span><input value={receiveDraft.qty} onChange={(event) => setReceiveDraft((current) => ({ ...current, qty: event.target.value }))} inputMode="numeric" placeholder="cartons / units" /></label>
-            <label><span>Note</span><input value={receiveDraft.note} onChange={(event) => setReceiveDraft((current) => ({ ...current, note: event.target.value }))} placeholder="damaged, pending, supplier ref" /></label>
-            <button type="button" onClick={submitReceive}>Draft receive movement</button>
+            <label><span>Qty</span><input value={receiveDraft.qty} onChange={(event) => setReceiveDraft((current) => ({ ...current, qty: event.target.value }))} inputMode="numeric" placeholder="qty" /></label>
+            <label><span>Note</span><input value={receiveDraft.note} onChange={(event) => setReceiveDraft((current) => ({ ...current, note: event.target.value }))} placeholder="note" /></label>
+            <button className="tactile secondary-action" type="button" onClick={useSelectedLocation}>Use selected location</button>
+            <button className="tactile" type="button" onClick={submitReceive}>Save draft</button>
           </div>
           <div className="movement-log-list">
             {localMovements.map((movement, index) => <div key={`${movement}-${index}`}>{movement}</div>)}
-            {!localMovements.length ? <p>Receive movements shown here are a UI scaffold. Database stock ledger comes next.</p> : null}
           </div>
         </section>
       </section>
@@ -426,11 +437,11 @@ function LocationCell({ slot, selected, skuTotals, onSelect, large }: { slot: Lo
   const health = healthFor(total);
   const style = { '--stock-level': `${waterLevel(total)}%` } as CSSProperties;
   return (
-    <button type="button" className={`location-cell ${large ? 'large' : ''} ${selected ? 'selected' : ''} stock-${health}`} style={style} onClick={() => onSelect(slot)}>
+    <button type="button" className={`location-cell tactile ${large ? 'large' : ''} ${selected ? 'selected' : ''} stock-${health}`} style={style} onClick={() => onSelect(slot)}>
       <span className="location-code">{slot.code}</span>
       {slot.items.length ? (
         <span className={`slot-item-wrap ${slot.items.length > 1 ? 'split' : ''}`}>
-          {slot.items.slice(0, 2).map((item) => <span key={item.sku} className="slot-mini"><b>{item.sku}</b><small>{item.qty} here · {skuTotals[item.sku] ?? item.qty} total</small></span>)}
+          {slot.items.slice(0, 2).map((item) => <span key={item.sku} className="slot-mini"><b>{item.sku}</b><small>{item.qty} · {skuTotals[item.sku] ?? item.qty} total</small></span>)}
         </span>
       ) : <span className="slot-empty">+</span>}
       <span className="stock-waterline" aria-hidden="true" />
