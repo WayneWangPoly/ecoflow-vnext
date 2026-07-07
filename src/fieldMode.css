@@ -1,7 +1,8 @@
 button,
 a.primary-button,
 a.warehouse-map-back,
-a.inventory-map-link {
+a.inventory-map-link,
+a.inventory-location-map-link {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: transform .08s ease, filter .08s ease, box-shadow .08s ease, border-color .08s ease, background .08s ease;
@@ -10,7 +11,8 @@ a.inventory-map-link {
 button:active,
 a.primary-button:active,
 a.warehouse-map-back:active,
-a.inventory-map-link:active {
+a.inventory-map-link:active,
+a.inventory-location-map-link:active {
   transform: translateY(1px) scale(.985);
   filter: brightness(.96);
 }
@@ -18,7 +20,8 @@ a.inventory-map-link:active {
 button:focus-visible,
 a.primary-button:focus-visible,
 a.warehouse-map-back:focus-visible,
-a.inventory-map-link:focus-visible {
+a.inventory-map-link:focus-visible,
+a.inventory-location-map-link:focus-visible {
   outline: 4px solid rgba(15, 125, 81, .24);
   outline-offset: 2px;
 }
@@ -110,4 +113,38 @@ a.inventory-map-link:focus-visible {
   display: flex;
   justify-content: flex-end;
   margin: 0 0 14px;
+}
+
+.inventory-live-panel {
+  border-color: rgba(15, 107, 67, .18) !important;
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(240,247,242,.96)) !important;
+}
+
+.inventory-live-note {
+  margin: 0;
+  color: #60716a;
+  font-weight: 850;
+}
+
+.inventory-live-table .table-row {
+  align-items: center;
+}
+
+.inventory-live-table .table-row.target-sku,
+.table-row.target-sku {
+  border-color: rgba(15, 107, 67, .4) !important;
+  box-shadow: inset 5px 0 #0f7d51, 0 10px 22px rgba(15, 107, 67, .1);
+  background: rgba(15, 107, 67, .06) !important;
+}
+
+.inventory-location-map-link {
+  color: #0f6b43;
+  font-weight: 950;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.inventory-location-map-link:hover {
+  text-decoration: underline;
 }
