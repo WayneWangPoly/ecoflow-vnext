@@ -53,6 +53,7 @@ export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
   const { data, error } = await active
     .from('v_ecoflow_order_lifecycle_board')
     .select('*')
+    .neq('lifecycle_status', 'COMPLETED')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(500);
 
