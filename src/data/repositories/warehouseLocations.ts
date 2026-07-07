@@ -41,6 +41,18 @@ export type InventoryLocationSummaryRow = {
   updated_at: string | null;
 };
 
+export type ReceivingBarcodeLookupRow = {
+  barcode: string;
+  sku: string;
+  product_name: string | null;
+  unit_level: 'carton' | 'sleeve' | 'each' | 'unknown' | string | null;
+  fixed_location: string | null;
+  pick_level: string | null;
+  classification: string | null;
+  barcode_status: string | null;
+  sku_status: string | null;
+};
+
 export type ReceiveWarehouseStockInput = {
   locationCode: string;
   barcode: string;
@@ -78,6 +90,17 @@ export async function loadInventoryLocationSummaries(client?: SupabaseClient | n
 
   if (error) throw error;
   return (data ?? []) as InventoryLocationSummaryRow[];
+}
+
+export async function loadReceivingBarcodeLookup(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_receiving_barcode_lookup')
+    .select('*')
+    .order('sku', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as ReceivingBarcodeLookupRow[];
 }
 
 export async function receiveWarehouseStock(input: ReceiveWarehouseStockInput, client?: SupabaseClient | null) {
