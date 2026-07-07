@@ -112,6 +112,8 @@ a.inventory-location-map-link:focus-visible {
 .inventory-map-action-row {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
   margin: 0 0 14px;
 }
 
@@ -147,4 +149,94 @@ a.inventory-location-map-link:focus-visible {
 
 .inventory-location-map-link:hover {
   text-decoration: underline;
+}
+
+.quick-customer-panel {
+  border-color: rgba(213, 121, 18, .22) !important;
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,248,236,.96)) !important;
+}
+
+.quick-customer-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, .9fr) minmax(120px, .7fr) minmax(220px, 1.2fr) minmax(160px, 1fr) 90px 120px minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.quick-customer-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.quick-customer-grid label > span {
+  color: #60716a;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.quick-customer-grid input,
+.quick-customer-grid select {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(16, 47, 40, .18);
+  background: #fff;
+  color: #102f28;
+  padding: 0 12px;
+  font-weight: 850;
+}
+
+.quick-customer-save {
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: #d57912;
+  color: #fff;
+  padding: 0 16px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.quick-customer-save:disabled {
+  opacity: .6;
+}
+
+.quick-customer-status {
+  margin-top: 10px;
+  min-height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #60716a;
+  font-weight: 850;
+}
+
+.quick-customer-status.ok {
+  background: rgba(15, 107, 67, .1);
+  color: #0f6b43;
+}
+
+.quick-customer-status.error {
+  background: rgba(192, 50, 33, .08);
+  color: #922a20;
+}
+
+@media (max-width: 1180px) {
+  .quick-customer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .quick-customer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-customer-save {
+    width: 100%;
+  }
 }
