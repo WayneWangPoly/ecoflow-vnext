@@ -1,0 +1,74 @@
+.brand-logo-lockup {
+  display: inline-grid !important;
+  gap: 2px;
+  align-content: center;
+  justify-items: start;
+  min-width: 0;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.brand-logo-lockup strong {
+  display: block;
+  color: #ffffff;
+  font-size: 28px;
+  line-height: .95;
+  font-weight: 950;
+  letter-spacing: -.045em;
+  text-shadow: none;
+}
+
+.brand-logo-lockup span {
+  display: block;
+  color: #bce8c4;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.brand-logo-lockup-large strong,
+.brand-logo-lockup-wide strong {
+  font-size: 34px;
+}
+
+.brand-logo-lockup-large span,
+.brand-logo-lockup-wide span {
+  font-size: 13px;
+}
+
+.sidebar-brand .brand-logo-lockup {
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-brand .brand-logo-lockup strong {
+  font-size: 25px;
+}
+
+.sidebar-brand .brand-logo-lockup span {
+  font-size: 9px;
+}
+
+.topbar-title .brand-logo-lockup,
+.topbar-title .brand-logo,
+.topbar-title .brand-wide {
+  display: none !important;
+}
+
+.brand-logo-lockup img,
+.brand-logo-image img,
+.brand-wide-image img {
+  display: none !important;
+}
+
+.brand-logo-image,
+.brand-wide-image,
+.brand-logo,
+.brand-wide {
+  background-image: none !important;
+}
