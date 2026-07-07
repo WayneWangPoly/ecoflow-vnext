@@ -51,6 +51,24 @@ export async function inviteTeamMember(
   return data;
 }
 
+export async function createTeamLogin(
+  supabase: SupabaseClient,
+  input: { email: string; displayName?: string; appRole: EcoFlowRole; password: string }
+) {
+  const { data, error } = await supabase.functions.invoke('create-team-login', {
+    body: {
+      email: input.email,
+      displayName: input.displayName ?? null,
+      appRole: input.appRole,
+      password: input.password,
+    },
+  });
+
+  if (error) throw error;
+  if (data?.error) throw new Error(`${data.error}${data.details ? `: ${data.details}` : ''}`);
+  return data;
+}
+
 export async function listTeamMembers(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('v_ecoflow_team_members_secure')
