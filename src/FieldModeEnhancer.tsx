@@ -22,6 +22,12 @@ function numberText(value: unknown) {
   return Number.isFinite(parsed) ? String(parsed) : '0';
 }
 
+function renderKey(rows: InventoryLocationSummaryRow[] | null, error: string) {
+  const targetSku = new URLSearchParams(window.location.search).get('sku') || '';
+  const lastUpdate = rows?.map((row) => `${row.sku}:${row.updated_at ?? ''}:${row.total_quantity ?? ''}`).join('|') ?? 'loading';
+  return `${targetSku}|${error}|${lastUpdate}`;
+}
+
 export function FieldModeEnhancer() {
   useEffect(() => {
     let inventoryRows: InventoryLocationSummaryRow[] | null = null;
@@ -50,7 +56,11 @@ export function FieldModeEnhancer() {
     }
 
     function renderInventoryPanel(panel: HTMLElement) {
+      const nextKey = renderKey(inventoryRows, inventoryError);
+      if (panel.dataset.renderKey === nextKey) return;
+      panel.dataset.renderKey = nextKey;
       panel.textContent = '';
+
       const head = document.createElement('div');
       head.className = 'panel-head';
       const title = document.createElement('h2');
