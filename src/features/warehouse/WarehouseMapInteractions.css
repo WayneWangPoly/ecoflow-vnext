@@ -7,6 +7,58 @@
   margin-bottom: 0;
 }
 
+.warehouse-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.warehouse-live-chip {
+  min-height: 42px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid rgba(16, 47, 40, .14);
+  background: #fff;
+  color: #102f28;
+}
+
+.warehouse-live-chip.state-live {
+  background: rgba(15, 107, 67, .1);
+  color: #0f6b43;
+  border-color: rgba(15, 107, 67, .28);
+}
+
+.warehouse-live-chip.state-empty {
+  background: rgba(96, 113, 106, .1);
+  color: #41524b;
+}
+
+.warehouse-live-chip.state-loading {
+  background: rgba(213, 121, 18, .12);
+  color: #8a4f0e;
+}
+
+.warehouse-live-chip.state-offline {
+  background: rgba(192, 50, 33, .1);
+  color: #9a2a1f;
+  border-color: rgba(192, 50, 33, .22);
+}
+
+.warehouse-error-strip {
+  border-color: rgba(192, 50, 33, .22);
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,245,242,.95));
+  color: #7c261d;
+  font-weight: 850;
+}
+
 .compact-head {
   align-items: center;
   margin-bottom: 12px;
@@ -72,13 +124,17 @@
 }
 
 .secondary-action {
-  background: #eef7ef !important;
-  color: #0e4c36 !important;
-  border: 1px solid #d3e5d8 !important;
+  background: #eef7ef;
+  color: #0e4c36;
+  border: 1px solid #d3e5d8;
 }
 
 .receive-form-grid {
   grid-template-columns: minmax(210px, 1.1fr) minmax(160px, .9fr) minmax(90px, .45fr) minmax(140px, .8fr) auto auto;
+}
+
+.receive-form-grid button:disabled {
+  opacity: .55;
 }
 
 .movement-log-list:empty {
