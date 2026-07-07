@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
-import { loadInventoryLocationSummaries, type InventoryLocationSummaryRow } from '@/data/repositories/warehouseLocations';
+import {
+  loadInventoryLocationSummaries,
+  loadWarehouseLocationItems,
+  recordCustomerStockDrawdown,
+  type InventoryLocationSummaryRow,
+  type WarehouseLocationItemRow,
+} from '@/data/repositories/warehouseLocations';
 
 function asButtonLink(label: string, href: string, className = 'inventory-map-link') {
   const link = document.createElement('a');
@@ -22,10 +28,24 @@ function numberText(value: unknown) {
   return Number.isFinite(parsed) ? String(parsed) : '0';
 }
 
+function numberValue(value: unknown, fallback = 0) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function renderKey(rows: InventoryLocationSummaryRow[] | null, error: string) {
   const targetSku = new URLSearchParams(window.location.search).get('sku') || '';
   const lastUpdate = rows?.map((row) => `${row.sku}:${row.updated_at ?? ''}:${row.total_quantity ?? ''}`).join('|') ?? 'loading';
   return `${targetSku}|${error}|${lastUpdate}`;
+}
+
+function warehouseRenderKey(rows: WarehouseLocationItemRow[] | null, error: string) {
+  const lastUpdate = rows?.map((row) => `${row.location_code}:${row.sku ?? ''}:${row.quantity ?? ''}:${row.item_updated_at ?? ''}`).join('|') ?? 'loading';
+  return `${error}|${lastUpdate}`;
+}
+
+function liveStockRows(rows: WarehouseLocationItemRow[] | null) {
+  return (rows ?? []).filter((row) => row.item_id && row.sku && numberValue(row.quantity) > 0);
 }
 
 export function FieldModeEnhancer() {
@@ -33,6 +53,9 @@ export function FieldModeEnhancer() {
     let inventoryRows: InventoryLocationSummaryRow[] | null = null;
     let inventoryError = '';
     let inventoryLoading: Promise<void> | null = null;
+    let warehouseRows: WarehouseLocationItemRow[] | null = null;
+    let warehouseError = '';
+    let warehouseLoading: Promise<void> | null = null;
 
     function openRequestedInventoryTab() {
       const params = new URLSearchParams(window.location.search);
@@ -50,7 +73,7 @@ export function FieldModeEnhancer() {
         if (!button) return;
         button.textContent = 'Open map';
         button.onclick = () => {
-          window.location.assign('/warehouse-map');
+          window.location.assign('/warehouse-map?quickIssue=1');
         };
       });
     }
@@ -155,6 +178,185 @@ export function FieldModeEnhancer() {
       }
     }
 
+    function renderQuickCustomerPanel(panel: HTMLElement) {
+      const nextKey = warehouseRenderKey(warehouseRows, warehouseError);
+      if (panel.dataset.renderKey === nextKey) return;
+      panel.dataset.renderKey = nextKey;
+      panel.textContent = '';
+
+      const head = document.createElement('div');
+      head.className = 'warehouse-map-card-head compact-head';
+      const title = document.createElement('h2');
+      title.textContent = 'Quick customer stock';
+      const meta = document.createElement('span');
+      meta.textContent = warehouseError ? 'schema pending' : warehouseRows ? 'To bill later' : 'loading';
+      head.append(title, meta);
+      panel.appendChild(head);
+
+      if (warehouseError || !warehouseRows) {
+        const note = document.createElement('p');
+        note.className = 'inventory-live-note';
+        note.textContent = warehouseError || 'Loading live stock…';
+        panel.appendChild(note);
+        return;
+      }
+
+      const rows = liveStockRows(warehouseRows);
+      if (!rows.length) {
+        const note = document.createElement('p');
+        note.className = 'inventory-live-note';
+        note.textContent = 'No live stock is available for quick customer stock yet.';
+        panel.appendChild(note);
+        return;
+      }
+
+      const skuMap = new Map<string, WarehouseLocationItemRow[]>();
+      rows.forEach((row) => {
+        if (!row.sku) return;
+        skuMap.set(row.sku, [...(skuMap.get(row.sku) ?? []), row]);
+      });
+      const skuList = Array.from(skuMap.keys()).sort((a, b) => a.localeCompare(b));
+
+      const form = document.createElement('div');
+      form.className = 'quick-customer-grid';
+
+      function labelWrap(label: string, field: HTMLElement) {
+        const wrap = document.createElement('label');
+        const span = document.createElement('span');
+        span.textContent = label;
+        wrap.append(span, field);
+        return wrap;
+      }
+
+      const customer = document.createElement('input');
+      customer.placeholder = 'Store / customer name';
+      const reference = document.createElement('input');
+      reference.placeholder = 'Optional reference';
+      const sku = document.createElement('select');
+      skuList.forEach((value) => {
+        const option = document.createElement('option');
+        const first = skuMap.get(value)?.[0];
+        option.value = value;
+        option.textContent = `${value} · ${first?.product_name || 'warehouse stock'}`;
+        sku.appendChild(option);
+      });
+      const location = document.createElement('select');
+      const qty = document.createElement('input');
+      qty.placeholder = 'Qty';
+      qty.inputMode = 'numeric';
+      qty.value = '1';
+      const unit = document.createElement('select');
+      ['carton', 'sleeve', 'each', 'unknown'].forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        unit.appendChild(option);
+      });
+      const note = document.createElement('input');
+      note.placeholder = 'Reason / who approved';
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'tactile quick-customer-save';
+      save.textContent = 'Save for billing';
+      const status = document.createElement('div');
+      status.className = 'quick-customer-status';
+
+      function refreshLocationOptions() {
+        const selectedSku = sku.value;
+        const options = (skuMap.get(selectedSku) ?? []).filter((row) => numberValue(row.quantity) > 0);
+        location.textContent = '';
+        options.forEach((row) => {
+          const option = document.createElement('option');
+          option.value = row.location_code;
+          option.textContent = `${row.location_code} · ${numberText(row.quantity)} ${row.unit_level || 'unit'}`;
+          location.appendChild(option);
+        });
+        const first = options[0];
+        unit.value = first?.unit_level || 'carton';
+      }
+
+      sku.onchange = refreshLocationOptions;
+      refreshLocationOptions();
+
+      save.onclick = async () => {
+        const selectedRow = (skuMap.get(sku.value) ?? []).find((row) => row.location_code === location.value) ?? skuMap.get(sku.value)?.[0];
+        const amount = Number(qty.value);
+        if (!customer.value.trim() || !sku.value || !Number.isFinite(amount) || amount <= 0) {
+          status.textContent = 'Customer, SKU and positive qty are required.';
+          status.className = 'quick-customer-status error';
+          return;
+        }
+        save.setAttribute('disabled', 'true');
+        save.textContent = 'Saving…';
+        try {
+          const result = await recordCustomerStockDrawdown({
+            customerName: customer.value.trim(),
+            customerReference: reference.value.trim() || undefined,
+            sku: sku.value,
+            productName: selectedRow?.product_name || undefined,
+            barcode: selectedRow?.source_barcode || undefined,
+            quantity: amount,
+            unitLevel: unit.value as 'carton' | 'sleeve' | 'each' | 'unknown',
+            locationCode: location.value || undefined,
+            note: note.value.trim() || undefined,
+          });
+          status.textContent = result.length ? `Saved ${result[0].issue_no} · ${amount} ${unit.value} · ${customer.value.trim()} · TO_BILL` : 'Saved for billing.';
+          status.className = 'quick-customer-status ok';
+          qty.value = '1';
+          note.value = '';
+          warehouseRows = await loadWarehouseLocationItems();
+          panel.dataset.renderKey = '';
+          renderQuickCustomerPanel(panel);
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : String(error);
+          status.className = 'quick-customer-status error';
+        } finally {
+          save.removeAttribute('disabled');
+          save.textContent = 'Save for billing';
+        }
+      };
+
+      form.append(
+        labelWrap('Customer', customer),
+        labelWrap('Reference', reference),
+        labelWrap('SKU', sku),
+        labelWrap('Location', location),
+        labelWrap('Qty', qty),
+        labelWrap('Unit', unit),
+        labelWrap('Note', note),
+        save
+      );
+      panel.append(form, status);
+    }
+
+    function patchQuickCustomerStockPanel() {
+      const page = document.querySelector<HTMLElement>('.warehouse-map-page');
+      if (!page) return;
+      let panel = document.querySelector<HTMLElement>('.quick-customer-panel');
+      if (!panel) {
+        panel = document.createElement('section');
+        panel.className = 'warehouse-map-card quick-customer-panel';
+        const bottomGrid = page.querySelector<HTMLElement>('.warehouse-bottom-grid');
+        bottomGrid?.insertAdjacentElement('afterend', panel) ?? page.appendChild(panel);
+      }
+      renderQuickCustomerPanel(panel);
+      if (!warehouseRows && !warehouseLoading) {
+        warehouseLoading = loadWarehouseLocationItems()
+          .then((rows) => {
+            warehouseRows = rows;
+            warehouseError = '';
+          })
+          .catch((error) => {
+            warehouseRows = [];
+            warehouseError = error instanceof Error ? error.message : String(error);
+          })
+          .finally(() => {
+            warehouseLoading = null;
+            patchQuickCustomerStockPanel();
+          });
+      }
+    }
+
     function patchInventoryMapEntry() {
       const heading = Array.from(document.querySelectorAll<HTMLElement>('h2, h1')).find((item) => item.textContent?.trim().toLowerCase().includes('inventory'));
       if (!heading) return;
@@ -163,6 +365,7 @@ export function FieldModeEnhancer() {
       const row = document.createElement('div');
       row.className = 'inventory-map-action-row';
       row.appendChild(asButtonLink('Open warehouse map', '/warehouse-map'));
+      row.appendChild(asButtonLink('Quick customer stock', '/warehouse-map?quickIssue=1', 'inventory-map-link secondary'));
       const insertionPoint = heading.closest<HTMLElement>('.panel-head') || heading;
       insertionPoint.insertAdjacentElement('afterend', row);
     }
@@ -182,6 +385,7 @@ export function FieldModeEnhancer() {
       patchWarehouseReceiveCard();
       patchInventoryMapEntry();
       patchInventoryLocationsPanel();
+      patchQuickCustomerStockPanel();
       patchCompletedLabels();
     }
 
