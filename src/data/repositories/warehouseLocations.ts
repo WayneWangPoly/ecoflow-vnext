@@ -28,6 +28,19 @@ export type WarehouseLocationItemRow = {
   sku_total_quantity: number | string | null;
 };
 
+export type InventoryLocationSummaryRow = {
+  sku: string;
+  product_name: string | null;
+  total_quantity: number | string | null;
+  location_count: number | string | null;
+  primary_location: string | null;
+  fixed_shelf: string | null;
+  current_locations: string | null;
+  barcodes: string | null;
+  last_movement_at: string | null;
+  updated_at: string | null;
+};
+
 export type ReceiveWarehouseStockInput = {
   locationCode: string;
   barcode: string;
@@ -54,6 +67,17 @@ export async function loadWarehouseLocationItems(client?: SupabaseClient | null)
 
   if (error) throw error;
   return (data ?? []) as WarehouseLocationItemRow[];
+}
+
+export async function loadInventoryLocationSummaries(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_inventory_locations')
+    .select('*')
+    .order('sku', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as InventoryLocationSummaryRow[];
 }
 
 export async function receiveWarehouseStock(input: ReceiveWarehouseStockInput, client?: SupabaseClient | null) {
