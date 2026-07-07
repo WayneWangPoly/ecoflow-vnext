@@ -130,6 +130,21 @@ with inbox as (
     max(last_synced_at) as last_synced_at
   from combined
   group by lifecycle_key
+), classified as (
+  select
+    *,
+    (
+      lower(coalesce(warehouse_gate_status, '')) in ('not_eligible_data','mapping_exception','not_eligible_mapping','unmapped','barcode_blocked')
+      or lower(coalesce(internalisation_status, '')) in ('mapping_exception','blocked_mapping','unmapped','barcode_blocked')
+      or coalesce(unmapped_line_count, 0) > 0
+      or coalesce(barcode_blocked_line_count, 0) > 0
+    ) as is_mapping_blocked,
+    (
+      coalesce(invoice_detail_missing, false)
+      or coalesce(line_items_missing, false)
+      or lower(coalesce(internalisation_status, '')) in ('blocked_data','not_eligible_data')
+    ) as is_data_blocked
+  from rolled
 )
 select
   coalesce(raw_order_id, external_order_id, order_number, external_order_number, lifecycle_key) as lifecycle_id,
@@ -157,8 +172,8 @@ select
     when nullif(internal_order_id, '') is not null and lower(coalesce(warehouse_gate_status, '')) in ('staged','packed','ready','ready_for_delivery') then 'STAGED'
     when nullif(internal_order_id, '') is not null and lower(coalesce(warehouse_gate_status, '')) in ('picking','pick_started') then 'PICKING'
     when nullif(internal_order_id, '') is not null then 'INTERNAL_ORDER_CREATED'
-    when coalesce(invoice_detail_missing, false) or coalesce(line_items_missing, false) then 'BLOCKED_DATA'
-    when coalesce(unmapped_line_count, 0) > 0 or coalesce(barcode_blocked_line_count, 0) > 0 then 'BLOCKED_MAPPING'
+    when is_mapping_blocked then 'BLOCKED_MAPPING'
+    when is_data_blocked then 'BLOCKED_DATA'
     else 'READY_TO_INTERNALISE'
   end as lifecycle_status,
   case
@@ -167,8 +182,7 @@ select
       or lower(coalesce(internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       then false
-    when coalesce(invoice_detail_missing, false) or coalesce(line_items_missing, false) then false
-    when coalesce(unmapped_line_count, 0) > 0 or coalesce(barcode_blocked_line_count, 0) > 0 then false
+    when is_mapping_blocked or is_data_blocked then false
     when nullif(internal_order_id, '') is not null then false
     else true
   end as can_internalise,
@@ -176,6 +190,6 @@ select
     coalesce(order_updated_at, '1900-01-01'::timestamptz),
     coalesce(last_synced_at, '1900-01-01'::timestamptz)
   ) as lifecycle_updated_at
-from rolled;
+from classified;
 
 grant select on public.v_ecoflow_order_lifecycle_board to authenticated;
