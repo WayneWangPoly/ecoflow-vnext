@@ -88,6 +88,9 @@ export type CustomerStockDrawdownInput = {
   locationCode?: string;
   customerReference?: string;
   productName?: string;
+  fulfilmentMode?: 'OWNER_ONSITE' | 'OPS_DELIVERY';
+  deliveryAddress?: string;
+  driverNote?: string;
 };
 
 export type CustomerStockDrawdownResult = {
@@ -181,6 +184,9 @@ export async function recordCustomerStockDrawdown(input: CustomerStockDrawdownIn
     p_location_code: input.locationCode ?? null,
     p_customer_reference: input.customerReference ?? null,
     p_product_name: input.productName ?? null,
+    p_fulfilment_mode: input.fulfilmentMode ?? 'OWNER_ONSITE',
+    p_delivery_address: input.deliveryAddress ?? null,
+    p_driver_note: input.driverNote ?? null,
   });
 
   if (error) throw error;
