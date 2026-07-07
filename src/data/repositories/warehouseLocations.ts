@@ -63,6 +63,21 @@ export type ReceiveWarehouseStockInput = {
   unitLevel?: 'carton' | 'sleeve' | 'each' | 'unknown';
 };
 
+export type PickWarehouseStockInput = {
+  sku: string;
+  quantity: number;
+  unitLevel: 'carton' | 'sleeve' | 'each' | 'unknown';
+  barcode?: string;
+  note?: string;
+};
+
+export type PickWarehouseStockResult = {
+  location_code: string;
+  sku: string;
+  picked_quantity: number | string;
+  remaining_quantity: number | string;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -117,4 +132,18 @@ export async function receiveWarehouseStock(input: ReceiveWarehouseStockInput, c
 
   if (error) throw error;
   return data;
+}
+
+export async function pickWarehouseStock(input: PickWarehouseStockInput, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_record_pick_movement', {
+    p_sku: input.sku,
+    p_quantity: input.quantity,
+    p_unit_level: input.unitLevel,
+    p_barcode: input.barcode ?? null,
+    p_note: input.note ?? null,
+  });
+
+  if (error) throw error;
+  return (data ?? []) as PickWarehouseStockResult[];
 }
