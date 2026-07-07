@@ -14,7 +14,8 @@
     "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
     "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",
     "import:ordermentum:missing-invoices": "node scripts/refresh-ordermentum-missing-invoices.mjs",
-    "test:ordermentum-auth": "node scripts/test-ordermentum-auth-and-orders.mjs"
+    "test:ordermentum-auth": "node scripts/test-ordermentum-auth-and-orders.mjs",
+    "auth:set-password": "node scripts/admin-set-user-password.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
