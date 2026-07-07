@@ -1,12 +1,14 @@
 -- Package 4: Ordermentum -> Internal order -> Warehouse -> Driver lifecycle board.
 -- This is a read-only control view for Owner/Accounts so completed Ordermentum orders do not re-enter release/pick flows.
 -- All ids are normalised to text because upstream Supabase views can expose uuid and text columns side by side.
+-- Uses UNION ALL + aggregation instead of FULL JOIN with OR conditions because Postgres cannot hash/merge join that predicate.
 
 drop view if exists public.v_ecoflow_order_lifecycle_board;
 
 create view public.v_ecoflow_order_lifecycle_board as
 with inbox as (
   select
+    coalesce(nullif(order_number::text, ''), nullif(external_order_number::text, ''), nullif(external_order_id::text, ''), raw_order_id::text) as lifecycle_key,
     raw_order_id::text as raw_order_id,
     external_order_id::text as external_order_id,
     external_order_number::text as external_order_number,
@@ -27,6 +29,7 @@ with inbox as (
   from public.v_ecoflow_ordermentum_inbox
 ), drafts as (
   select
+    coalesce(nullif(order_number::text, ''), nullif(external_order_number::text, ''), nullif(external_order_id::text, ''), raw_order_id::text) as lifecycle_key,
     raw_order_id::text as raw_order_id,
     external_order_id::text as external_order_id,
     external_order_number::text as external_order_number,
@@ -43,57 +46,136 @@ with inbox as (
     barcode_blocked_line_count::numeric as barcode_blocked_line_count,
     last_synced_at::timestamptz as last_synced_at
   from public.v_ecoflow_ordermentum_internal_order_drafts_v3
+), combined as (
+  select
+    lifecycle_key,
+    raw_order_id,
+    external_order_id,
+    external_order_number,
+    external_invoice_number,
+    order_number,
+    invoice_number,
+    order_status,
+    invoice_status,
+    payment_status,
+    invoice_payment_status,
+    invoice_total,
+    total_due,
+    line_count,
+    invoice_detail_missing,
+    line_items_missing,
+    order_updated_at,
+    last_synced_at,
+    null::text as internalisation_status,
+    null::text as account_release_status,
+    null::text as warehouse_gate_status,
+    null::text as internal_order_id,
+    null::numeric as unmapped_line_count,
+    null::numeric as barcode_blocked_line_count
+  from inbox
+
+  union all
+
+  select
+    lifecycle_key,
+    raw_order_id,
+    external_order_id,
+    external_order_number,
+    null::text as external_invoice_number,
+    order_number,
+    invoice_number,
+    null::text as order_status,
+    null::text as invoice_status,
+    null::text as payment_status,
+    null::text as invoice_payment_status,
+    invoice_total,
+    total_due,
+    line_count,
+    null::boolean as invoice_detail_missing,
+    null::boolean as line_items_missing,
+    null::timestamptz as order_updated_at,
+    last_synced_at,
+    internalisation_status,
+    account_release_status,
+    warehouse_gate_status,
+    internal_order_id,
+    unmapped_line_count,
+    barcode_blocked_line_count
+  from drafts
+), rolled as (
+  select
+    lifecycle_key,
+    max(raw_order_id) filter (where raw_order_id is not null and raw_order_id <> '') as raw_order_id,
+    max(external_order_id) filter (where external_order_id is not null and external_order_id <> '') as external_order_id,
+    max(external_order_number) filter (where external_order_number is not null and external_order_number <> '') as external_order_number,
+    max(external_invoice_number) filter (where external_invoice_number is not null and external_invoice_number <> '') as external_invoice_number,
+    max(order_number) filter (where order_number is not null and order_number <> '') as order_number,
+    max(invoice_number) filter (where invoice_number is not null and invoice_number <> '') as invoice_number,
+    max(order_status) filter (where order_status is not null and order_status <> '') as order_status,
+    max(invoice_status) filter (where invoice_status is not null and invoice_status <> '') as invoice_status,
+    max(payment_status) filter (where payment_status is not null and payment_status <> '') as payment_status,
+    max(invoice_payment_status) filter (where invoice_payment_status is not null and invoice_payment_status <> '') as invoice_payment_status,
+    max(internalisation_status) filter (where internalisation_status is not null and internalisation_status <> '') as internalisation_status,
+    max(account_release_status) filter (where account_release_status is not null and account_release_status <> '') as account_release_status,
+    max(warehouse_gate_status) filter (where warehouse_gate_status is not null and warehouse_gate_status <> '') as warehouse_gate_status,
+    max(internal_order_id) filter (where internal_order_id is not null and internal_order_id <> '') as internal_order_id,
+    max(invoice_total) filter (where invoice_total is not null) as invoice_total,
+    max(total_due) filter (where total_due is not null) as total_due,
+    max(line_count) filter (where line_count is not null) as line_count,
+    bool_or(coalesce(invoice_detail_missing, false)) as invoice_detail_missing,
+    bool_or(coalesce(line_items_missing, false)) as line_items_missing,
+    max(coalesce(unmapped_line_count, 0)) as unmapped_line_count,
+    max(coalesce(barcode_blocked_line_count, 0)) as barcode_blocked_line_count,
+    max(order_updated_at) as order_updated_at,
+    max(last_synced_at) as last_synced_at
+  from combined
+  group by lifecycle_key
 )
 select
-  coalesce(i.raw_order_id, d.raw_order_id, i.external_order_id, d.external_order_id, i.order_number, d.order_number) as lifecycle_id,
-  coalesce(i.external_order_id, d.external_order_id) as external_order_id,
-  coalesce(i.order_number, i.external_order_number, d.order_number, d.external_order_number) as order_number,
-  coalesce(i.invoice_number, i.external_invoice_number, d.invoice_number) as invoice_number,
-  i.order_status as ordermentum_order_status,
-  i.invoice_status as ordermentum_invoice_status,
-  d.internalisation_status,
-  d.account_release_status,
-  d.warehouse_gate_status,
-  d.internal_order_id,
-  i.payment_status,
-  i.invoice_payment_status,
-  coalesce(i.invoice_total, d.invoice_total, i.total_due, d.total_due) as invoice_total,
-  coalesce(i.line_count, d.line_count) as line_count,
-  coalesce(d.unmapped_line_count, 0) as unmapped_line_count,
-  coalesce(d.barcode_blocked_line_count, 0) as barcode_blocked_line_count,
+  coalesce(raw_order_id, external_order_id, order_number, external_order_number, lifecycle_key) as lifecycle_id,
+  external_order_id,
+  coalesce(order_number, external_order_number) as order_number,
+  coalesce(invoice_number, external_invoice_number) as invoice_number,
+  order_status as ordermentum_order_status,
+  invoice_status as ordermentum_invoice_status,
+  internalisation_status,
+  account_release_status,
+  warehouse_gate_status,
+  internal_order_id,
+  payment_status,
+  invoice_payment_status,
+  coalesce(invoice_total, total_due) as invoice_total,
+  line_count,
+  coalesce(unmapped_line_count, 0) as unmapped_line_count,
+  coalesce(barcode_blocked_line_count, 0) as barcode_blocked_line_count,
   case
-    when lower(coalesce(i.order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(i.invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(d.internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(d.warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+    when lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       then 'COMPLETED'
-    when nullif(d.internal_order_id, '') is not null and lower(coalesce(d.warehouse_gate_status, '')) in ('staged','packed','ready','ready_for_delivery') then 'STAGED'
-    when nullif(d.internal_order_id, '') is not null and lower(coalesce(d.warehouse_gate_status, '')) in ('picking','pick_started') then 'PICKING'
-    when nullif(d.internal_order_id, '') is not null then 'INTERNAL_ORDER_CREATED'
-    when coalesce(i.invoice_detail_missing, false) or coalesce(i.line_items_missing, false) then 'BLOCKED_DATA'
-    when coalesce(d.unmapped_line_count, 0) > 0 or coalesce(d.barcode_blocked_line_count, 0) > 0 then 'BLOCKED_MAPPING'
+    when nullif(internal_order_id, '') is not null and lower(coalesce(warehouse_gate_status, '')) in ('staged','packed','ready','ready_for_delivery') then 'STAGED'
+    when nullif(internal_order_id, '') is not null and lower(coalesce(warehouse_gate_status, '')) in ('picking','pick_started') then 'PICKING'
+    when nullif(internal_order_id, '') is not null then 'INTERNAL_ORDER_CREATED'
+    when coalesce(invoice_detail_missing, false) or coalesce(line_items_missing, false) then 'BLOCKED_DATA'
+    when coalesce(unmapped_line_count, 0) > 0 or coalesce(barcode_blocked_line_count, 0) > 0 then 'BLOCKED_MAPPING'
     else 'READY_TO_INTERNALISE'
   end as lifecycle_status,
   case
-    when lower(coalesce(i.order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(i.invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(d.internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
-      or lower(coalesce(d.warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+    when lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+      or lower(coalesce(warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       then false
-    when coalesce(i.invoice_detail_missing, false) or coalesce(i.line_items_missing, false) then false
-    when coalesce(d.unmapped_line_count, 0) > 0 or coalesce(d.barcode_blocked_line_count, 0) > 0 then false
-    when nullif(d.internal_order_id, '') is not null then false
+    when coalesce(invoice_detail_missing, false) or coalesce(line_items_missing, false) then false
+    when coalesce(unmapped_line_count, 0) > 0 or coalesce(barcode_blocked_line_count, 0) > 0 then false
+    when nullif(internal_order_id, '') is not null then false
     else true
   end as can_internalise,
   greatest(
-    coalesce(i.order_updated_at, '1900-01-01'::timestamptz),
-    coalesce(i.last_synced_at, '1900-01-01'::timestamptz),
-    coalesce(d.last_synced_at, '1900-01-01'::timestamptz)
+    coalesce(order_updated_at, '1900-01-01'::timestamptz),
+    coalesce(last_synced_at, '1900-01-01'::timestamptz)
   ) as lifecycle_updated_at
-from inbox i
-full join drafts d
-  on d.external_order_id = i.external_order_id
-  or d.order_number = i.order_number
-  or d.order_number = i.external_order_number;
+from rolled;
 
 grant select on public.v_ecoflow_order_lifecycle_board to authenticated;
