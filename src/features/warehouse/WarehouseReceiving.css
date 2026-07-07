@@ -1,0 +1,62 @@
+.receive-scan-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(16, 47, 40, .14);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.receive-scan-card > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.receive-scan-card b {
+  color: #102f28;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.receive-scan-card span {
+  color: #60716a;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.receive-scan-card.receive-known {
+  border-color: rgba(15, 107, 67, .28);
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(238,247,241,.96));
+}
+
+.receive-scan-card.receive-unknown {
+  border-color: rgba(213, 121, 18, .28);
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,248,236,.96));
+}
+
+.qty-confirm-warning {
+  border-radius: 999px;
+  background: rgba(213, 121, 18, .14);
+  color: #8a4f0e !important;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .receive-scan-card {
+    display: grid;
+  }
+
+  .receive-scan-card button,
+  .qty-confirm-warning {
+    justify-content: center;
+    width: 100%;
+  }
+}
