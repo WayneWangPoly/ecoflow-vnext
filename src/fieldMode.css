@@ -156,9 +156,23 @@ a.inventory-location-map-link:focus-visible {
   background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,248,236,.96)) !important;
 }
 
+.quick-customer-mode-hint {
+  border-radius: 12px;
+  background: rgba(213, 121, 18, .12);
+  color: #6e410e;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.quick-customer-mode-hint b {
+  color: #102f28;
+}
+
 .quick-customer-grid {
   display: grid;
-  grid-template-columns: minmax(160px, .9fr) minmax(120px, .7fr) minmax(220px, 1.2fr) minmax(160px, 1fr) 90px 120px minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(190px, 1fr) minmax(160px, .8fr) minmax(130px, .7fr) minmax(240px, 1.15fr) minmax(170px, .9fr) 90px 120px minmax(220px, 1.1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
   gap: 10px;
   align-items: end;
 }
@@ -187,6 +201,13 @@ a.inventory-location-map-link:focus-visible {
   color: #102f28;
   padding: 0 12px;
   font-weight: 850;
+}
+
+.quick-customer-grid input:disabled,
+.quick-customer-grid select:disabled {
+  background: #eef1ee;
+  color: #91a099;
+  cursor: not-allowed;
 }
 
 .quick-customer-save {
@@ -225,7 +246,13 @@ a.inventory-location-map-link:focus-visible {
   color: #922a20;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1400px) {
+  .quick-customer-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+@media (max-width: 820px) {
   .quick-customer-grid {
     grid-template-columns: 1fr 1fr;
   }
