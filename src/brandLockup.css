@@ -174,7 +174,8 @@
 
 .orders-workflow-more,
 .orders-workflow-empty,
-.orders-archive-note {
+.orders-archive-note,
+.orders-active-note {
   border-radius: 12px;
   padding: 10px 12px;
   background: rgba(96, 113, 106, .1);
@@ -182,11 +183,16 @@
   font-weight: 850;
 }
 
-.orders-archive-note {
+.orders-archive-note,
+.orders-active-note {
   margin: 0 0 14px;
 }
 
 .orders-row-archived {
+  display: none !important;
+}
+
+.orders-active-table .table-row:nth-of-type(n+82) {
   display: none !important;
 }
 
