@@ -1,0 +1,63 @@
+.pick-stock-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 8px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 850;
+  margin: 8px 0;
+}
+
+.pick-stock-strip.stock-ok {
+  background: rgba(15, 107, 67, .1);
+  color: #0f6b43;
+}
+
+.pick-stock-strip.stock-warn {
+  background: rgba(213, 121, 18, .14);
+  color: #8a4f0e;
+}
+
+.pick-location {
+  text-decoration: none;
+}
+
+.pick-location:hover {
+  text-decoration: underline;
+}
+
+.pick-stock-short {
+  border-color: rgba(213, 121, 18, .28) !important;
+}
+
+.pick-scan-button.scan-invalid {
+  border-color: rgba(192, 50, 33, .35) !important;
+  color: #9a2a1f !important;
+  background: rgba(192, 50, 33, .08) !important;
+}
+
+.pick-live-error,
+.pick-persist-error {
+  border-color: rgba(192, 50, 33, .22) !important;
+  color: #8f2c22 !important;
+  background: rgba(192, 50, 33, .08) !important;
+}
+
+.pick-persist-message {
+  color: #0f6b43 !important;
+  font-weight: 850;
+}
+
+.driver-primary-button:disabled,
+.confirm-in-row:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  filter: grayscale(.2);
+}
+
+@media (max-width: 520px) {
+  .pick-stock-strip {
+    grid-template-columns: 1fr;
+  }
+}
