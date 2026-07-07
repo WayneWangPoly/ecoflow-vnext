@@ -78,6 +78,27 @@ export type PickWarehouseStockResult = {
   remaining_quantity: number | string;
 };
 
+export type CustomerStockDrawdownInput = {
+  customerName: string;
+  sku: string;
+  quantity: number;
+  unitLevel: 'carton' | 'sleeve' | 'each' | 'unknown';
+  barcode?: string;
+  note?: string;
+  locationCode?: string;
+  customerReference?: string;
+  productName?: string;
+};
+
+export type CustomerStockDrawdownResult = {
+  issue_id: string;
+  issue_no: string;
+  location_code: string;
+  sku: string;
+  issued_quantity: number | string;
+  remaining_quantity: number | string;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -146,4 +167,22 @@ export async function pickWarehouseStock(input: PickWarehouseStockInput, client?
 
   if (error) throw error;
   return (data ?? []) as PickWarehouseStockResult[];
+}
+
+export async function recordCustomerStockDrawdown(input: CustomerStockDrawdownInput, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_record_customer_stock_issue', {
+    p_customer_name: input.customerName,
+    p_sku: input.sku,
+    p_quantity: input.quantity,
+    p_unit_level: input.unitLevel,
+    p_barcode: input.barcode ?? null,
+    p_note: input.note ?? null,
+    p_location_code: input.locationCode ?? null,
+    p_customer_reference: input.customerReference ?? null,
+    p_product_name: input.productName ?? null,
+  });
+
+  if (error) throw error;
+  return (data ?? []) as CustomerStockDrawdownResult[];
 }
