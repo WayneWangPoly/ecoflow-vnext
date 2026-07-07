@@ -35,27 +35,6 @@ export function EmailLoginScreen({
     }
   }
 
-  async function resetPassword() {
-    if (!email.trim()) {
-      setError('Enter your email first.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      });
-      if (resetError) throw resetError;
-      setMessage('Password reset email sent. Check your inbox.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <main className="login-page">
       <section className="login-card">
@@ -67,7 +46,6 @@ export function EmailLoginScreen({
           </div>
         </div>
         <h1>Sign in</h1>
-        <p>Use your own work email and password. Shared role passcodes are no longer used for production access.</p>
         <label htmlFor="email">Email</label>
         <input
           id="email"
@@ -92,8 +70,8 @@ export function EmailLoginScreen({
         <button className="primary-button" type="button" disabled={loading || !email.trim() || !password} onClick={() => void signIn()}>
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
-        <button type="button" disabled={loading} onClick={() => void resetPassword()}>
-          Reset password
+        <button type="button" disabled={loading} onClick={() => setMessage('Ask the owner/admin to set a password. No reset email is sent from this screen.')}>
+          Need access
         </button>
       </section>
     </main>
