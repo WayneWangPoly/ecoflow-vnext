@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
 import {
+  loadCustomerOpsQueue,
   loadInventoryLocationSummaries,
   loadWarehouseLocationItems,
   recordCustomerStockDrawdown,
+  updateCustomerOpsStatus,
+  type CustomerOpsQueueRow,
+  type CustomerOpsStatus,
   type InventoryLocationSummaryRow,
   type WarehouseLocationItemRow,
 } from '@/data/repositories/warehouseLocations';
@@ -33,6 +37,12 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function formatTime(value?: string | null) {
+  if (!value) return 'not released';
+  try { return new Date(value).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+  catch { return value; }
+}
+
 function renderKey(rows: InventoryLocationSummaryRow[] | null, error: string) {
   const targetSku = new URLSearchParams(window.location.search).get('sku') || '';
   const lastUpdate = rows?.map((row) => `${row.sku}:${row.updated_at ?? ''}:${row.total_quantity ?? ''}`).join('|') ?? 'loading';
@@ -44,8 +54,21 @@ function warehouseRenderKey(rows: WarehouseLocationItemRow[] | null, error: stri
   return `${error}|${lastUpdate}`;
 }
 
+function opsQueueRenderKey(rows: CustomerOpsQueueRow[] | null, error: string, mode: string) {
+  const body = rows?.map((row) => `${row.id}:${row.ops_status}:${row.updated_at ?? ''}`).join('|') ?? 'loading';
+  return `${mode}|${error}|${body}`;
+}
+
 function liveStockRows(rows: WarehouseLocationItemRow[] | null) {
   return (rows ?? []).filter((row) => row.item_id && row.sku && numberValue(row.quantity) > 0);
+}
+
+function opsStatusLabel(status: CustomerOpsStatus) {
+  if (status === 'RELEASED_TO_WAREHOUSE') return 'Released to warehouse';
+  if (status === 'PICKED') return 'Picked / ready for driver';
+  if (status === 'OUT_FOR_DELIVERY') return 'With driver';
+  if (status === 'DELIVERED') return 'Delivered';
+  return 'Cancelled';
 }
 
 export function FieldModeEnhancer() {
@@ -56,7 +79,16 @@ export function FieldModeEnhancer() {
     let warehouseRows: WarehouseLocationItemRow[] | null = null;
     let warehouseError = '';
     let warehouseLoading: Promise<void> | null = null;
+    let opsRows: CustomerOpsQueueRow[] | null = null;
+    let opsError = '';
+    let opsLoading: Promise<void> | null = null;
     let quickPanelScrolled = false;
+
+    async function reloadOpsQueue() {
+      opsRows = await loadCustomerOpsQueue();
+      opsError = '';
+      document.querySelectorAll<HTMLElement>('.quick-ops-panel').forEach((panel) => { panel.dataset.renderKey = ''; });
+    }
 
     function openRequestedInventoryTab() {
       const params = new URLSearchParams(window.location.search);
@@ -73,9 +105,7 @@ export function FieldModeEnhancer() {
         const button = card.querySelector<HTMLButtonElement>('button.primary-button');
         if (!button) return;
         button.textContent = 'Open map';
-        button.onclick = () => {
-          window.location.assign('/warehouse-map?quickIssue=1');
-        };
+        button.onclick = () => { window.location.assign('/warehouse-map?quickIssue=1'); };
       });
     }
 
@@ -164,18 +194,9 @@ export function FieldModeEnhancer() {
       renderInventoryPanel(panel);
       if (!inventoryRows && !inventoryLoading) {
         inventoryLoading = loadInventoryLocationSummaries()
-          .then((rows) => {
-            inventoryRows = rows;
-            inventoryError = '';
-          })
-          .catch((error) => {
-            inventoryRows = [];
-            inventoryError = error instanceof Error ? error.message : String(error);
-          })
-          .finally(() => {
-            inventoryLoading = null;
-            patchInventoryLocationsPanel();
-          });
+          .then((rows) => { inventoryRows = rows; inventoryError = ''; })
+          .catch((error) => { inventoryRows = []; inventoryError = error instanceof Error ? error.message : String(error); })
+          .finally(() => { inventoryLoading = null; patchInventoryLocationsPanel(); });
       }
     }
 
@@ -213,16 +234,12 @@ export function FieldModeEnhancer() {
 
       const modeHint = document.createElement('div');
       modeHint.className = 'quick-customer-mode-hint';
-      modeHint.innerHTML = '<b>Owner onsite</b>: no warehouse/driver release. <b>Warehouse + driver</b>: release to operations queue and keep delivery details for the driver.';
+      modeHint.innerHTML = '<b>Owner onsite</b>: no warehouse/driver release. <b>Warehouse + driver</b>: release to staff mobile queue; it does not change normal A–F route labels.';
       panel.appendChild(modeHint);
 
       const skuMap = new Map<string, WarehouseLocationItemRow[]>();
-      rows.forEach((row) => {
-        if (!row.sku) return;
-        skuMap.set(row.sku, [...(skuMap.get(row.sku) ?? []), row]);
-      });
+      rows.forEach((row) => { if (row.sku) skuMap.set(row.sku, [...(skuMap.get(row.sku) ?? []), row]); });
       const skuList = Array.from(skuMap.keys()).sort((a, b) => a.localeCompare(b));
-
       const form = document.createElement('div');
       form.className = 'quick-customer-grid';
 
@@ -242,7 +259,6 @@ export function FieldModeEnhancer() {
       opsOption.value = 'OPS_DELIVERY';
       opsOption.textContent = 'Warehouse + driver delivery';
       mode.append(onsiteOption, opsOption);
-
       const customer = document.createElement('input');
       customer.placeholder = 'Store / customer name';
       const reference = document.createElement('input');
@@ -290,8 +306,7 @@ export function FieldModeEnhancer() {
       }
 
       function refreshLocationOptions() {
-        const selectedSku = sku.value;
-        const options = (skuMap.get(selectedSku) ?? []).filter((row) => numberValue(row.quantity) > 0);
+        const options = (skuMap.get(sku.value) ?? []).filter((row) => numberValue(row.quantity) > 0);
         location.textContent = '';
         options.forEach((row) => {
           const option = document.createElement('option');
@@ -347,6 +362,7 @@ export function FieldModeEnhancer() {
           deliveryAddress.value = '';
           driverNote.value = '';
           warehouseRows = await loadWarehouseLocationItems();
+          if (ops) await reloadOpsQueue();
           panel.dataset.renderKey = '';
           renderQuickCustomerPanel(panel);
         } catch (error) {
@@ -358,20 +374,145 @@ export function FieldModeEnhancer() {
         }
       };
 
-      form.append(
-        labelWrap('Mode', mode),
-        labelWrap('Customer', customer),
-        labelWrap('Reference', reference),
-        labelWrap('SKU', sku),
-        labelWrap('Location', location),
-        labelWrap('Qty', qty),
-        labelWrap('Unit', unit),
-        labelWrap('Delivery address', deliveryAddress),
-        labelWrap('Driver note', driverNote),
-        labelWrap('Note', note),
-        save
-      );
+      form.append(labelWrap('Mode', mode), labelWrap('Customer', customer), labelWrap('Reference', reference), labelWrap('SKU', sku), labelWrap('Location', location), labelWrap('Qty', qty), labelWrap('Unit', unit), labelWrap('Delivery address', deliveryAddress), labelWrap('Driver note', driverNote), labelWrap('Note', note), save);
       panel.append(form, status);
+    }
+
+    function renderOpsQueuePanel(panel: HTMLElement, mode: 'warehouse' | 'driver') {
+      const nextKey = opsQueueRenderKey(opsRows, opsError, mode);
+      if (panel.dataset.renderKey === nextKey) return;
+      panel.dataset.renderKey = nextKey;
+      panel.textContent = '';
+
+      const head = document.createElement('div');
+      head.className = 'driver-card-head quick-ops-head';
+      const title = document.createElement('h2');
+      title.textContent = mode === 'warehouse' ? 'Quick customer handoff' : 'Quick deliveries';
+      const meta = document.createElement('span');
+      meta.textContent = opsError ? 'schema pending' : opsRows ? `${opsRows.length} open` : 'loading';
+      head.append(title, meta);
+      panel.appendChild(head);
+
+      const hint = document.createElement('p');
+      hint.className = 'driver-card-meta quick-ops-policy';
+      hint.textContent = 'Sorting rule: normal Ordermentum stops and A–F labels stay unchanged. Quick items use QI number only; driver handles them as separate add-ons after/around the normal run.';
+      panel.appendChild(hint);
+
+      if (opsError || !opsRows) {
+        const note = document.createElement('div');
+        note.className = 'driver-inline-hint';
+        note.textContent = opsError || 'Loading quick customer stock queue…';
+        panel.appendChild(note);
+        return;
+      }
+      if (!opsRows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = 'No released quick customer stock tasks.';
+        panel.appendChild(empty);
+        return;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'quick-ops-list';
+      opsRows.forEach((row) => {
+        const card = document.createElement('article');
+        card.className = `quick-ops-row quick-ops-${row.ops_status.toLowerCase()}`;
+        const copy = document.createElement('div');
+        copy.className = 'quick-ops-copy';
+        const titleLine = document.createElement('strong');
+        titleLine.textContent = `${row.issue_no} · ${row.customer_name}`;
+        const skuLine = document.createElement('span');
+        skuLine.textContent = `${row.quantity} ${row.unit_level} · ${row.sku}${row.product_name ? ` · ${row.product_name}` : ''}`;
+        const detail = document.createElement('small');
+        detail.textContent = `${row.location_code || 'no location'} · ${opsStatusLabel(row.ops_status)} · released ${formatTime(row.released_at)}`;
+        const address = document.createElement('small');
+        address.textContent = row.delivery_address ? `Deliver: ${row.delivery_address}` : 'No delivery address on record';
+        const note = document.createElement('small');
+        note.textContent = [row.driver_note, row.note].filter(Boolean).join(' · ') || 'No driver note';
+        copy.append(titleLine, skuLine, detail, address, note);
+
+        const actions = document.createElement('div');
+        actions.className = 'quick-ops-actions';
+        const chip = document.createElement('span');
+        chip.className = 'quick-ops-label-chip';
+        chip.textContent = 'NO A–F LABEL · USE QI';
+        actions.appendChild(chip);
+
+        function addAction(label: string, next: CustomerOpsStatus, actionNote: string) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'driver-ghost-button quick-ops-action';
+          button.textContent = label;
+          button.onclick = async () => {
+            button.setAttribute('disabled', 'true');
+            button.textContent = 'Saving…';
+            try {
+              await updateCustomerOpsStatus({ issueId: row.id, opsStatus: next, note: actionNote });
+              await reloadOpsQueue();
+              panel.dataset.renderKey = '';
+              renderOpsQueuePanel(panel, mode);
+            } catch (error) {
+              button.textContent = error instanceof Error ? error.message : 'Failed';
+              button.classList.add('quick-ops-action-error');
+            }
+          };
+          actions.appendChild(button);
+        }
+
+        if (mode === 'warehouse' && row.ops_status === 'RELEASED_TO_WAREHOUSE') addAction('Picked for driver', 'PICKED', 'Warehouse picked quick customer stock');
+        if (mode === 'driver' && row.ops_status === 'PICKED') addAction('Take on run', 'OUT_FOR_DELIVERY', 'Driver took quick customer stock');
+        if (mode === 'driver' && row.ops_status === 'OUT_FOR_DELIVERY') addAction('Delivered', 'DELIVERED', 'Driver completed quick customer stock delivery');
+        if (mode === 'driver' && row.ops_status === 'RELEASED_TO_WAREHOUSE') {
+          const wait = document.createElement('span');
+          wait.className = 'quick-ops-waiting';
+          wait.textContent = 'Waiting for warehouse pick';
+          actions.appendChild(wait);
+        }
+
+        card.append(copy, actions);
+        list.appendChild(card);
+      });
+      panel.appendChild(list);
+    }
+
+    function ensureOpsData(afterLoad: () => void) {
+      if (opsRows || opsError) return;
+      if (!opsLoading) {
+        opsLoading = loadCustomerOpsQueue()
+          .then((rows) => { opsRows = rows; opsError = ''; })
+          .catch((error) => { opsRows = []; opsError = error instanceof Error ? error.message : String(error); })
+          .finally(() => { opsLoading = null; afterLoad(); });
+      }
+    }
+
+    function patchWarehouseMobileOpsPanel() {
+      const title = document.querySelector<HTMLElement>('.mobile-title h1');
+      if (title?.textContent?.trim() !== 'Warehouse') return;
+      const host = document.querySelector<HTMLElement>('.mobile-content');
+      const tabs = document.querySelector<HTMLElement>('.mobile-tabs');
+      if (!host || !tabs) return;
+      let panel = document.querySelector<HTMLElement>('.warehouse-mobile-quick-ops-panel');
+      if (!panel) {
+        panel = document.createElement('section');
+        panel.className = 'mobile-card quick-ops-panel warehouse-mobile-quick-ops-panel';
+        tabs.insertAdjacentElement('afterend', panel);
+      }
+      renderOpsQueuePanel(panel, 'warehouse');
+      ensureOpsData(patchWarehouseMobileOpsPanel);
+    }
+
+    function patchDriverMobileOpsPanel() {
+      const content = document.querySelector<HTMLElement>('.driver-content');
+      if (!content) return;
+      let panel = document.querySelector<HTMLElement>('.driver-mobile-quick-ops-panel');
+      if (!panel) {
+        panel = document.createElement('section');
+        panel.className = 'driver-card quick-ops-panel driver-mobile-quick-ops-panel';
+        content.insertAdjacentElement('afterbegin', panel);
+      }
+      renderOpsQueuePanel(panel, 'driver');
+      ensureOpsData(patchDriverMobileOpsPanel);
     }
 
     function patchQuickCustomerStockPanel() {
@@ -391,18 +532,9 @@ export function FieldModeEnhancer() {
       }
       if (!warehouseRows && !warehouseLoading) {
         warehouseLoading = loadWarehouseLocationItems()
-          .then((rows) => {
-            warehouseRows = rows;
-            warehouseError = '';
-          })
-          .catch((error) => {
-            warehouseRows = [];
-            warehouseError = error instanceof Error ? error.message : String(error);
-          })
-          .finally(() => {
-            warehouseLoading = null;
-            patchQuickCustomerStockPanel();
-          });
+          .then((rows) => { warehouseRows = rows; warehouseError = ''; })
+          .catch((error) => { warehouseRows = []; warehouseError = error instanceof Error ? error.message : String(error); })
+          .finally(() => { warehouseLoading = null; patchQuickCustomerStockPanel(); });
       }
     }
 
@@ -435,6 +567,8 @@ export function FieldModeEnhancer() {
       patchInventoryMapEntry();
       patchInventoryLocationsPanel();
       patchQuickCustomerStockPanel();
+      patchWarehouseMobileOpsPanel();
+      patchDriverMobileOpsPanel();
       patchCompletedLabels();
     }
 
