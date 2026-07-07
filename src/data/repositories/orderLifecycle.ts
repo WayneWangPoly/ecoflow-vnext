@@ -60,3 +60,15 @@ export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as OrderLifecycleRow[];
 }
+
+export async function loadOrderLifecycleArchive(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_order_lifecycle_board')
+    .select('*')
+    .order('lifecycle_updated_at', { ascending: false })
+    .limit(1000);
+
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as OrderLifecycleRow[];
+}
