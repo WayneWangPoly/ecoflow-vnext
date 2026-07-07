@@ -102,6 +102,29 @@ export type CustomerStockDrawdownResult = {
   remaining_quantity: number | string;
 };
 
+export type CustomerOpsStatus = 'RELEASED_TO_WAREHOUSE' | 'PICKED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
+
+export type CustomerOpsQueueRow = {
+  id: string;
+  issue_no: string;
+  customer_name: string;
+  customer_reference: string | null;
+  sku: string;
+  product_name: string | null;
+  barcode: string | null;
+  unit_level: 'carton' | 'sleeve' | 'each' | 'unknown';
+  quantity: number | string;
+  location_code: string | null;
+  note: string | null;
+  delivery_address: string | null;
+  driver_note: string | null;
+  ops_status: CustomerOpsStatus;
+  bill_status: 'TO_BILL' | 'BILLED' | 'NO_CHARGE' | 'CANCELLED';
+  released_at: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -140,6 +163,19 @@ export async function loadReceivingBarcodeLookup(client?: SupabaseClient | null)
 
   if (error) throw error;
   return (data ?? []) as ReceivingBarcodeLookupRow[];
+}
+
+export async function loadCustomerOpsQueue(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_customer_stock_issues_ops_queue')
+    .select('*')
+    .order('ops_status', { ascending: true })
+    .order('released_at', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as CustomerOpsQueueRow[];
 }
 
 export async function receiveWarehouseStock(input: ReceiveWarehouseStockInput, client?: SupabaseClient | null) {
@@ -191,4 +227,16 @@ export async function recordCustomerStockDrawdown(input: CustomerStockDrawdownIn
 
   if (error) throw error;
   return (data ?? []) as CustomerStockDrawdownResult[];
+}
+
+export async function updateCustomerOpsStatus(input: { issueId: string; opsStatus: CustomerOpsStatus; note?: string }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_update_customer_stock_issue_ops_status', {
+    p_issue_id: input.issueId,
+    p_ops_status: input.opsStatus,
+    p_note: input.note ?? null,
+  });
+
+  if (error) throw error;
+  return data;
 }
