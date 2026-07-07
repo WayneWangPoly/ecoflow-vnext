@@ -1,6 +1,7 @@
 button,
 a.primary-button,
-a.warehouse-map-back {
+a.warehouse-map-back,
+a.inventory-map-link {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: transform .08s ease, filter .08s ease, box-shadow .08s ease, border-color .08s ease, background .08s ease;
@@ -8,14 +9,16 @@ a.warehouse-map-back {
 
 button:active,
 a.primary-button:active,
-a.warehouse-map-back:active {
+a.warehouse-map-back:active,
+a.inventory-map-link:active {
   transform: translateY(1px) scale(.985);
   filter: brightness(.96);
 }
 
 button:focus-visible,
 a.primary-button:focus-visible,
-a.warehouse-map-back:focus-visible {
+a.warehouse-map-back:focus-visible,
+a.inventory-map-link:focus-visible {
   outline: 4px solid rgba(15, 125, 81, .24);
   outline-offset: 2px;
 }
@@ -30,4 +33,81 @@ a.warehouse-map-back:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.brand-logo-image,
+.brand-wide-image {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  min-width: 0;
+  width: auto;
+  height: auto;
+}
+
+.brand-logo-image img,
+.brand-wide-image img {
+  display: block;
+  width: auto;
+  max-width: 174px;
+  max-height: 54px;
+  object-fit: contain;
+}
+
+.brand-logo-large img {
+  max-width: 340px;
+  max-height: 108px;
+}
+
+.brand-logo-fallback,
+.brand-wide-fallback {
+  display: none;
+  color: #0d4f2f;
+  font-weight: 950;
+  letter-spacing: -.04em;
+}
+
+.brand-logo-image img[src="/ecoflow-logo.png"] + .brand-logo-fallback,
+.brand-wide-image img[src="/ecoflow-logo.png"] + .brand-wide-fallback {
+  display: none;
+}
+
+.sidebar-brand .brand-logo-image img {
+  max-width: 148px;
+  max-height: 42px;
+}
+
+.sidebar-brand > div:not(.brand-logo) {
+  display: none;
+}
+
+.topbar-title .brand-logo {
+  display: none !important;
+}
+
+.inventory-map-link {
+  min-height: 42px;
+  border-radius: 12px;
+  background: #0f7d51;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  font-weight: 950;
+  text-decoration: none;
+  box-shadow: 0 10px 24px rgba(15, 125, 81, .18);
+}
+
+.inventory-map-link.secondary {
+  background: #102f28;
+}
+
+.inventory-map-action-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 14px;
 }
