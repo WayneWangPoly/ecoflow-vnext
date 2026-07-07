@@ -2,6 +2,13 @@ import { useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BrandMark } from '@/app/Brand';
 
+function friendlyResetError(message: string) {
+  if (message.toLowerCase().includes('rate limit')) {
+    return 'Too many password reset emails. Try again later or ask an owner/admin to set the password directly.';
+  }
+  return message;
+}
+
 export function EmailLoginScreen({
   supabase,
   authError,
@@ -30,6 +37,28 @@ export function EmailLoginScreen({
       onSignedIn();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!email.trim()) {
+      setError('Enter your email first.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      });
+      if (resetError) throw resetError;
+      setMessage('Password reset email sent.');
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      setError(friendlyResetError(raw));
     } finally {
       setLoading(false);
     }
@@ -70,8 +99,8 @@ export function EmailLoginScreen({
         <button className="primary-button" type="button" disabled={loading || !email.trim() || !password} onClick={() => void signIn()}>
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
-        <button type="button" disabled={loading} onClick={() => setMessage('Ask the owner/admin to set a password. No reset email is sent from this screen.')}>
-          Need access
+        <button type="button" disabled={loading || !email.trim()} onClick={() => void resetPassword()}>
+          Reset password
         </button>
       </section>
     </main>
