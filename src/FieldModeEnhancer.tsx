@@ -56,6 +56,7 @@ export function FieldModeEnhancer() {
     let warehouseRows: WarehouseLocationItemRow[] | null = null;
     let warehouseError = '';
     let warehouseLoading: Promise<void> | null = null;
+    let quickPanelScrolled = false;
 
     function openRequestedInventoryTab() {
       const params = new URLSearchParams(window.location.search);
@@ -189,7 +190,7 @@ export function FieldModeEnhancer() {
       const title = document.createElement('h2');
       title.textContent = 'Quick customer stock';
       const meta = document.createElement('span');
-      meta.textContent = warehouseError ? 'schema pending' : warehouseRows ? 'To bill later' : 'loading';
+      meta.textContent = warehouseError ? 'schema pending' : warehouseRows ? 'Choose owner take-away or driver delivery' : 'loading';
       head.append(title, meta);
       panel.appendChild(head);
 
@@ -210,6 +211,11 @@ export function FieldModeEnhancer() {
         return;
       }
 
+      const modeHint = document.createElement('div');
+      modeHint.className = 'quick-customer-mode-hint';
+      modeHint.innerHTML = '<b>Owner onsite</b>: no warehouse/driver release. <b>Warehouse + driver</b>: release to operations queue and keep delivery details for the driver.';
+      panel.appendChild(modeHint);
+
       const skuMap = new Map<string, WarehouseLocationItemRow[]>();
       rows.forEach((row) => {
         if (!row.sku) return;
@@ -227,6 +233,15 @@ export function FieldModeEnhancer() {
         wrap.append(span, field);
         return wrap;
       }
+
+      const mode = document.createElement('select');
+      const onsiteOption = document.createElement('option');
+      onsiteOption.value = 'OWNER_ONSITE';
+      onsiteOption.textContent = 'Owner onsite / no release';
+      const opsOption = document.createElement('option');
+      opsOption.value = 'OPS_DELIVERY';
+      opsOption.textContent = 'Warehouse + driver delivery';
+      mode.append(onsiteOption, opsOption);
 
       const customer = document.createElement('input');
       customer.placeholder = 'Store / customer name';
@@ -252,6 +267,10 @@ export function FieldModeEnhancer() {
         option.textContent = value;
         unit.appendChild(option);
       });
+      const deliveryAddress = document.createElement('input');
+      deliveryAddress.placeholder = 'Delivery address / route note';
+      const driverNote = document.createElement('input');
+      driverNote.placeholder = 'Driver instruction';
       const note = document.createElement('input');
       note.placeholder = 'Reason / who approved';
       const save = document.createElement('button');
@@ -260,6 +279,15 @@ export function FieldModeEnhancer() {
       save.textContent = 'Save for billing';
       const status = document.createElement('div');
       status.className = 'quick-customer-status';
+
+      function refreshModeFields() {
+        const ops = mode.value === 'OPS_DELIVERY';
+        deliveryAddress.disabled = !ops;
+        driverNote.disabled = !ops;
+        deliveryAddress.placeholder = ops ? 'Delivery address / route note' : 'Not needed when owner is onsite';
+        driverNote.placeholder = ops ? 'Driver instruction' : 'Not released to driver';
+        save.textContent = ops ? 'Release to warehouse + driver' : 'Save owner onsite stock';
+      }
 
       function refreshLocationOptions() {
         const selectedSku = sku.value;
@@ -275,14 +303,22 @@ export function FieldModeEnhancer() {
         unit.value = first?.unit_level || 'carton';
       }
 
+      mode.onchange = refreshModeFields;
       sku.onchange = refreshLocationOptions;
       refreshLocationOptions();
+      refreshModeFields();
 
       save.onclick = async () => {
         const selectedRow = (skuMap.get(sku.value) ?? []).find((row) => row.location_code === location.value) ?? skuMap.get(sku.value)?.[0];
         const amount = Number(qty.value);
+        const ops = mode.value === 'OPS_DELIVERY';
         if (!customer.value.trim() || !sku.value || !Number.isFinite(amount) || amount <= 0) {
           status.textContent = 'Customer, SKU and positive qty are required.';
+          status.className = 'quick-customer-status error';
+          return;
+        }
+        if (ops && !deliveryAddress.value.trim()) {
+          status.textContent = 'Delivery address or route note is required when releasing to warehouse/driver.';
           status.className = 'quick-customer-status error';
           return;
         }
@@ -299,11 +335,17 @@ export function FieldModeEnhancer() {
             unitLevel: unit.value as 'carton' | 'sleeve' | 'each' | 'unknown',
             locationCode: location.value || undefined,
             note: note.value.trim() || undefined,
+            fulfilmentMode: mode.value as 'OWNER_ONSITE' | 'OPS_DELIVERY',
+            deliveryAddress: ops ? deliveryAddress.value.trim() : undefined,
+            driverNote: ops ? driverNote.value.trim() || undefined : undefined,
           });
-          status.textContent = result.length ? `Saved ${result[0].issue_no} · ${amount} ${unit.value} · ${customer.value.trim()} · TO_BILL` : 'Saved for billing.';
+          const tag = ops ? 'RELEASED_TO_WAREHOUSE · TO_BILL' : 'NOT_RELEASED · TO_BILL';
+          status.textContent = result.length ? `Saved ${result[0].issue_no} · ${amount} ${unit.value} · ${customer.value.trim()} · ${tag}` : `Saved · ${tag}`;
           status.className = 'quick-customer-status ok';
           qty.value = '1';
           note.value = '';
+          deliveryAddress.value = '';
+          driverNote.value = '';
           warehouseRows = await loadWarehouseLocationItems();
           panel.dataset.renderKey = '';
           renderQuickCustomerPanel(panel);
@@ -312,17 +354,20 @@ export function FieldModeEnhancer() {
           status.className = 'quick-customer-status error';
         } finally {
           save.removeAttribute('disabled');
-          save.textContent = 'Save for billing';
+          refreshModeFields();
         }
       };
 
       form.append(
+        labelWrap('Mode', mode),
         labelWrap('Customer', customer),
         labelWrap('Reference', reference),
         labelWrap('SKU', sku),
         labelWrap('Location', location),
         labelWrap('Qty', qty),
         labelWrap('Unit', unit),
+        labelWrap('Delivery address', deliveryAddress),
+        labelWrap('Driver note', driverNote),
         labelWrap('Note', note),
         save
       );
@@ -340,6 +385,10 @@ export function FieldModeEnhancer() {
         bottomGrid?.insertAdjacentElement('afterend', panel) ?? page.appendChild(panel);
       }
       renderQuickCustomerPanel(panel);
+      if (!quickPanelScrolled && new URLSearchParams(window.location.search).get('quickIssue') === '1') {
+        quickPanelScrolled = true;
+        window.setTimeout(() => panel?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 140);
+      }
       if (!warehouseRows && !warehouseLoading) {
         warehouseLoading = loadWarehouseLocationItems()
           .then((rows) => {
