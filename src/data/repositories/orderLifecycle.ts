@@ -6,6 +6,7 @@ export type OrderLifecycleStatus =
   | 'BLOCKED_DATA'
   | 'BLOCKED_MAPPING'
   | 'INTERNAL_ORDER_CREATED'
+  | 'LEGACY_INTERNAL_REVIEW'
   | 'PICKING'
   | 'STAGED'
   | 'COMPLETED';
@@ -54,6 +55,7 @@ export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
     .from('v_ecoflow_order_lifecycle_board')
     .select('*')
     .neq('lifecycle_status', 'COMPLETED')
+    .neq('lifecycle_status', 'LEGACY_INTERNAL_REVIEW')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(30);
 
@@ -67,6 +69,7 @@ export async function loadOrderLifecycleArchive(client?: SupabaseClient | null) 
     .from('v_ecoflow_order_lifecycle_board')
     .select('*')
     .neq('lifecycle_status', 'COMPLETED')
+    .neq('lifecycle_status', 'LEGACY_INTERNAL_REVIEW')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(60);
 
