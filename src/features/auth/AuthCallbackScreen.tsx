@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BrandMark } from '@/app/Brand';
 
+function friendlyAuthError(message: string) {
+  if (message.toLowerCase().includes('code verifier')) {
+    return 'This password reset link was opened without its browser verification state. Request a fresh reset link and open it in this browser.';
+  }
+  return message;
+}
+
 export function AuthCallbackScreen({ supabase }: { supabase: SupabaseClient }) {
-  const [message, setMessage] = useState('Completing secure sign-in…');
+  const [message, setMessage] = useState('Completing sign-in…');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,18 +25,18 @@ export function AuthCallbackScreen({ supabase }: { supabase: SupabaseClient }) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) throw exchangeError;
         } else {
-          // detectSessionInUrl handles older hash-token invite and recovery links.
           const { error: sessionError } = await supabase.auth.getSession();
           if (sessionError) throw sessionError;
         }
 
         if (!active) return;
-        setMessage('Secure session created. Continue to set or confirm your password.');
+        setMessage('Session ready. Opening password page…');
         window.history.replaceState({}, document.title, '/auth/set-password');
-        window.setTimeout(() => window.location.assign('/auth/set-password'), 500);
+        window.setTimeout(() => window.location.assign('/auth/set-password'), 350);
       } catch (err) {
         if (!active) return;
-        setError(err instanceof Error ? err.message : String(err));
+        const raw = err instanceof Error ? err.message : String(err);
+        setError(friendlyAuthError(raw));
       }
     }
 
@@ -45,11 +52,11 @@ export function AuthCallbackScreen({ supabase }: { supabase: SupabaseClient }) {
           <BrandMark large />
           <div>
             <div className="login-brand-name">EcoFlow</div>
-            <div className="login-brand-subtitle">AUTH CALLBACK</div>
+            <div className="login-brand-subtitle">AUTH</div>
           </div>
         </div>
         <h1>{error ? 'Sign-in link failed' : message}</h1>
-        {error ? <div className="error-message">{error}</div> : <p>Please keep this tab open.</p>}
+        {error ? <div className="error-message">{error}</div> : null}
       </section>
     </main>
   );
