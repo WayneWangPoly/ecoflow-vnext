@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   type EcoFlowRole,
+  createTeamLogin,
   inviteTeamMember,
   listTeamInvitations,
   listTeamMembers,
@@ -29,6 +30,7 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [appRole, setAppRole] = useState<EcoFlowRole>('WAREHOUSE');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,6 +65,25 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
       setMessage(`Invitation sent to ${email}.`);
       setEmail('');
       setDisplayName('');
+      setTemporaryPassword('');
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateLogin() {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await createTeamLogin(supabase, { email, displayName, appRole, password: temporaryPassword });
+      setMessage(`Login ready for ${email}. No email was sent.`);
+      setEmail('');
+      setDisplayName('');
+      setTemporaryPassword('');
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -106,7 +127,7 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
       <div className="panel-head">
         <div>
           <h2>Team access</h2>
-          <span>Invite staff with their own email account. Roles control operational access.</span>
+          <span>Invite by email or create a direct internal login.</span>
         </div>
         <span className="pill pill-good">Owner/Admin</span>
       </div>
@@ -127,7 +148,17 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
           </select>
         </label>
         <button className="primary-button" type="button" onClick={() => void handleInvite()} disabled={loading || !email.trim()}>
-          {loading ? 'Sending…' : 'Send invite'}
+          {loading ? 'Working…' : 'Send invite'}
+        </button>
+      </div>
+
+      <div className="settings-panel">
+        <label>
+          <span>Temporary password</span>
+          <input value={temporaryPassword} onChange={(event) => setTemporaryPassword(event.target.value)} type="password" placeholder="At least 10 characters" autoComplete="new-password" />
+        </label>
+        <button className="primary-button" type="button" onClick={() => void handleCreateLogin()} disabled={loading || !email.trim() || temporaryPassword.length < 10}>
+          {loading ? 'Working…' : 'Create login without email'}
         </button>
       </div>
 
@@ -138,7 +169,7 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
       <div className="readiness-grid">
         <div><strong>{members.length}</strong><span>members</span></div>
         <div><strong>{invitedCount}</strong><span>pending invites</span></div>
-        <div><strong>Individual accounts</strong><span>security model</span></div>
+        <div><strong>Direct login</strong><span>no email dependency</span></div>
         <div><strong>Audited roles</strong><span>access control</span></div>
       </div>
 
