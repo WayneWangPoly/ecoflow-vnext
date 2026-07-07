@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -22,7 +23,7 @@ import {
   taskStateFor,
   TROLLEY_CAPACITY
 } from '@/domain/pickPlan';
-import type { BulkPickTask, PickState } from '@/domain/pickPlan';
+import type { BulkPickTask, PickState, PickTaskState } from '@/domain/pickPlan';
 import type { BusinessDay, ImportedOrder } from '@/domain/types';
 import { loadWarehouseLocationItems, pickWarehouseStock, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import { BoxChip } from './Brand';
@@ -109,7 +110,7 @@ function buildWarehouseSkuStock(rows: WarehouseLocationItemRow[]) {
   return map;
 }
 
-function planWarehousePick(task: BulkPickTask, stock: WarehouseSkuStock | undefined, state: ReturnType<typeof taskStateFor>): WarehousePickPlan {
+function planWarehousePick(task: BulkPickTask, stock: WarehouseSkuStock | undefined, state: PickTaskState): WarehousePickPlan {
   const pickCartons = Math.max(0, task.totalCartons - (state.shortCartons || 0));
   const pickSleeves = Math.max(0, task.totalSleeves - (state.shortSleeves || 0));
   const expectedBarcodes = Array.from(new Set([task.barcode, ...(stock?.barcodes || [])].filter((value): value is string => Boolean(value))));
@@ -118,6 +119,7 @@ function planWarehousePick(task: BulkPickTask, stock: WarehouseSkuStock | undefi
   const locations = stock?.locations?.length ? stock.locations.join(' / ') : task.location || '';
   const displayLocation = stock?.primaryLocation || task.location || 'NO LIVE LOC';
   const warnings: string[] = [];
+
   if (!stock) warnings.push('No live warehouse stock for this SKU yet.');
   else {
     if (cartonShortage) warnings.push(`${cartonShortage} carton short from live stock`);
@@ -125,6 +127,7 @@ function planWarehousePick(task: BulkPickTask, stock: WarehouseSkuStock | undefi
     if (stock.hasTempStock) warnings.push('TEMP also has stock — verify before picking.');
   }
   if (locations && locations !== displayLocation) warnings.push(`Other locations: ${locations}`);
+
   return {
     stock: stock || null,
     displayLocation,
@@ -205,11 +208,7 @@ function ScanSheet({ task, expectedBarcodes, onResult, onClose }: {
           <button type="button" className="driver-icon-button" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
         {expectedBarcodes.length ? <div className="driver-inline-hint">Expected: {expectedBarcodes.join(' / ')}</div> : null}
-        {!error ? (
-          <video ref={videoRef} className="scan-video" muted playsInline />
-        ) : (
-          <div className="driver-inline-hint">{error}</div>
-        )}
+        {!error ? <video ref={videoRef} className="scan-video" muted playsInline /> : <div className="driver-inline-hint">{error}</div>}
         <label className="pod-input">
           <span>Or type the code</span>
           <input value={manual} inputMode="numeric" placeholder="Barcode digits" onChange={(event) => setManual(event.target.value)} />
@@ -279,7 +278,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
   orders: ImportedOrder[];
   businessDay: BusinessDay;
   day: DriverDayState;
-  setDay: React.Dispatch<React.SetStateAction<DriverDayState>>;
+  setDay: Dispatch<SetStateAction<DriverDayState>>;
   syncStatus?: PickBoardSyncStatus;
 }) {
   const [view, setView] = useState<PickView>('bulk');
@@ -335,12 +334,13 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
     );
   }
 
-  const pickedCount = countPickedTasks(pick, tasks);
-  const stagedCount = stops.filter((stop) => Boolean(pick.stagedStops[stop.orderId])).length;
+  const activePick: PickState = pick;
+  const pickedCount = countPickedTasks(activePick, tasks);
+  const stagedCount = stops.filter((stop) => Boolean(activePick.stagedStops[stop.orderId])).length;
   const trips = groupIntoTrips(tasks);
   const scanTask = scanSku ? tasks.find((task) => task.sku === scanSku) ?? null : null;
   const shortTask = shortSku ? tasks.find((task) => task.sku === shortSku) ?? null : null;
-  const scanPlan = scanTask ? planWarehousePick(scanTask, warehouseSkuStock.get(scanTask.sku), taskStateFor(pick, scanTask.sku)) : null;
+  const scanPlan = scanTask ? planWarehousePick(scanTask, warehouseSkuStock.get(scanTask.sku), taskStateFor(activePick, scanTask.sku)) : null;
 
   function markPickedLocal(sku: string) {
     patchPick((current) => ({
@@ -350,7 +350,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
   }
 
   async function confirmPicked(task: BulkPickTask) {
-    const state = taskStateFor(pick, task.sku);
+    const state = taskStateFor(activePick, task.sku);
     const plan = planWarehousePick(task, warehouseSkuStock.get(task.sku), state);
     if (!state.scannedValue) {
       setPickPersistErrors((current) => ({ ...current, [task.sku]: 'Scan the product barcode before picking.' }));
@@ -368,7 +368,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
     setSavingPickSku(task.sku);
     setPickPersistErrors((current) => ({ ...current, [task.sku]: '' }));
     try {
-      const moves = [] as string[];
+      const moves: string[] = [];
       if (plan.pickCartons > 0) {
         const result = await pickWarehouseStock({ sku: task.sku, quantity: plan.pickCartons, unitLevel: 'carton', barcode: state.scannedValue, note: 'Picked to dock from bulk pick' });
         moves.push(...result.map((row) => `${row.picked_quantity} ctn from ${row.location_code}`));
@@ -396,13 +396,12 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
 
   function recordScan(sku: string, value: string | null) {
     setScanSku(null);
+    if (!value) return;
     patchPick((current) => ({
       ...current,
       taskState: {
         ...current.taskState,
-        [sku]: value === null
-          ? { ...taskStateFor(current, sku), scanSkipped: true, scannedValue: undefined }
-          : { ...taskStateFor(current, sku), scannedValue: value, scanSkipped: false }
+        [sku]: { ...taskStateFor(current, sku), scannedValue: value, scanSkipped: false }
       }
     }));
   }
@@ -443,7 +442,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
             <span>~{trip.load} boxes{trip.load > TROLLEY_CAPACITY ? ` · ${Math.ceil(trip.load / TROLLEY_CAPACITY)} runs` : ''}</span>
           </div>
           {trip.tasks.map((task) => {
-            const state = taskStateFor(pick, task.sku);
+            const state = taskStateFor(activePick, task.sku);
             const plan = planWarehousePick(task, warehouseSkuStock.get(task.sku), state);
             const scannedValue = state.scannedValue || '';
             const scanDone = Boolean(scannedValue);
@@ -522,8 +521,8 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
 
   const sortView = (
     <div className="pick-stack">
-      {tasks.filter((task) => taskStateFor(pick, task.sku).status === 'PICKED').map((task) => {
-        const allDone = task.allocations.every((allocation) => pick.allocDone[allocKey(task.sku, allocation.orderId)]);
+      {tasks.filter((task) => taskStateFor(activePick, task.sku).status === 'PICKED').map((task) => {
+        const allDone = task.allocations.every((allocation) => activePick.allocDone[allocKey(task.sku, allocation.orderId)]);
         return (
           <article key={task.sku} className={cls('pick-task', allDone && 'done-soft')}>
             <div className="pick-task-top">
@@ -535,7 +534,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
             </div>
             <div className="alloc-grid">
               {task.allocations.map((allocation) => {
-                const done = pick.allocDone[allocKey(task.sku, allocation.orderId)];
+                const done = activePick.allocDone[allocKey(task.sku, allocation.orderId)];
                 return (
                   <button
                     key={allocation.orderId}
@@ -566,9 +565,9 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
         const stopCartons = cartons.filter((carton) => carton.orderId === stop.orderId);
         const mixedCount = stopCartons.filter((carton) => carton.type === 'MIXED').length;
         const relevantTasks = tasks.filter((task) => task.allocations.some((allocation) => allocation.orderId === stop.orderId));
-        const allocatedCount = relevantTasks.filter((task) => pick.allocDone[allocKey(task.sku, stop.orderId)]).length;
-        const complete = stopAllocationsComplete(pick, tasks, stop.orderId);
-        const stagedAt = pick.stagedStops[stop.orderId];
+        const allocatedCount = relevantTasks.filter((task) => activePick.allocDone[allocKey(task.sku, stop.orderId)]).length;
+        const complete = stopAllocationsComplete(activePick, tasks, stop.orderId);
+        const stagedAt = activePick.stagedStops[stop.orderId];
         return (
           <article key={stop.orderId} className={cls('pick-stop-card', stagedAt && 'staged')}>
             <div className="pick-stop-head">
