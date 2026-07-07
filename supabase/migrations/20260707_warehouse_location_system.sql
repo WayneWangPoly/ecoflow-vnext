@@ -1,5 +1,7 @@
 -- EcoFlow warehouse location system
--- Applies the real warehouse map backbone: locations, stock-by-location and movement history.
+-- Real warehouse map backbone: locations, stock-by-location and movement history.
+-- Double-sided racks use L/R in the database location code so each physical face is unique:
+-- A4-L-04-02A / A4-R-04-02A. TEMP and B3 remain simple area/shelf codes.
 
 create extension if not exists pgcrypto;
 
@@ -143,34 +145,45 @@ drop policy if exists ecoflow_warehouse_movements_manage on public.ecoflow_wareh
 create policy ecoflow_warehouse_movements_manage on public.ecoflow_warehouse_movements
 for insert with check (public.ecoflow_can_manage_warehouse());
 
+with generated_locations as (
+  select
+    case
+      when side.side = 'front' then r.rack_id || '-' || lpad(gs.bin::text, 2, '0') || '-' || lvl.level_code || half.half_code
+      else r.rack_id || '-' || side.prefix || '-' || lpad(gs.bin::text, 2, '0') || '-' || lvl.level_code || half.half_code
+    end as location_code,
+    r.rack_id,
+    r.rack_id as rack_title,
+    side.side,
+    lpad(gs.bin::text, 2, '0') as bin_code,
+    lvl.level_code,
+    half.half_code,
+    lvl.display_level,
+    r.category,
+    'BIN'::text as location_type,
+    r.sort_base + gs.bin * 100 + lvl.sort_offset + case half.half_code when 'A' then 1 else 2 end + case side.side when 'left' then 0 when 'right' then 40 else 80 end as sort_order
+  from (
+    values
+      ('A4', 4, null::text, 1000),
+      ('A3', 4, 'Single Wall Cup (ART) / SO5 Bags / Paper Bags', 2000),
+      ('A2', 4, 'Single Wall Cup (White) / Salad / Soup Bowl', 3000),
+      ('A1', 4, null::text, 4000),
+      ('C2', 4, null::text, 5000),
+      ('C1', 4, null::text, 6000)
+  ) as r(rack_id, bins, category, sort_base)
+  cross join lateral generate_series(1, r.bins) as gs(bin)
+  cross join lateral (values ('03','Top', 0), ('02','Middle', 10), ('01','Bottom', 20)) as lvl(level_code, display_level, sort_offset)
+  cross join lateral (values ('A'), ('B')) as half(half_code)
+  cross join lateral (
+    select * from (values ('front','F')) as s(side, prefix) where r.rack_id = 'C1'
+    union all
+    select * from (values ('left','L'), ('right','R')) as s(side, prefix) where r.rack_id <> 'C1'
+  ) as side
+)
 insert into public.ecoflow_warehouse_locations (location_code, rack_id, rack_title, side, bin_code, level_code, half_code, display_level, category, location_type, sort_order)
-select
-  r.rack_id || '-' || lpad(gs.bin::text, 2, '0') || '-' || lvl.level_code || half.half_code,
-  r.rack_id,
-  r.rack_id,
-  side.side,
-  lpad(gs.bin::text, 2, '0'),
-  lvl.level_code,
-  half.half_code,
-  lvl.display_level,
-  r.category,
-  'BIN',
-  r.sort_base + gs.bin * 100 + lvl.sort_offset + case half.half_code when 'A' then 1 else 2 end + case side.side when 'left' then 0 when 'right' then 40 else 80 end
-from (
-  values
-    ('A4', 4, null::text, 1000),
-    ('A3', 4, 'Single Wall Cup (ART) / SO5 Bags / Paper Bags', 2000),
-    ('A2', 4, 'Single Wall Cup (White) / Salad / Soup Bowl', 3000),
-    ('A1', 4, null::text, 4000),
-    ('C2', 4, null::text, 5000),
-    ('C1', 4, null::text, 6000)
-) as r(rack_id, bins, category, sort_base)
-cross join lateral generate_series(1, r.bins) as gs(bin)
-cross join lateral (values ('03','Top', 0), ('02','Middle', 10), ('01','Bottom', 20)) as lvl(level_code, display_level, sort_offset)
-cross join lateral (values ('A'), ('B')) as half(half_code)
-cross join lateral (
-  select unnest(case when r.rack_id = 'C1' then array['front']::text[] else array['left','right']::text[] end) as side
-) as side
+select distinct on (location_code)
+  location_code, rack_id, rack_title, side, bin_code, level_code, half_code, display_level, category, location_type, sort_order
+from generated_locations
+order by location_code, sort_order
 on conflict (location_code) do update set
   rack_id = excluded.rack_id,
   rack_title = excluded.rack_title,
