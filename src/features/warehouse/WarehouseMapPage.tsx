@@ -108,6 +108,15 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function locationCodeFor(rack: RackDefinition, side: RackSide, bin: string, level: LevelCode, half: HalfCode) {
+  if (rack.mode === 'double') return `${rack.id}-${side === 'left' ? 'L' : 'R'}-${bin}-${level}${half}`;
+  return `${rack.id}-${bin}-${level}${half}`;
+}
+
+function inventoryUrlForSku(sku: string) {
+  return `/?tab=inventory&sku=${encodeURIComponent(sku)}`;
+}
+
 function scaffoldLocations() {
   const rows: LocationSlot[] = [];
   RACKS.forEach((rack) => {
@@ -144,7 +153,7 @@ function scaffoldLocations() {
               rackId: rack.id,
               rackTitle: rack.title,
               side,
-              code: `${rack.id}-${bin}-${level}${half}`,
+              code: locationCodeFor(rack, side, bin, level, half),
               bin,
               level,
               half,
@@ -393,6 +402,7 @@ export function WarehouseMapPage() {
         <div className="warehouse-header-actions">
           <span className={`warehouse-live-chip state-${loadState}`}>{loadState === 'live' ? `${liveItemCount} live items` : loadState === 'empty' ? 'Live locations · empty stock' : loadState === 'loading' ? 'Loading live stock' : 'Schema pending'}</span>
           <button className="warehouse-map-back tactile" type="button" onClick={() => void reloadWarehouseData()}>Reload</button>
+          <a className="warehouse-map-back tactile" href="/?tab=inventory">Inventory</a>
           <a className="warehouse-map-back tactile" href="/">Back</a>
         </div>
       </header>
@@ -469,7 +479,7 @@ export function WarehouseMapPage() {
             <span>{selectedLocation.rackTitle} · {SIDE_LABEL[selectedLocation.side]} · {selectedLocation.displayLevel}</span>
             {selectedLocation.items.length ? selectedLocation.items.map((item) => (
               <article key={`${selectedLocation.key}-${item.sku}-${item.unitLevel}`} className="location-item-card">
-                <div><strong>{item.sku}</strong><span>{item.name}</span></div>
+                <div><a className="location-sku-link" href={inventoryUrlForSku(item.sku)}><strong>{item.sku}</strong></a><span>{item.name}</span></div>
                 <div><span>Here</span><b>{item.qty}</b></div>
                 <div><span>Total</span><b>{skuTotals[item.sku] ?? item.totalQty ?? item.qty}</b></div>
                 <div><span>Barcode</span><b>{item.barcode || '—'}</b></div>
