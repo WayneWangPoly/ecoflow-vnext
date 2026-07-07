@@ -38,14 +38,24 @@ function requireSupabase(client?: SupabaseClient | null) {
   return active;
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const parts = [record.message, record.details, record.hint, record.code].filter(Boolean).map(String);
+    return parts.length ? parts.join(' · ') : JSON.stringify(record);
+  }
+  return String(error);
+}
+
 export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
     .from('v_ecoflow_order_lifecycle_board')
     .select('*')
-    .order('lifecycle_updated_at', { ascending: false, nullsFirst: false })
+    .order('lifecycle_updated_at', { ascending: false })
     .limit(500);
 
-  if (error) throw error;
+  if (error) throw new Error(errorMessage(error));
   return (data ?? []) as OrderLifecycleRow[];
 }
