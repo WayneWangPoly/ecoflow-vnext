@@ -52,10 +52,8 @@ function errorMessage(error: unknown) {
 export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
-    .from('v_ecoflow_order_lifecycle_board')
+    .from('v_ecoflow_order_lifecycle_active')
     .select('*')
-    .neq('lifecycle_status', 'COMPLETED')
-    .neq('lifecycle_status', 'LEGACY_INTERNAL_REVIEW')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(30);
 
@@ -66,10 +64,8 @@ export async function loadOrderLifecycleBoard(client?: SupabaseClient | null) {
 export async function loadOrderLifecycleArchive(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
-    .from('v_ecoflow_order_lifecycle_board')
+    .from('v_ecoflow_order_lifecycle_active')
     .select('*')
-    .neq('lifecycle_status', 'COMPLETED')
-    .neq('lifecycle_status', 'LEGACY_INTERNAL_REVIEW')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(60);
 
