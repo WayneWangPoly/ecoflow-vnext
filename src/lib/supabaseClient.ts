@@ -9,7 +9,12 @@ export const supabase = supabaseUrl && supabaseAnonKey
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        flowType: 'pkce',
+        // Email recovery/invite links are often opened from mail apps, another tab,
+        // or another browser. PKCE requires the original code verifier to still be
+        // in local storage, so it breaks those links with "code verifier not found".
+        // This SPA only uses email/password + recovery links, so implicit keeps the
+        // reset-password flow usable for warehouse/driver/owner accounts.
+        flowType: 'implicit',
       },
     })
   : null;
