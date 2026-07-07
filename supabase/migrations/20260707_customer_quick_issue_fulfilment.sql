@@ -36,7 +36,12 @@ alter table public.ecoflow_customer_stock_issues
 
 create index if not exists idx_ecoflow_customer_stock_issues_ops on public.ecoflow_customer_stock_issues(ops_status, released_at desc, created_at desc);
 
-create or replace view public.v_ecoflow_customer_stock_issues_to_bill as
+-- PostgreSQL cannot CREATE OR REPLACE a view when column order/names change.
+-- Drop the old TO_BILL view first, then recreate it with the new fulfilment columns.
+drop view if exists public.v_ecoflow_customer_stock_issues_ops_queue;
+drop view if exists public.v_ecoflow_customer_stock_issues_to_bill;
+
+create view public.v_ecoflow_customer_stock_issues_to_bill as
 select
   id,
   issue_no,
@@ -65,7 +70,7 @@ order by created_at desc;
 
 grant select on public.v_ecoflow_customer_stock_issues_to_bill to authenticated;
 
-create or replace view public.v_ecoflow_customer_stock_issues_ops_queue as
+create view public.v_ecoflow_customer_stock_issues_ops_queue as
 select
   id,
   issue_no,
@@ -91,7 +96,11 @@ order by released_at nulls last, created_at desc;
 
 grant select on public.v_ecoflow_customer_stock_issues_ops_queue to authenticated;
 
-create or replace function public.ecoflow_record_customer_stock_issue(
+-- Replace both the original 9-argument quick issue RPC and the new 12-argument signature.
+drop function if exists public.ecoflow_record_customer_stock_issue(text, text, numeric, text, text, text, text, text, text);
+drop function if exists public.ecoflow_record_customer_stock_issue(text, text, numeric, text, text, text, text, text, text, text, text, text);
+
+create function public.ecoflow_record_customer_stock_issue(
   p_customer_name text,
   p_sku text,
   p_quantity numeric,
