@@ -372,6 +372,8 @@
 .location-item-card span,
 .location-item-card small { color: var(--wm-muted); font-size: 12px; font-weight: 850; }
 .location-item-card b { font-size: 18px; color: var(--wm-deep); }
+.location-sku-link { color: var(--wm-deep); text-decoration: none; display: inline-flex; align-items: center; }
+.location-sku-link:hover { color: var(--wm-green); text-decoration: underline; }
 
 .receive-form-grid { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(160px, .9fr) minmax(90px, .45fr) minmax(140px, .8fr) auto auto; gap: 10px; align-items: end; }
 .receive-form-grid label { display: grid; gap: 6px; min-width: 0; }
