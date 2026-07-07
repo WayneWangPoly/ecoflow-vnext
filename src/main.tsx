@@ -6,6 +6,7 @@ import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import './styles.css';
 import './fieldMode.css';
+import './brandLockup.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
