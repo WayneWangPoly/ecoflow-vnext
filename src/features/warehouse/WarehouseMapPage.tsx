@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
+import {
+  loadWarehouseLocationItems,
+  receiveWarehouseStock,
+  type WarehouseLocationItemRow,
+} from '@/data/repositories/warehouseLocations';
 import './WarehouseMapPage.css';
 import './WarehouseMapInteractions.css';
 
@@ -8,6 +13,7 @@ type RackMode = 'double' | 'single' | 'area';
 type LevelCode = '01' | '02' | '03';
 type HalfCode = 'A' | 'B';
 type StockHealth = 'full' | 'normal' | 'low' | 'critical' | 'empty';
+type LoadState = 'loading' | 'live' | 'empty' | 'offline';
 
 type RackDefinition = {
   id: string;
@@ -30,6 +36,8 @@ type StockItem = {
   name: string;
   barcode: string;
   qty: number;
+  totalQty: number;
+  unitLevel: string;
   category: string;
   recent: string;
 };
@@ -45,7 +53,7 @@ type LocationSlot = {
   level?: LevelCode;
   half?: HalfCode;
   category?: string;
-  confidence: 'draft' | 'verified';
+  confidence: 'empty' | 'live';
   items: StockItem[];
 };
 
@@ -95,47 +103,23 @@ function slotKey(rackId: string, side: RackSide, bin?: string, level?: string, h
   return [rackId, side, bin ?? '', level ?? '', half ?? ''].join(':');
 }
 
-const SEEDED_STOCK: Record<string, StockItem[]> = {
-  [slotKey('A2', 'left', '01', '02', 'A')]: [
-    { sku: 'SWC-WHITE-8OZ', name: 'Single Wall Cup White 8oz', barcode: 'pending-photo-barcode-001', qty: 18, category: 'Single Wall Cup (White)', recent: 'Draft from known A2 category' }
-  ],
-  [slotKey('A2', 'right', '03', '02', 'B')]: [
-    { sku: 'SALAD-BOWL-24OZ', name: 'Salad / Soup Bowl 24oz', barcode: 'pending-photo-barcode-002', qty: 4, category: 'Salad / Soup Bowl', recent: 'Draft position, confirm on site' }
-  ],
-  [slotKey('A3', 'left', '02', '02', 'A')]: [
-    { sku: 'SWC-ART-8OZ', name: 'Single Wall Cup ART 8oz', barcode: 'pending-photo-barcode-003', qty: 23, category: 'Single Wall Cup (ART)', recent: 'Draft from known A3 category' }
-  ],
-  [slotKey('A3', 'right', '04', '01', 'B')]: [
-    { sku: 'SO5-BAG-KRAFT', name: 'SO5 / Paper Bag Kraft', barcode: 'pending-photo-barcode-004', qty: 31, category: 'SO5 Bags / Paper Bags', recent: 'Draft from known A3 category' }
-  ],
-  [slotKey('B3', 'front', undefined, '01')]: [
-    { sku: 'GLOVE-NITRILE', name: 'Nitrile Glove', barcode: 'pending-photo-barcode-005', qty: 22, category: 'Glove', recent: 'B3 bottom shelf known' }
-  ],
-  [slotKey('B3', 'front', undefined, '02')]: [
-    { sku: 'GREASE-PROOF-SHEET', name: 'Grease Paperproof', barcode: 'pending-photo-barcode-006', qty: 11, category: 'Grease Paperproof', recent: 'B3 middle shelf known' }
-  ],
-  [slotKey('B3', 'front', undefined, '03')]: [
-    { sku: 'CUTLERY-KIT', name: 'Cutlery', barcode: 'pending-photo-barcode-007', qty: 5, category: 'Cutlery', recent: 'B3 top shelf known' }
-  ],
-  [slotKey('TEMP', 'front')]: [
-    { sku: 'UNKNOWN-BARCODE-PENDING', name: 'Pending barcode / temporary stock', barcode: 'scan-to-identify', qty: 2, category: 'Temporary', recent: 'Temporary holding area is searchable' }
-  ]
-};
+function numberValue(value: unknown, fallback = 0) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
-function buildLocations() {
+function scaffoldLocations() {
   const rows: LocationSlot[] = [];
   RACKS.forEach((rack) => {
     if (rack.id === 'TEMP') {
-      const key = slotKey('TEMP', 'front');
-      rows.push({ key, rackId: rack.id, rackTitle: rack.title, side: 'front', code: 'TEMP', displayLevel: 'Temporary holding area', confidence: 'draft', items: SEEDED_STOCK[key] ?? [] });
+      rows.push({ key: slotKey('TEMP', 'front'), rackId: rack.id, rackTitle: rack.title, side: 'front', code: 'TEMP', displayLevel: 'Temporary holding area', confidence: 'empty', items: [] });
       return;
     }
 
     if (rack.id === 'B3') {
       (['03', '02', '01'] as LevelCode[]).forEach((level) => {
-        const key = slotKey(rack.id, 'front', undefined, level);
         rows.push({
-          key,
+          key: slotKey(rack.id, 'front', undefined, level),
           rackId: rack.id,
           rackTitle: rack.title,
           side: 'front',
@@ -143,8 +127,8 @@ function buildLocations() {
           level,
           displayLevel: B3_LEVEL_LABEL[level],
           category: B3_LEVEL_LABEL[level].split('·')[1]?.trim(),
-          confidence: 'draft',
-          items: SEEDED_STOCK[key] ?? []
+          confidence: 'empty',
+          items: []
         });
       });
       return;
@@ -155,9 +139,8 @@ function buildLocations() {
       Array.from({ length: rack.bins ?? 4 }, (_, index) => String(index + 1).padStart(2, '0')).forEach((bin) => {
         (['03', '02', '01'] as LevelCode[]).forEach((level) => {
           (['A', 'B'] as HalfCode[]).forEach((half) => {
-            const key = slotKey(rack.id, side, bin, level, half);
             rows.push({
-              key,
+              key: slotKey(rack.id, side, bin, level, half),
               rackId: rack.id,
               rackTitle: rack.title,
               side,
@@ -167,8 +150,8 @@ function buildLocations() {
               half,
               displayLevel: LEVEL_LABEL[level],
               category: rack.categories?.join(' / '),
-              confidence: 'draft',
-              items: SEEDED_STOCK[key] ?? []
+              confidence: 'empty',
+              items: []
             });
           });
         });
@@ -176,6 +159,57 @@ function buildLocations() {
     });
   });
   return rows;
+}
+
+function rowKey(row: WarehouseLocationItemRow) {
+  if (row.rack_id === 'TEMP') return slotKey('TEMP', 'front');
+  if (row.rack_id === 'B3') return slotKey('B3', 'front', undefined, row.level_code ?? undefined);
+  return slotKey(row.rack_id, row.side, row.bin_code ?? undefined, row.level_code ?? undefined, row.half_code ?? undefined);
+}
+
+function buildLocations(liveRows: WarehouseLocationItemRow[]) {
+  const scaffold = scaffoldLocations();
+  const byKey = new Map(scaffold.map((slot) => [slot.key, { ...slot, items: [...slot.items] }]));
+
+  liveRows.forEach((row) => {
+    const key = rowKey(row);
+    const existing = byKey.get(key) ?? {
+      key,
+      rackId: row.rack_id,
+      rackTitle: row.rack_title,
+      side: row.side,
+      code: row.location_code,
+      bin: row.bin_code ?? undefined,
+      level: row.level_code as LevelCode | undefined,
+      half: row.half_code as HalfCode | undefined,
+      displayLevel: row.display_level,
+      category: row.location_category ?? undefined,
+      confidence: 'empty' as const,
+      items: []
+    };
+
+    existing.code = row.location_code;
+    existing.displayLevel = row.display_level || existing.displayLevel;
+    existing.category = row.location_category ?? existing.category;
+
+    if (row.item_id && row.sku) {
+      existing.confidence = 'live';
+      existing.items.push({
+        sku: row.sku,
+        name: row.product_name || row.sku,
+        barcode: row.source_barcode || '',
+        qty: numberValue(row.quantity, 0),
+        totalQty: numberValue(row.sku_total_quantity, numberValue(row.quantity, 0)),
+        unitLevel: row.unit_level || 'carton',
+        category: row.location_category || '',
+        recent: row.last_movement_at ? `Last movement ${new Date(row.last_movement_at).toLocaleString('en-AU')}` : row.last_note || 'Live warehouse stock'
+      });
+    }
+
+    byKey.set(key, existing);
+  });
+
+  return Array.from(byKey.values());
 }
 
 function healthFor(totalQty: number): StockHealth {
@@ -198,15 +232,24 @@ function locationText(slot: LocationSlot) {
   return `${slot.code} ${slot.rackId} ${slot.rackTitle} ${slot.displayLevel} ${slot.category ?? ''} ${slot.items.map(itemText).join(' ')}`.toLowerCase();
 }
 
+function initialLocationKey() {
+  return slotKey('A2', 'left', '01', '02', 'A');
+}
+
 export function WarehouseMapPage() {
-  const locations = useMemo(() => buildLocations(), []);
+  const [liveRows, setLiveRows] = useState<WarehouseLocationItemRow[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [loadError, setLoadError] = useState('');
+  const locations = useMemo(() => buildLocations(liveRows), [liveRows]);
   const [activeRackId, setActiveRackId] = useState('A2');
   const [activeSide, setActiveSide] = useState<RackSide>('left');
-  const [selectedKey, setSelectedKey] = useState(slotKey('A2', 'left', '01', '02', 'A'));
+  const [selectedKey, setSelectedKey] = useState(initialLocationKey());
   const [query, setQuery] = useState('');
-  const [receiveDraft, setReceiveDraft] = useState<ReceiveDraft>({ locationKey: selectedKey, barcode: '', qty: '', note: '' });
+  const [receiveDraft, setReceiveDraft] = useState<ReceiveDraft>({ locationKey: initialLocationKey(), barcode: '', qty: '', note: '' });
   const [localMovements, setLocalMovements] = useState<string[]>([]);
   const [tapFeedback, setTapFeedback] = useState('');
+  const [savingReceive, setSavingReceive] = useState(false);
+  const [initialTargetApplied, setInitialTargetApplied] = useState(false);
 
   const activeRack = RACKS.find((rack) => rack.id === activeRackId) ?? RACKS[0];
   const detailSide: RackSide = activeRack.mode === 'double' ? activeSide : 'front';
@@ -216,7 +259,7 @@ export function WarehouseMapPage() {
     const totals: Record<string, number> = {};
     locations.forEach((slot) => {
       slot.items.forEach((item) => {
-        totals[item.sku] = (totals[item.sku] ?? 0) + item.qty;
+        totals[item.sku] = Math.max(totals[item.sku] ?? 0, item.totalQty || item.qty);
       });
     });
     return totals;
@@ -228,11 +271,45 @@ export function WarehouseMapPage() {
     return locations.filter((slot) => locationText(slot).includes(needle));
   }, [locations, query]);
 
+  async function reloadWarehouseData() {
+    setLoadState('loading');
+    setLoadError('');
+    try {
+      const rows = await loadWarehouseLocationItems();
+      setLiveRows(rows);
+      const liveItemCount = rows.filter((row) => row.item_id).length;
+      setLoadState(liveItemCount ? 'live' : 'empty');
+    } catch (error) {
+      setLiveRows([]);
+      setLoadState('offline');
+      setLoadError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  useEffect(() => {
+    void reloadWarehouseData();
+  }, []);
+
   useEffect(() => {
     if (query.trim().length < 2 || !searchResults[0]) return;
     openLocation(searchResults[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  useEffect(() => {
+    if (initialTargetApplied || !locations.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const targetLocation = params.get('location');
+    const targetSku = params.get('sku');
+    const target = targetLocation
+      ? locations.find((slot) => slot.code.toLowerCase() === targetLocation.toLowerCase())
+      : targetSku
+        ? locations.find((slot) => slot.items.some((item) => item.sku.toLowerCase() === targetSku.toLowerCase()))
+        : null;
+    if (target) openLocation(target);
+    setInitialTargetApplied(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations, initialTargetApplied]);
 
   function flash(message: string) {
     setTapFeedback(message);
@@ -266,7 +343,7 @@ export function WarehouseMapPage() {
     flash(`Location ${selectedLocation.code}`);
   }
 
-  function submitReceive() {
+  async function submitReceive() {
     const location = locations.find((slot) => slot.key === receiveDraft.locationKey);
     const qty = Number(receiveDraft.qty);
     if (!location || !receiveDraft.barcode.trim() || !Number.isFinite(qty) || qty <= 0) {
@@ -274,12 +351,36 @@ export function WarehouseMapPage() {
       flash('Not saved');
       return;
     }
-    const known = locations.flatMap((slot) => slot.items).find((item) => item.barcode.toLowerCase() === receiveDraft.barcode.trim().toLowerCase());
-    const target = known ? location.code : 'TEMP';
-    setLocalMovements((current) => [`RECEIVE ${qty} · ${receiveDraft.barcode.trim()} → ${target}${known ? ` · ${known.sku}` : ' · unknown barcode'}`, ...current].slice(0, 8));
-    setReceiveDraft((current) => ({ ...current, barcode: '', qty: '', note: '' }));
-    flash('Receive drafted');
+
+    const barcode = receiveDraft.barcode.trim();
+    const known = locations.flatMap((slot) => slot.items).find((item) => item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase());
+    const targetCode = known ? location.code : 'TEMP';
+
+    setSavingReceive(true);
+    try {
+      await receiveWarehouseStock({
+        locationCode: targetCode,
+        barcode,
+        quantity: qty,
+        note: receiveDraft.note || (known ? `Received to ${location.code}` : `Unknown barcode scanned at ${location.code}; routed to TEMP`),
+        sku: known?.sku,
+        productName: known?.name,
+        unitLevel: (known?.unitLevel as 'carton' | 'sleeve' | 'each' | 'unknown' | undefined) ?? 'carton'
+      });
+      setLocalMovements((current) => [`RECEIVE ${qty} · ${barcode} → ${targetCode}${known ? ` · ${known.sku}` : ' · unknown barcode'}`, ...current].slice(0, 8));
+      setReceiveDraft((current) => ({ ...current, barcode: '', qty: '', note: '' }));
+      await reloadWarehouseData();
+      flash('Receive saved');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLocalMovements((current) => [`Rejected · ${message}`, ...current].slice(0, 8));
+      flash('Not saved');
+    } finally {
+      setSavingReceive(false);
+    }
   }
+
+  const liveItemCount = liveRows.filter((row) => row.item_id).length;
 
   return (
     <main className="warehouse-map-page">
@@ -289,8 +390,14 @@ export function WarehouseMapPage() {
           <span className="warehouse-map-eyebrow">ECOFLOW WAREHOUSE MAP</span>
           <h1>Warehouse map</h1>
         </div>
-        <a className="warehouse-map-back tactile" href="/">Back</a>
+        <div className="warehouse-header-actions">
+          <span className={`warehouse-live-chip state-${loadState}`}>{loadState === 'live' ? `${liveItemCount} live items` : loadState === 'empty' ? 'Live locations · empty stock' : loadState === 'loading' ? 'Loading live stock' : 'Schema pending'}</span>
+          <button className="warehouse-map-back tactile" type="button" onClick={() => void reloadWarehouseData()}>Reload</button>
+          <a className="warehouse-map-back tactile" href="/">Back</a>
+        </div>
       </header>
+
+      {loadError ? <div className="warehouse-map-card warehouse-error-strip">Warehouse data not available yet. Apply the warehouse location migration in Supabase. Detail: {loadError}</div> : null}
 
       <section className="warehouse-map-grid">
         <section className="warehouse-map-card warehouse-map-overview-card">
@@ -302,7 +409,7 @@ export function WarehouseMapPage() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU / barcode / location" />
             <button className="tactile" type="button" onClick={() => searchResults[0] && openLocation(searchResults[0])}>Find</button>
           </div>
-          <div className="warehouse-floorplan" aria-label="Warehouse draft floorplan">
+          <div className="warehouse-floorplan" aria-label="Warehouse live floorplan">
             {RACKS.map((rack) => {
               const active = rack.id === activeRackId;
               const style = { left: `${rack.map.x}%`, top: `${rack.map.y}%`, width: `${rack.map.w}%`, height: `${rack.map.h}%` };
@@ -330,7 +437,7 @@ export function WarehouseMapPage() {
               {searchResults.slice(0, 8).map((slot) => (
                 <button key={slot.key} type="button" className={`tactile ${slot.key === selectedKey ? 'active' : ''}`} onClick={() => openLocation(slot)}>
                   <strong>{slot.code}</strong>
-                  <span>{slot.rackTitle} · {SIDE_LABEL[slot.side]}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ''}</span>
+                  <span>{slot.rackTitle} · {SIDE_LABEL[slot.side]}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ' · empty'}</span>
                 </button>
               ))}
             </div>
@@ -361,14 +468,14 @@ export function WarehouseMapPage() {
             <strong>{selectedLocation.code}</strong>
             <span>{selectedLocation.rackTitle} · {SIDE_LABEL[selectedLocation.side]} · {selectedLocation.displayLevel}</span>
             {selectedLocation.items.length ? selectedLocation.items.map((item) => (
-              <article key={`${selectedLocation.key}-${item.sku}`} className="location-item-card">
+              <article key={`${selectedLocation.key}-${item.sku}-${item.unitLevel}`} className="location-item-card">
                 <div><strong>{item.sku}</strong><span>{item.name}</span></div>
                 <div><span>Here</span><b>{item.qty}</b></div>
-                <div><span>Total</span><b>{skuTotals[item.sku] ?? item.qty}</b></div>
-                <div><span>Barcode</span><b>{item.barcode}</b></div>
+                <div><span>Total</span><b>{skuTotals[item.sku] ?? item.totalQty ?? item.qty}</b></div>
+                <div><span>Barcode</span><b>{item.barcode || '—'}</b></div>
                 <small>{item.recent}</small>
               </article>
-            )) : <p className="empty-location-note">Empty slot</p>}
+            )) : <p className="empty-location-note">Empty slot · ready for receiving or putaway.</p>}
           </div>
         </section>
 
@@ -380,7 +487,7 @@ export function WarehouseMapPage() {
             <label><span>Qty</span><input value={receiveDraft.qty} onChange={(event) => setReceiveDraft((current) => ({ ...current, qty: event.target.value }))} inputMode="numeric" placeholder="qty" /></label>
             <label><span>Note</span><input value={receiveDraft.note} onChange={(event) => setReceiveDraft((current) => ({ ...current, note: event.target.value }))} placeholder="note" /></label>
             <button className="tactile secondary-action" type="button" onClick={useSelectedLocation}>Use selected location</button>
-            <button className="tactile" type="button" onClick={submitReceive}>Save draft</button>
+            <button className="tactile" type="button" disabled={savingReceive || loadState === 'offline'} onClick={() => void submitReceive()}>{savingReceive ? 'Saving…' : 'Save live'}</button>
           </div>
           <div className="movement-log-list">
             {localMovements.map((movement, index) => <div key={`${movement}-${index}`}>{movement}</div>)}
@@ -433,7 +540,7 @@ function RackView({ locations, activeRack, selectedKey, skuTotals, onSelect }: {
 
 function LocationCell({ slot, selected, skuTotals, onSelect, large }: { slot: LocationSlot; selected: boolean; skuTotals: Record<string, number>; onSelect: (slot: LocationSlot) => void; large?: boolean }) {
   const primary = slot.items[0];
-  const total = primary ? skuTotals[primary.sku] ?? primary.qty : 0;
+  const total = primary ? skuTotals[primary.sku] ?? primary.totalQty ?? primary.qty : 0;
   const health = healthFor(total);
   const style = { '--stock-level': `${waterLevel(total)}%` } as CSSProperties;
   return (
@@ -441,7 +548,7 @@ function LocationCell({ slot, selected, skuTotals, onSelect, large }: { slot: Lo
       <span className="location-code">{slot.code}</span>
       {slot.items.length ? (
         <span className={`slot-item-wrap ${slot.items.length > 1 ? 'split' : ''}`}>
-          {slot.items.slice(0, 2).map((item) => <span key={item.sku} className="slot-mini"><b>{item.sku}</b><small>{item.qty} · {skuTotals[item.sku] ?? item.qty} total</small></span>)}
+          {slot.items.slice(0, 2).map((item) => <span key={`${item.sku}-${item.unitLevel}`} className="slot-mini"><b>{item.sku}</b><small>{item.qty} here · {skuTotals[item.sku] ?? item.totalQty ?? item.qty} total</small></span>)}
         </span>
       ) : <span className="slot-empty">+</span>}
       <span className="stock-waterline" aria-hidden="true" />
