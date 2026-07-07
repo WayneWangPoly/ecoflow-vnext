@@ -143,7 +143,15 @@ with inbox as (
       coalesce(invoice_detail_missing, false)
       or coalesce(line_items_missing, false)
       or lower(coalesce(internalisation_status, '')) in ('blocked_data','not_eligible_data')
-    ) as is_data_blocked
+    ) as is_data_blocked,
+    (
+      nullif(internal_order_id, '') is null
+      and coalesce(invoice_total, total_due, 0) = 0
+      and coalesce(order_status, '') = ''
+      and coalesce(invoice_status, '') = ''
+      and lower(coalesce(internalisation_status, '')) in ('blocked_data','not_eligible_data')
+      and lower(coalesce(warehouse_gate_status, '')) in ('not_eligible_data','mapping_exception','not_eligible_mapping','')
+    ) as is_historical_not_eligible
   from rolled
 )
 select
@@ -164,7 +172,8 @@ select
   coalesce(unmapped_line_count, 0) as unmapped_line_count,
   coalesce(barcode_blocked_line_count, 0) as barcode_blocked_line_count,
   case
-    when lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+    when is_historical_not_eligible
+      or lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
@@ -177,7 +186,8 @@ select
     else 'READY_TO_INTERNALISE'
   end as lifecycle_status,
   case
-    when lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
+    when is_historical_not_eligible
+      or lower(coalesce(order_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(invoice_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(internalisation_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
       or lower(coalesce(warehouse_gate_status, '')) in ('completed','complete','closed','delivered','fulfilled','finalised','finalized')
