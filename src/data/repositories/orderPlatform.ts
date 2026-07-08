@@ -12,6 +12,8 @@ export type OrderPlatformGuardrailRow = {
 
 export type OrderPlatformBucket = 'ACTIVE' | 'LEGACY_REVIEW' | 'ARCHIVE';
 
+export type LegacyReviewDecision = 'ARCHIVE_APPROVED' | 'CANCEL_DRAFT_REQUESTED' | 'REBUILD_REQUESTED' | 'KEEP_REVIEW';
+
 export type OrderPlatformLatestOrderRow = {
   lifecycle_id: string | null;
   order_number: string | null;
@@ -26,6 +28,17 @@ export type OrderPlatformLatestOrderRow = {
   invoice_total: number | string | null;
   lifecycle_updated_at: string | null;
   platform_bucket: OrderPlatformBucket | string | null;
+};
+
+export type LegacyReviewDecisionRow = {
+  id: string;
+  lifecycle_id: string;
+  order_number: string | null;
+  invoice_number: string | null;
+  internal_order_id: string | null;
+  decision: LegacyReviewDecision;
+  decision_note: string | null;
+  decided_at: string;
 };
 
 function requireSupabase(client?: SupabaseClient | null) {
@@ -56,12 +69,12 @@ export async function loadOrderPlatformGuardrails(client?: SupabaseClient | null
 export async function loadOrderPlatformLatestOrders(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
-    .from('v_ecoflow_order_platform_latest_orders')
+    .from('v_ecoflow_order_lifecycle_active')
     .select('*')
     .order('lifecycle_updated_at', { ascending: false })
     .limit(120);
   if (error) throw new Error(errorMessage(error));
-  return (data ?? []) as OrderPlatformLatestOrderRow[];
+  return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'ACTIVE' }));
 }
 
 export async function loadLegacyInternalReviewOrders(client?: SupabaseClient | null) {
@@ -72,7 +85,7 @@ export async function loadLegacyInternalReviewOrders(client?: SupabaseClient | n
     .order('lifecycle_updated_at', { ascending: false })
     .limit(30);
   if (error) throw new Error(errorMessage(error));
-  return (data ?? []) as OrderPlatformLatestOrderRow[];
+  return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'LEGACY_REVIEW' }));
 }
 
 export async function loadCompletedArchivePreview(client?: SupabaseClient | null) {
@@ -85,4 +98,15 @@ export async function loadCompletedArchivePreview(client?: SupabaseClient | null
     .limit(30);
   if (error) throw new Error(errorMessage(error));
   return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'ARCHIVE' }));
+}
+
+export async function recordLegacyReviewDecision(input: { lifecycleId: string; decision: LegacyReviewDecision; note?: string }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_record_legacy_internal_review_decision', {
+    p_lifecycle_id: input.lifecycleId,
+    p_decision: input.decision,
+    p_note: input.note ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as LegacyReviewDecisionRow[];
 }
