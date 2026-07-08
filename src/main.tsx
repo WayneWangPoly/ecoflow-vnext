@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
-import { InternalOrderExecutionInspector } from './InternalOrderExecutionInspector';
+import { InternalOrderReadinessInspector } from './InternalOrderReadinessInspector';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import './styles.css';
@@ -19,7 +19,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <FieldModeEnhancer />
       <OrderPlatformExperience />
-      <InternalOrderExecutionInspector />
+      <InternalOrderReadinessInspector />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
     </BrowserRouter>
   </React.StrictMode>
