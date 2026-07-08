@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
-import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/supabaseOrdermentumViews';
+import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { callInternaliseOrders, podAssetUrl } from '@/data/repositories/pickSync';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
@@ -291,8 +291,8 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
         <div className="hero-metrics">
           <MetricCard label="NEW TODAY" value={count('newToday')} helper="first seen" />
           <MetricCard label="UPDATED TODAY" value={count('updatedToday')} tone="blue" helper="changed" />
-          <MetricCard label="CARRY-OVER" value={count('carryOver')} tone="gold" helper="open from earlier" />
-          <MetricCard label="DUE TODAY" value={count('dueToday')} tone="mint" helper="operational day" />
+          <MetricCard label="ACTIVE ORDERS" value={activeOrders} tone="gold" helper={`${syncBatch.fetched} retained raw`} />
+          <MetricCard label="OPEN AR" value={money(openAR)} tone="mint" helper="unpaid only" />
         </div>
       </section>
 
@@ -660,9 +660,9 @@ function InventoryPanel({ stock, catalog, summary }: { stock: StockRow[]; catalo
             <div className="table-row" key={`${row.source}-${row.id}`}>
               <span><strong>{row.sku}</strong><small>{row.category}</small></span>
               <span>{row.name}</span>
-              <span><Pill tone={row.source === 'order-detail' ? 'good' : row.source === 'variant' ? 'blue' : 'neutral'}>{sourceLabel(row.source)}</Pill></span>
+              <span><Pill tone="blue">{sourceLabel(row.source)}</Pill></span>
               <span>{row.unit}</span>
-              <span>{money(row.basePrice)}</span>
+              <span>{row.displayPrice}</span>
             </div>
           ))}
         </div>
@@ -672,84 +672,21 @@ function InventoryPanel({ stock, catalog, summary }: { stock: StockRow[]; catalo
 }
 
 function StoresPanel({ stores, priceGroups }: { stores: StoreProfile[]; priceGroups: PriceGroupRow[] }) {
-  const tierCounts = stores.reduce<Record<string, number>>((acc, store) => {
-    acc[store.priceTier] = (acc[store.priceTier] || 0) + 1;
-    return acc;
-  }, {});
-
   return (
     <section className="workspace-stack">
-      <section className="quick-stats tier-stats">
-        {priceGroups.map((group) => <MetricCard key={group.id} label={String(group.name).toUpperCase()} value={tierCounts[String(group.name)] || 0} tone={group.default ? 'mint' : 'green'} helper={`${group.retailersTotal} OM retailers`} />)}
-      </section>
-      <section className="panel">
-        <div className="panel-head"><h2>Store and price tier control</h2><span>derived from recent order retailers, linked to Ordermentum price groups</span></div>
-        <div className="table-like stores-table">
-          <div className="table-head"><span>Store</span><span>Delivery address</span><span>Tier</span><span>Contact</span><span>Site status</span></div>
-          {stores.map((store) => (
-            <div className="table-row" key={store.id}>
-              <span><strong>{store.name}</strong><small>{store.suburb} · {store.orderCount ?? 0} orders</small></span>
-              <span>{store.address || <em className="missing-cell">no verified address</em>}</span>
-              <span><Pill tone={store.priceTier === 'Unmapped' ? 'warn' : 'blue'}>{store.priceTier}</Pill></span>
-              <span>{store.phone || '—'}</span>
-              <span><Pill tone={store.status === 'NEEDS_ADDRESS' ? 'warn' : 'good'}>{store.status === 'NEEDS_ADDRESS' ? 'NEEDS ADDRESS' : 'SITE OK'}</Pill></span>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel">
-        <div className="panel-head"><h2>Ordermentum price group master</h2><span>active trading tiers</span></div>
-        <div className="table-like price-group-table-like">
-          <div className="table-head"><span>Group</span><span>Default</span><span>Retailers</span><span>Products</span><span>Action</span></div>
-          {priceGroups.map((group) => (
-            <div className="table-row" key={group.id}>
-              <span><strong>{group.name}</strong><small>{group.id}</small></span>
-              <span>{group.default ? 'Yes' : 'No'}</span>
-              <span>{group.retailersTotal}</span>
-              <span>{group.productsTotal}</span>
-              <span><Pill tone="blue">map</Pill></span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <section className="quick-stats"><MetricCard label="Stores" value={stores.length} /><MetricCard label="Price groups" value={priceGroups.length} tone="blue" /><MetricCard label="Ready" value={stores.filter((store) => store.status === 'OK').length} tone="mint" /><MetricCard label="Needs review" value={stores.filter((store) => store.status !== 'OK').length} tone="gold" /></section>
+      <section className="panel"><div className="panel-head"><h2>Store master</h2><span>address + price tier</span></div><div className="store-grid">{stores.map((store) => <article className="store-card" key={store.id}><div><strong>{store.name}</strong><span>{store.address || `${store.suburb} · address pending`}</span><small>{store.statementGroup} · {store.paymentTerms}</small></div><Pill tone={store.status === 'OK' ? 'good' : 'warn'}>{store.status}</Pill></article>)}</div></section>
     </section>
   );
 }
 
 function ReconciliationPanel({ orders, summary }: { orders: ImportedOrder[]; summary: EcoFlowDataSet['summary'] }) {
-  const open = orders.filter((order) => order.paymentStatus !== 'PAID');
+  const paid = orders.filter((order) => order.paymentStatus === 'PAID').reduce((sum, order) => sum + order.amount, 0);
+  const outstanding = orders.filter((order) => order.paymentStatus !== 'PAID').reduce((sum, order) => sum + order.amount, 0);
   return (
     <section className="workspace-stack">
-      <section className="panel reconciliation-hero">
-        <div>
-          <span className="section-eyebrow">STATEMENT CONTROL</span>
-          <h2>Ordermentum invoice detail is now part of the data model.</h2>
-          <p>{summary.detailInvoiceNo} is linked to {summary.detailOrderNo}, {summary.detailRetailerName}, {summary.detailLineCount} line items and {money(summary.invoiceTotal)} invoice value.</p>
-        </div>
-        <button className="primary-small" type="button">Generate statement preview</button>
-      </section>
-      <section className="statement-summary">
-        <MetricCard label="OPEN INVOICES" value={open.length} tone="gold" />
-        <MetricCard label="OPEN VALUE" value={money(open.reduce((sum, order) => sum + order.amount, 0))} tone="blue" />
-        <MetricCard label="POD MISSING" value={orders.filter((order) => order.podStatus === 'missing').length} tone="mint" />
-        <MetricCard label="SOURCE INVOICE" value={summary.detailInvoiceNo} tone="green" />
-      </section>
-      <section className="panel">
-        <div className="panel-head"><h2>Statement and reconciliation</h2><span>order status, payment and POD checks</span></div>
-        <div className="table-like">
-          <div className="table-head"><span>Invoice</span><span>Customer</span><span>Ordermentum ref</span><span>Status</span><span>POD</span><span>Amount</span></div>
-          {orders.map((order) => (
-            <div className="table-row" key={order.id}>
-              <span><strong>{order.invoiceNo}</strong><small>{order.account}</small></span>
-              <span>{order.store}</span>
-              <span>{order.orderNo}</span>
-              <span><Pill tone={order.paymentStatus === 'PAID' ? 'good' : order.paymentStatus === 'OVERDUE' ? 'danger' : 'warn'}>{order.paymentStatus.replace(/_/g, ' ')}</Pill></span>
-              <span>{order.podStatus}</span>
-              <span>{money(order.amount)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <section className="quick-stats"><MetricCard label="Invoices" value={orders.length} /><MetricCard label="Paid value" value={money(paid)} tone="mint" /><MetricCard label="Outstanding" value={money(outstanding)} tone="gold" /><MetricCard label="Total imported" value={money(summary.invoiceTotal)} tone="blue" /></section>
+      <section className="panel"><div className="panel-head"><h2>Reconciliation queue</h2><span>payments and POD variance</span></div><div className="table-like"><div className="table-head"><span>Invoice</span><span>Store</span><span>Payment</span><span>Amount</span><span>Status</span></div>{orders.slice(0, 20).map((order) => <div className="table-row" key={order.id}><span><strong>{order.invoiceNo}</strong><small>{order.orderNo}</small></span><span>{order.store}</span><span>{order.paymentStatus}</span><span>{money(order.amount)}</span><span><StatusPill status={order.status} /></span></div>)}</div></section>
     </section>
   );
 }
