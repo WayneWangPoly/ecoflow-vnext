@@ -6,6 +6,8 @@ import {
   loadLegacyInternalReviewOrders,
   loadOrderPlatformGuardrails,
   loadOrderPlatformLatestOrders,
+  recordLegacyReviewDecision,
+  type LegacyReviewDecision,
   type OrderPlatformGuardrailRow,
   type OrderPlatformLatestOrderRow,
 } from '@/data/repositories/orderPlatform';
@@ -165,6 +167,8 @@ function CompactOrderTable({
   onPageSizeChange,
   page,
   onPageChange,
+  decisionBusy,
+  onLegacyDecision,
 }: {
   mode: PlatformMode;
   rows: OrderPlatformLatestOrderRow[];
@@ -177,6 +181,8 @@ function CompactOrderTable({
   onPageSizeChange: (value: number) => void;
   page: number;
   onPageChange: (value: number) => void;
+  decisionBusy?: string;
+  onLegacyDecision?: (order: OrderPlatformLatestOrderRow, decision: LegacyReviewDecision) => void;
 }) {
   const filtered = rows.filter((order) => {
     const matchesText = !query.trim() || orderSearchText(order).includes(query.trim().toLowerCase());
@@ -213,19 +219,31 @@ function CompactOrderTable({
 
       <div className="order-platform-table">
         <div className="order-platform-table-header">
-          <span>Order</span><span>Bucket</span><span>Lifecycle</span><span>Internal</span><span>Updated</span><span>Value</span><span>Gate</span>
+          <span>Order</span><span>Bucket</span><span>Lifecycle</span><span>Internal</span><span>Updated</span><span>Value</span><span>Gate</span><span>Action</span>
         </div>
-        {pageRows.map((order) => (
-          <article className="order-platform-table-row" key={`${mode}-${order.lifecycle_id}-${order.order_number}-${order.invoice_number}`}>
-            <span><strong>{order.order_number || order.lifecycle_id || 'Unknown'}</strong><small>{order.invoice_number || 'invoice pending'}</small></span>
-            <span><MiniPill tone={mode === 'active' ? 'good' : mode === 'legacy' ? 'warn' : 'blue'}>{order.platform_bucket || (mode === 'legacy' ? 'LEGACY_REVIEW' : mode === 'archive' ? 'ARCHIVE' : 'ACTIVE')}</MiniPill></span>
-            <span><MiniPill tone={statusTone(order.lifecycle_status)}>{title(order.lifecycle_status)}</MiniPill><small>{[order.internalisation_status, order.warehouse_gate_status].filter(Boolean).join(' · ') || 'no detail'}</small></span>
-            <span><strong>{order.internal_order_id ? 'Created' : 'Not created'}</strong><small>{order.internal_order_id || '—'}</small></span>
-            <span>{timeText(order.lifecycle_updated_at)}</span>
-            <span>{money(order.invoice_total)}</span>
-            <span><MiniPill tone={order.can_internalise ? 'good' : 'neutral'}>{order.can_internalise ? 'CAN INTERNALISE' : 'LOCKED'}</MiniPill></span>
-          </article>
-        ))}
+        {pageRows.map((order) => {
+          const busy = Boolean(order.lifecycle_id && decisionBusy === order.lifecycle_id);
+          return (
+            <article className="order-platform-table-row" key={`${mode}-${order.lifecycle_id}-${order.order_number}-${order.invoice_number}`}>
+              <span><strong>{order.order_number || order.lifecycle_id || 'Unknown'}</strong><small>{order.invoice_number || 'invoice pending'}</small></span>
+              <span><MiniPill tone={mode === 'active' ? 'good' : mode === 'legacy' ? 'warn' : 'blue'}>{order.platform_bucket || (mode === 'legacy' ? 'LEGACY_REVIEW' : mode === 'archive' ? 'ARCHIVE' : 'ACTIVE')}</MiniPill></span>
+              <span><MiniPill tone={statusTone(order.lifecycle_status)}>{title(order.lifecycle_status)}</MiniPill><small>{[order.internalisation_status, order.warehouse_gate_status].filter(Boolean).join(' · ') || 'no detail'}</small></span>
+              <span><strong>{order.internal_order_id ? 'Created' : 'Not created'}</strong><small>{order.internal_order_id || '—'}</small></span>
+              <span>{timeText(order.lifecycle_updated_at)}</span>
+              <span>{money(order.invoice_total)}</span>
+              <span><MiniPill tone={order.can_internalise ? 'good' : 'neutral'}>{order.can_internalise ? 'CAN INTERNALISE' : 'LOCKED'}</MiniPill></span>
+              <span className="order-platform-action-cell">
+                {mode === 'legacy' && onLegacyDecision ? (
+                  <>
+                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'ARCHIVE_APPROVED')}>Archive</button>
+                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'CANCEL_DRAFT_REQUESTED')}>Cancel draft</button>
+                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'REBUILD_REQUESTED')}>Rebuild</button>
+                  </>
+                ) : <MiniPill tone="neutral">Read only</MiniPill>}
+              </span>
+            </article>
+          );
+        })}
         {!pageRows.length ? <div className="order-platform-empty">No matching orders.</div> : null}
       </div>
 
@@ -249,6 +267,8 @@ function OrderPlatformContent() {
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [decisionBusy, setDecisionBusy] = useState('');
   const [loadedAt, setLoadedAt] = useState('');
 
   async function reload() {
@@ -267,6 +287,26 @@ function OrderPlatformContent() {
       setLoadedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function decideLegacy(order: OrderPlatformLatestOrderRow, decision: LegacyReviewDecision) {
+    if (!order.lifecycle_id) return;
+    setDecisionBusy(order.lifecycle_id);
+    setNotice('');
+    setError('');
+    try {
+      await recordLegacyReviewDecision({
+        lifecycleId: order.lifecycle_id,
+        decision,
+        note: `${decision} from Orders platform control for ${order.order_number || order.lifecycle_id}`,
+      });
+      setNotice(`${order.order_number || order.lifecycle_id} marked as ${title(decision)}.`);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDecisionBusy('');
     }
   }
 
@@ -311,6 +351,7 @@ function OrderPlatformContent() {
       </section>
 
       {error ? <div className="order-platform-error">{error}</div> : null}
+      {notice ? <div className="order-platform-notice">{notice}</div> : null}
 
       <section className="order-platform-metrics">
         <PlatformMetric label="Raw Ordermentum" value={numberValue(raw?.row_count)} helper="retained history; not a work queue" intent="neutral" />
@@ -367,6 +408,8 @@ function OrderPlatformContent() {
         onPageSizeChange={setPageSize}
         page={page}
         onPageChange={setPage}
+        decisionBusy={decisionBusy}
+        onLegacyDecision={decideLegacy}
       />
 
       <section className="order-platform-review-grid">
