@@ -63,3 +63,26 @@ export async function loadOrderPlatformLatestOrders(client?: SupabaseClient | nu
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as OrderPlatformLatestOrderRow[];
 }
+
+export async function loadLegacyInternalReviewOrders(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_order_lifecycle_legacy_internal_review')
+    .select('*')
+    .order('lifecycle_updated_at', { ascending: false })
+    .limit(30);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as OrderPlatformLatestOrderRow[];
+}
+
+export async function loadCompletedArchivePreview(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_order_lifecycle_board')
+    .select('*')
+    .eq('lifecycle_status', 'COMPLETED')
+    .order('lifecycle_updated_at', { ascending: false })
+    .limit(30);
+  if (error) throw new Error(errorMessage(error));
+  return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'ARCHIVE' }));
+}
