@@ -254,7 +254,8 @@
   gap: 10px;
 }
 
-.order-platform-lane header {
+.order-platform-lane header,
+.order-platform-review-panel header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -290,7 +291,8 @@
   border-color: rgba(192, 50, 33, .16);
 }
 
-.order-platform-order-list {
+.order-platform-order-list,
+.order-platform-review-list {
   display: grid;
   gap: 8px;
 }
@@ -358,6 +360,45 @@
   font-weight: 900;
 }
 
+.order-platform-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.order-platform-review-panel {
+  border: 1px solid rgba(16, 47, 40, .1);
+  border-radius: 24px;
+  background: rgba(255,255,255,.94);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 18px 42px rgba(16, 47, 40, .07);
+}
+
+.order-platform-review-panel h3 {
+  margin: 0 0 4px;
+  color: #102f28;
+  font-size: 22px;
+  letter-spacing: -.03em;
+}
+
+.order-platform-review-panel p {
+  margin: 0;
+  color: #60716a;
+  font-weight: 850;
+}
+
+.order-platform-review-warn {
+  border-color: rgba(213, 121, 18, .22);
+  background: linear-gradient(135deg, #fff, rgba(255, 248, 236, .96));
+}
+
+.order-platform-review-blue {
+  border-color: rgba(36, 102, 170, .18);
+  background: linear-gradient(135deg, #fff, rgba(238, 245, 255, .96));
+}
+
 .orders-workflow-panel {
   border-color: rgba(15, 107, 67, .2) !important;
   background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(241,248,243,.96)) !important;
@@ -393,7 +434,8 @@
 
 @media (max-width: 1180px) {
   .order-platform-metrics,
-  .order-platform-lanes {
+  .order-platform-lanes,
+  .order-platform-review-grid {
     grid-template-columns: repeat(2, minmax(220px, 1fr));
   }
 
@@ -408,7 +450,8 @@
 
 @media (max-width: 720px) {
   .order-platform-metrics,
-  .order-platform-lanes {
+  .order-platform-lanes,
+  .order-platform-review-grid {
     grid-template-columns: 1fr;
   }
 
