@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   loadOrderPlatformGuardrails,
   loadOrderPlatformLatestOrders,
@@ -39,7 +41,7 @@ function statusTone(status: string | null | undefined) {
   return 'neutral';
 }
 
-function MiniPill({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
+function MiniPill({ children, tone = 'neutral' }: { children: ReactNode; tone?: string }) {
   return <span className={`order-platform-pill order-platform-pill-${tone}`}>{children}</span>;
 }
 
@@ -66,7 +68,41 @@ function OrderCard({ order }: { order: OrderPlatformLatestOrderRow }) {
   );
 }
 
-export function OrderPlatformExperience() {
+function useOrdersPortalHost() {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    function locate() {
+      const heading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((node) => node.textContent?.trim() === 'Order control');
+      const panel = heading?.closest<HTMLElement>('.panel');
+      if (!panel) {
+        setHost(null);
+        return;
+      }
+      let mount = document.querySelector<HTMLElement>('.order-platform-react-mount');
+      if (!mount) {
+        mount = document.createElement('section');
+        mount.className = 'order-platform-react-mount';
+        panel.insertAdjacentElement('beforebegin', mount);
+      }
+      setHost(mount);
+    }
+
+    locate();
+    let pending = false;
+    const observer = new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      window.setTimeout(() => { pending = false; locate(); }, 120);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  return host;
+}
+
+function OrderPlatformContent() {
   const [guardrails, setGuardrails] = useState<OrderPlatformGuardrailRow[]>([]);
   const [orders, setOrders] = useState<OrderPlatformLatestOrderRow[]>([]);
   const [query, setQuery] = useState('');
@@ -172,4 +208,9 @@ export function OrderPlatformExperience() {
       </section>
     </section>
   );
+}
+
+export function OrderPlatformExperience() {
+  const host = useOrdersPortalHost();
+  return host ? createPortal(<OrderPlatformContent />, host) : null;
 }
