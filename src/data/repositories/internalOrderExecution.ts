@@ -16,6 +16,9 @@ export type InternalOrderDependencyRow = {
   has_internal_order_id: boolean | null;
   has_internalisation_status: boolean | null;
   has_warehouse_gate_status: boolean | null;
+  identity_column?: string | null;
+  status_column?: string | null;
+  execution_role?: string | null;
 };
 
 export type InternalOrderExecutionQueueRow = {
@@ -28,11 +31,24 @@ export type InternalOrderExecutionQueueRow = {
   decision_note: string | null;
   decided_at: string | null;
   execution_status: string | null;
+  affected_rows?: number | string | null;
+  executed_at?: string | null;
+  error_message?: string | null;
   lifecycle_status: string | null;
   internalisation_status: string | null;
   warehouse_gate_status: string | null;
   invoice_total: number | string | null;
   lifecycle_updated_at: string | null;
+};
+
+export type InternalOrderExecutionResultRow = {
+  execution_id: string;
+  lifecycle_id: string;
+  decision: string;
+  execution_status: string;
+  affected_rows: number | string | null;
+  executed_at: string;
+  error_message: string | null;
 };
 
 function requireSupabase(client?: SupabaseClient | null) {
@@ -80,4 +96,13 @@ export async function loadInternalOrderExecutionQueue(client?: SupabaseClient | 
     .limit(80);
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as InternalOrderExecutionQueueRow[];
+}
+
+export async function executeLegacyInternalReviewDecision(lifecycleId: string, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_execute_legacy_internal_review_decision', {
+    p_lifecycle_id: lifecycleId,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as InternalOrderExecutionResultRow[];
 }
