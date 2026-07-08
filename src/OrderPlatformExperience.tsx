@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  loadCompletedArchivePreview,
+  loadLegacyInternalReviewOrders,
   loadOrderPlatformGuardrails,
   loadOrderPlatformLatestOrders,
   type OrderPlatformGuardrailRow,
@@ -102,9 +104,29 @@ function useOrdersPortalHost() {
   return host;
 }
 
+function ReviewStrip({ title, helper, rows, tone }: { title: string; helper: string; rows: OrderPlatformLatestOrderRow[]; tone: 'warn' | 'blue' }) {
+  return (
+    <section className={`order-platform-review-panel order-platform-review-${tone}`}>
+      <header>
+        <div>
+          <h3>{title}</h3>
+          <p>{helper}</p>
+        </div>
+        <MiniPill tone={tone}>{rows.length}</MiniPill>
+      </header>
+      <div className="order-platform-review-list">
+        {rows.slice(0, 8).map((order) => <OrderCard key={`${title}-${order.lifecycle_id}-${order.order_number}`} order={order} />)}
+        {!rows.length ? <div className="order-platform-empty">No rows in this bucket.</div> : null}
+      </div>
+    </section>
+  );
+}
+
 function OrderPlatformContent() {
   const [guardrails, setGuardrails] = useState<OrderPlatformGuardrailRow[]>([]);
   const [orders, setOrders] = useState<OrderPlatformLatestOrderRow[]>([]);
+  const [legacyRows, setLegacyRows] = useState<OrderPlatformLatestOrderRow[]>([]);
+  const [archiveRows, setArchiveRows] = useState<OrderPlatformLatestOrderRow[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [loadedAt, setLoadedAt] = useState('');
@@ -112,12 +134,16 @@ function OrderPlatformContent() {
   async function reload() {
     setError('');
     try {
-      const [nextGuardrails, nextOrders] = await Promise.all([
+      const [nextGuardrails, nextOrders, nextLegacy, nextArchive] = await Promise.all([
         loadOrderPlatformGuardrails(),
         loadOrderPlatformLatestOrders(),
+        loadLegacyInternalReviewOrders(),
+        loadCompletedArchivePreview(),
       ]);
       setGuardrails(nextGuardrails);
       setOrders(nextOrders);
+      setLegacyRows(nextLegacy);
+      setArchiveRows(nextArchive);
       setLoadedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -205,6 +231,21 @@ function OrderPlatformContent() {
             </section>
           ))}
         </div>
+      </section>
+
+      <section className="order-platform-review-grid">
+        <ReviewStrip
+          title="Legacy internal review"
+          helper="Quarantined historical internal drafts. Do not pick, route, or driver-release until owner/accounts decide archive, cancel, or rebuild."
+          rows={legacyRows}
+          tone="warn"
+        />
+        <ReviewStrip
+          title="Archive preview"
+          helper="Completed and historical imports stay searchable, but outside the active workflow hot path."
+          rows={archiveRows}
+          tone="blue"
+        />
       </section>
     </section>
   );
