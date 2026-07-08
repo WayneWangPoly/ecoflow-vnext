@@ -108,5 +108,11 @@ export async function recordLegacyReviewDecision(input: { lifecycleId: string; d
     p_note: input.note ?? null,
   });
   if (error) throw new Error(errorMessage(error));
+
+  const { error: executeError } = await active.rpc('ecoflow_execute_legacy_internal_review_decision', {
+    p_lifecycle_id: input.lifecycleId,
+  });
+  if (executeError) throw new Error(errorMessage(executeError));
+
   return (data ?? []) as LegacyReviewDecisionRow[];
 }
