@@ -143,7 +143,10 @@ export function WarehouseBarcodeSprint() {
       });
       const first = result[0];
       setNotice(`${sku}: ${title(first?.package_level || form.packageLevel)} barcode saved${first?.movement_id ? ' + stock received' : ''}.`);
-      setForm((current) => ({ ...current, barcode: '', note: '', packageLevel: current.packageLevel === 'CARTON' ? 'SLEEVE' : current.packageLevel }));
+      setForm((current) => {
+        const nextLevel: BarcodePackageLevel = current.packageLevel === 'CARTON' ? 'SLEEVE' : current.packageLevel;
+        return { ...current, barcode: '', note: '', packageLevel: nextLevel };
+      });
       await reload();
       window.setTimeout(() => barcodeInputRef.current?.focus(), 60);
     } catch (err) {
@@ -154,11 +157,12 @@ export function WarehouseBarcodeSprint() {
   }
 
   function pickSku(row: BarcodeRegistryReviewRow) {
+    const nextLevel: BarcodePackageLevel = row.barcode_signal === 'NEEDS_SLEEVE_BARCODE' ? 'SLEEVE' : 'CARTON';
     setForm((current) => ({
       ...current,
       sku: row.sku || '',
       shelf: row.fixed_shelf || current.shelf,
-      packageLevel: row.barcode_signal === 'NEEDS_SLEEVE_BARCODE' ? 'SLEEVE' : 'CARTON',
+      packageLevel: nextLevel,
       barcode: '',
     }));
     window.setTimeout(() => barcodeInputRef.current?.focus(), 60);
