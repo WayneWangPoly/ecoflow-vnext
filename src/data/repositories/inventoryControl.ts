@@ -103,12 +103,15 @@ export type InventoryMovementResult = {
 
 export type BarcodePackageLevel = 'CARTON' | 'SLEEVE' | 'EACH' | 'INNER' | 'UNKNOWN';
 export type BarcodeActionMode = 'MAP_ONLY' | 'MAP_AND_COUNT' | 'MAP_AND_RECEIVE';
+export type SkuPackageMode = 'CARTON_AND_SLEEVE' | 'CARTON_ONLY' | 'SLEEVE_ONLY' | 'EACH_ONLY' | 'INNER_ONLY' | 'UNKNOWN';
 
 export type BarcodeSprintKpis = {
   registered_barcodes: number | string | null;
   covered_skus: number | string | null;
+  needs_policy?: number | string | null;
   needs_carton: number | string | null;
   needs_sleeve: number | string | null;
+  needs_each?: number | string | null;
   barcode_ready_skus: number | string | null;
   scans_24h: number | string | null;
   latest_scan_at: string | null;
@@ -117,11 +120,13 @@ export type BarcodeSprintKpis = {
 export type BarcodeRegistryReviewRow = {
   sku: string | null;
   product_name: string | null;
+  package_mode?: SkuPackageMode | string | null;
   fixed_shelf: string | null;
   barcode_count: number | string | null;
   carton_barcodes: number | string | null;
   sleeve_barcodes: number | string | null;
   each_barcodes: number | string | null;
+  inner_barcodes?: number | string | null;
   last_scanned_at: string | null;
   scan_count: number | string | null;
   barcode_signal: string | null;
@@ -160,6 +165,24 @@ export type BarcodeScanResult = {
   scan_status: string;
   movement_id: string | null;
   scanned_at: string;
+};
+
+export type SkuPackagePolicyResult = {
+  sku: string;
+  package_mode: SkuPackageMode;
+  default_shelf: string | null;
+  updated_at: string;
+};
+
+export type ReceiveByBarcodeResult = {
+  movement_id: string;
+  sku: string;
+  barcode: string;
+  package_level: BarcodePackageLevel | string;
+  packages: number | string;
+  units_received: number | string;
+  to_location: string;
+  moved_at: string;
 };
 
 function requireSupabase(client?: SupabaseClient | null) {
@@ -299,4 +322,28 @@ export async function recordBarcodeScan(input: { sessionId?: string | null; sku:
   });
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as BarcodeScanResult[];
+}
+
+export async function setSkuPackagePolicy(input: { sku: string; packageMode: SkuPackageMode | string; defaultShelf?: string | null; note?: string | null }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_set_sku_package_policy', {
+    p_sku: input.sku,
+    p_package_mode: input.packageMode,
+    p_default_shelf: input.defaultShelf ?? null,
+    p_note: input.note ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as SkuPackagePolicyResult[];
+}
+
+export async function receiveByBarcode(input: { barcode: string; qtyPackages?: number | string | null; toLocation?: string | null; note?: string | null }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_receive_by_barcode', {
+    p_barcode: input.barcode,
+    p_qty_packages: input.qtyPackages ?? 1,
+    p_to_location: input.toLocation ?? null,
+    p_note: input.note ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as ReceiveByBarcodeResult[];
 }
