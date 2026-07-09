@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
@@ -15,6 +15,7 @@ import { AuthCallbackScreen } from '@/features/auth/AuthCallbackScreen';
 import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
 import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTypes';
+import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
 import type {
@@ -86,7 +87,7 @@ function canManageTeam(profile?: EcoFlowAuthProfile | null) {
 }
 
 function appRoleDisplay(profile?: EcoFlowAuthProfile | null) {
-  return profile ? `${profile.app_role}${profile.email ? ` · ${profile.email}` : ''}` : 'Legacy local role';
+  return profile ? `${profile.app_role}${profile.email ? ` 路 ${profile.email}` : ''}` : 'Legacy local role';
 }
 
 function syncTone(status: ImportedOrder['syncStatus']): 'good' | 'blue' | 'neutral' {
@@ -160,7 +161,7 @@ function LoginScreen({ onLogin }: { onLogin: (role: Role) => void }) {
   );
 }
 
-function LoadingScreen({ message = 'Loading secure session…' }: { message?: string }) {
+function LoadingScreen({ message = 'Loading secure session...' }: { message?: string }) {
   return (
     <main className="login-page">
       <section className="login-card">
@@ -284,9 +285,9 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
     <>
       <section className="hero-card">
         <div className="hero-copy">
-          <span>ECOFLOW CONTROL ROOM · ORDERMENTUM INBOX</span>
+          <span>ECOFLOW CONTROL ROOM 路 ORDERMENTUM INBOX</span>
           <h1>Build the supply chain<br />behind a cleaner food future.</h1>
-          <div className="date-chip">{syncBatch.businessDay.label} · cutoff {syncBatch.businessDay.cutoffTime} · {syncBatch.source}</div>
+          <div className="date-chip">{syncBatch.businessDay.label} 路 cutoff {syncBatch.businessDay.cutoffTime} 路 {syncBatch.source}</div>
         </div>
         <div className="hero-metrics">
           <MetricCard label="NEW TODAY" value={count('newToday')} helper="first seen" />
@@ -307,7 +308,7 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
         <div className="panel large-panel">
           <div className="panel-head">
             <h2>{role === 'account' ? 'Ordermentum inbox' : 'Daily control queue'}</h2>
-            <span>{syncBatch.created} new · {syncBatch.updated} updated · {syncBatch.unchanged} unchanged</span>
+            <span>{syncBatch.created} new 路 {syncBatch.updated} updated 路 {syncBatch.unchanged} unchanged</span>
           </div>
           <div className="list-stack">
             {sortOrdersForOperations(orders).filter((order) => order.syncStatus !== 'UNCHANGED' || order.openExceptionCount > 0).slice(0, 10).map((order) => (
@@ -338,7 +339,7 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
           <div className="stock-watch">
             {lowStock.slice(0, 8).map((row) => (
               <div className="stock-watch-row" key={row.sku}>
-                <div><strong>{row.sku}</strong><span>{row.location} · reserved {row.reserved}</span></div>
+                <div><strong>{row.sku}</strong><span>{row.location} 路 reserved {row.reserved}</span></div>
                 <Pill tone={row.onHand < row.reserved ? 'danger' : 'warn'}>{row.onHand < row.reserved ? 'INSUFFICIENT' : 'LOW'}</Pill>
               </div>
             ))}
@@ -361,13 +362,13 @@ function OrderListItem({ order, selectable, onToggle }: { order: ImportedOrder; 
       {selectable ? <input type="checkbox" checked={order.selected} onChange={onToggle} aria-label={`select ${order.orderNo}`} /> : null}
       <div className="order-main-copy">
         <div className="order-title-line"><strong>{order.orderNo}</strong><StatusPill status={order.status} /><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill>{order.releaseGateStatus ? <Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill> : null}</div>
-        <span>{order.store} · {order.suburb} · {order.priceTier}</span>
-        <small>{order.lines.map((line) => `${line.sku} × ${line.qty} ${line.unit}`).join(' · ')}</small>
+        <span>{order.store} 路 {order.suburb} 路 {order.priceTier}</span>
+        <small>{order.lines.map((line) => `${line.sku} 脳 ${line.qty} ${line.unit}`).join(' 路 ')}</small>
         {order.releaseBlockers ? <small className="release-blockers">{order.releaseBlockers}</small> : null}
       </div>
       <div className="order-side-copy">
         <strong>{money(order.amount)}</strong>
-        <small>{order.packageCount} labels · due {formatBusinessDate(order.deliveryDate || order.dueAt)}</small>
+        <small>{order.packageCount} labels 路 due {formatBusinessDate(order.deliveryDate || order.dueAt)}</small>
       </div>
     </article>
   );
@@ -395,7 +396,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
   const selectedReady = ready.filter((order) => order.selected).length;
   const releasedCount = Object.keys(day.releasedOrders).length;
 
-  // Formal internal-order creation lives in the database RPC — never a front-end status flip.
+  // Formal internal-order creation lives in the database RPC 鈥?never a front-end status flip.
   async function internaliseEligible() {
     setInternalising(true);
     setInternaliseResult('');
@@ -411,7 +412,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
     }
   }
 
-  /** Adds the order to today's shared run — synced to every device through day state. */
+  /** Adds the order to today's shared run 鈥?synced to every device through day state. */
   function releaseToRun(orderId: string) {
     setDay((current) => ({ ...current, releasedOrders: { ...current.releasedOrders, [orderId]: new Date().toISOString() } }));
     setOrders((current) => current.map((order) => order.id === orderId ? { ...order, selected: false } : order));
@@ -434,7 +435,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
         <div className="sync-header-block">
           <span className="section-eyebrow">ORDERMENTUM INBOX</span>
           <h2>Daily order intake</h2>
-          <div className="sync-meta-line">Business day {data.businessDay.label} · last sync {formatDateTime(data.syncBatch.completedAt)}</div>
+          <div className="sync-meta-line">Business day {data.businessDay.label} 路 last sync {formatDateTime(data.syncBatch.completedAt)}</div>
         </div>
         <div className="sync-strip">
           <div><strong>{data.syncBatch.fetched}</strong><span>Fetched</span></div>
@@ -446,13 +447,13 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
         <div className="release-gate-strip">
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE').length}</strong><span>ready to internalise</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_MAPPING').length}</strong><span>mapping blocked</span></div>
-          <div><strong>{releasedCount}</strong><span>in today’s run</span></div>
+          <div><strong>{releasedCount}</strong><span>in today鈥檚 run</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'REVIEW_PAYMENT').length}</strong><span>payment review</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_DATA').length}</strong><span>data blocked</span></div>
         </div>
         <div className="internalise-row">
           <button className="primary-small" type="button" disabled={internalising} onClick={() => void internaliseEligible()}>
-            {internalising ? 'Internalising…' : 'Internalise eligible (RPC)'}
+            {internalising ? 'Internalising...' : 'Internalise eligible (RPC)'}
           </button>
           {internaliseResult ? <span className="internalise-result">{internaliseResult}</span> : null}
         </div>
@@ -471,7 +472,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
           {bucketRows.map((order) => (
             <div className="table-row" key={order.id}>
               <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
-              <span><strong>{order.store}</strong><small>{order.priceTier} · {order.suburb}</small></span>
+              <span><strong>{order.store}</strong><small>{order.priceTier} 路 {order.suburb}</small></span>
               <span>{formatDateTime(order.firstSeenAt)}<small>{order.firstSeenBusinessDay}</small></span>
               <span>{formatDateTime(order.lastSeenAt)}<small>{order.changeSummary}</small></span>
               <span>{formatBusinessDate(order.deliveryDate || order.dueAt)}<small>{order.requestedDeliveryBusinessDay}</small></span>
@@ -495,9 +496,9 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
           <div className="list-stack">
             {visibleExceptions.slice(0, 14).map((exception) => (
               <article className="exception-card" key={exception.id}>
-                <div><strong>{exception.orderNo}</strong><span>{exception.store} · {exception.category.replace(/_/g, ' ')}</span></div>
+                <div><strong>{exception.orderNo}</strong><span>{exception.store} 路 {exception.category.replace(/_/g, ' ')}</span></div>
                 <p>{exception.summary}</p>
-                <small>{exception.detail} Fix the underlying data (mapping / invoice detail) — exceptions clear on the next sync.</small>
+                <small>{exception.detail} Fix the underlying data (mapping / invoice detail) 鈥?exceptions clear on the next sync.</small>
               </article>
             ))}
             {!visibleExceptions.length ? <div className="empty-state">No open exception.</div> : null}
@@ -539,7 +540,7 @@ function OrdersPanel({ orders }: { orders: ImportedOrder[] }) {
   // Read-only: status changes only happen through release, picking and delivery actions.
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum · status follows the real workflow</span></div>
+      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum 路 status follows the real workflow</span></div>
       <div className="table-like">
         <div className="table-head"><span>Order</span><span>Store</span><span>Tier</span><span>Status</span><span>Value</span><span>POD</span></div>
         {orders.map((order) => (
@@ -575,10 +576,10 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
         <MetricCard label="RELEASED TO RUN" value={stops.length} tone="green" helper={businessDay.label} />
         <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Not locked'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'driver locks remotely'} />
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
-        <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
+        <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` 路 ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>Run board</h2><span>shared facts — same data the driver and warehouse see</span></div>
+        <div className="panel-head"><h2>Run board</h2><span>shared facts 鈥?same data the driver and warehouse see</span></div>
         <div className="list-stack">
           {stops.map((stop) => {
             const progress = progressFor(stop.orderId);
@@ -595,11 +596,11 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
               <article className="stop-row" key={stop.orderId}>
                 <b>{stop.stopNumber}</b>
                 <div>
-                  <strong>{stop.boxCode} · {stop.store}</strong>
+                  <strong>{stop.boxCode} 路 {stop.store}</strong>
                   <span>
-                    {stop.cartons} ctn · {stopStatusLabelDesk(status)}
+                    {stop.cartons} ctn 路 {stopStatusLabelDesk(status)}
                     {progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}
-                    {pod?.receiverName ? ` · received by ${pod.receiverName}` : ''}
+                    {pod?.receiverName ? ` 路 received by ${pod.receiverName}` : ''}
                   </span>
                   {pod?.photoPath || pod?.signaturePath ? (
                     <span className="pod-links">
@@ -612,7 +613,7 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
               </article>
             );
           })}
-          {!stops.length ? <div className="empty-state">No orders released into today’s run yet — release them from the Ordermentum tab.</div> : null}
+          {!stops.length ? <div className="empty-state">No orders released into today鈥檚 run yet 鈥?release them from the Ordermentum tab.</div> : null}
         </div>
       </section>
     </section>
@@ -675,7 +676,7 @@ function StoresPanel({ stores, priceGroups }: { stores: StoreProfile[]; priceGro
   return (
     <section className="workspace-stack">
       <section className="quick-stats"><MetricCard label="Stores" value={stores.length} /><MetricCard label="Price groups" value={priceGroups.length} tone="blue" /><MetricCard label="Ready" value={stores.filter((store) => store.status === 'OK').length} tone="mint" /><MetricCard label="Needs review" value={stores.filter((store) => store.status !== 'OK').length} tone="gold" /></section>
-      <section className="panel"><div className="panel-head"><h2>Store master</h2><span>address + price tier</span></div><div className="store-grid">{stores.map((store) => <article className="store-card" key={store.id}><div><strong>{store.name}</strong><span>{store.address || `${store.suburb} · address pending`}</span><small>{store.statementGroup} · {store.paymentTerms}</small></div><Pill tone={store.status === 'OK' ? 'good' : 'warn'}>{store.status}</Pill></article>)}</div></section>
+      <section className="panel"><div className="panel-head"><h2>Store master</h2><span>address + price tier</span></div><div className="store-grid">{stores.map((store) => <article className="store-card" key={store.id}><div><strong>{store.name}</strong><span>{store.address || `${store.suburb} 路 address pending`}</span><small>{store.statementGroup} 路 {store.paymentTerms}</small></div><Pill tone={store.status === 'OK' ? 'good' : 'warn'}>{store.status}</Pill></article>)}</div></section>
     </section>
   );
 }
@@ -699,7 +700,7 @@ function LogsPanel({ logs }: { logs: Activity[] }) {
         {logs.map((log) => (
           <article className="log-row" key={`${log.at}-${log.detail}`}>
             <b>{log.at}</b>
-            <div><strong>{log.actor} · {log.action}</strong><span>{log.detail}</span></div>
+            <div><strong>{log.actor} 路 {log.action}</strong><span>{log.detail}</span></div>
           </article>
         ))}
       </div>
@@ -740,6 +741,14 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
         </div>
       </section>
       {authProfile && canManageTeam(authProfile) && supabase ? (
+        <OrdermentumIntegrationSettingsPanel supabase={supabase} />
+      ) : authProfile ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Ordermentum integration</h2><Pill tone="neutral">Owner/Admin only</Pill></div>
+          <p>Your account can use EcoFlow, but only OWNER or ADMIN can trigger Ordermentum cloud sync.</p>
+        </section>
+      ) : null}
+      {authProfile && canManageTeam(authProfile) && supabase ? (
         <TeamInviteSettingsPanel supabase={supabase} />
       ) : authProfile ? (
         <section className="panel">
@@ -779,7 +788,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
 
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout} onUndo={() => undefined}>
-      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load — the data below is fallback/demo, not live. {loadError}</div> : null}
+      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load 鈥?the data below is fallback/demo, not live. {loadError}</div> : null}
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
@@ -814,14 +823,14 @@ function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout, a
   return (
     <MobileShell role="warehouse" onLogout={onLogout ?? (() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); })}>
       <section className="mobile-content">
-        {loadError ? <div className="sync-error-banner">Supabase orders failed to load — showing fallback data. {loadError}</div> : null}
+        {loadError ? <div className="sync-error-banner">Supabase orders failed to load 鈥?showing fallback data. {loadError}</div> : null}
         <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick and stock control.</p></div>
         <nav className="mobile-tabs">
           {(['receive', 'pick', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
         </nav>
         {tab === 'receive' ? <div className="mobile-card"><h2>Inbound receiving</h2><p>Confirm received stock and put away to mapped locations.</p><button className="primary-button">Scan receiving dock</button></div> : null}
         {tab === 'pick' ? <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} syncStatus={syncStatus} /> : null}
-        {tab === 'stock' ? <div className="mobile-stack">{stock.slice(0, 18).map((row) => <article className="mobile-card" key={row.sku}><strong>{row.sku}</strong><span>{row.location}</span><span>On hand {row.onHand} · reserved {row.reserved}</span></article>)}</div> : null}
+        {tab === 'stock' ? <div className="mobile-stack">{stock.slice(0, 18).map((row) => <article className="mobile-card" key={row.sku}><strong>{row.sku}</strong><span>{row.location}</span><span>On hand {row.onHand} 路 reserved {row.reserved}</span></article>)}</div> : null}
       </section>
     </MobileShell>
   );

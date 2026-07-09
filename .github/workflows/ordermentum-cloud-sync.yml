@@ -15,9 +15,9 @@ on:
           - catchup
   schedule:
     # Orders are time-sensitive: run every hour.
+    # Master data is intentionally not scheduled here because it can take ~30 minutes;
+    # Owner/Admin can trigger it from EcoFlow Settings -> Integrations when needed.
     - cron: "17 * * * *"
-    # Master data changes slower: run once per day around early Adelaide morning.
-    - cron: "43 16 * * *"
 
 concurrency:
   group: ordermentum-cloud-sync
@@ -59,13 +59,8 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "${{ github.event.schedule }}" = "17 * * * *" ]; then
-              echo "SYNC_MODE=orders_only" >> "$GITHUB_ENV"
-              echo "Scheduled hourly run: orders_only"
-            else
-              echo "SYNC_MODE=master_only" >> "$GITHUB_ENV"
-              echo "Scheduled daily run: master_only"
-            fi
+            echo "SYNC_MODE=orders_only" >> "$GITHUB_ENV"
+            echo "Scheduled hourly run: orders_only"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
             echo "Manual run: ${{ inputs.mode }}"
