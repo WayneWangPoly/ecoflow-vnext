@@ -1,6 +1,8 @@
 -- Owner-facing store intelligence.
 -- Ordermentum remains the order source, but EcoFlow gives the owner a better store view:
 -- contribution, address readiness, price tier, delivery readiness, SKU mix and last-order signal.
+-- Retailer IDs can be uuid or text depending on the imported source, so this view normalises
+-- all retailer/store identifiers to text before grouping or fallback to UNKNOWN.
 
 drop view if exists public.v_ecoflow_owner_store_sku_mix;
 drop view if exists public.v_ecoflow_owner_store_performance;
@@ -16,7 +18,7 @@ with order_fact as (
     coalesce(o.imported_at, o.last_synced_at, o.created_at, o.updated_at) as order_ts,
     coalesce(o.invoice_total, o.total_due, 0)::numeric as order_value,
     lower(coalesce(o.status, '')) as status_lc,
-    om.retailer_id,
+    nullif(om.retailer_id::text, '') as retailer_id,
     coalesce(nullif(om.retailer_name, ''), 'Unknown store') as om_store_name,
     om.delivery_date,
     om.due_at
@@ -37,32 +39,45 @@ with order_fact as (
     f.status_lc
   from order_fact f
   left join public.ecoflow_ordermentum_internal_order_lines l on l.internal_order_id = f.internal_order_id
-), store_base as (
+), order_store_rollup as (
   select
-    coalesce(nullif(s.retailer_id, ''), f.retailer_id, 'UNKNOWN') as store_id,
-    coalesce(nullif(s.store_name, ''), max(f.om_store_name), 'Unknown store') as store_name,
+    coalesce(retailer_id, 'UNKNOWN') as store_id,
+    count(distinct internal_order_id)::numeric as lifetime_orders,
+    count(distinct internal_order_id) filter (where order_ts >= now() - interval '7 days')::numeric as orders_7d,
+    count(distinct internal_order_id) filter (where order_ts >= now() - interval '30 days')::numeric as orders_30d,
+    coalesce(sum(order_value) filter (where order_ts >= now() - interval '7 days'), 0)::numeric as revenue_7d,
+    coalesce(sum(order_value) filter (where order_ts >= now() - interval '30 days'), 0)::numeric as revenue_30d,
+    max(order_ts) as last_order_at,
+    min(order_ts) as first_order_at,
+    count(distinct internal_order_id) filter (where status_lc in ('legacy_cancelled','legacy_rebuild_superseded','cancelled','canceled'))::numeric as legacy_or_cancelled_orders,
+    max(om_store_name) as om_store_name
+  from order_fact
+  group by coalesce(retailer_id, 'UNKNOWN')
+), line_store_rollup as (
+  select
+    coalesce(retailer_id, 'UNKNOWN') as store_id,
+    coalesce(sum(qty) filter (where order_ts >= now() - interval '30 days'), 0)::numeric as units_30d,
+    count(distinct sku) filter (where order_ts >= now() - interval '30 days')::numeric as sku_count_30d
+  from line_fact
+  group by coalesce(retailer_id, 'UNKNOWN')
+), site_rollup as (
+  select
+    coalesce(nullif(s.retailer_id::text, ''), 'UNKNOWN') as store_id,
+    max(nullif(s.store_name, '')) as store_name,
     max(coalesce(nullif(s.formatted_address, ''), concat_ws(', ', nullif(s.street1, ''), nullif(s.street2, ''), nullif(s.suburb, ''), nullif(s.state, ''), nullif(s.postcode, '')))) as address,
     max(s.suburb) as suburb,
     max(s.state) as state,
     max(s.postcode) as postcode,
     max(s.contact_phone) as contact_phone,
     max(s.delivery_instructions) as delivery_instructions,
-    max(s.price_group_id) as price_group_id,
-    bool_or(coalesce(s.verified, false)) as verified,
-    count(distinct f.internal_order_id)::numeric as lifetime_orders,
-    count(distinct f.internal_order_id) filter (where f.order_ts >= now() - interval '7 days')::numeric as orders_7d,
-    count(distinct f.internal_order_id) filter (where f.order_ts >= now() - interval '30 days')::numeric as orders_30d,
-    coalesce(sum(distinct f.order_value) filter (where f.order_ts >= now() - interval '7 days'), 0)::numeric as revenue_7d,
-    coalesce(sum(distinct f.order_value) filter (where f.order_ts >= now() - interval '30 days'), 0)::numeric as revenue_30d,
-    coalesce(sum(l.qty) filter (where l.order_ts >= now() - interval '30 days'), 0)::numeric as units_30d,
-    count(distinct l.sku) filter (where l.order_ts >= now() - interval '30 days')::numeric as sku_count_30d,
-    max(f.order_ts) as last_order_at,
-    min(f.order_ts) as first_order_at,
-    count(distinct f.internal_order_id) filter (where f.status_lc in ('legacy_cancelled','legacy_rebuild_superseded','cancelled','canceled'))::numeric as legacy_or_cancelled_orders
+    max(s.price_group_id::text) as price_group_id,
+    bool_or(coalesce(s.verified, false)) as verified
   from public.ecoflow_store_sites s
-  full join order_fact f on f.retailer_id = s.retailer_id
-  left join line_fact l on l.retailer_id = coalesce(s.retailer_id, f.retailer_id) and l.internal_order_id = f.internal_order_id
-  group by coalesce(nullif(s.retailer_id, ''), f.retailer_id, 'UNKNOWN'), coalesce(nullif(s.store_name, ''), 'Unknown store')
+  group by coalesce(nullif(s.retailer_id::text, ''), 'UNKNOWN')
+), store_keys as (
+  select store_id from site_rollup
+  union
+  select store_id from order_store_rollup
 ), top_sku as (
   select distinct on (coalesce(retailer_id, 'UNKNOWN'))
     coalesce(retailer_id, 'UNKNOWN') as store_id,
@@ -77,22 +92,44 @@ with order_fact as (
   order by coalesce(retailer_id, 'UNKNOWN'), sum(qty) desc, sum(line_value) desc
 )
 select
-  b.*,
+  k.store_id,
+  coalesce(s.store_name, o.om_store_name, 'Unknown store') as store_name,
+  s.address,
+  s.suburb,
+  s.state,
+  s.postcode,
+  s.contact_phone,
+  s.delivery_instructions,
+  s.price_group_id,
+  coalesce(s.verified, false) as verified,
+  coalesce(o.lifetime_orders, 0)::numeric as lifetime_orders,
+  coalesce(o.orders_7d, 0)::numeric as orders_7d,
+  coalesce(o.orders_30d, 0)::numeric as orders_30d,
+  coalesce(o.revenue_7d, 0)::numeric as revenue_7d,
+  coalesce(o.revenue_30d, 0)::numeric as revenue_30d,
+  coalesce(l.units_30d, 0)::numeric as units_30d,
+  coalesce(l.sku_count_30d, 0)::numeric as sku_count_30d,
+  o.last_order_at,
+  o.first_order_at,
+  coalesce(o.legacy_or_cancelled_orders, 0)::numeric as legacy_or_cancelled_orders,
   coalesce(t.top_sku_30d, '—') as top_sku_30d,
   coalesce(t.top_product_30d, 'No product movement yet') as top_product_30d,
   coalesce(t.top_sku_units_30d, 0)::numeric as top_sku_units_30d,
   coalesce(t.top_sku_revenue_30d, 0)::numeric as top_sku_revenue_30d,
   case
-    when b.store_id = 'UNKNOWN' then 'MISSING_STORE_MAPPING'
-    when nullif(trim(coalesce(b.address, '')), '') is null then 'NEEDS_ADDRESS'
-    when nullif(trim(coalesce(b.price_group_id, '')), '') is null then 'NEEDS_PRICE_TIER'
-    when coalesce(b.verified, false) is false then 'NEEDS_VERIFICATION'
-    when b.orders_30d > 0 then 'ACTIVE'
+    when k.store_id = 'UNKNOWN' then 'MISSING_STORE_MAPPING'
+    when nullif(trim(coalesce(s.address, '')), '') is null then 'NEEDS_ADDRESS'
+    when nullif(trim(coalesce(s.price_group_id, '')), '') is null then 'NEEDS_PRICE_TIER'
+    when coalesce(s.verified, false) is false then 'NEEDS_VERIFICATION'
+    when coalesce(o.orders_30d, 0) > 0 then 'ACTIVE'
     else 'QUIET'
   end as store_signal,
-  dense_rank() over (order by b.revenue_30d desc nulls last, b.orders_30d desc nulls last) as revenue_rank_30d
-from store_base b
-left join top_sku t on t.store_id = b.store_id
+  dense_rank() over (order by coalesce(o.revenue_30d, 0) desc nulls last, coalesce(o.orders_30d, 0) desc nulls last) as revenue_rank_30d
+from store_keys k
+left join site_rollup s on s.store_id = k.store_id
+left join order_store_rollup o on o.store_id = k.store_id
+left join line_store_rollup l on l.store_id = k.store_id
+left join top_sku t on t.store_id = k.store_id
 order by revenue_rank_30d asc;
 
 grant select on public.v_ecoflow_owner_store_performance to authenticated;
@@ -119,11 +156,11 @@ with order_fact as (
     o.id as internal_order_id,
     coalesce(o.imported_at, o.last_synced_at, o.created_at, o.updated_at) as order_ts,
     lower(coalesce(o.status, '')) as status_lc,
-    om.retailer_id,
+    nullif(om.retailer_id::text, '') as retailer_id,
     coalesce(nullif(s.store_name, ''), nullif(om.retailer_name, ''), 'Unknown store') as store_name
   from public.ecoflow_ordermentum_internal_orders o
   left join public.om_orders om on om.id::text = o.external_order_id::text or om.order_number::text = o.order_number::text
-  left join public.ecoflow_store_sites s on s.retailer_id = om.retailer_id
+  left join public.ecoflow_store_sites s on s.retailer_id::text = om.retailer_id::text
 )
 select
   coalesce(f.retailer_id, 'UNKNOWN') as store_id,
