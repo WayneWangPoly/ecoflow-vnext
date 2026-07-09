@@ -9,11 +9,11 @@ import {
 } from '@/data/repositories/warehouseReceiving';
 
 const defaultForm = {
-  mode: 'RECEIVE',
+  mode: 'DIRECT',
   barcode: '',
   qty: '1',
   fromLocation: 'RECEIVING',
-  toLocation: 'RECEIVING',
+  toLocation: '',
   note: '',
 };
 
@@ -111,9 +111,10 @@ export function WarehouseReceivingFlow() {
         const first = result[0];
         setNotice(`${first?.sku || 'SKU'} put away ${num(first?.units_putaway)} units to ${first?.to_location || form.toLocation}.`);
       } else {
-        const result = await receiveByBarcode({ barcode, qtyPackages: form.qty || 1, toLocation: form.toLocation || 'RECEIVING', note: form.note || null });
+        const toLocation = form.mode === 'DIRECT' ? (form.toLocation || null) : (form.toLocation || 'RECEIVING');
+        const result = await receiveByBarcode({ barcode, qtyPackages: form.qty || 1, toLocation, note: form.note || null });
         const first = result[0];
-        setNotice(`${first?.sku || 'SKU'} received ${num(first?.units_received)} units into ${first?.to_location || form.toLocation}.`);
+        setNotice(`${first?.sku || 'SKU'} received ${num(first?.units_received)} units into ${first?.to_location || 'fixed shelf'}.`);
       }
       setForm((current) => ({ ...current, barcode: '', note: '' }));
       await reload();
@@ -146,14 +147,15 @@ export function WarehouseReceivingFlow() {
   }, [queue, query]);
 
   const receiveCount = queue.reduce((total, row) => total + num(row.receiving_units), 0);
+  const receiveButton = busy ? 'Saving…' : form.mode === 'PUTAWAY' ? 'Confirm putaway' : form.mode === 'DOCK' ? 'Receive to dock' : 'Receive direct to shelf';
 
   return (
     <section className="warehouse-receive-screen">
       <section className="warehouse-receive-hero">
         <div>
           <span>DAILY RECEIVING</span>
-          <h2>Scan in, then scan to shelf.</h2>
-          <p>Two actions only: receive known barcode into RECEIVING, then put away from RECEIVING to the fixed shelf.</p>
+          <h2>Count first. Receive straight to shelf when possible.</h2>
+          <p>Default flow: count cartons/items at the dock, scan known barcode, put stock straight onto the shelf. Use dock holding only for exceptions.</p>
         </div>
         <button type="button" onClick={() => void reload()}>Refresh</button>
       </section>
@@ -162,29 +164,31 @@ export function WarehouseReceivingFlow() {
       {notice ? <div className="warehouse-receive-notice">{notice}</div> : null}
 
       <section className="warehouse-receive-form">
-        <div className="warehouse-receive-mode-row">
-          <button type="button" className={form.mode === 'RECEIVE' ? 'active' : ''} onClick={() => update('mode', 'RECEIVE')}>Receive</button>
-          <button type="button" className={form.mode === 'PUTAWAY' ? 'active' : ''} onClick={() => update('mode', 'PUTAWAY')}>Putaway</button>
+        <div className="warehouse-receive-mode-row warehouse-receive-mode-three">
+          <button type="button" className={form.mode === 'DIRECT' ? 'active' : ''} onClick={() => { update('mode', 'DIRECT'); update('toLocation', ''); }}>Direct shelf</button>
+          <button type="button" className={form.mode === 'DOCK' ? 'active' : ''} onClick={() => { update('mode', 'DOCK'); update('toLocation', 'RECEIVING'); }}>Dock hold</button>
+          <button type="button" className={form.mode === 'PUTAWAY' ? 'active' : ''} onClick={() => update('mode', 'PUTAWAY')}>Putaway exception</button>
         </div>
         <input ref={scanRef} value={form.barcode} onChange={(e) => update('barcode', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }} placeholder="Scan mapped barcode, then Enter" />
         <div className="warehouse-receive-grid">
           <input value={form.qty} onChange={(e) => update('qty', e.target.value)} inputMode="decimal" placeholder="Package count" />
-          <input value={form.fromLocation} onChange={(e) => update('fromLocation', e.target.value.toUpperCase())} placeholder="From" disabled={form.mode === 'RECEIVE'} />
-          <input value={form.toLocation} onChange={(e) => update('toLocation', e.target.value.toUpperCase())} placeholder={form.mode === 'RECEIVE' ? 'To location' : 'Shelf / rack'} />
+          <input value={form.fromLocation} onChange={(e) => update('fromLocation', e.target.value.toUpperCase())} placeholder="From" disabled={form.mode !== 'PUTAWAY'} />
+          <input value={form.toLocation} onChange={(e) => update('toLocation', e.target.value.toUpperCase())} placeholder={form.mode === 'DIRECT' ? 'Blank = fixed shelf' : form.mode === 'DOCK' ? 'RECEIVING' : 'Shelf / rack'} />
         </div>
-        <input value={form.note} onChange={(e) => update('note', e.target.value)} placeholder="Optional PO / note" />
-        <button type="button" disabled={Boolean(busy)} onClick={() => void submit()}>{busy ? 'Saving…' : form.mode === 'PUTAWAY' ? 'Confirm putaway' : 'Confirm receive'}</button>
+        <input value={form.note} onChange={(e) => update('note', e.target.value)} placeholder="Supplier order / invoice / note" />
+        <button type="button" disabled={Boolean(busy)} onClick={() => void submit()}>{receiveButton}</button>
+        <p className="warehouse-receive-floor-note">After putaway, reconcile the counted receipt against the supplier order/invoice before payment. Barcode receiving records the stock movement; reconciliation records the payable check.</p>
       </section>
 
       <section className="warehouse-receive-kpis">
-        <div><strong>{queue.length}</strong><span>SKU rows in receiving</span></div>
-        <div><strong>{num(receiveCount)}</strong><span>units in receiving</span></div>
+        <div><strong>{queue.length}</strong><span>exception SKU rows in dock</span></div>
+        <div><strong>{num(receiveCount)}</strong><span>units waiting in RECEIVING</span></div>
       </section>
 
       <section className="warehouse-receive-work-grid">
         <section className="warehouse-receive-panel">
-          <header><h3>Putaway queue</h3><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search queue" /></header>
-          <div>{visibleQueue.map((row) => <QueueRow key={row.sku || Math.random()} row={row} onPick={pickQueue} />)}{!visibleQueue.length ? <div className="warehouse-receive-empty">No stock waiting in RECEIVING.</div> : null}</div>
+          <header><h3>Dock exceptions</h3><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search queue" /></header>
+          <div>{visibleQueue.map((row) => <QueueRow key={row.sku || Math.random()} row={row} onPick={pickQueue} />)}{!visibleQueue.length ? <div className="warehouse-receive-empty">No stock waiting in RECEIVING. Normal direct-shelf receiving is clear.</div> : null}</div>
         </section>
         <section className="warehouse-receive-panel">
           <header><h3>Recent warehouse movements</h3><Pill kind="blue">{movements.length}</Pill></header>
