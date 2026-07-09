@@ -89,12 +89,13 @@ $$;
 
 grant execute on function public.ecoflow_record_accounts_statement_action(text, text, text, text) to authenticated;
 
-drop view if exists public.v_ecoflow_accounts_statement_latest_actions;
-drop view if exists public.v_ecoflow_accounts_followup_queue;
-drop view if exists public.v_ecoflow_accounts_statement_export;
-drop view if exists public.v_ecoflow_accounts_statement_lines;
-drop view if exists public.v_ecoflow_accounts_statement_customers;
-drop view if exists public.v_ecoflow_accounts_ar_kpis;
+-- Drop dependent views first so this migration can be safely re-run.
+drop view if exists public.v_ecoflow_accounts_followup_queue cascade;
+drop view if exists public.v_ecoflow_accounts_statement_export cascade;
+drop view if exists public.v_ecoflow_accounts_ar_kpis cascade;
+drop view if exists public.v_ecoflow_accounts_statement_customers cascade;
+drop view if exists public.v_ecoflow_accounts_statement_lines cascade;
+drop view if exists public.v_ecoflow_accounts_statement_latest_actions cascade;
 
 create view public.v_ecoflow_accounts_statement_latest_actions as
 select distinct on (store_id)
