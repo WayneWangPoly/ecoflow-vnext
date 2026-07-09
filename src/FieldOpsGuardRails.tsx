@@ -162,9 +162,46 @@ function applyPickPhaseGate() {
   ensureReverseLoadManifest(pickBoard);
 }
 
+function ensureOneDriverLoadCoach(card: HTMLElement, loaded: { current: number; total: number }) {
+  const list = card.querySelector<HTMLElement>('.load-list');
+  if (!list) return;
+  let coach = card.querySelector<HTMLElement>('.field-one-driver-load-card');
+  if (!coach) {
+    coach = document.createElement('section');
+    coach.className = 'field-one-driver-load-card';
+    list.insertAdjacentElement('beforebegin', coach);
+  }
+  const rows = Array.from(list.querySelectorAll<HTMLElement>('.load-row'));
+  const nextRow = rows.find((row) => !row.classList.contains('loaded'));
+  if (!nextRow) {
+    coach.innerHTML = `
+      <div><span>ONE DRIVER LOAD</span><strong>Ready to leave</strong><small>${loaded.current}/${loaded.total} stops loaded. Check tailgate/door, then start route.</small></div>
+      <b>GO</b>
+    `;
+    return;
+  }
+  const box = textOf(nextRow, '.box-chip') || textOf(nextRow, '[class*="box"]') || 'BOX';
+  const store = textOf(nextRow, '.load-copy strong') || 'Next stop';
+  const detail = textOf(nextRow, '.load-copy span') || 'Cartons pending';
+  const afterNext = rows.slice(rows.indexOf(nextRow) + 1).find((row) => !row.classList.contains('loaded'));
+  const afterText = afterNext ? textOf(afterNext, '.load-copy strong') : 'Then close the van door';
+  coach.innerHTML = `
+    <div class="field-load-next"><span>NEXT LOAD</span><strong>${box}</strong><small>${store} · ${detail}</small></div>
+    <div class="field-load-rule"><b>${loaded.current}/${loaded.total}</b><small>Reverse order. Put this in now, tick it, then next: ${afterText}</small></div>
+  `;
+}
+
 function applyLoadGate() {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
   const startButton = buttons.find((button) => /Start route/i.test(button.textContent || ''));
+  const loadCard = Array.from(document.querySelectorAll<HTMLElement>('.driver-card')).find((card) => /Load truck/i.test(card.textContent || '') && card.querySelector('.load-list'));
+
+  if (loadCard) {
+    const cardText = loadCard.textContent || '';
+    const cardLoaded = parseFraction(cardText, /(\d+)\/(\d+)/) || parseFraction(cardText, /(\d+)\s+of\s+(\d+)\s+stops loaded/i);
+    if (cardLoaded) ensureOneDriverLoadCoach(loadCard, cardLoaded);
+  }
+
   if (!startButton) return;
   const card = startButton.closest<HTMLElement>('.driver-card');
   if (!card) return;
