@@ -54,6 +54,56 @@ export type OwnerStoreSkuMixRow = {
   last_sold_at: string | null;
 };
 
+export type OwnerStoreStatementSummaryRow = {
+  store_id: string | null;
+  store_name: string | null;
+  invoice_count: number | string | null;
+  open_invoice_count: number | string | null;
+  overdue_invoice_count: number | string | null;
+  total_statement_value: number | string | null;
+  open_statement_value: number | string | null;
+  overdue_statement_value: number | string | null;
+  statement_value_30d: number | string | null;
+  latest_invoice_at: string | null;
+  worst_overdue_days: number | string | null;
+  statement_signal: string | null;
+};
+
+export type OwnerStoreReorderWatchRow = {
+  store_id: string | null;
+  store_name: string | null;
+  sku: string | null;
+  product_name: string | null;
+  order_count_30d: number | string | null;
+  units_30d: number | string | null;
+  revenue_30d: number | string | null;
+  last_sold_at: string | null;
+  price_group_id: string | null;
+  delivery_instructions: string | null;
+  store_signal: string | null;
+  store_revenue_30d: number | string | null;
+  store_sku_rank: number | string | null;
+  global_velocity_rank: number | string | null;
+  reorder_signal: string | null;
+  action_hint: string | null;
+};
+
+export type OwnerStoreExperienceGapRow = {
+  store_id: string | null;
+  store_name: string | null;
+  address: string | null;
+  suburb: string | null;
+  price_group_id: string | null;
+  delivery_instructions: string | null;
+  orders_30d: number | string | null;
+  revenue_30d: number | string | null;
+  store_signal: string | null;
+  statement_signal: string | null;
+  open_statement_value: number | string | null;
+  overdue_statement_value: number | string | null;
+  owner_action: string | null;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -96,4 +146,35 @@ export async function loadOwnerStoreSkuMix(client?: SupabaseClient | null) {
     .limit(160);
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as OwnerStoreSkuMixRow[];
+}
+
+export async function loadOwnerStoreStatementSummary(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_owner_store_statement_summary')
+    .select('*')
+    .order('open_statement_value', { ascending: false })
+    .limit(80);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as OwnerStoreStatementSummaryRow[];
+}
+
+export async function loadOwnerStoreReorderWatch(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_owner_store_reorder_watch')
+    .select('*')
+    .limit(120);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as OwnerStoreReorderWatchRow[];
+}
+
+export async function loadOwnerStoreExperienceGaps(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_owner_store_experience_gaps')
+    .select('*')
+    .limit(80);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as OwnerStoreExperienceGapRow[];
 }
