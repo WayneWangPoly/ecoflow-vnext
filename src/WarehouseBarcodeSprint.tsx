@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   loadBarcodeRecentScans,
   loadBarcodeRegistryReview,
@@ -39,13 +40,13 @@ function dateText(value?: string | null) {
   return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
 }
 
-function tone(signal?: string | null) {
+function tone(signal?: string | null): 'good' | 'warn' | 'neutral' {
   if (signal === 'BARCODE_READY') return 'good';
   if (signal?.includes('NEEDS')) return 'warn';
   return 'neutral';
 }
 
-function SmallPill({ children, kind = 'neutral' }: { children: string; kind?: 'good' | 'warn' | 'neutral' | 'blue' }) {
+function SmallPill({ children, kind = 'neutral' }: { children: ReactNode; kind?: 'good' | 'warn' | 'neutral' | 'blue' }) {
   return <span className={`barcode-pill barcode-pill-${kind}`}>{children}</span>;
 }
 
