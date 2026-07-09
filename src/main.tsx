@@ -5,6 +5,7 @@ import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
+import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
@@ -18,6 +19,7 @@ import './ownerStoreIntelligence.css';
 import './storeStatementPressure.css';
 import './accountsStatementWorkbench.css';
 import './roleAwareNavigation.css';
+import './ownerCommandCenter.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -26,6 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <FieldModeEnhancer />
       <RoleAwareDesktopNavigation />
+      <OwnerCommandCenter />
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
       <AccountsStatementWorkbench />
