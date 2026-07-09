@@ -10,7 +10,6 @@ import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
-import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import './styles.css';
 import './fieldMode.css';
@@ -24,7 +23,6 @@ import './roleAwareNavigation.css';
 import './ownerCommandCenter.css';
 import './inventoryControlCenter.css';
 import './inventoryMovementLedger.css';
-import './warehouseBarcodeSprint.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -37,7 +35,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
-      <WarehouseBarcodeSprintMount />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
