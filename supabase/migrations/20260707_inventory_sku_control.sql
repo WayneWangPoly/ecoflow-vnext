@@ -167,9 +167,9 @@ $$;
 
 grant execute on function public.ecoflow_apply_inventory_sku_action(text, text, text, text) to authenticated;
 
-drop view if exists public.v_ecoflow_inventory_sku_actions_latest cascade;
-drop view if exists public.v_ecoflow_inventory_sku_control cascade;
 drop view if exists public.v_ecoflow_inventory_kpis cascade;
+drop view if exists public.v_ecoflow_inventory_sku_control cascade;
+drop view if exists public.v_ecoflow_inventory_sku_actions_latest cascade;
 
 create view public.v_ecoflow_inventory_sku_actions_latest as
 select distinct on (sku)
@@ -193,7 +193,7 @@ with velocity as (
     revenue_30d,
     units_7d,
     units_30d,
-    order_count_30d,
+    order_count as order_count_30d,
     avg_unit_price,
     last_sold_at,
     barcode_attention_lines,
