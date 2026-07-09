@@ -22,6 +22,7 @@ import './accountsStatementWorkbench.css';
 import './roleAwareNavigation.css';
 import './ownerCommandCenter.css';
 import './inventoryControlCenter.css';
+import './inventoryMovementLedger.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
