@@ -101,6 +101,67 @@ export type InventoryMovementResult = {
   moved_at: string;
 };
 
+export type BarcodePackageLevel = 'CARTON' | 'SLEEVE' | 'EACH' | 'INNER' | 'UNKNOWN';
+export type BarcodeActionMode = 'MAP_ONLY' | 'MAP_AND_COUNT' | 'MAP_AND_RECEIVE';
+
+export type BarcodeSprintKpis = {
+  registered_barcodes: number | string | null;
+  covered_skus: number | string | null;
+  needs_carton: number | string | null;
+  needs_sleeve: number | string | null;
+  barcode_ready_skus: number | string | null;
+  scans_24h: number | string | null;
+  latest_scan_at: string | null;
+};
+
+export type BarcodeRegistryReviewRow = {
+  sku: string | null;
+  product_name: string | null;
+  fixed_shelf: string | null;
+  barcode_count: number | string | null;
+  carton_barcodes: number | string | null;
+  sleeve_barcodes: number | string | null;
+  each_barcodes: number | string | null;
+  last_scanned_at: string | null;
+  scan_count: number | string | null;
+  barcode_signal: string | null;
+};
+
+export type BarcodeRecentScanRow = {
+  id: string;
+  session_id: string | null;
+  sku: string | null;
+  barcode: string | null;
+  package_level: BarcodePackageLevel | string | null;
+  units_per_barcode: number | string | null;
+  product_name: string | null;
+  shelf: string | null;
+  qty_observed: number | string | null;
+  action_mode: string | null;
+  scan_status: string | null;
+  movement_id: string | null;
+  scan_note: string | null;
+  scanned_at: string | null;
+};
+
+export type BarcodeSessionResult = {
+  session_id: string;
+  session_name: string;
+  target_area: string | null;
+  session_status: string;
+  created_at: string;
+};
+
+export type BarcodeScanResult = {
+  event_id: string;
+  sku: string;
+  barcode: string;
+  package_level: BarcodePackageLevel;
+  scan_status: string;
+  movement_id: string | null;
+  scanned_at: string;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -183,4 +244,59 @@ export async function recordInventoryMovement(input: { sku: string; movementType
   });
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as InventoryMovementResult[];
+}
+
+export async function loadBarcodeSprintKpis(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.from('v_ecoflow_barcode_sprint_kpis').select('*').maybeSingle();
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? null) as BarcodeSprintKpis | null;
+}
+
+export async function loadBarcodeRegistryReview(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_barcode_registry_review')
+    .select('*')
+    .limit(160);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as BarcodeRegistryReviewRow[];
+}
+
+export async function loadBarcodeRecentScans(client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active
+    .from('v_ecoflow_barcode_recent_scans')
+    .select('*')
+    .limit(80);
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as BarcodeRecentScanRow[];
+}
+
+export async function startBarcodeScanSession(input: { sessionName?: string | null; targetArea?: string | null }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_start_barcode_scan_session', {
+    p_session_name: input.sessionName ?? 'Barcode sprint',
+    p_target_area: input.targetArea ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as BarcodeSessionResult[];
+}
+
+export async function recordBarcodeScan(input: { sessionId?: string | null; sku: string; barcode: string; packageLevel: BarcodePackageLevel; unitsPerBarcode?: number | string | null; productName?: string | null; shelf?: string | null; qtyObserved?: number | string | null; actionMode?: BarcodeActionMode | null; note?: string | null }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_record_barcode_scan', {
+    p_session_id: input.sessionId ?? null,
+    p_sku: input.sku,
+    p_barcode: input.barcode,
+    p_package_level: input.packageLevel,
+    p_units_per_barcode: input.unitsPerBarcode ?? 1,
+    p_product_name: input.productName ?? null,
+    p_shelf: input.shelf ?? null,
+    p_qty_observed: input.qtyObserved ?? null,
+    p_action_mode: input.actionMode ?? 'MAP_ONLY',
+    p_note: input.note ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as BarcodeScanResult[];
 }
