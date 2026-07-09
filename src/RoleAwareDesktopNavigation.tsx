@@ -20,7 +20,8 @@ function normaliseRole(value?: string | null) {
   return 'OWNER';
 }
 
-function buttonBaseLabel(button: HTMLButtonElement) {
+function buttonBaseLabel(button?: HTMLButtonElement | null) {
+  if (!button) return '';
   const existing = button.dataset.ecoflowBaseLabel;
   if (existing) return existing;
   const text = button.textContent?.trim() || '';
@@ -66,7 +67,7 @@ export function RoleAwareDesktopNavigation() {
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {
         const accountsButton = buttons.find((button) => buttonBaseLabel(button) === 'Reconciliation');
         const activeButton = buttons.find((button) => button.classList.contains('active'));
-        if (accountsButton && buttonBaseLabel(activeButton as HTMLButtonElement | undefined as never) !== 'Reconciliation') {
+        if (accountsButton && buttonBaseLabel(activeButton) !== 'Reconciliation') {
           accountDefaultApplied.current = true;
           window.setTimeout(() => accountsButton.click(), 80);
         }
