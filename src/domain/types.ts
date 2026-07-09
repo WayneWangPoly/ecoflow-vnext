@@ -1,6 +1,6 @@
 export type Role = 'owner' | 'account' | 'warehouse' | 'driver';
 export type DesktopTab = 'dashboard' | 'ordermentum' | 'orders' | 'delivery' | 'inventory' | 'stores' | 'reconciliation' | 'logs' | 'settings';
-export type WarehouseTab = 'receive' | 'pick' | 'stock';
+export type WarehouseTab = 'receive' | 'barcode' | 'pick' | 'stock';
 export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
 export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CLOSED' | 'CANCELLED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'OVERDUE' | 'CREDIT_HOLD';
@@ -178,62 +178,4 @@ export type OrdermentumRepositoryStatus = {
   connected: boolean;
   loadedAt: string;
   sourceFiles: string[];
-  counts: {
-    recentOrders: number;
-    products: number;
-    productsTotal: number;
-    variants: number;
-    variantsTotal: number;
-    priceGroups: number;
-    stockLocations: number;
-    detailOrderLines: number;
-  };
-};
-
-export type MappingExceptionCategory = 'SITE_MAPPING' | 'SKU_MAPPING' | 'STOCK_SHORTAGE' | 'PRICE_TIER' | 'PAYMENT' | 'ADDRESS';
-
-export type MappingException = {
-  id: string;
-  orderId: string;
-  orderNo: string;
-  store: string;
-  category: MappingExceptionCategory;
-  severity: 'warn' | 'danger';
-  summary: string;
-  detail: string;
-  action: string;
-};
-
-export type OrdermentumImportSummary = {
-  recentOrdersCount: number;
-  detailOrderNo: string;
-  detailInvoiceNo: string;
-  detailRetailerName: string;
-  detailLineCount: number;
-  invoiceTotal: number;
-  invoiceStatus: string;
-  supplierName: string;
-  productSampleCount: number;
-  productCatalogTotal: number;
-  variantSampleCount: number;
-  variantCatalogTotal: number;
-  priceGroupCount: number;
-  stockLocationCount: number;
-  sourceFiles: string[];
-};
-
-export type EcoFlowDataSet = {
-  orders: ImportedOrder[];
-  stores: StoreProfile[];
-  stock: StockRow[];
-  logs: Activity[];
-  catalog: CatalogRow[];
-  priceGroups: PriceGroupRow[];
-  dataQuality: DataQualityItem[];
-  mappingExceptions: MappingException[];
-  syncBatch: SyncBatch;
-  businessDay: BusinessDay;
-  bucketCounts: OrderBucketCount[];
-  repositoryStatus: OrdermentumRepositoryStatus;
-  summary: OrdermentumImportSummary;
 };
