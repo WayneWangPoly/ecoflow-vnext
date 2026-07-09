@@ -41,7 +41,7 @@ function signalTone(signal?: string | null) {
   return 'neutral';
 }
 
-function SmallPill({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
+function SmallPill({ children, kind = 'neutral' }: { children: any; kind?: string }) {
   return <span className={`barcode-pill barcode-pill-${kind}`}>{children}</span>;
 }
 
