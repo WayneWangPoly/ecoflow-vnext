@@ -104,6 +104,18 @@ export type OwnerStoreExperienceGapRow = {
   owner_action: string | null;
 };
 
+export type StoreOwnerAction = 'SET_PRICE_TIER' | 'SET_DELIVERY_INSTRUCTIONS' | 'SET_ADDRESS' | 'SET_CONTACT_PHONE' | 'MARK_VERIFIED' | 'ACK_STATEMENT_REVIEW';
+
+export type StoreOwnerActionResult = {
+  action_id: string;
+  store_id: string;
+  action: StoreOwnerAction;
+  execution_status: string;
+  affected_rows: number | string | null;
+  executed_at: string;
+  error_message: string | null;
+};
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -177,4 +189,16 @@ export async function loadOwnerStoreExperienceGaps(client?: SupabaseClient | nul
     .limit(80);
   if (error) throw new Error(errorMessage(error));
   return (data ?? []) as OwnerStoreExperienceGapRow[];
+}
+
+export async function applyStoreOwnerAction(input: { storeId: string; action: StoreOwnerAction; value?: string | null; note?: string | null }, client?: SupabaseClient | null) {
+  const active = requireSupabase(client);
+  const { data, error } = await active.rpc('ecoflow_apply_store_owner_action', {
+    p_store_id: input.storeId,
+    p_action: input.action,
+    p_value: input.value ?? null,
+    p_note: input.note ?? null,
+  });
+  if (error) throw new Error(errorMessage(error));
+  return (data ?? []) as StoreOwnerActionResult[];
 }
