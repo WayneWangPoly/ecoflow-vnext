@@ -1,74 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import {
   loadBarcodeRecentScans,
   loadBarcodeRegistryReview,
   loadBarcodeSprintKpis,
   recordBarcodeScan,
   startBarcodeScanSession,
-  type BarcodeActionMode,
-  type BarcodePackageLevel,
-  type BarcodeRecentScanRow,
-  type BarcodeRegistryReviewRow,
-  type BarcodeSprintKpis,
 } from '@/data/repositories/inventoryControl';
 
-type FormState = {
-  sku: string;
-  barcode: string;
-  packageLevel: BarcodePackageLevel;
-  unitsPerBarcode: string;
-  shelf: string;
-  qtyObserved: string;
-  actionMode: BarcodeActionMode;
-  note: string;
-};
-
-function num(value: unknown) {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function title(value?: string | null) {
-  return String(value || 'UNKNOWN').replace(/_/g, ' ');
-}
-
-function dateText(value?: string | null) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-}
-
-function tone(signal?: string | null): 'good' | 'warn' | 'neutral' {
-  if (signal === 'BARCODE_READY') return 'good';
-  if (signal?.includes('NEEDS')) return 'warn';
-  return 'neutral';
-}
-
-function SmallPill({ children, kind = 'neutral' }: { children: ReactNode; kind?: 'good' | 'warn' | 'neutral' | 'blue' }) {
-  return <span className={`barcode-pill barcode-pill-${kind}`}>{children}</span>;
-}
-
-function QueueRow({ row, onPick }: { row: BarcodeRegistryReviewRow; onPick: (row: BarcodeRegistryReviewRow) => void }) {
-  return (
-    <button type="button" className="barcode-queue-row" onClick={() => onPick(row)}>
-      <div><strong>{row.sku}</strong><span>{row.product_name}</span><small>{row.fixed_shelf || 'No shelf'} · scanned {num(row.scan_count)}</small></div>
-      <SmallPill kind={tone(row.barcode_signal)}>{title(row.barcode_signal)}</SmallPill>
-    </button>
-  );
-}
-
-function ScanRow({ row }: { row: BarcodeRecentScanRow }) {
-  return (
-    <article className="barcode-scan-row">
-      <div><strong>{row.sku}</strong><span>{row.barcode}</span><small>{row.shelf || 'No shelf'} · {dateText(row.scanned_at)}</small></div>
-      <SmallPill kind={row.movement_id ? 'good' : 'blue'}>{title(row.package_level)} · {title(row.scan_status)}</SmallPill>
-    </article>
-  );
-}
-
-const defaultForm: FormState = {
+const packageLevels = ['CARTON', 'SLEEVE', 'EACH', 'INNER'] as const;
+const defaultForm = {
   sku: '',
   barcode: '',
   packageLevel: 'CARTON',
@@ -79,21 +19,65 @@ const defaultForm: FormState = {
   note: '',
 };
 
+function num(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function title(value?: unknown) {
+  return String(value || 'UNKNOWN').replace(/_/g, ' ');
+}
+
+function dateText(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function signalTone(signal?: string | null) {
+  if (signal === 'BARCODE_READY') return 'good';
+  if (signal?.includes('NEEDS')) return 'warn';
+  return 'neutral';
+}
+
+function SmallPill({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
+  return <span className={`barcode-pill barcode-pill-${kind}`}>{children}</span>;
+}
+
+function QueueRow({ row, onPick }: { row: any; onPick: (row: any) => void }) {
+  return (
+    <button type="button" className="barcode-queue-row" onClick={() => onPick(row)}>
+      <div><strong>{row.sku}</strong><span>{row.product_name}</span><small>{row.fixed_shelf || 'No shelf'} · scanned {num(row.scan_count)}</small></div>
+      <SmallPill kind={signalTone(row.barcode_signal)}>{title(row.barcode_signal)}</SmallPill>
+    </button>
+  );
+}
+
+function ScanRow({ row }: { row: any }) {
+  return (
+    <article className="barcode-scan-row">
+      <div><strong>{row.sku}</strong><span>{row.barcode}</span><small>{row.shelf || 'No shelf'} · {dateText(row.scanned_at)}</small></div>
+      <SmallPill kind={row.movement_id ? 'good' : 'blue'}>{title(row.package_level)} · {title(row.scan_status)}</SmallPill>
+    </article>
+  );
+}
+
 export function WarehouseBarcodeSprint() {
   const [sessionId, setSessionId] = useState<string | null>(() => window.localStorage.getItem('ecoflow-barcode-sprint-session'));
   const [sessionLabel, setSessionLabel] = useState('First barcode sprint');
   const [targetArea, setTargetArea] = useState('A4 / cups / lids');
-  const [form, setForm] = useState<FormState>(defaultForm);
-  const [kpis, setKpis] = useState<BarcodeSprintKpis | null>(null);
-  const [queue, setQueue] = useState<BarcodeRegistryReviewRow[]>([]);
-  const [recent, setRecent] = useState<BarcodeRecentScanRow[]>([]);
+  const [form, setForm] = useState(defaultForm);
+  const [kpis, setKpis] = useState<any>(null);
+  const [queue, setQueue] = useState<any[]>([]);
+  const [recent, setRecent] = useState<any[]>([]);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
+  function update(key: keyof typeof defaultForm, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
@@ -122,7 +106,7 @@ export function WarehouseBarcodeSprint() {
     return id;
   }
 
-  async function saveScan(modeOverride?: BarcodeActionMode) {
+  async function saveScan(modeOverride?: string) {
     const sku = form.sku.trim().toUpperCase();
     const barcode = form.barcode.trim();
     if (!sku) { setError('Type or pick SKU first.'); return; }
@@ -134,19 +118,16 @@ export function WarehouseBarcodeSprint() {
         sessionId: id,
         sku,
         barcode,
-        packageLevel: form.packageLevel,
+        packageLevel: form.packageLevel as any,
         unitsPerBarcode: form.unitsPerBarcode || 1,
         shelf: form.shelf,
         qtyObserved: form.qtyObserved || 1,
-        actionMode: modeOverride || form.actionMode,
+        actionMode: (modeOverride || form.actionMode) as any,
         note: form.note,
       });
       const first = result[0];
       setNotice(`${sku}: ${title(first?.package_level || form.packageLevel)} barcode saved${first?.movement_id ? ' + stock received' : ''}.`);
-      setForm((current) => {
-        const nextLevel: BarcodePackageLevel = current.packageLevel === 'CARTON' ? 'SLEEVE' : current.packageLevel;
-        return { ...current, barcode: '', note: '', packageLevel: nextLevel };
-      });
+      setForm((current) => ({ ...current, barcode: '', note: '', packageLevel: current.packageLevel === 'CARTON' ? 'SLEEVE' : current.packageLevel }));
       await reload();
       window.setTimeout(() => barcodeInputRef.current?.focus(), 60);
     } catch (err) {
@@ -156,13 +137,12 @@ export function WarehouseBarcodeSprint() {
     }
   }
 
-  function pickSku(row: BarcodeRegistryReviewRow) {
-    const nextLevel: BarcodePackageLevel = row.barcode_signal === 'NEEDS_SLEEVE_BARCODE' ? 'SLEEVE' : 'CARTON';
+  function pickSku(row: any) {
     setForm((current) => ({
       ...current,
       sku: row.sku || '',
       shelf: row.fixed_shelf || current.shelf,
-      packageLevel: nextLevel,
+      packageLevel: row.barcode_signal === 'NEEDS_SLEEVE_BARCODE' ? 'SLEEVE' : 'CARTON',
       barcode: '',
     }));
     window.setTimeout(() => barcodeInputRef.current?.focus(), 60);
@@ -197,10 +177,10 @@ export function WarehouseBarcodeSprint() {
         <div className="barcode-session-row"><input value={sessionLabel} onChange={(e) => setSessionLabel(e.target.value)} placeholder="Session name" /><input value={targetArea} onChange={(e) => setTargetArea(e.target.value)} placeholder="Area / rack" /></div>
         <div className="barcode-main-inputs"><input value={form.sku} onChange={(e) => update('sku', e.target.value.toUpperCase())} placeholder="SKU / item code" /><input ref={barcodeInputRef} value={form.barcode} onChange={(e) => update('barcode', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void saveScan(); }} placeholder="Scan barcode here, then Enter" /></div>
         <div className="barcode-package-buttons">
-          {(['CARTON','SLEEVE','EACH','INNER'] as BarcodePackageLevel[]).map((level) => <button key={level} type="button" className={form.packageLevel === level ? 'active' : ''} onClick={() => update('packageLevel', level)}>{level}</button>)}
+          {packageLevels.map((level) => <button key={level} type="button" className={form.packageLevel === level ? 'active' : ''} onClick={() => update('packageLevel', level)}>{level}</button>)}
         </div>
         <div className="barcode-detail-inputs"><input value={form.unitsPerBarcode} onChange={(e) => update('unitsPerBarcode', e.target.value)} inputMode="decimal" placeholder="Units per barcode" /><input value={form.qtyObserved} onChange={(e) => update('qtyObserved', e.target.value)} inputMode="decimal" placeholder="Qty counted" /><input value={form.shelf} onChange={(e) => update('shelf', e.target.value.toUpperCase())} placeholder="Shelf / rack" /></div>
-        <select value={form.actionMode} onChange={(e) => update('actionMode', e.target.value as BarcodeActionMode)}><option value="MAP_ONLY">Map barcode only</option><option value="MAP_AND_COUNT">Map + count note</option><option value="MAP_AND_RECEIVE">Map + receive into stock</option></select>
+        <select value={form.actionMode} onChange={(e) => update('actionMode', e.target.value)}><option value="MAP_ONLY">Map barcode only</option><option value="MAP_AND_COUNT">Map + count note</option><option value="MAP_AND_RECEIVE">Map + receive into stock</option></select>
         <input value={form.note} onChange={(e) => update('note', e.target.value)} placeholder="Optional note" />
         <div className="barcode-actions"><button type="button" disabled={busy === 'scan'} onClick={() => void saveScan('MAP_ONLY')}>{busy === 'scan' ? 'Saving…' : 'Save barcode'}</button><button type="button" disabled={busy === 'scan'} onClick={() => void saveScan('MAP_AND_RECEIVE')}>Save + receive stock</button><button type="button" onClick={() => setForm(defaultForm)}>Clear</button></div>
       </section>
