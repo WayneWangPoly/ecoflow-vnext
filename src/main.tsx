@@ -13,6 +13,7 @@ import './brandLockup.css';
 import './orderPlatformTable.css';
 import './ownerOrderIntelligence.css';
 import './ownerStoreIntelligence.css';
+import './storeStatementPressure.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
