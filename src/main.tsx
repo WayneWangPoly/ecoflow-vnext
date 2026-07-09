@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
+import { InventoryControlCenter } from './InventoryControlCenter';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
@@ -20,6 +21,7 @@ import './storeStatementPressure.css';
 import './accountsStatementWorkbench.css';
 import './roleAwareNavigation.css';
 import './ownerCommandCenter.css';
+import './inventoryControlCenter.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -31,6 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <OwnerCommandCenter />
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
+      <InventoryControlCenter />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
