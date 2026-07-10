@@ -10,6 +10,23 @@
 .field-stage-sync.sync-saved { color: var(--ef-good); background: var(--ef-good-bg); border-color: #cfe7da; }
 .field-stage-sync.sync-offline { color: var(--ef-warn); background: var(--ef-warn-bg); border-color: #ead29b; }
 
+.warehouse-putaway-target-bridge {
+  order: -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #c9d9ec;
+  border-radius: 8px;
+  background: #eef5fb;
+  color: #174f86;
+}
+.warehouse-putaway-target-bridge > div { display: grid; gap: 2px; }
+.warehouse-putaway-target-bridge span { font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.warehouse-putaway-target-bridge strong { font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace; font-size: 16px; }
+.warehouse-putaway-target-bridge button { min-height: 40px; border: 1px solid #b9cce0; border-radius: 7px; background: #fff; color: #174f86; padding: 0 12px; font-weight: 650; }
+
 .warehouse-putaway-control { display: grid; gap: 12px; }
 .warehouse-putaway-target {
   display: grid;
@@ -45,9 +62,11 @@
 @media (max-width: 760px) {
   .barcode-master-screen .barcode-actions { grid-template-columns: 1fr 1fr !important; }
   .warehouse-putaway-actions { grid-template-columns: 1fr; }
+  .warehouse-putaway-target-bridge { align-items: flex-start; }
 }
 
 @media (max-width: 460px) {
   .barcode-master-screen .barcode-actions { grid-template-columns: 1fr !important; }
   .field-stage-head { display: grid !important; }
+  .warehouse-putaway-target-bridge { display: grid; }
 }
