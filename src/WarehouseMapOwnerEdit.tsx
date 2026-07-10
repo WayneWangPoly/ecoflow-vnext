@@ -90,6 +90,7 @@ export function WarehouseMapOwnerEdit() {
     snapshotRef.current = currentLayout();
     const floorplan = document.querySelector<HTMLElement>('.warehouse-floorplan');
     if (!floorplan) return;
+    const floorplanElement = floorplan;
     let active: HTMLElement | null = null;
     let startX = 0;
     let startY = 0;
@@ -103,7 +104,7 @@ export function WarehouseMapOwnerEdit() {
 
     function pointerDown(event: PointerEvent) {
       const element = (event.target as HTMLElement).closest<HTMLElement>('.floor-rack, .floor-static');
-      if (!element || !floorplan.contains(element)) return;
+      if (!element || !floorplanElement.contains(element)) return;
       event.preventDefault();
       select(element);
       active = element;
@@ -116,7 +117,7 @@ export function WarehouseMapOwnerEdit() {
 
     function pointerMove(event: PointerEvent) {
       if (!active) return;
-      const rect = floorplan.getBoundingClientRect();
+      const rect = floorplanElement.getBoundingClientRect();
       const left = Math.max(0, Math.min(98, startLeft + ((event.clientX - startX) / rect.width) * 100));
       const top = Math.max(0, Math.min(98, startTop + ((event.clientY - startY) / rect.height) * 100));
       active.style.left = `${left.toFixed(2)}%`;
@@ -127,11 +128,11 @@ export function WarehouseMapOwnerEdit() {
       active = null;
     }
 
-    floorplan.addEventListener('pointerdown', pointerDown);
+    floorplanElement.addEventListener('pointerdown', pointerDown);
     window.addEventListener('pointermove', pointerMove);
     window.addEventListener('pointerup', pointerUp);
     return () => {
-      floorplan.removeEventListener('pointerdown', pointerDown);
+      floorplanElement.removeEventListener('pointerdown', pointerDown);
       window.removeEventListener('pointermove', pointerMove);
       window.removeEventListener('pointerup', pointerUp);
       layoutElements().forEach((item) => item.classList.remove('layout-selected'));
