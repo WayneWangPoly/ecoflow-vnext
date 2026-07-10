@@ -26,5 +26,29 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Audit warehouse invariants
         run: npm run audit:warehouse
-      - name: Build application
-        run: npm run build
+      - name: TypeScript check
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node ./node_modules/typescript/bin/tsc -b --pretty false 2>&1 | tee typecheck.log
+      - name: Vite bundle
+        id: bundle
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node ./node_modules/vite/bin/vite.js build 2>&1 | tee vite-build.log
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: warehouse-validation-logs
+          path: |
+            typecheck.log
+            vite-build.log
+          if-no-files-found: warn
+      - name: Fail on validation error
+        if: steps.typecheck.outcome == 'failure' || steps.bundle.outcome == 'failure'
+        run: exit 1
