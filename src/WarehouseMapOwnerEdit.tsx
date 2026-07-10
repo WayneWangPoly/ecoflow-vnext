@@ -64,6 +64,7 @@ export function WarehouseMapOwnerEdit() {
   const [editing, setEditing] = useState(false);
   const [selectedKey, setSelectedKey] = useState('');
   const snapshotRef = useRef<LayoutState>({});
+  const systemLayoutRef = useRef<LayoutState>({});
 
   useEffect(() => {
     if (window.location.pathname !== '/warehouse-map') return;
@@ -71,6 +72,9 @@ export function WarehouseMapOwnerEdit() {
     function locate() {
       const nextHost = document.querySelector<HTMLElement>('.warehouse-header-actions');
       setHost(nextHost);
+      if (!Object.keys(systemLayoutRef.current).length && layoutElements().length) {
+        systemLayoutRef.current = currentLayout();
+      }
       applyLayout(storedLayout());
     }
     locate();
@@ -161,7 +165,7 @@ export function WarehouseMapOwnerEdit() {
 
   function reset() {
     window.localStorage.removeItem(STORAGE_KEY);
-    applyLayout(snapshotRef.current);
+    applyLayout(systemLayoutRef.current);
     setSelectedKey('');
   }
 
@@ -182,7 +186,7 @@ export function WarehouseMapOwnerEdit() {
             <button type="button" onClick={() => nudge('height', -0.5)}>Height −</button>
             <button type="button" onClick={() => nudge('height', 0.5)}>Height +</button>
           </div>
-          <div className="warehouse-layout-actions"><button type="button" onClick={reset}>Reset</button><button type="button" onClick={cancel}>Cancel</button><button className="primary" type="button" onClick={save}>Save layout</button></div>
+          <div className="warehouse-layout-actions"><button type="button" onClick={reset}>Reset to system</button><button type="button" onClick={cancel}>Cancel</button><button className="primary" type="button" onClick={save}>Save layout</button></div>
         </aside>,
         document.body,
       ) : null}
