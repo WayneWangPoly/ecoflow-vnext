@@ -3,12 +3,14 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
+import { DriverDeliveryExceptionEnhancer } from './DriverDeliveryExceptionEnhancer';
 import { DriverPodQualityEnhancer } from './DriverPodQualityEnhancer';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { FieldOpsGuardRails } from './FieldOpsGuardRails';
 import { InventoryControlCenter } from './InventoryControlCenter';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
+import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
@@ -35,6 +37,7 @@ import './fieldOpsGuardRails.css';
 import './stageAndLoadExecution.css';
 import './labelPrintBlackWhite.css';
 import './driverPodQuality.css';
+import './deliveryOperations.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -45,8 +48,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
       <DriverPodQualityEnhancer />
+      <DriverDeliveryExceptionEnhancer />
       <RoleAwareDesktopNavigation />
       <OwnerCommandCenter />
+      <OwnerDeliveryAlerts />
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
