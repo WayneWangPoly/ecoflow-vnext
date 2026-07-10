@@ -40,6 +40,7 @@ import './labelPrintBlackWhite.css';
 import './driverPodQuality.css';
 import './deliveryOperations.css';
 import './returnZoneOperations.css';
+import './returnZoneCopyFix.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
