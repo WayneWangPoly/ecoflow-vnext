@@ -1,4 +1,4 @@
-name: Warehouse productisation check
+name: Warehouse and delivery productisation check
 
 on:
   pull_request:
@@ -7,6 +7,7 @@ on:
     branches:
       - 'agent/warehouse-productisation'
       - 'agent/warehouse-backend-hardening'
+      - 'agent/owner-driver-tracking-map'
 
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Audit warehouse invariants
+      - name: Audit operational invariants
         run: npm run audit:warehouse
       - name: TypeScript check
         shell: bash
@@ -41,7 +42,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: warehouse-validation-logs
+          name: operational-validation-logs
           path: |
             typecheck.log
             vite-build.log
@@ -75,12 +76,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Load current warehouse schema contract
+      - name: Load current operational schema contract
         shell: bash
         run: |
           set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee warehouse-db-contract.log
-      - name: Apply warehouse hardening migrations in release order
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee operational-db-contract.log
+      - name: Apply hardening and driver tracking migrations in release order
         shell: bash
         run: |
           set -euo pipefail
@@ -90,20 +91,26 @@ jobs:
             supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql \
             supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql \
             supabase/migrations/20260710130400_receiving_confirmation_qualification.sql \
-            supabase/migrations/20260710130500_layout_conflict_qualification.sql
+            supabase/migrations/20260710130500_layout_conflict_qualification.sql \
+            supabase/migrations/20260710140000_owner_driver_location_tracking.sql
           do
-            echo "==> $file" | tee -a warehouse-db-contract.log
-            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a warehouse-db-contract.log
+            echo "==> $file" | tee -a operational-db-contract.log
+            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
           done
       - name: Execute warehouse transaction contract tests
         shell: bash
         run: |
           set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-contract-test.sql 2>&1 | tee -a warehouse-db-contract.log
-      - name: Upload warehouse database contract log
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute driver tracking privacy and idempotency tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/driver-location-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Upload operational database contract log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: warehouse-database-contract
-          path: warehouse-db-contract.log
+          name: operational-database-contract
+          path: operational-db-contract.log
           if-no-files-found: warn
