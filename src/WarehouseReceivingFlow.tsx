@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadWarehouseReceivingMovements, type WarehouseReceivingMovementRow } from '@/data/repositories/warehouseReceiving';
 import {
+  cancelStagedReceivingBatch,
   finishStagedReceivingBatch,
   loadOpenStagedReceivingBatches,
   loadStagedReceivingLines,
@@ -12,6 +13,7 @@ import {
 } from '@/data/repositories/stagedReceiving';
 
 const defaultForm = { barcode: '', qty: '1', location: '', note: '' };
+type PendingScan = { fingerprint: string; idempotencyKey: string; clientScannedAt: string };
 
 function num(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -49,7 +51,7 @@ function LineRow({ line, busy, onTick }: { line: StagedReceivingLine; busy: stri
       <div className="warehouse-scan-number"><strong>{num(line.qty_packages)}</strong><span>packages</span></div>
       <div className="warehouse-scan-number"><strong>{num(line.units_received)}</strong><span>units</span></div>
       <Pill kind={posted ? 'good' : checked ? 'blue' : 'warn'}>{posted ? 'IN STOCK' : checked ? 'TICKED' : 'CHECK'}</Pill>
-      <div className="warehouse-scan-location">{line.suggested_location || 'RECEIVING'}</div>
+      <div className="warehouse-scan-location">{line.suggested_location || 'TEMP'}</div>
     </article>
   );
 }
@@ -74,6 +76,7 @@ export function WarehouseReceivingFlow() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const scanRef = useRef<HTMLInputElement | null>(null);
+  const pendingScanRef = useRef<PendingScan | null>(null);
 
   function update(key: keyof typeof defaultForm, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -130,6 +133,7 @@ export function WarehouseReceivingFlow() {
       const rows = await startStagedReceivingBatch();
       const first = rows[0];
       if (!first?.batch_id) throw new Error('Could not start receiving batch.');
+      pendingScanRef.current = null;
       setNotice(`Receiving batch ${first.batch_no || ''} started.`);
       await reload(first.batch_id);
       window.setTimeout(() => scanRef.current?.focus(), 60);
@@ -143,6 +147,7 @@ export function WarehouseReceivingFlow() {
   async function resumeBatch(batchId: string) {
     setBusy('resume');
     setNotice('');
+    pendingScanRef.current = null;
     try {
       await reload(batchId || null);
       window.setTimeout(() => scanRef.current?.focus(), 60);
@@ -161,14 +166,30 @@ export function WarehouseReceivingFlow() {
     setNotice('');
     try {
       const batchId = await ensureBatch();
-      const result = await stageReceivingScan({ batchId, barcode, qtyPackages: qty, targetLocation: form.location || null, note: form.note || null });
+      const location = form.location.trim().toUpperCase();
+      const fingerprint = JSON.stringify([batchId, barcode, qty, location, form.note.trim()]);
+      const pending = pendingScanRef.current?.fingerprint === fingerprint
+        ? pendingScanRef.current
+        : { fingerprint, idempotencyKey: crypto.randomUUID(), clientScannedAt: new Date().toISOString() };
+      pendingScanRef.current = pending;
+
+      const result = await stageReceivingScan({
+        batchId,
+        barcode,
+        qtyPackages: qty,
+        targetLocation: location || null,
+        note: form.note || null,
+        idempotencyKey: pending.idempotencyKey,
+        clientScannedAt: pending.clientScannedAt,
+      });
       const first = result[0];
+      pendingScanRef.current = null;
       setNotice(`${first?.sku || 'SKU'} found. Check package quantity and shelf, then tick the line.`);
       setForm((current) => ({ ...current, barcode: '', qty: '1', note: '' }));
       await reload(batchId);
       window.setTimeout(() => scanRef.current?.focus(), 60);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(`${err instanceof Error ? err.message : String(err)} · retrying the same scan will not create a duplicate line.`);
     } finally {
       setBusy('');
     }
@@ -196,7 +217,28 @@ export function WarehouseReceivingFlow() {
     try {
       const result = await finishStagedReceivingBatch({ batchId: batch.id, note: form.note || null });
       const first = result[0];
-      setNotice(`${first?.posted_lines || 0} lines posted to stock · ${num(first?.posted_units)} units.`);
+      pendingScanRef.current = null;
+      setNotice(`${first?.posted_lines || 0} lines posted once to stock and warehouse locations · ${num(first?.posted_units)} units.`);
+      setForm(defaultForm);
+      await reload(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function cancelBatch() {
+    if (!batch?.id) return;
+    const reason = window.prompt(`Cancel ${batch.batch_no}? Enter a reason for the audit trail.`)?.trim();
+    if (!reason) return;
+    setBusy('cancel');
+    setError('');
+    setNotice('');
+    try {
+      await cancelStagedReceivingBatch({ batchId: batch.id, reason });
+      pendingScanRef.current = null;
+      setNotice(`${batch.batch_no} cancelled · ${reason}`);
       setForm(defaultForm);
       await reload(null);
     } catch (err) {
@@ -218,7 +260,7 @@ export function WarehouseReceivingFlow() {
         <div>
           <span>DAILY RECEIVING</span>
           <h2>Scan. Verify. Post once.</h2>
-          <p>One live batch at a time wherever possible. Every line is checked before the database posts stock to the ledger.</p>
+          <p>One live batch at a time wherever possible. Every scan is idempotent and every confirmed line posts to both the stock ledger and warehouse location balance.</p>
         </div>
         <button type="button" onClick={() => void reload(batch?.id)}>Refresh</button>
       </section>
@@ -229,7 +271,10 @@ export function WarehouseReceivingFlow() {
       <section className="warehouse-receive-form warehouse-stage-form">
         <div className="warehouse-batch-row">
           <div><strong>{batch?.batch_no || 'No active receiving batch'}</strong><span>{title(batch?.receive_signal || 'SCAN FIRST ITEM')}</span></div>
-          <button type="button" disabled={Boolean(busy)} onClick={() => void startNewBatch()}>{batch ? 'New delivery batch' : 'Start receiving'}</button>
+          <div className="warehouse-batch-actions">
+            {batch ? <button className="warehouse-cancel-batch" type="button" disabled={Boolean(busy)} onClick={() => void cancelBatch()}>Cancel batch</button> : null}
+            <button type="button" disabled={Boolean(busy)} onClick={() => void startNewBatch()}>{batch ? 'New delivery batch' : 'Start receiving'}</button>
+          </div>
         </div>
 
         {openBatches.length ? (
@@ -247,7 +292,7 @@ export function WarehouseReceivingFlow() {
         <input ref={scanRef} value={form.barcode} onChange={(event) => update('barcode', event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void scanLine(); }} placeholder="Scan one carton or sleeve barcode, then Enter" autoComplete="off" />
         <div className="warehouse-receive-grid warehouse-stage-grid">
           <input type="number" min="1" step="1" value={form.qty} onChange={(event) => update('qty', event.target.value)} inputMode="numeric" placeholder="Package quantity" />
-          <input value={form.location} onChange={(event) => update('location', event.target.value.toUpperCase())} placeholder="Blank = system shelf" autoCapitalize="characters" />
+          <input value={form.location} onChange={(event) => update('location', event.target.value.toUpperCase())} placeholder="Blank = fixed shelf or TEMP" autoCapitalize="characters" />
           <input value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Supplier order / invoice / note" />
         </div>
         <button type="button" disabled={Boolean(busy)} onClick={() => void scanLine()}>{busy === 'scan' ? 'Checking barcode…' : 'Add scanned package'}</button>
