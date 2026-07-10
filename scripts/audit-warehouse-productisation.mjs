@@ -6,7 +6,10 @@ const root = new URL('..', import.meta.url).pathname;
 const read = (path) => readFileSync(join(root, path), 'utf8');
 
 const receiving = read('src/WarehouseReceivingFlow.tsx');
+const stagedRepository = read('src/data/repositories/stagedReceiving.ts');
 const barcode = read('src/WarehouseBarcodeSprint.tsx');
+const barcodeLifecycle = read('src/data/repositories/barcodeLifecycle.ts');
+const layoutRepository = read('src/data/repositories/warehouseLayout.ts');
 const main = read('src/main.tsx');
 const ownerEdit = read('src/WarehouseMapOwnerEdit.tsx');
 const putaway = read('src/WarehouseMapPutawayControl.tsx');
@@ -16,14 +19,23 @@ const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
 const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
+const backendMigration = read('supabase/migrations/20260710_warehouse_backend_hardening.sql');
+const backendFollowup = read('supabase/migrations/20260710_warehouse_backend_hardening_followup.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
 assert.match(receiving, /Complete batch and post stock/, 'Receiving must keep one explicit stock-posting gate.');
 assert.match(receiving, /Number\.isInteger\(qty\)/, 'Receiving package quantity must be a positive integer.');
+assert.match(receiving, /crypto\.randomUUID\(\)/, 'Receiving scans must create an idempotency key.');
+assert.match(receiving, /pendingScanRef/, 'A failed scan retry must reuse the same idempotency key.');
+assert.match(receiving, /cancelStagedReceivingBatch/, 'Open batches must have an auditable cancellation path.');
+assert.match(stagedRepository, /ecoflow_stage_receiving_scan_v2/, 'The client must use the idempotent receiving RPC.');
+assert.match(stagedRepository, /p_idempotency_key/, 'The idempotency key must reach the database.');
 assert.doesNotMatch(barcode, /receiveByBarcode|MAP_AND_RECEIVE|Save \+ receive stock/i, 'Barcode setup must not provide a second receiving path.');
 assert.match(barcode, /Stock was not changed/, 'Barcode setup must explicitly confirm mapping-only behaviour.');
 assert.match(barcode, /levelAllowed/, 'Barcode package mode must constrain package level.');
+assert.match(barcode, /retireCurrentBarcode/, 'Owner must be able to retire obsolete packaging codes.');
+assert.match(barcodeLifecycle, /ecoflow_retire_barcode_mapping/, 'Barcode retirement must use the controlled RPC.');
 assert.match(main, /ProductionWriteSafety/, 'Production write safety must be mounted.');
 assert.match(main, /WarehouseCameraScanner/, 'Mobile warehouse camera scanner must be mounted.');
 assert.match(main, /WarehouseMapOwnerEdit/, 'Owner layout editor must be mounted.');
@@ -32,6 +44,9 @@ assert.match(main, /WarehousePutawayTargetBridge/, 'Map putaway target must retu
 assert.match(main, /LoadRecoveryControl/, 'Controlled loading recovery must be mounted.');
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
 assert.match(ownerEdit, /OWNER|ADMIN/, 'Warehouse layout editing must be owner/admin gated.');
+assert.match(ownerEdit, /saveWarehouseLayout/, 'Owner layout changes must persist to cloud configuration.');
+assert.match(ownerEdit, /layoutVersion/, 'Cloud layout saves must use optimistic versioning.');
+assert.match(layoutRepository, /ecoflow_save_warehouse_layout/, 'Layout persistence must use the owner-only RPC.');
 assert.match(putaway, /All stock increases still go through the controlled Receive batch/, 'Map must explain the single receiving path.');
 assert.match(putaway, /legacyReceive\.hidden = true/, 'Legacy map receiving UI must be removed from the operator path.');
 assert.match(safety, /Read-only safety mode/, 'Production fallback must become read-only.');
@@ -45,4 +60,17 @@ assert.match(loadRecovery, /Undo last load/, 'The most recent load confirmation 
 assert.match(guardrails, /querySelectorAll<HTMLButtonElement>\('\.load-row'\)/, 'Route start must be gated from load row state.');
 assert.doesNotMatch(guardrails, /stops loaded\//i, 'Route start must not parse loaded progress copy.');
 
-console.log('Warehouse productisation audit passed.');
+assert.match(backendMigration, /uq_receiving_line_idempotency/, 'Database must enforce one line per receiving idempotency key.');
+assert.match(backendMigration, /DIRECT_RECEIVE_DISABLED/g, 'Legacy direct receiving RPCs must be blocked.');
+assert.match(backendMigration, /trg_ecoflow_controlled_receive_source/, 'Ledger RECEIVE writes must come from controlled batches only.');
+assert.match(backendMigration, /ecoflow_cancel_warehouse_receiving_batch/, 'Database must audit batch cancellation.');
+assert.match(backendMigration, /ecoflow_warehouse_receiving_audit/, 'Receiving decisions must have an audit table.');
+assert.match(backendMigration, /ecoflow_save_warehouse_layout/, 'Database must provide owner-only layout versioning.');
+assert.match(backendMigration, /WAREHOUSE_RECEIVING_LINE/g, 'Ledger and map movements must share receiving-line references.');
+assert.match(backendMigration, /ecoflow_warehouse_location_items/, 'Batch completion must update warehouse location balances.');
+assert.match(backendMigration, /revoke execute[^;]+from anon/gi, 'Warehouse write RPCs must not remain anonymous.');
+assert.match(backendFollowup, /v_existing_found := found/, 'Barcode existence must not depend on a later SELECT FOUND state.');
+assert.match(backendFollowup, /where is_active/, 'Operational barcode views must ignore retired codes.');
+assert.match(backendFollowup, /ecoflow_barcode_units_positive_integer/, 'Package conversion must be a positive whole number.');
+
+console.log('Warehouse productisation and backend hardening audit passed.');
