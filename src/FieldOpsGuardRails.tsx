@@ -122,7 +122,7 @@ function ensureReverseLoadManifest(pickBoard: HTMLElement) {
   const staged = cards.filter((card) => card.classList.contains('staged')).length;
   const reverseStops = cards.slice().reverse().slice(0, 8).map((card) => textOf(card, '.pick-task-copy strong') || card.textContent?.trim() || 'Stop');
   manifest.innerHTML = `
-    <div><span>STAGE + LOAD RULE</span><strong>${staged}/${cards.length} stops staged</strong><small>A6 has two labels per sheet. Stick label before staging. Load in reverse route order.</small></div>
+    <div><span>STAGE + LOAD RULE</span><strong>${staged}/${cards.length} stops staged</strong><small>A6 sheet prints two labels. Stick label before staging. Load in reverse route order.</small></div>
     <ol>${reverseStops.map((stop, index) => `<li><b>${index + 1}</b><span>${stop}</span></li>`).join('')}</ol>
   `;
 }
@@ -211,6 +211,35 @@ function applyPickPhaseGate() {
   ensureStageChecklists(pickBoard);
 }
 
+function syncLoadRowCheck(row: HTMLElement) {
+  const loaded = row.classList.contains('loaded');
+  const box = textOf(row, '.box-chip') || 'BOX';
+  const store = textOf(row, '.load-copy strong') || 'stop';
+  const key = `ecoflow-load-check-${safeKey(`${box}-${store}`)}`;
+  const checked = loaded || window.sessionStorage.getItem(key) === 'true';
+  let check = row.nextElementSibling instanceof HTMLElement && row.nextElementSibling.classList.contains('field-load-row-check')
+    ? row.nextElementSibling
+    : null;
+  if (!check) {
+    check = document.createElement('button');
+    check.type = 'button';
+    check.className = 'field-load-row-check';
+    row.insertAdjacentElement('afterend', check);
+    check.addEventListener('click', () => {
+      const next = window.sessionStorage.getItem(key) !== 'true';
+      window.sessionStorage.setItem(key, String(next));
+      syncLoadRowCheck(row);
+    });
+  }
+  check.classList.toggle('checked', checked);
+  check.innerHTML = `<b>${checked ? '✓' : ''}</b><span>${loaded ? `${box} loaded` : `Check label ${box} on every carton`}</span>`;
+  const button = row as HTMLButtonElement;
+  if (!loaded) {
+    button.disabled = !checked;
+    button.title = checked ? '' : `Check the A6 label box code ${box} before ticking this stop loaded.`;
+  }
+}
+
 function ensureOneDriverLoadCoach(card: HTMLElement, loaded: { current: number; total: number }) {
   const list = card.querySelector<HTMLElement>('.load-list');
   if (!list) return;
@@ -221,6 +250,7 @@ function ensureOneDriverLoadCoach(card: HTMLElement, loaded: { current: number; 
     list.insertAdjacentElement('beforebegin', coach);
   }
   const rows = Array.from(list.querySelectorAll<HTMLElement>('.load-row'));
+  rows.forEach(syncLoadRowCheck);
   const nextRow = rows.find((row) => !row.classList.contains('loaded'));
   if (!nextRow) {
     coach.innerHTML = `
@@ -236,7 +266,7 @@ function ensureOneDriverLoadCoach(card: HTMLElement, loaded: { current: number; 
   const afterText = afterNext ? textOf(afterNext, '.load-copy strong') : 'Then close the van door';
   coach.innerHTML = `
     <div class="field-load-next"><span>NEXT LOAD</span><strong>${box}</strong><small>${store} · ${detail}</small></div>
-    <div class="field-load-rule"><b>${loaded.current}/${loaded.total}</b><small>Reverse order. Put this in now, tick it, then next: ${afterText}</small></div>
+    <div class="field-load-rule"><b>${loaded.current}/${loaded.total}</b><small>Check A6 label box code, put this in now, tick it, then next: ${afterText}</small></div>
   `;
 }
 
@@ -274,7 +304,7 @@ function applyLoadGate() {
     startButton.insertAdjacentElement('afterend', hint);
   }
   hint.textContent = shouldGate
-    ? `Load every stop first: ${loaded.current}/${loaded.total}. Reverse order only — last stop goes deepest.`
+    ? `Load every stop first: ${loaded.current}/${loaded.total}. A6 label box code must match the screen before ticking loaded.`
     : 'All stops loaded. Start route only after clock-in.';
 }
 
