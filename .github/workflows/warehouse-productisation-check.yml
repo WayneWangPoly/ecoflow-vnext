@@ -50,5 +50,5 @@ jobs:
             vite-build.log
           if-no-files-found: warn
       - name: Fail on validation error
-        if: steps.typecheck.outcome == 'failure' || steps.bundle.outcome == 'failure'
+        if: ${{ steps.typecheck.outcome == 'failure' || steps.bundle.outcome == 'failure' }}
         run: exit 1
