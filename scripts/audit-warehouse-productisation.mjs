@@ -22,6 +22,7 @@ const guardrails = read('src/FieldOpsGuardRails.tsx');
 const backendMigration = read('supabase/migrations/20260710130000_warehouse_backend_hardening.sql');
 const backendFollowup = read('supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql');
 const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql');
+const conflictQualification = read('supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -77,5 +78,6 @@ assert.match(qualifiedFunctions, /select r\.\* into v_registry/, 'Receiving barc
 assert.match(qualifiedFunctions, /where l\.batch_id=p_batch_id/g, 'Receiving batch line references must be explicitly qualified.');
 assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retirement must qualify barcode columns.');
 assert.match(qualifiedFunctions, /where vel\.sku = v_sku/, 'Barcode product lookup must qualify SKU columns.');
+assert.match(conflictQualification, /on conflict on constraint ecoflow_inventory_sku_controls_pkey/, 'Barcode control upsert must use the named primary-key constraint.');
 
 console.log('Warehouse productisation and backend hardening audit passed.');
