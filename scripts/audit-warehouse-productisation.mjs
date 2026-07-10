@@ -13,6 +13,7 @@ const putaway = read('src/WarehouseMapPutawayControl.tsx');
 const safety = read('src/ProductionWriteSafety.tsx');
 const textRepair = read('src/TextEncodingRepair.tsx');
 const scanner = read('src/WarehouseCameraScanner.tsx');
+const stage = read('src/StageAndLoadExecution.tsx');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -31,6 +32,10 @@ assert.match(putaway, /All stock increases still go through the controlled Recei
 assert.match(putaway, /legacyReceive\.hidden = true/, 'Legacy map receiving UI must be removed from the operator path.');
 assert.match(safety, /Read-only safety mode/, 'Production fallback must become read-only.');
 assert.match(scanner, /BarcodeDetector/, 'Phone camera barcode detection must be available.');
+assert.match(scanner, /mountedVideo/, 'Camera must wait for the scanner surface before attaching the stream.');
 assert.match(textRepair, /脳.*×|路.*·/s, 'Known legacy mojibake must be repaired in rendered text.');
+assert.doesNotMatch(stage, /@ts-nocheck/, 'Stage and load execution must remain type checked.');
+assert.match(stage, /Offline · saved on this device/, 'Stage preparation must expose offline sync state.');
+assert.match(stage, /syncByKey/, 'Stage preparation sync state must be tracked per stop.');
 
 console.log('Warehouse productisation audit passed.');
