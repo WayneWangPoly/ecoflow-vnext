@@ -19,9 +19,9 @@ const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
 const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
-const backendMigration = read('supabase/migrations/20260710_warehouse_backend_hardening.sql');
-const backendFollowup = read('supabase/migrations/20260710_warehouse_backend_hardening_followup.sql');
-const qualifiedFunctions = read('supabase/migrations/20260710_warehouse_backend_function_qualification.sql');
+const backendMigration = read('supabase/migrations/20260710130000_warehouse_backend_hardening.sql');
+const backendFollowup = read('supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql');
+const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
