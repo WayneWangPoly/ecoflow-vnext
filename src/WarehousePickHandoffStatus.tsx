@@ -41,12 +41,14 @@ function HandoffCard({ progress, error, onRefresh }: { progress: PickHandoffProg
       <div className="warehouse-pick-handoff-metrics">
         <div><strong>{num(progress?.picked_task_count)}/{num(progress?.task_count)}</strong><span>SKUs picked</span></div>
         <div><strong>{num(progress?.done_allocation_count)}/{num(progress?.allocation_count)}</strong><span>box allocations</span></div>
+        <div><strong>{num(progress?.sealed_stop_count)}</strong><span>stops sealed</span></div>
+        <div><strong>{num(progress?.labelled_stop_count)}</strong><span>labels applied</span></div>
         <div><strong>{num(progress?.staged_stop_count)}</strong><span>stops staged</span></div>
         <div><strong>{num(progress?.short_units)}</strong><span>short units</span></div>
       </div>
       <div className={`warehouse-pick-phase-strip phase-${phaseTone(phase)}`}>
         <strong>{title(progress?.handoff_status)}</strong>
-        <span>Pick bulk first, sort into A/B/C/D boxes second, then stage/load in reverse route order.</span>
+        <span>Bulk pick → box allocation → seal → apply A6 labels → stage → reverse load.</span>
       </div>
     </section>
   );
