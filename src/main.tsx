@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
 import { DriverDeliveryExceptionEnhancer } from './DriverDeliveryExceptionEnhancer';
+import { DriverLocationTracker } from './DriverLocationTracker';
 import { DriverPodQualityEnhancer } from './DriverPodQualityEnhancer';
 import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
@@ -13,6 +14,7 @@ import { LoadRecoveryControl } from './LoadRecoveryControl';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
+import { OwnerDriverTrackingMap } from './OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
@@ -52,6 +54,7 @@ import './returnZoneGeofence.css';
 import './industrialTheme.css';
 import './warehouseProductisation.css';
 import './warehouseProductisationFixes.css';
+import './ownerDriverTracking.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -67,9 +70,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />
+      <DriverLocationTracker />
       <RoleAwareDesktopNavigation />
       <OwnerCommandCenter />
       <OwnerDeliveryAlerts />
+      <OwnerDriverTrackingMap />
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
