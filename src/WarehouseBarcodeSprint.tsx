@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { retireBarcodeMapping } from '@/data/repositories/barcodeLifecycle';
 import {
   loadBarcodeRecentScans,
   loadBarcodeRegistryReview,
@@ -8,6 +9,7 @@ import {
   setSkuPackagePolicy,
   startBarcodeScanSession,
 } from '@/data/repositories/inventoryControl';
+import { supabase } from '@/lib/supabaseClient';
 
 const packageLevels = [
   ['CARTON', 'Carton'],
@@ -100,6 +102,13 @@ function ScanRow({ row }: { row: any }) {
   );
 }
 
+async function ownerCanRetireBarcode() {
+  if (window.localStorage.getItem('ecoflow-role') === 'owner') return true;
+  if (!supabase) return false;
+  const { data } = await supabase.from('v_ecoflow_current_user').select('app_role,is_active').maybeSingle();
+  return Boolean(data?.is_active && (data.app_role === 'OWNER' || data.app_role === 'ADMIN'));
+}
+
 export function WarehouseBarcodeSprint() {
   const [sessionId, setSessionId] = useState<string | null>(() => window.localStorage.getItem('ecoflow-barcode-sprint-session'));
   const [sessionLabel, setSessionLabel] = useState('Warehouse barcode setup');
@@ -112,6 +121,7 @@ export function WarehouseBarcodeSprint() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [canRetire, setCanRetire] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
 
   function update(key: keyof typeof defaultForm, value: string) {
@@ -130,7 +140,7 @@ export function WarehouseBarcodeSprint() {
     }
   }
 
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => { void reload(); void ownerCanRetireBarcode().then(setCanRetire); }, []);
   useEffect(() => { barcodeInputRef.current?.focus(); }, [form.sku, form.packageLevel]);
 
   async function createSession() {
@@ -219,6 +229,30 @@ export function WarehouseBarcodeSprint() {
     }
   }
 
+  async function retireCurrentBarcode() {
+    const barcode = form.barcode.trim();
+    if (!barcode) { setError('Scan or type the old barcode to retire first.'); return; }
+    const reason = window.prompt('Why is this packaging code being retired?')?.trim();
+    if (!reason) return;
+    const replacement = window.prompt('Replacement barcode (optional). Map the new code first, then enter it here.')?.trim() || null;
+    const confirmed = window.confirm(`Retire ${barcode}${replacement ? ` and replace it with ${replacement}` : ''}? Historical receiving records will remain searchable.`);
+    if (!confirmed) return;
+    setBusy('retire');
+    setError('');
+    setNotice('');
+    try {
+      const rows = await retireBarcodeMapping({ barcode, reason, replacementBarcode: replacement });
+      const first = rows[0];
+      setNotice(`${first?.barcode || barcode} retired${first?.replacement_barcode ? ` → ${first.replacement_barcode}` : ''}. Old history was retained.`);
+      setForm((current) => ({ ...current, barcode: '', note: '' }));
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
   function pickSku(row: any) {
     const mode = row.package_mode && row.package_mode !== 'UNKNOWN' ? row.package_mode : form.packageMode;
     setForm((current) => ({
@@ -243,7 +277,7 @@ export function WarehouseBarcodeSprint() {
   return (
     <section className="barcode-sprint-screen barcode-master-screen">
       <section className="barcode-sprint-hero">
-        <div><span>BARCODE MASTER</span><h2>Map packaging once. Receive through the controlled batch.</h2><p>Carton and sleeve codes remain stable for the product. New packaging creates a new active mapping instead of changing stock here. Unit / bottle is available only where the product genuinely needs it.</p></div>
+        <div><span>BARCODE MASTER</span><h2>Map packaging once. Receive through the controlled batch.</h2><p>Carton and sleeve codes remain active until an Owner retires the old packaging. A replacement code is mapped first; historical scans and receipts remain searchable.</p></div>
         <button type="button" disabled={busy === 'session'} onClick={() => void newSession()}>{busy === 'session' ? 'Starting…' : sessionId ? 'New setup session' : 'Start setup session'}</button>
       </section>
 
@@ -251,7 +285,7 @@ export function WarehouseBarcodeSprint() {
       {notice ? <div className="barcode-notice">{notice}</div> : null}
 
       <section className="barcode-kpis">
-        <div><strong>{num(kpis?.registered_barcodes)}</strong><span>registered codes</span></div>
+        <div><strong>{num(kpis?.registered_barcodes)}</strong><span>active codes</span></div>
         <div><strong>{num(kpis?.needs_policy)}</strong><span>need package rule</span></div>
         <div><strong>{num(kpis?.needs_carton)}</strong><span>need carton code</span></div>
         <div><strong>{num(kpis?.needs_sleeve) + num(kpis?.needs_each)}</strong><span>need sleeve / unit</span></div>
@@ -268,7 +302,13 @@ export function WarehouseBarcodeSprint() {
         </div>
         <div className="barcode-detail-inputs"><input type="number" min="1" step="1" value={form.unitsPerBarcode} onChange={(event) => update('unitsPerBarcode', event.target.value)} inputMode="numeric" placeholder="Units per package" /><input type="number" min="1" step="1" value={form.qtyObserved} onChange={(event) => update('qtyObserved', event.target.value)} inputMode="numeric" placeholder="Packages observed" /><input value={form.shelf} onChange={(event) => update('shelf', event.target.value.toUpperCase())} placeholder="Fixed shelf / rack" autoCapitalize="characters" /></div>
         <input value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Packaging version / supplier note" />
-        <div className="barcode-actions"><button type="button" disabled={Boolean(busy)} onClick={() => void savePolicy()}>{busy === 'policy' ? 'Saving rule…' : 'Save package rule'}</button><button type="button" disabled={Boolean(busy)} onClick={() => void saveScan('MAP_ONLY')}>{busy === 'scan' ? 'Saving barcode…' : 'Save barcode mapping'}</button><button type="button" disabled={Boolean(busy)} onClick={() => void saveScan('MAP_AND_COUNT')}>Save mapping + count note</button><button type="button" onClick={() => setForm(defaultForm)}>Clear</button></div>
+        <div className="barcode-actions">
+          <button type="button" disabled={Boolean(busy)} onClick={() => void savePolicy()}>{busy === 'policy' ? 'Saving rule…' : 'Save package rule'}</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void saveScan('MAP_ONLY')}>{busy === 'scan' ? 'Saving barcode…' : 'Save barcode mapping'}</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void saveScan('MAP_AND_COUNT')}>Save mapping + count note</button>
+          <button type="button" onClick={() => setForm(defaultForm)}>Clear</button>
+          {canRetire ? <button className="barcode-retire-action" type="button" disabled={Boolean(busy) || !form.barcode.trim()} onClick={() => void retireCurrentBarcode()}>{busy === 'retire' ? 'Retiring…' : 'Retire old barcode'}</button> : null}
+        </div>
       </section>
 
       <section className="barcode-work-grid">
