@@ -9,6 +9,7 @@ import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { FieldOpsGuardRails } from './FieldOpsGuardRails';
 import { InventoryControlCenter } from './InventoryControlCenter';
+import { LoadRecoveryControl } from './LoadRecoveryControl';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
@@ -62,6 +63,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
+      <LoadRecoveryControl />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />
