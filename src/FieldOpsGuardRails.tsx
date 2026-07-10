@@ -13,6 +13,10 @@ function textOf(root: ParentNode | null | undefined, selector: string) {
   return root?.querySelector<HTMLElement>(selector)?.textContent?.trim() || '';
 }
 
+function safeKey(value: string) {
+  return value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 80) || 'stop';
+}
+
 function activePhase(pickBoard: HTMLElement) {
   const active = Array.from(pickBoard.querySelectorAll<HTMLButtonElement>('.pick-view-toggle button')).find((button) => button.classList.contains('active'));
   if (/Sort/i.test(active?.textContent || '')) return 'sort';
@@ -118,9 +122,53 @@ function ensureReverseLoadManifest(pickBoard: HTMLElement) {
   const staged = cards.filter((card) => card.classList.contains('staged')).length;
   const reverseStops = cards.slice().reverse().slice(0, 8).map((card) => textOf(card, '.pick-task-copy strong') || card.textContent?.trim() || 'Stop');
   manifest.innerHTML = `
-    <div><span>STAGE + LOAD RULE</span><strong>${staged}/${cards.length} stops staged</strong><small>Load in reverse route order: last stop deepest, first stop nearest the door.</small></div>
+    <div><span>STAGE + LOAD RULE</span><strong>${staged}/${cards.length} stops staged</strong><small>A6 has two labels per sheet. Stick label before staging. Load in reverse route order.</small></div>
     <ol>${reverseStops.map((stop, index) => `<li><b>${index + 1}</b><span>${stop}</span></li>`).join('')}</ol>
   `;
+}
+
+function syncStageChecklist(card: HTMLElement) {
+  if (card.classList.contains('staged')) return;
+  const stopName = textOf(card, '.pick-task-copy strong') || card.textContent?.slice(0, 30) || 'stop';
+  const key = `ecoflow-stage-check-${safeKey(stopName)}`;
+  const current = JSON.parse(window.sessionStorage.getItem(key) || '{"seal":false,"label":false,"stage":false}') as Record<string, boolean>;
+  let checklist = card.querySelector<HTMLElement>('.field-stage-checklist');
+  const button = Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find((node) => /Seal, label and stage/i.test(node.textContent || ''));
+  if (!checklist && button) {
+    checklist = document.createElement('section');
+    checklist.className = 'field-stage-checklist';
+    checklist.innerHTML = `
+      <button type="button" data-step="seal"><b></b><span>Box sealed</span></button>
+      <button type="button" data-step="label"><b></b><span>A6 label applied</span></button>
+      <button type="button" data-step="stage"><b></b><span>At staging area</span></button>
+    `;
+    button.insertAdjacentElement('beforebegin', checklist);
+    checklist.querySelectorAll<HTMLButtonElement>('button').forEach((step) => {
+      step.addEventListener('click', () => {
+        const stepKey = step.dataset.step || '';
+        const next = JSON.parse(window.sessionStorage.getItem(key) || '{}') as Record<string, boolean>;
+        next[stepKey] = !next[stepKey];
+        window.sessionStorage.setItem(key, JSON.stringify(next));
+        syncStageChecklist(card);
+      });
+    });
+  }
+  if (!checklist || !button) return;
+  checklist.querySelectorAll<HTMLButtonElement>('button').forEach((step) => {
+    const stepKey = step.dataset.step || '';
+    const checked = Boolean(current[stepKey]);
+    step.classList.toggle('checked', checked);
+    const box = step.querySelector('b');
+    if (box) box.textContent = checked ? '✓' : '';
+  });
+  const ready = Boolean(current.seal && current.label && current.stage);
+  button.disabled = !ready;
+  button.title = ready ? '' : 'Seal the box, apply A6 label, and move to staging area before staging this stop.';
+}
+
+function ensureStageChecklists(pickBoard: HTMLElement) {
+  if (activePhase(pickBoard) !== 'stage') return;
+  pickBoard.querySelectorAll<HTMLElement>('.pick-stop-card').forEach(syncStageChecklist);
 }
 
 function applyPickPhaseGate() {
@@ -160,6 +208,7 @@ function applyPickPhaseGate() {
   ensureNextPickCoach(pickBoard, picked, total);
   ensureSortCoach(pickBoard);
   ensureReverseLoadManifest(pickBoard);
+  ensureStageChecklists(pickBoard);
 }
 
 function ensureOneDriverLoadCoach(card: HTMLElement, loaded: { current: number; total: number }) {
