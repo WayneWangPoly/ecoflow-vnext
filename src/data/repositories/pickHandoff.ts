@@ -14,6 +14,10 @@ export type PickHandoffProgressRow = {
   allocation_count: number | string | null;
   done_allocation_count: number | string | null;
   staged_stop_count: number | string | null;
+  preparation_stop_count?: number | string | null;
+  sealed_stop_count?: number | string | null;
+  labelled_stop_count?: number | string | null;
+  latest_preparation_at?: string | null;
   warehouse_phase: string | null;
 };
 
@@ -42,5 +46,14 @@ export async function loadLatestPickHandoffProgress(client?: SupabaseClient | nu
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(errorMessage(error));
-  return (data ?? null) as PickHandoffProgressRow | null;
+  const base = (data ?? null) as PickHandoffProgressRow | null;
+  if (!base?.business_day) return base;
+
+  const { data: preparation, error: preparationError } = await active
+    .from('v_ecoflow_pick_stage_preparation_kpis')
+    .select('*')
+    .eq('business_day', base.business_day)
+    .maybeSingle();
+  if (preparationError && preparationError.code !== 'PGRST116') throw new Error(errorMessage(preparationError));
+  return { ...base, ...(preparation ?? {}) } as PickHandoffProgressRow;
 }
