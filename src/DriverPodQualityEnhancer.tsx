@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, RotateCcw } from 'lucide-react';
 import { resolveOrderIdForBox, saveGoodsPlacedProof, type PodQualityContext } from '@/data/repositories/deliveryPodQuality';
+import { dispatchDeliveryNotifications, queueDeliveryNotifications, type DeliveryOutcome } from '@/data/repositories/deliveryOperations';
 
 function readImageAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -67,14 +68,14 @@ function readContext(sheet: HTMLElement) {
   };
 }
 
-function Pod2Capture({ sheet, contextSeed, onReadyChange }: { sheet: HTMLElement; contextSeed: ReturnType<typeof readContext>; onReadyChange: (ready: boolean) => void }) {
+function Pod2Capture({ contextSeed, onReadyChange }: { contextSeed: ReturnType<typeof readContext>; onReadyChange: (path: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [preview, setPreview] = useState('');
   const [uploadedPath, setUploadedPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => onReadyChange(Boolean(uploadedPath)), [uploadedPath, onReadyChange]);
+  useEffect(() => onReadyChange(uploadedPath), [uploadedPath, onReadyChange]);
 
   const contextLabel = useMemo(() => [contextSeed.boxCode, contextSeed.storeName].filter(Boolean).join(' · '), [contextSeed.boxCode, contextSeed.storeName]);
 
@@ -132,7 +133,7 @@ function Pod2Capture({ sheet, contextSeed, onReadyChange }: { sheet: HTMLElement
 export function DriverPodQualityEnhancer() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState<HTMLElement | null>(null);
-  const [pod2Ready, setPod2Ready] = useState(false);
+  const [pod2Path, setPod2Path] = useState('');
   const [pod1Ready, setPod1Ready] = useState(false);
   const [contextSeed, setContextSeed] = useState<ReturnType<typeof readContext> | null>(null);
 
@@ -143,7 +144,7 @@ export function DriverPodQualityEnhancer() {
         setHost(null);
         setSheet(null);
         setPod1Ready(false);
-        setPod2Ready(false);
+        setPod2Path('');
         setContextSeed(null);
         return;
       }
@@ -186,10 +187,10 @@ export function DriverPodQualityEnhancer() {
   }, []);
 
   useEffect(() => {
-    if (!sheet) return;
+    if (!sheet || !contextSeed) return;
     const confirm = Array.from(sheet.querySelectorAll<HTMLButtonElement>('button')).find((button) => /Confirm delivered/i.test(button.textContent || ''));
     if (!confirm) return;
-    const ready = pod1Ready && pod2Ready;
+    const ready = pod1Ready && Boolean(pod2Path);
     confirm.disabled = !ready;
     confirm.dataset.podQualityReady = ready ? 'true' : 'false';
 
@@ -199,18 +200,48 @@ export function DriverPodQualityEnhancer() {
       gate.className = 'pod-quality-gate';
       confirm.insertAdjacentElement('beforebegin', gate);
     }
-    gate.innerHTML = `<strong>${ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED'}</strong><span>POD 1 ${pod1Ready ? '✓' : '—'} · POD 2 ${pod2Ready ? '✓' : '—'} · signature remains optional</span>`;
+    gate.innerHTML = `<strong>${ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED'}</strong><span>POD 1 ${pod1Ready ? '✓' : '—'} · POD 2 ${pod2Path ? '✓' : '—'} · confirmation message queues automatically</span>`;
 
-    const block = (event: Event) => {
-      if (confirm.dataset.podQualityReady === 'true') return;
-      event.preventDefault();
-      event.stopPropagation();
+    const handle = (event: Event) => {
+      if (confirm.dataset.podQualityReady !== 'true') {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (confirm.dataset.notificationQueued === 'true') return;
+      confirm.dataset.notificationQueued = 'true';
+      void (async () => {
+        try {
+          const orderId = contextSeed.boxCode ? await resolveOrderIdForBox({ businessDay: contextSeed.businessDay, boxCode: contextSeed.boxCode }) : null;
+          if (!orderId) throw new Error('Could not resolve order for delivery notification.');
+          const phoneHref = document.querySelector<HTMLAnchorElement>('.driver-sheet a.phone-link')?.getAttribute('href') || '';
+          const storedKey = `ecoflow-delivery-outcome:${contextSeed.businessDay}:${orderId}`;
+          let stored: { outcome?: DeliveryOutcome; exceptionId?: string } | null = null;
+          try { stored = JSON.parse(window.localStorage.getItem(storedKey) || 'null'); } catch { stored = null; }
+          const outcome: DeliveryOutcome = stored?.outcome === 'PARTIAL' || stored?.outcome === 'MISSING_CARTON' ? stored.outcome : 'DELIVERED';
+          const eventKey = stored?.exceptionId ? `${contextSeed.businessDay}:${orderId}:EXCEPTION:${stored.exceptionId}` : `${contextSeed.businessDay}:${orderId}:DELIVERED`;
+          await queueDeliveryNotifications({
+            ...contextSeed,
+            orderId,
+            outcome,
+            eventKey,
+            storePhone: phoneHref.replace(/^tel:/i, '').trim() || null,
+            pod2Path,
+            internalDetail: outcome === 'DELIVERED' ? 'Full delivery completed with two-photo POD.' : 'Partial delivery completed for the cartons placed on site.',
+          });
+          void dispatchDeliveryNotifications({ businessDay: contextSeed.businessDay, orderId }).catch(() => undefined);
+          if (stored?.exceptionId) window.localStorage.removeItem(storedKey);
+        } catch (err) {
+          confirm.dataset.notificationQueued = 'false';
+          console.error('Delivery notification queue failed', err);
+        }
+      })();
     };
-    confirm.addEventListener('click', block, true);
-    return () => confirm.removeEventListener('click', block, true);
-  }, [sheet, pod1Ready, pod2Ready]);
+    confirm.addEventListener('click', handle, true);
+    return () => confirm.removeEventListener('click', handle, true);
+  }, [sheet, contextSeed, pod1Ready, pod2Path]);
 
   return host && sheet && contextSeed
-    ? createPortal(<Pod2Capture key={`${contextSeed.businessDay}-${contextSeed.boxCode}-${contextSeed.stopNumber}`} sheet={sheet} contextSeed={contextSeed} onReadyChange={setPod2Ready} />, host)
+    ? createPortal(<Pod2Capture key={`${contextSeed.businessDay}-${contextSeed.boxCode}-${contextSeed.stopNumber}`} contextSeed={contextSeed} onReadyChange={setPod2Path} />, host)
     : null;
 }
