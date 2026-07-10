@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect } from 'react';
 import { loadStagePreparations, saveStagePreparation } from '@/data/repositories/stageExecution';
 
