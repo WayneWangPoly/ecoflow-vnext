@@ -99,8 +99,12 @@ function positionPromise() {
   });
 }
 
+function optionalCoordinate(value: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function statusLabel(status: TrackerStatus, active: boolean, lastSharedAt: string) {
-  if (!active) return 'Location sharing starts with route';
+  if (!active) return 'Location sharing stops with route';
   if (status === 'saving') return 'Saving location…';
   if (status === 'blocked') return 'Location permission blocked';
   if (status === 'offline') return 'Location offline';
@@ -152,6 +156,9 @@ export function DriverLocationTracker() {
   const share = useCallback(async (source: DriverLocationSource) => {
     const current = latestSnapshot();
     if (!current || !canTrack || busyRef.current || blockedRef.current) return;
+    // Privacy boundary: no manual or automatic samples after route completion.
+    // The final ROUTE_END event is allowed so the Owner sees where tracking stopped.
+    if (!current.active && source !== 'ROUTE_END') return;
     if (!navigator.onLine) {
       setStatus('offline');
       return;
@@ -167,8 +174,8 @@ export function DriverLocationTracker() {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracyM: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
-        speedMps: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
-        headingDegrees: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+        speedMps: optionalCoordinate(position.coords.speed),
+        headingDegrees: optionalCoordinate(position.coords.heading),
         currentOrderId: current.currentOrderId,
         source,
         clientSampleId: id(),
@@ -218,7 +225,8 @@ export function DriverLocationTracker() {
       if (!last || Date.now() - new Date(last).getTime() >= SAMPLE_MS) void share('AUTO_INTERVAL');
     }, 30000);
     const visible = () => {
-      if (document.visibilityState === 'visible') void share('AUTO_INTERVAL');
+      const current = latestSnapshot();
+      if (current?.active && document.visibilityState === 'visible') void share('AUTO_INTERVAL');
     };
     window.addEventListener('online', visible);
     document.addEventListener('visibilitychange', visible);
@@ -236,8 +244,9 @@ export function DriverLocationTracker() {
     <button
       type="button"
       className={`driver-location-share driver-location-${status}`}
+      disabled={!active && snapshot?.eventSource !== 'ROUTE_END'}
       onClick={() => { blockedRef.current = false; void share('MANUAL'); }}
-      title={blocked ? 'Enable location permission in browser settings, then tap to retry.' : 'Share a fresh location with the Owner.'}
+      title={blocked ? 'Enable location permission in browser settings, then tap to retry.' : active ? 'Share a fresh location with the Owner.' : 'Location sharing is off because the route is not active.'}
     >
       {blocked ? <LocateOff size={15} /> : <LocateFixed size={15} />}
       <span>{statusLabel(status, active, lastSharedAt)}</span>
