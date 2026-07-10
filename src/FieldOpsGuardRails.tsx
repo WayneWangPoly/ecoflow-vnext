@@ -2,10 +2,8 @@ import { useEffect } from 'react';
 
 /**
  * Floor-discipline gates for the pick board and the driver load screen.
- * This layer only *gates* native controls (phase tabs, start-route button).
- * Stage checklists and sequential loading live in StageAndLoadExecution —
- * keep exactly one owner per behaviour so the floor never sees two
- * overlapping checklists for the same physical action.
+ * Stage checklists and sequential loading live in StageAndLoadExecution.
+ * The load gate reads the load-row state itself rather than parsing operator copy.
  */
 
 function parseFraction(text: string, pattern: RegExp) {
@@ -26,16 +24,18 @@ function applyPickPhaseGate() {
   const picked = progress?.current ?? 0;
   const total = progress?.total ?? 0;
   const buttons = Array.from(pickBoard.querySelectorAll<HTMLButtonElement>('.pick-view-toggle button'));
-  const sortButton = buttons.find((button) => /Sort/i.test(button.textContent || ''));
-  const stageButton = buttons.find((button) => /Stage/i.test(button.textContent || ''));
+  const sortButton = buttons[1];
+  const stageButton = buttons[2];
 
   if (sortButton) {
     sortButton.disabled = total > 0 && picked === 0;
     sortButton.title = sortButton.disabled ? 'Bulk pick at least one SKU before sorting.' : '';
+    sortButton.dataset.phaseGate = 'sort';
   }
   if (stageButton) {
     stageButton.disabled = total > 0 && picked < total;
     stageButton.title = stageButton.disabled ? 'Finish all bulk pick tasks before staging stops.' : '';
+    stageButton.dataset.phaseGate = 'stage';
   }
 
   let hint = pickBoard.querySelector<HTMLElement>('.field-pick-gate-hint');
@@ -52,22 +52,35 @@ function applyPickPhaseGate() {
   }
 }
 
-function applyLoadGate() {
-  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-  const startButton = buttons.find((button) => /Start route/i.test(button.textContent || ''));
-  if (!startButton) return;
-  const card = startButton.closest<HTMLElement>('.driver-card');
-  if (!card) return;
-  const loaded = parseFraction(card.textContent || '', /(\d+)\s+of\s+(\d+)\s+stops loaded/i);
-  if (!loaded) return;
+function routeCard() {
+  return Array.from(document.querySelectorAll<HTMLElement>('.driver-card')).find((card) =>
+    card.querySelector('h2')?.textContent?.trim() === 'Route'
+  ) ?? null;
+}
 
-  const shouldGate = loaded.current < loaded.total;
+function applyLoadGate() {
+  const loadList = document.querySelector<HTMLElement>('.load-list');
+  const card = routeCard();
+  const startButton = card?.querySelector<HTMLButtonElement>('button.driver-primary-button');
+  if (!loadList || !card || !startButton) return;
+
+  const rows = Array.from(loadList.querySelectorAll<HTMLButtonElement>('.load-row'));
+  const loadedCount = rows.filter((row) => row.classList.contains('loaded')).length;
+  const total = rows.length;
+  if (!total) return;
+
+  const shouldGate = loadedCount < total;
   if (shouldGate) {
+    if (!startButton.dataset.loadGatePreviousDisabled) {
+      startButton.dataset.loadGatePreviousDisabled = startButton.disabled ? 'true' : 'false';
+    }
     startButton.disabled = true;
     startButton.dataset.loadGated = 'true';
-  } else if (startButton.dataset.loadGated === 'true' && !/Clock in first/i.test(document.body.textContent || '')) {
-    startButton.disabled = false;
+  } else if (startButton.dataset.loadGated === 'true') {
+    const wasDisabledBeforeLoadGate = startButton.dataset.loadGatePreviousDisabled === 'true';
+    startButton.disabled = wasDisabledBeforeLoadGate;
     delete startButton.dataset.loadGated;
+    delete startButton.dataset.loadGatePreviousDisabled;
   }
 
   let hint = card.querySelector<HTMLElement>('.field-load-gate-hint');
@@ -77,8 +90,10 @@ function applyLoadGate() {
     startButton.insertAdjacentElement('afterend', hint);
   }
   hint.textContent = shouldGate
-    ? `Load every stop first: ${loaded.current}/${loaded.total}.`
-    : 'All stops loaded. Start route only after clock-in.';
+    ? `Load every stop first: ${loadedCount}/${total}.`
+    : startButton.disabled
+      ? 'All stops loaded. Complete the remaining driver requirement before starting.'
+      : 'All stops loaded. Route can start.';
 }
 
 export function FieldOpsGuardRails() {
