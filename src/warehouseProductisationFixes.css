@@ -10,6 +10,15 @@
 .field-stage-sync.sync-saved { color: var(--ef-good); background: var(--ef-good-bg); border-color: #cfe7da; }
 .field-stage-sync.sync-offline { color: var(--ef-warn); background: var(--ef-warn-bg); border-color: #ead29b; }
 
+.warehouse-load-undo {
+  width: 100%;
+  min-height: 48px !important;
+  margin-top: 9px;
+  border-style: dashed !important;
+  font-weight: 650 !important;
+}
+.warehouse-load-undo:disabled { opacity: .35; }
+
 .warehouse-putaway-target-bridge {
   order: -1;
   display: flex;
