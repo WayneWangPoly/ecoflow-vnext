@@ -7,6 +7,9 @@ export type ReturnZone = {
   zone_code: string;
   zone_name: string | null;
   warehouse_location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  radius_metres: number | string | null;
   active: boolean | null;
 };
 
@@ -58,12 +61,23 @@ export async function loadOpenReturnZoneItems(client?: SupabaseClient | null) {
   return (data ?? []) as OpenDeliveryReturn[];
 }
 
-export async function driverDropReturn(input: { exceptionId: string; zoneCode: string; note?: string | null; driver?: string | null }, client?: SupabaseClient | null) {
+export async function driverDropReturn(input: {
+  exceptionId: string;
+  zoneCode: string;
+  note?: string | null;
+  driver?: string | null;
+  latitude: number;
+  longitude: number;
+  accuracyMetres: number;
+}, client?: SupabaseClient | null) {
   const { data, error } = await activeClient(client).rpc('ecoflow_driver_drop_return', {
     p_exception_id: input.exceptionId,
     p_zone_code: input.zoneCode,
     p_note: input.note ?? null,
     p_driver: input.driver ?? 'Driver',
+    p_latitude: input.latitude,
+    p_longitude: input.longitude,
+    p_accuracy_metres: input.accuracyMetres,
   });
   if (error) throw new Error(errorMessage(error));
   return data ?? [];
