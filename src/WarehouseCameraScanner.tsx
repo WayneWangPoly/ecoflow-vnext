@@ -24,7 +24,7 @@ function barcodeInput() {
 }
 
 function warehouseSurfaceVisible() {
-  return ['/warehouse-map'].includes(window.location.pathname)
+  return window.location.pathname === '/warehouse-map'
     || Boolean(Array.from(document.querySelectorAll<HTMLElement>('.warehouse-receive-screen, .barcode-sprint-screen, .mobile-title')).find(isVisible));
 }
 
@@ -34,6 +34,10 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
   input.focus();
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
 export function WarehouseCameraScanner() {
@@ -55,9 +59,11 @@ export function WarehouseCameraScanner() {
     const observer = new MutationObserver(refresh);
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
     window.addEventListener('resize', refresh);
+    window.addEventListener('focusin', refresh);
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', refresh);
+      window.removeEventListener('focusin', refresh);
     };
   }, []);
 
@@ -109,7 +115,17 @@ export function WarehouseCameraScanner() {
     rafRef.current = window.requestAnimationFrame(() => void scanFrame());
   }
 
+  async function mountedVideo() {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (videoRef.current) return videoRef.current;
+      await nextFrame();
+    }
+    return null;
+  }
+
   async function startCamera() {
+    const target = barcodeInput();
+    if (!target) return;
     setOpen(true);
     setError('');
     const DetectorClass = (window as unknown as { BarcodeDetector?: DetectorConstructor }).BarcodeDetector;
@@ -117,7 +133,13 @@ export function WarehouseCameraScanner() {
       setError('Live barcode detection is not supported by this browser. Use the barcode field or the device scanner shortcut.');
       return;
     }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera access is not available in this browser.');
+      return;
+    }
     try {
+      const video = await mountedVideo();
+      if (!video) throw new Error('Camera screen could not be mounted. Close and try again.');
       const requestedFormats = ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'itf'];
       const supported = DetectorClass.getSupportedFormats ? await DetectorClass.getSupportedFormats() : requestedFormats;
       const formats = requestedFormats.filter((format) => supported.includes(format));
@@ -127,9 +149,8 @@ export function WarehouseCameraScanner() {
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
-      if (!videoRef.current) return;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+      video.srcObject = stream;
+      await video.play();
       scanningRef.current = true;
       void scanFrame();
     } catch (cameraError) {
@@ -139,7 +160,7 @@ export function WarehouseCameraScanner() {
   }
 
   async function toggleTorch() {
-    const track = streamRef.current?.getVideoTracks()[0] as (MediaStreamTrack & { getCapabilities?: () => { torch?: boolean } }) | undefined;
+    const track = streamRef.current?.getVideoTracks()[0];
     if (!track?.applyConstraints) return;
     const next = !torchOn;
     try {
