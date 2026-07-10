@@ -69,7 +69,7 @@ function CartonLabel({ carton, runLabel, dateLabel }: { carton: CartonSpec; runL
         <div className="label-stop-block">
           <span>STOP</span>
           <strong>{carton.stopNumber}</strong>
-          <small>Load reverse order</small>
+          <small>Reverse load</small>
         </div>
         <div className="label-carton-count">
           <span>CARTON</span>
@@ -112,8 +112,8 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
       <header className="label-toolbar no-print">
         <button type="button" className="driver-icon-button" onClick={onClose} aria-label="Close labels"><X size={22} /></button>
         <div className="label-toolbar-copy">
-          <strong>Black & white carton labels</strong>
-          <span>{cartons.length} labels · A4/A6 friendly · logo from public asset when available</span>
+          <strong>Black & white A6 carton labels</strong>
+          <span>{cartons.length} labels · 2 labels per A6 sheet · logo from public asset when available</span>
         </div>
         <button type="button" className="driver-primary-button label-print-button" onClick={() => window.print()}>
           <Printer size={18} /> Print
