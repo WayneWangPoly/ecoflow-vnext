@@ -41,6 +41,7 @@ import './driverPodQuality.css';
 import './deliveryOperations.css';
 import './returnZoneOperations.css';
 import './returnZoneCopyFix.css';
+import './returnZoneGeofence.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
