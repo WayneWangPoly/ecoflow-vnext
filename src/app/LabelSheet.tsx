@@ -2,7 +2,18 @@ import { useState } from 'react';
 import { Printer, X } from 'lucide-react';
 import type { CartonSpec } from '@/domain/pickPlan';
 
-const logoCandidates = ['/ecoflow-logo.svg', '/ecoflow-logo.png', '/logo.svg', '/logo.png', '/EcoFlow-logo.png', '/EcoFlow.png'];
+const logoCandidates = [
+  '/ecoflow-logo.svg',
+  '/ecoflow-logo.png',
+  '/ecoflow-packaging-logo.svg',
+  '/ecoflow-packaging-logo.png',
+  '/ecoflow_packaging_logo.png',
+  '/EcoFlowPackaging.png',
+  '/logo.svg',
+  '/logo.png',
+  '/EcoFlow-logo.png',
+  '/EcoFlow.png'
+];
 
 function LabelLogo() {
   const [index, setIndex] = useState(0);
@@ -30,7 +41,7 @@ function LabelBars({ value }: { value: string }) {
     return { x: 2 + index * 4, height, width };
   });
   return (
-    <svg className="label-bars" viewBox="0 0 112 52" aria-label={value} role="img">
+    <svg className="label-bars" viewBox="0 0 112 52" aria-label={`Label reference ${value}`} role="img">
       <rect x="0" y="0" width="112" height="52" fill="#fff" />
       {bars.map((bar, index) => <rect key={index} x={bar.x} y={4} width={bar.width} height={bar.height} fill="#111" />)}
       <text x="56" y="49" textAnchor="middle" fontSize="6" fontFamily="Arial, sans-serif" fill="#111">{value}</text>
@@ -89,7 +100,7 @@ function CartonLabel({ carton, runLabel, dateLabel }: { carton: CartonSpec; runL
       </section>
 
       <footer className="label-bottom-row">
-        <div className="label-load-rule"><strong>LOAD</strong><span>Last stop deepest · first stop near door</span><em>A6 two-up sheet</em></div>
+        <div className="label-load-rule"><strong>LOAD</strong><span>Last stop deepest · first stop near door</span><em>Label {carton.index} of {carton.total}</em></div>
         <LabelBars value={labelId} />
       </footer>
     </div>
@@ -102,9 +113,9 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
   dateLabel: string;
   onClose: () => void;
 }) {
-  const pages: CartonSpec[][] = [];
+  const sheets: CartonSpec[][] = [];
   for (let index = 0; index < cartons.length; index += 2) {
-    pages.push(cartons.slice(index, index + 2));
+    sheets.push(cartons.slice(index, index + 2));
   }
 
   return (
@@ -112,15 +123,15 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
       <header className="label-toolbar no-print">
         <button type="button" className="driver-icon-button" onClick={onClose} aria-label="Close labels"><X size={22} /></button>
         <div className="label-toolbar-copy">
-          <strong>Black & white A6 two-up carton labels</strong>
-          <span>{cartons.length} labels · each A6 sheet prints 2 carton labels · logo from public asset when available</span>
+          <strong>A6 carton labels · two labels per A6 sheet</strong>
+          <span>{cartons.length} labels · {sheets.length} A6 sheet{sheets.length === 1 ? '' : 's'} · black and white printer layout</span>
         </div>
         <button type="button" className="driver-primary-button label-print-button" onClick={() => window.print()}>
-          <Printer size={18} /> Print
+          <Printer size={18} /> Print A6
         </button>
       </header>
       <div className="label-pages">
-        {pages.map((pair, pageIndex) => (
+        {sheets.map((pair, pageIndex) => (
           <div className="label-page label-page-a6-two-up" key={pageIndex}>
             {pair.map((carton) => (
               <CartonLabel key={carton.id} carton={carton} runLabel={runLabel} dateLabel={dateLabel} />
@@ -128,7 +139,7 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
             {pair.length === 1 ? <div className="carton-label label-blank" /> : null}
           </div>
         ))}
-        {!pages.length ? <div className="empty-state no-print">No cartons in this run yet.</div> : null}
+        {!sheets.length ? <div className="empty-state no-print">No cartons in this run yet.</div> : null}
       </div>
     </div>
   );
