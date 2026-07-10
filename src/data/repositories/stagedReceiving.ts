@@ -29,6 +29,7 @@ export type StagedReceivingLine = {
   line_status: string | null;
   movement_id: string | null;
   scanned_at: string | null;
+  idempotency_key?: string | null;
 };
 
 function activeClient(client?: SupabaseClient | null) {
@@ -79,13 +80,23 @@ export async function startStagedReceivingBatch(client?: SupabaseClient | null) 
   return (data ?? []) as Array<{ batch_id: string; batch_no: string; batch_status: string; created_at: string }>;
 }
 
-export async function stageReceivingScan(input: { batchId?: string | null; barcode: string; qtyPackages?: string | number | null; targetLocation?: string | null; note?: string | null }, client?: SupabaseClient | null) {
-  const { data, error } = await activeClient(client).rpc('ecoflow_stage_receiving_scan', {
+export async function stageReceivingScan(input: {
+  batchId?: string | null;
+  barcode: string;
+  qtyPackages?: string | number | null;
+  targetLocation?: string | null;
+  note?: string | null;
+  idempotencyKey: string;
+  clientScannedAt?: string | null;
+}, client?: SupabaseClient | null) {
+  const { data, error } = await activeClient(client).rpc('ecoflow_stage_receiving_scan_v2', {
     p_batch_id: input.batchId ?? null,
     p_barcode: input.barcode,
     p_qty_packages: input.qtyPackages ?? 1,
     p_target_location: input.targetLocation ?? null,
     p_note: input.note ?? null,
+    p_idempotency_key: input.idempotencyKey,
+    p_client_scanned_at: input.clientScannedAt ?? new Date().toISOString(),
   });
   if (error) throw new Error(message(error));
   return (data ?? []) as Array<{ line_id: string; batch_id: string; sku: string; product_name: string | null; units_received: number | string; suggested_location: string }>;
@@ -108,4 +119,13 @@ export async function finishStagedReceivingBatch(input: { batchId: string; note?
   });
   if (error) throw new Error(message(error));
   return (data ?? []) as Array<{ batch_id: string; batch_no: string; posted_lines: number | string; posted_units: number | string; batch_status: string }>;
+}
+
+export async function cancelStagedReceivingBatch(input: { batchId: string; reason: string }, client?: SupabaseClient | null) {
+  const { data, error } = await activeClient(client).rpc('ecoflow_cancel_warehouse_receiving_batch', {
+    p_batch_id: input.batchId,
+    p_reason: input.reason,
+  });
+  if (error) throw new Error(message(error));
+  return (data ?? []) as Array<{ batch_id: string; batch_no: string; batch_status: string; cancelled_at: string }>;
 }

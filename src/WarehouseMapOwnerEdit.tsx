@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 const STORAGE_KEY = 'ecoflow-warehouse-layout-v1';
-type LayoutBox = { left: string; top: string; width: string; height: string };
-type LayoutState = Record<string, LayoutBox>;
+const SITE_CODE = 'SITE-01';
+
+type LayoutSyncState = 'loading' | 'cloud' | 'saving' | 'local' | 'conflict' | 'error';
 
 function layoutElements() {
   return Array.from(document.querySelectorAll<HTMLElement>('.warehouse-floorplan > .floor-rack, .warehouse-floorplan > .floor-static'));
@@ -21,18 +23,18 @@ function currentLayout() {
     const key = element.dataset.layoutKey || elementKey(element, index);
     element.dataset.layoutKey = key;
     return [key, { left: element.style.left, top: element.style.top, width: element.style.width, height: element.style.height }];
-  })) as LayoutState;
+  })) as WarehouseLayoutState;
 }
 
-function storedLayout(): LayoutState {
+function storedLayout(): WarehouseLayoutState {
   try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') as LayoutState;
+    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') as WarehouseLayoutState;
   } catch {
     return {};
   }
 }
 
-function applyLayout(layout: LayoutState) {
+function applyLayout(layout: WarehouseLayoutState) {
   layoutElements().forEach((element, index) => {
     const key = element.dataset.layoutKey || elementKey(element, index);
     element.dataset.layoutKey = key;
@@ -58,25 +60,69 @@ function percent(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function syncLabel(state: LayoutSyncState, version: number | null) {
+  if (state === 'loading') return 'Loading cloud layout';
+  if (state === 'saving') return 'Saving layout…';
+  if (state === 'cloud') return `Cloud layout · v${version ?? 1}`;
+  if (state === 'conflict') return 'Cloud changed · reload required';
+  if (state === 'error') return 'Cloud save failed · local copy retained';
+  return 'Local layout fallback';
+}
+
 export function WarehouseMapOwnerEdit() {
   const [owner, setOwner] = useState(false);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [selectedKey, setSelectedKey] = useState('');
-  const snapshotRef = useRef<LayoutState>({});
-  const systemLayoutRef = useRef<LayoutState>({});
+  const [layoutVersion, setLayoutVersion] = useState<number | null>(null);
+  const [syncState, setSyncState] = useState<LayoutSyncState>(supabase ? 'loading' : 'local');
+  const snapshotRef = useRef<WarehouseLayoutState>({});
+  const systemLayoutRef = useRef<WarehouseLayoutState>({});
+  const cloudLayoutRef = useRef<WarehouseLayoutState>({});
+  const cloudLoadStartedRef = useRef(false);
+  const editingRef = useRef(false);
+
+  useEffect(() => {
+    editingRef.current = editing;
+    document.body.classList.toggle('warehouse-layout-editing', editing);
+  }, [editing]);
 
   useEffect(() => {
     if (window.location.pathname !== '/warehouse-map') return;
     void isOwnerRole().then(setOwner);
+
+    function startCloudLoad() {
+      if (!supabase || cloudLoadStartedRef.current || !layoutElements().length) return;
+      cloudLoadStartedRef.current = true;
+      void loadWarehouseLayout(SITE_CODE)
+        .then((row) => {
+          if (row?.layout_json && Object.keys(row.layout_json).length) {
+            cloudLayoutRef.current = row.layout_json;
+            setLayoutVersion(Number(row.layout_version));
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(row.layout_json));
+            if (!editingRef.current) applyLayout(row.layout_json);
+          }
+          setSyncState(row ? 'cloud' : 'local');
+        })
+        .catch(() => {
+          setSyncState('local');
+          if (!editingRef.current) applyLayout(storedLayout());
+        });
+    }
+
     function locate() {
       const nextHost = document.querySelector<HTMLElement>('.warehouse-header-actions');
       setHost(nextHost);
       if (!Object.keys(systemLayoutRef.current).length && layoutElements().length) {
         systemLayoutRef.current = currentLayout();
       }
-      applyLayout(storedLayout());
+      if (!editingRef.current) {
+        const preferred = Object.keys(cloudLayoutRef.current).length ? cloudLayoutRef.current : storedLayout();
+        applyLayout(preferred);
+      }
+      startCloudLoad();
     }
+
     locate();
     const observer = new MutationObserver(locate);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -84,7 +130,6 @@ export function WarehouseMapOwnerEdit() {
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle('warehouse-layout-editing', editing);
     if (!editing) return;
 
     snapshotRef.current = currentLayout();
@@ -143,7 +188,7 @@ export function WarehouseMapOwnerEdit() {
     return layoutElements().find((element) => element.dataset.layoutKey === selectedKey) ?? null;
   }
 
-  function nudge(property: keyof LayoutBox, amount: number) {
+  function nudge(property: keyof WarehouseLayoutBox, amount: number) {
     const element = selectedElement();
     if (!element) return;
     const current = percent(element.style[property]);
@@ -152,10 +197,29 @@ export function WarehouseMapOwnerEdit() {
     element.style[property] = `${Math.max(minimum, Math.min(maximum, current + amount)).toFixed(2)}%`;
   }
 
-  function save() {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(currentLayout()));
-    setEditing(false);
-    setSelectedKey('');
+  async function save() {
+    const layout = currentLayout();
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    if (!supabase) {
+      cloudLayoutRef.current = layout;
+      setSyncState('local');
+      setEditing(false);
+      setSelectedKey('');
+      return;
+    }
+
+    setSyncState('saving');
+    try {
+      const saved = await saveWarehouseLayout({ siteCode: SITE_CODE, layout, expectedVersion: layoutVersion });
+      cloudLayoutRef.current = saved?.layout_json || layout;
+      setLayoutVersion(saved?.layout_version ?? layoutVersion);
+      setSyncState('cloud');
+      setEditing(false);
+      setSelectedKey('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSyncState(/LAYOUT_VERSION_CONFLICT/i.test(message) ? 'conflict' : 'error');
+    }
   }
 
   function cancel() {
@@ -170,13 +234,40 @@ export function WarehouseMapOwnerEdit() {
     setSelectedKey('');
   }
 
+  async function reloadCloud() {
+    if (!supabase) return;
+    setSyncState('loading');
+    try {
+      const row = await loadWarehouseLayout(SITE_CODE);
+      const layout = row?.layout_json || systemLayoutRef.current;
+      cloudLayoutRef.current = layout;
+      setLayoutVersion(row?.layout_version ?? null);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+      applyLayout(layout);
+      setSyncState(row ? 'cloud' : 'local');
+      setEditing(false);
+      setSelectedKey('');
+    } catch {
+      setSyncState('error');
+    }
+  }
+
   if (!owner || !host) return null;
   return (
     <>
-      {createPortal(<button className={`warehouse-owner-edit-button ${editing ? 'active' : ''}`} type="button" onClick={() => setEditing((value) => !value)}>{editing ? 'Editing layout' : 'Edit layout'}</button>, host)}
+      {createPortal(
+        <button className={`warehouse-owner-edit-button ${editing ? 'active' : ''}`} type="button" onClick={() => setEditing((value) => !value)} title={syncLabel(syncState, layoutVersion)}>
+          {editing ? 'Editing layout' : 'Edit layout'}
+        </button>,
+        host,
+      )}
       {editing ? createPortal(
         <aside className="warehouse-layout-editor" aria-label="Owner warehouse layout editor">
-          <div><span>OWNER LAYOUT CONTROL</span><strong>{selectedKey ? selectedKey.replace(':', ' · ') : 'Select a rack or area'}</strong><small>Drag on the map or use the precise controls. Stock and location codes are not changed.</small></div>
+          <div>
+            <span>OWNER LAYOUT CONTROL</span>
+            <strong>{selectedKey ? selectedKey.replace(':', ' · ') : 'Select a rack or area'}</strong>
+            <small>{syncLabel(syncState, layoutVersion)} · stock and location codes are not changed.</small>
+          </div>
           <div className="warehouse-layout-nudge">
             <button type="button" onClick={() => nudge('top', -0.5)}>↑</button>
             <button type="button" onClick={() => nudge('left', -0.5)}>←</button>
@@ -187,7 +278,12 @@ export function WarehouseMapOwnerEdit() {
             <button type="button" onClick={() => nudge('height', -0.5)}>Height −</button>
             <button type="button" onClick={() => nudge('height', 0.5)}>Height +</button>
           </div>
-          <div className="warehouse-layout-actions"><button type="button" onClick={reset}>Reset to system</button><button type="button" onClick={cancel}>Cancel</button><button className="primary" type="button" onClick={save}>Save layout</button></div>
+          <div className="warehouse-layout-actions">
+            <button type="button" onClick={() => void reloadCloud()} disabled={syncState === 'loading' || !supabase}>Reload cloud</button>
+            <button type="button" onClick={reset}>Reset to system</button>
+            <button type="button" onClick={cancel}>Cancel</button>
+            <button className="primary" type="button" onClick={() => void save()} disabled={syncState === 'saving'}>{syncState === 'saving' ? 'Saving…' : 'Save layout'}</button>
+          </div>
         </aside>,
         document.body,
       ) : null}

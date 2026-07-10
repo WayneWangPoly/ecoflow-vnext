@@ -2,6 +2,22 @@
 .barcode-actions button:nth-child(4) { background: var(--ef-surface-2); color: var(--ef-text); border: 1px solid var(--ef-border-strong); }
 .barcode-package-buttons button:disabled { opacity: .28; cursor: not-allowed; }
 .barcode-master-screen .barcode-actions { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.barcode-retire-action {
+  grid-column: 1 / -1;
+  min-height: 48px !important;
+  border: 1px solid #e2b8ae !important;
+  background: #fff4f1 !important;
+  color: #9d3023 !important;
+}
+.barcode-retire-action:disabled { opacity: .35; }
+
+.warehouse-batch-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.warehouse-batch-actions button { min-height: 44px; }
+.warehouse-cancel-batch {
+  border: 1px solid #d8b7ae !important;
+  background: #fff7f4 !important;
+  color: #9d3023 !important;
+}
 
 .field-stage-head { display: flex !important; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .field-stage-head > div { display: grid; gap: 3px; }
@@ -68,14 +84,22 @@
 .warehouse-putaway-actions button:disabled { opacity: .35; }
 .warehouse-putaway-notice { padding: 9px 11px; border: 1px solid #cfe7da; border-radius: 7px; background: #e7f5ee; color: #0e6b47; font-size: 12.5px; font-weight: 600; }
 
+.warehouse-layout-actions { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.warehouse-layout-actions button:disabled { opacity: .4; }
+
 @media (max-width: 760px) {
   .barcode-master-screen .barcode-actions { grid-template-columns: 1fr 1fr !important; }
+  .barcode-retire-action { grid-column: 1 / -1; }
   .warehouse-putaway-actions { grid-template-columns: 1fr; }
   .warehouse-putaway-target-bridge { align-items: flex-start; }
+  .warehouse-batch-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .warehouse-layout-actions { grid-template-columns: 1fr 1fr !important; }
 }
 
 @media (max-width: 460px) {
   .barcode-master-screen .barcode-actions { grid-template-columns: 1fr !important; }
   .field-stage-head { display: grid !important; }
   .warehouse-putaway-target-bridge { display: grid; }
+  .warehouse-batch-actions { grid-template-columns: 1fr; }
+  .warehouse-layout-actions { grid-template-columns: 1fr !important; }
 }
