@@ -11,6 +11,7 @@ import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
+import { StageAndLoadExecution } from './StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
@@ -30,6 +31,7 @@ import './warehouseReceivingFlow.css';
 import './warehouseBarcodeSprint.css';
 import './warehousePickHandoff.css';
 import './fieldOpsGuardRails.css';
+import './stageAndLoadExecution.css';
 import './labelPrintBlackWhite.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
@@ -39,6 +41,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
+      <StageAndLoadExecution />
       <RoleAwareDesktopNavigation />
       <OwnerCommandCenter />
       <OwnerOrderIntelligence />
