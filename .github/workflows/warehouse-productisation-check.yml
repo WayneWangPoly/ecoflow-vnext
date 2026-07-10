@@ -75,40 +75,32 @@ jobs:
         uses: actions/checkout@v4
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Bootstrap Supabase-compatible database roles
+      - name: Load current warehouse schema contract
         shell: bash
         run: |
-          psql -v ON_ERROR_STOP=1 <<'SQL'
-          create extension if not exists pgcrypto;
-          create schema if not exists auth;
-          create schema if not exists extensions;
-          do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
-          do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;
-          create table if not exists auth.users (
-            id uuid primary key default gen_random_uuid(),
-            email text,
-            raw_user_meta_data jsonb default '{}'::jsonb,
-            created_at timestamptz not null default now(),
-            updated_at timestamptz not null default now()
-          );
-          create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
-          create or replace function auth.role() returns text language sql stable as $$ select 'authenticated'::text $$;
-          create or replace function auth.jwt() returns jsonb language sql stable as $$ select '{}'::jsonb $$;
-          SQL
-      - name: Replay every migration from an empty database
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee warehouse-db-contract.log
+      - name: Apply warehouse hardening migrations in release order
         shell: bash
         run: |
           set -euo pipefail
-          : > migration-replay.log
-          while IFS= read -r file; do
-            echo "==> $file" | tee -a migration-replay.log
-            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a migration-replay.log
-          done < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | sort)
-      - name: Upload migration replay log
+          for file in \
+            supabase/migrations/20260710130000_warehouse_backend_hardening.sql \
+            supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql \
+            supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql
+          do
+            echo "==> $file" | tee -a warehouse-db-contract.log
+            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a warehouse-db-contract.log
+          done
+      - name: Execute warehouse transaction contract tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-contract-test.sql 2>&1 | tee -a warehouse-db-contract.log
+      - name: Upload warehouse database contract log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: warehouse-migration-replay
-          path: migration-replay.log
+          name: warehouse-database-contract
+          path: warehouse-db-contract.log
           if-no-files-found: warn
