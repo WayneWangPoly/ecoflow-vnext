@@ -22,6 +22,7 @@ import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
 import { WarehouseCameraScanner } from './WarehouseCameraScanner';
 import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
 import { WarehouseMapPutawayControl } from './WarehouseMapPutawayControl';
+import { WarehousePutawayTargetBridge } from './WarehousePutawayTargetBridge';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
 import './styles.css';
@@ -71,6 +72,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
       <WarehouseBarcodeSprintMount />
+      <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
