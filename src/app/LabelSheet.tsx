@@ -89,7 +89,7 @@ function CartonLabel({ carton, runLabel, dateLabel }: { carton: CartonSpec; runL
       </section>
 
       <footer className="label-bottom-row">
-        <div className="label-load-rule"><strong>LOAD</strong><span>Last stop deepest · first stop near door</span></div>
+        <div className="label-load-rule"><strong>LOAD</strong><span>Last stop deepest · first stop near door</span><em>A6 two-up sheet</em></div>
         <LabelBars value={labelId} />
       </footer>
     </div>
@@ -112,8 +112,8 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
       <header className="label-toolbar no-print">
         <button type="button" className="driver-icon-button" onClick={onClose} aria-label="Close labels"><X size={22} /></button>
         <div className="label-toolbar-copy">
-          <strong>Black & white A6 carton labels</strong>
-          <span>{cartons.length} labels · 2 labels per A6 sheet · logo from public asset when available</span>
+          <strong>Black & white A6 two-up carton labels</strong>
+          <span>{cartons.length} labels · each A6 sheet prints 2 carton labels · logo from public asset when available</span>
         </div>
         <button type="button" className="driver-primary-button label-print-button" onClick={() => window.print()}>
           <Printer size={18} /> Print
@@ -121,7 +121,7 @@ export function LabelSheet({ cartons, runLabel, dateLabel, onClose }: {
       </header>
       <div className="label-pages">
         {pages.map((pair, pageIndex) => (
-          <div className="label-page" key={pageIndex}>
+          <div className="label-page label-page-a6-two-up" key={pageIndex}>
             {pair.map((carton) => (
               <CartonLabel key={carton.id} carton={carton} runLabel={runLabel} dateLabel={dateLabel} />
             ))}
