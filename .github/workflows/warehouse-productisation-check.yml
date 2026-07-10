@@ -27,15 +27,11 @@ jobs:
       - name: Audit warehouse invariants
         run: npm run audit:warehouse
       - name: TypeScript check
-        id: typecheck
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
           node ./node_modules/typescript/bin/tsc -b --pretty false 2>&1 | tee typecheck.log
       - name: Vite bundle
-        id: bundle
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -49,6 +45,3 @@ jobs:
             typecheck.log
             vite-build.log
           if-no-files-found: warn
-      - name: Fail on validation error
-        if: ${{ steps.typecheck.outcome == 'failure' || steps.bundle.outcome == 'failure' }}
-        run: exit 1
