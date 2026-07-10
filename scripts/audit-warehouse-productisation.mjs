@@ -88,6 +88,7 @@ assert.match(conflictQualification, /on conflict on constraint ecoflow_inventory
 
 assert.match(driverTracker, /3 \* 60 \* 1000/, 'Automatic driver position sampling must use the three-minute cadence.');
 assert.match(driverTracker, /routeStartedAt && !day\.routeEndedAt/, 'Driver tracking must stop when the route ends.');
+assert.match(driverTracker, /!current\.active && source !== 'ROUTE_END'/, 'Only the final route-end event may be sampled after tracking stops.');
 assert.match(driverTracker, /document\.visibilityState === 'visible'/, 'Automatic browser sampling must only run while the Driver app is visible.');
 assert.match(driverTracker, /STOP_ARRIVAL|DELIVERY|ROUTE_END/, 'Operational route events must create timeline markers.');
 assert.match(driverTracker, /recordDriverLocationSample/, 'Driver samples must use the controlled database RPC.');
@@ -98,7 +99,7 @@ assert.match(ownerTracking, /loadOwnerDriverLocationTimeline/, 'Owner map must l
 assert.match(driverLocationRepository, /ecoflow_record_driver_location_sample/, 'Driver repository must call the controlled location RPC.');
 assert.match(driverLocationRepository, /v_ecoflow_owner_driver_location_timeline/, 'Owner repository must use the protected timeline view.');
 assert.match(driverTrackingMigration, /uq_driver_location_client_sample/, 'Driver samples must be idempotent.');
-assert.match(driverTrackingMigration, /AUTO_INTERVAL[^\n]+60 seconds/s, 'Noisy browser callbacks must be rate limited.');
+assert.match(driverTrackingMigration, /v_source = 'AUTO_INTERVAL'[\s\S]+interval '60 seconds'/, 'Noisy browser callbacks must be rate limited.');
 assert.match(driverTrackingMigration, /ecoflow_can_view_driver_location/, 'Location history must be Owner/Admin gated.');
 assert.match(driverTrackingMigration, /app_role in \('DRIVER','OWNER','ADMIN'\)/, 'Only active Driver/Owner/Admin users may record a position.');
 assert.match(driverTrackingMigration, /security_invoker = true/g, 'Owner tracking views must preserve RLS.');
