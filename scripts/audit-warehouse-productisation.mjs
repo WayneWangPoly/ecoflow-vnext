@@ -19,10 +19,14 @@ const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
 const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
+const driverTracker = read('src/DriverLocationTracker.tsx');
+const ownerTracking = read('src/OwnerDriverTrackingMap.tsx');
+const driverLocationRepository = read('src/data/repositories/driverLocation.ts');
 const backendMigration = read('supabase/migrations/20260710130000_warehouse_backend_hardening.sql');
 const backendFollowup = read('supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql');
 const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql');
 const conflictQualification = read('supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql');
+const driverTrackingMigration = read('supabase/migrations/20260710140000_owner_driver_location_tracking.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -45,6 +49,8 @@ assert.match(main, /WarehouseMapPutawayControl/, 'Warehouse map must mount the c
 assert.match(main, /WarehousePutawayTargetBridge/, 'Map putaway target must return to controlled receiving.');
 assert.match(main, /LoadRecoveryControl/, 'Controlled loading recovery must be mounted.');
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
+assert.match(main, /DriverLocationTracker/, 'Driver location sampling must be mounted.');
+assert.match(main, /OwnerDriverTrackingMap/, 'Owner delivery tracking map must be mounted.');
 assert.match(ownerEdit, /OWNER|ADMIN/, 'Warehouse layout editing must be owner/admin gated.');
 assert.match(ownerEdit, /saveWarehouseLayout/, 'Owner layout changes must persist to cloud configuration.');
 assert.match(ownerEdit, /layoutVersion/, 'Cloud layout saves must use optimistic versioning.');
@@ -80,4 +86,22 @@ assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retiremen
 assert.match(qualifiedFunctions, /where vel\.sku = v_sku/, 'Barcode product lookup must qualify SKU columns.');
 assert.match(conflictQualification, /on conflict on constraint ecoflow_inventory_sku_controls_pkey/, 'Barcode control upsert must use the named primary-key constraint.');
 
-console.log('Warehouse productisation and backend hardening audit passed.');
+assert.match(driverTracker, /3 \* 60 \* 1000/, 'Automatic driver position sampling must use the three-minute cadence.');
+assert.match(driverTracker, /routeStartedAt && !day\.routeEndedAt/, 'Driver tracking must stop when the route ends.');
+assert.match(driverTracker, /document\.visibilityState === 'visible'/, 'Automatic browser sampling must only run while the Driver app is visible.');
+assert.match(driverTracker, /STOP_ARRIVAL|DELIVERY|ROUTE_END/, 'Operational route events must create timeline markers.');
+assert.match(driverTracker, /recordDriverLocationSample/, 'Driver samples must use the controlled database RPC.');
+assert.match(ownerTracking, /No delivery sequence is exposed/, 'Owner map must not display driver delivery order.');
+assert.match(ownerTracking, /Driver position timeline/, 'Owner map must expose a time-labelled route history.');
+assert.match(ownerTracking, /staleMinutes > 10/, 'Owner map must flag a stale driver position.');
+assert.match(ownerTracking, /loadOwnerDriverLocationTimeline/, 'Owner map must load database location history.');
+assert.match(driverLocationRepository, /ecoflow_record_driver_location_sample/, 'Driver repository must call the controlled location RPC.');
+assert.match(driverLocationRepository, /v_ecoflow_owner_driver_location_timeline/, 'Owner repository must use the protected timeline view.');
+assert.match(driverTrackingMigration, /uq_driver_location_client_sample/, 'Driver samples must be idempotent.');
+assert.match(driverTrackingMigration, /AUTO_INTERVAL[^\n]+60 seconds/s, 'Noisy browser callbacks must be rate limited.');
+assert.match(driverTrackingMigration, /ecoflow_can_view_driver_location/, 'Location history must be Owner/Admin gated.');
+assert.match(driverTrackingMigration, /app_role in \('DRIVER','OWNER','ADMIN'\)/, 'Only active Driver/Owner/Admin users may record a position.');
+assert.match(driverTrackingMigration, /security_invoker = true/g, 'Owner tracking views must preserve RLS.');
+assert.match(driverTrackingMigration, /revoke insert, update, delete/, 'Direct location table writes must be blocked.');
+
+console.log('Warehouse, receiving and owner delivery tracking audit passed.');
