@@ -1,0 +1,172 @@
+.driver-location-share {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.driver-location-share:hover { background: rgba(255, 255, 255, .16); }
+.driver-location-saving { color: #d9edff; }
+.driver-location-blocked,
+.driver-location-error { color: #ffd7c3; border-color: rgba(255, 171, 123, .5); }
+.driver-location-offline { color: #ffe8a8; border-color: rgba(255, 211, 102, .5); }
+
+.owner-driver-tracking {
+  order: -1;
+  overflow: hidden;
+  padding: 0 !important;
+  border: 1px solid #c8d4cc !important;
+  background: #f8faf8 !important;
+  box-shadow: 0 14px 36px rgba(15, 37, 28, .08);
+}
+.owner-tracking-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #d8e0db;
+  background: linear-gradient(135deg, #0b2f24 0%, #123f31 72%, #18523f 100%);
+  color: #fff;
+}
+.owner-tracking-head h2 { margin: 4px 0 6px; font-size: 25px; letter-spacing: -.025em; }
+.owner-tracking-head p { max-width: 760px; margin: 0; color: #c8ddd3; font-size: 13px; line-height: 1.5; }
+.owner-tracking-head .section-eyebrow { color: #9fc8b5; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.owner-tracking-actions { display: flex; align-items: center; gap: 8px; }
+.owner-tracking-actions select,
+.owner-tracking-actions button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  padding: 0 11px;
+  font-weight: 700;
+}
+.owner-tracking-actions button { display: inline-flex; align-items: center; gap: 7px; }
+.owner-tracking-actions option { color: #142019; }
+.owner-tracking-actions button:disabled { opacity: .55; }
+.owner-tracking-error { margin: 14px 20px 0; padding: 10px 12px; border: 1px solid #e9b4a8; border-radius: 7px; background: #fff0ec; color: #8a2f20; font-size: 13px; font-weight: 650; }
+
+.owner-tracking-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: #d8e0db;
+  border-bottom: 1px solid #d8e0db;
+}
+.owner-tracking-stats > div {
+  min-height: 80px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: 9px;
+  padding: 14px 18px;
+  background: #fff;
+  color: #173025;
+}
+.owner-tracking-stats svg { grid-row: 1 / 3; align-self: center; color: #287051; }
+.owner-tracking-stats strong { font-size: 17px; line-height: 1.1; }
+.owner-tracking-stats span { color: #718078; font-size: 11px; }
+.owner-tracking-stats .stale svg,
+.owner-tracking-stats .stale strong { color: #ae5c18; }
+
+.owner-tracking-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 560px; }
+.owner-tracking-map-wrap { min-width: 0; padding: 18px; border-right: 1px solid #d8e0db; background: #eef3ef; }
+.owner-tracking-map {
+  width: 100%;
+  min-height: 460px;
+  display: block;
+  border: 1px solid #c5d0c9;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8faf8, #eef3ef);
+  color: #d5ddd8;
+}
+.owner-map-grid { opacity: .62; }
+.owner-driver-path { fill: none; stroke: #267552; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 7; opacity: .72; }
+.owner-map-warehouse rect { fill: #102f25; stroke: #fff; stroke-width: 2; }
+.owner-map-warehouse > text:not(.owner-map-label) { fill: #fff; font-size: 12px; font-weight: 800; }
+.owner-map-label { fill: #183f30; font-size: 11px; font-weight: 800; }
+
+.owner-store-pin { cursor: pointer; }
+.owner-store-pin circle { fill: #fff; stroke: #597267; stroke-width: 2.5; transition: transform .15s ease, stroke-width .15s ease; }
+.owner-store-pin path { fill: #597267; pointer-events: none; }
+.owner-store-pin:hover circle,
+.owner-store-pin.selected circle { stroke-width: 4; transform: scale(1.15); }
+.owner-store-pin.selected circle { stroke: #d36c18; }
+.owner-store-delivered circle { fill: #dff2e7; stroke: #1f7a50; }
+.owner-store-delivered path { fill: #1f7a50; }
+.owner-store-failed circle { fill: #ffebe6; stroke: #b5432f; }
+.owner-store-failed path { fill: #b5432f; }
+.owner-store-arrived circle { fill: #fff0dc; stroke: #cc6a17; }
+.owner-store-arrived path { fill: #cc6a17; }
+.owner-store-staged circle { fill: #e5effa; stroke: #356d9c; }
+.owner-store-staged path { fill: #356d9c; }
+.owner-store-label { fill: #243a30; font-size: 9px; font-weight: 700; paint-order: stroke; stroke: #f5f8f6; stroke-width: 3px; stroke-linejoin: round; }
+
+.owner-time-pin circle { fill: #257453; stroke: #fff; stroke-width: 2; }
+.owner-time-pin.event circle { fill: #d16a16; }
+.owner-time-pin.latest circle { fill: #0c3326; stroke-width: 3; }
+.owner-time-pin > text:not(.owner-time-label) { fill: #fff; font-size: 10px; font-weight: 900; }
+.owner-time-label { fill: #0b3124; font-size: 9px; font-weight: 800; paint-order: stroke; stroke: #f7faf8; stroke-width: 3px; }
+.owner-map-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 4px 0; color: #64736b; font-size: 11px; }
+.owner-map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.owner-map-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #fff; border: 2px solid #597267; }
+.owner-map-legend .legend-driver { background: #0c3326; border-color: #0c3326; }
+.owner-map-legend .legend-delivered { background: #dff2e7; border-color: #1f7a50; }
+.owner-map-legend .legend-failed { background: #ffebe6; border-color: #b5432f; }
+
+.owner-tracking-side { display: grid; align-content: start; gap: 12px; padding: 18px; background: #f8faf8; }
+.owner-latest-card,
+.owner-selected-store { display: grid; gap: 5px; padding: 15px; border: 1px solid #cdd8d1; border-radius: 9px; background: #fff; }
+.owner-latest-card > span,
+.owner-selected-store > span { color: #718078; font-size: 9px; font-weight: 800; letter-spacing: .14em; }
+.owner-latest-card strong,
+.owner-selected-store strong { color: #143529; font-size: 16px; }
+.owner-selected-store strong { display: inline-flex; align-items: center; gap: 6px; }
+.owner-latest-card p,
+.owner-selected-store p { margin: 0; color: #4f6258; font-size: 12px; line-height: 1.45; }
+.owner-latest-card small,
+.owner-selected-store small { color: #718078; font-size: 10.5px; }
+.owner-latest-card.stale { border-color: #e5c28f; background: #fff8eb; }
+.owner-timeline-list { overflow: hidden; border: 1px solid #d1dbd5; border-radius: 9px; background: #fff; }
+.owner-timeline-title { display: flex; align-items: center; gap: 7px; padding: 12px 13px; border-bottom: 1px solid #e2e8e4; color: #173b2d; font-size: 12px; font-weight: 800; }
+.owner-timeline-list article { display: grid; grid-template-columns: 50px 1fr; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #edf1ee; }
+.owner-timeline-list article:last-child { border-bottom: 0; }
+.owner-timeline-list time { color: #1c6b4b; font-size: 11px; font-weight: 800; }
+.owner-timeline-list article div { display: grid; gap: 2px; }
+.owner-timeline-list strong { color: #243b31; font-size: 11px; }
+.owner-timeline-list span { color: #7a8780; font-size: 9.5px; }
+.owner-timeline-empty { margin: 0; padding: 15px; color: #748078; font-size: 11px; line-height: 1.5; }
+.owner-tracking-foot { display: flex; align-items: center; gap: 7px; padding: 11px 18px; border-top: 1px solid #d8e0db; background: #f1f5f2; color: #68766f; font-size: 10.5px; }
+
+@media (max-width: 1050px) {
+  .owner-tracking-layout { grid-template-columns: 1fr; }
+  .owner-tracking-map-wrap { border-right: 0; border-bottom: 1px solid #d8e0db; }
+  .owner-tracking-side { grid-template-columns: 1fr 1fr; }
+  .owner-timeline-list { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .driver-location-share span { display: none; }
+  .driver-location-share { width: 36px; justify-content: center; padding: 0; }
+  .owner-tracking-head { display: grid; padding: 18px; }
+  .owner-tracking-actions { width: 100%; }
+  .owner-tracking-actions select { min-width: 0; flex: 1; }
+  .owner-tracking-stats { grid-template-columns: 1fr 1fr; }
+  .owner-tracking-layout { min-height: 0; }
+  .owner-tracking-map-wrap { padding: 10px; }
+  .owner-tracking-map { min-height: 350px; }
+  .owner-tracking-side { grid-template-columns: 1fr; padding: 12px; }
+  .owner-timeline-list { grid-column: auto; }
+}
