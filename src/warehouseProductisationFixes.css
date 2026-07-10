@@ -1,0 +1,12 @@
+.barcode-actions button:nth-child(3) { display: inline-flex !important; align-items: center; justify-content: center; }
+.barcode-actions button:nth-child(4) { background: var(--ef-surface-2); color: var(--ef-text); border: 1px solid var(--ef-border-strong); }
+.barcode-package-buttons button:disabled { opacity: .28; cursor: not-allowed; }
+.barcode-master-screen .barcode-actions { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+
+@media (max-width: 760px) {
+  .barcode-master-screen .barcode-actions { grid-template-columns: 1fr 1fr !important; }
+}
+
+@media (max-width: 460px) {
+  .barcode-master-screen .barcode-actions { grid-template-columns: 1fr !important; }
+}
