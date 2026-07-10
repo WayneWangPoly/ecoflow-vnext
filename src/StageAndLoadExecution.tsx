@@ -1,14 +1,15 @@
-// @ts-nocheck
 import { useEffect } from 'react';
 import { loadStagePreparations, saveStagePreparation } from '@/data/repositories/stageExecution';
 
 type PrepEntry = { sealed: boolean; labelled: boolean; sealedAt?: string | null; labelAppliedAt?: string | null };
 type PrepState = Record<string, PrepEntry>;
 type DayContext = { businessDay: string; orderByBox: Record<string, string> };
+type PrepSyncState = 'idle' | 'saving' | 'saved' | 'offline';
 
 const STORAGE_KEY = 'ecoflow-stage-prep-v2';
 let hydratedDay = '';
 let hydrating = false;
+const syncByKey: Record<string, PrepSyncState> = {};
 
 function loadState(): PrepState {
   try {
@@ -53,6 +54,13 @@ function cardIdentity(card: HTMLElement) {
   return { key: orderId || fallback, orderId, businessDay: context?.businessDay || null };
 }
 
+function syncLabel(state: PrepSyncState) {
+  if (state === 'saving') return 'Saving…';
+  if (state === 'saved') return 'Synced';
+  if (state === 'offline') return 'Offline · saved on this device';
+  return 'Ready';
+}
+
 async function hydrateSharedPreparation() {
   const context = resolveDayContext();
   if (!context || hydrating || hydratedDay === context.businessDay) return;
@@ -67,12 +75,13 @@ async function hydrateSharedPreparation() {
         sealedAt: prep.sealedAt || null,
         labelAppliedAt: prep.labelAppliedAt || null,
       };
+      syncByKey[orderId] = 'saved';
     });
     saveState(next);
     hydratedDay = context.businessDay;
     runEnhancement();
   } catch {
-    // Local operation remains available when network sync is temporarily unavailable.
+    // Retry while preserving local floor operation; the UI shows offline state after a save attempt.
   } finally {
     hydrating = false;
   }
@@ -81,14 +90,22 @@ async function hydrateSharedPreparation() {
 function persistShared(card: HTMLElement, entry: PrepEntry) {
   const identity = cardIdentity(card);
   if (!identity.orderId || !identity.businessDay) return;
+  syncByKey[identity.key] = 'saving';
+  runEnhancement();
   void saveStagePreparation({
     businessDay: identity.businessDay,
     orderId: identity.orderId,
     preparation: { sealedAt: entry.sealedAt || null, labelAppliedAt: entry.labelAppliedAt || null },
-  }).catch(() => undefined);
+  }).then(() => {
+    syncByKey[identity.key] = 'saved';
+    runEnhancement();
+  }).catch(() => {
+    syncByKey[identity.key] = 'offline';
+    runEnhancement();
+  });
 }
 
-function button(label: string, className: string, disabled: boolean, onClick: () => void) {
+function actionButton(label: string, className: string, disabled: boolean, onClick: () => void) {
   const element = document.createElement('button');
   element.type = 'button';
   element.className = className;
@@ -122,12 +139,22 @@ function renderStageCard(card: HTMLElement, allState: PrepState) {
 
   const head = document.createElement('div');
   head.className = 'field-stage-head';
-  head.innerHTML = `<strong>Finish this stop</strong><span>${allocationReady ? 'Do the physical action, then tick the screen.' : original.textContent || 'Finish sorting first.'}</span>`;
+  const headCopy = document.createElement('div');
+  const heading = document.createElement('strong');
+  heading.textContent = 'Finish this stop';
+  const helper = document.createElement('span');
+  helper.textContent = allocationReady ? 'Do the physical action, then confirm it here.' : original.textContent || 'Finish sorting first.';
+  headCopy.append(heading, helper);
+  const sync = document.createElement('small');
+  const syncState = syncByKey[key] || 'idle';
+  sync.className = `field-stage-sync sync-${syncState}`;
+  sync.textContent = syncLabel(syncState);
+  head.append(headCopy, sync);
   execution.appendChild(head);
 
   const steps = document.createElement('div');
   steps.className = 'field-stage-steps';
-  const seal = button(state.sealed ? '✓ 1. Cartons sealed' : '1. Seal cartons', `field-stage-step ${state.sealed ? 'done' : ''}`, !allocationReady, () => {
+  const seal = actionButton(state.sealed ? '✓ 1. Cartons sealed' : '1. Seal cartons', `field-stage-step ${state.sealed ? 'done' : ''}`, !allocationReady, () => {
     const next = loadState();
     const nextEntry: PrepEntry = state.sealed
       ? { sealed: false, labelled: false, sealedAt: null, labelAppliedAt: null }
@@ -137,7 +164,7 @@ function renderStageCard(card: HTMLElement, allState: PrepState) {
     persistShared(card, nextEntry);
     runEnhancement();
   });
-  const label = button(state.labelled ? '✓ 2. Labels applied' : '2. Apply every label', `field-stage-step ${state.labelled ? 'done' : ''}`, !allocationReady || !state.sealed, () => {
+  const label = actionButton(state.labelled ? '✓ 2. Labels applied' : '2. Apply every label', `field-stage-step ${state.labelled ? 'done' : ''}`, !allocationReady || !state.sealed, () => {
     const next = loadState();
     const nextEntry: PrepEntry = {
       sealed: true,
@@ -150,7 +177,7 @@ function renderStageCard(card: HTMLElement, allState: PrepState) {
     persistShared(card, nextEntry);
     runEnhancement();
   });
-  const stage = button('3. Stage for driver', 'field-stage-step field-stage-final', !allocationReady || !state.sealed || !state.labelled, () => {
+  const stage = actionButton('3. Stage for driver', 'field-stage-step field-stage-final', !allocationReady || !state.sealed || !state.labelled, () => {
     original.click();
   });
   steps.append(seal, label, stage);
@@ -195,10 +222,20 @@ function applySequentialLoading() {
   }
   if (!strip) return;
   if (nextIndex < 0) {
-    strip.innerHTML = '<strong>All stops loaded</strong><span>Check the van door and start the route.</span>';
+    strip.replaceChildren();
+    const strong = document.createElement('strong');
+    strong.textContent = 'All stops loaded';
+    const span = document.createElement('span');
+    span.textContent = 'Check the van door and start the route.';
+    strip.append(strong, span);
   } else {
     const next = rows[nextIndex];
-    strip.innerHTML = `<strong>NEXT ONLY · ${text(next, '.box-chip') || 'BOX'}</strong><span>${text(next, '.load-copy strong')} · tick after the cartons are physically in the van.</span>`;
+    strip.replaceChildren();
+    const strong = document.createElement('strong');
+    strong.textContent = `NEXT ONLY · ${text(next, '.box-chip') || 'BOX'}`;
+    const span = document.createElement('span');
+    span.textContent = `${text(next, '.load-copy strong')} · tick after the cartons are physically in the van.`;
+    strip.append(strong, span);
   }
 }
 

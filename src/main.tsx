@@ -9,14 +9,21 @@ import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { FieldOpsGuardRails } from './FieldOpsGuardRails';
 import { InventoryControlCenter } from './InventoryControlCenter';
+import { LoadRecoveryControl } from './LoadRecoveryControl';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
+import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
 import { StageAndLoadExecution } from './StageAndLoadExecution';
+import { TextEncodingRepair } from './TextEncodingRepair';
 import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
+import { WarehouseCameraScanner } from './WarehouseCameraScanner';
+import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
+import { WarehouseMapPutawayControl } from './WarehouseMapPutawayControl';
+import { WarehousePutawayTargetBridge } from './WarehousePutawayTargetBridge';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
 import './styles.css';
@@ -43,15 +50,20 @@ import './returnZoneOperations.css';
 import './returnZoneCopyFix.css';
 import './returnZoneGeofence.css';
 import './industrialTheme.css';
+import './warehouseProductisation.css';
+import './warehouseProductisationFixes.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
+      <ProductionWriteSafety />
+      <TextEncodingRepair />
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
+      <LoadRecoveryControl />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />
@@ -62,10 +74,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
       <WarehouseBarcodeSprintMount />
+      <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
+      <WarehouseCameraScanner />
+      <WarehouseMapOwnerEdit />
+      <WarehouseMapPutawayControl />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
     </BrowserRouter>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

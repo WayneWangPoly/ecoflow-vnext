@@ -4,8 +4,17 @@ import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
 import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
+type WarehouseOpsMode = 'receive' | 'returns' | 'barcode';
+
+const modeCopy: Record<WarehouseOpsMode, { label: string; helper: string }> = {
+  receive: { label: 'Receive', helper: 'Daily inbound stock batches' },
+  returns: { label: 'Returns', helper: 'Inspect before stock release' },
+  barcode: { label: 'Barcode setup', helper: 'Master data, not daily receiving' },
+};
+
 export function WarehouseBarcodeSprintMount() {
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [mode, setMode] = useState<WarehouseOpsMode>('receive');
 
   useEffect(() => {
     function locate() {
@@ -20,7 +29,7 @@ export function WarehouseBarcodeSprintMount() {
       let mount = content.querySelector<HTMLElement>('.warehouse-barcode-sprint-mount');
       if (!mount) {
         mount = document.createElement('section');
-        mount.className = 'warehouse-barcode-sprint-mount';
+        mount.className = 'warehouse-barcode-sprint-mount warehouse-operations-mount';
         tabs.insertAdjacentElement('afterend', mount);
       }
       mount.style.display = isReceive ? 'block' : 'none';
@@ -35,11 +44,29 @@ export function WarehouseBarcodeSprintMount() {
     const observer = new MutationObserver(() => {
       if (pending) return;
       pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 140);
+      window.setTimeout(() => { pending = false; locate(); }, 120);
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
   }, []);
 
-  return host ? createPortal(<><WarehouseReceivingFlow /><WarehouseReturnsPanel /><WarehouseBarcodeSprint /></>, host) : null;
+  if (!host) return null;
+  return createPortal(
+    <>
+      <nav className="warehouse-ops-switcher" aria-label="Warehouse receiving work areas">
+        {(Object.keys(modeCopy) as WarehouseOpsMode[]).map((item) => (
+          <button key={item} type="button" className={mode === item ? 'active' : ''} onClick={() => setMode(item)} title={modeCopy[item].helper}>{modeCopy[item].label}</button>
+        ))}
+      </nav>
+      <div className="warehouse-ops-context">
+        <a href="/warehouse-map">Warehouse map</a>
+        <a href="/warehouse-map?mode=putaway">Putaway locations</a>
+        <a href="/?tab=inventory">Inventory control</a>
+      </div>
+      {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
+      {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
+      {mode === 'barcode' ? <WarehouseBarcodeSprint /> : null}
+    </>,
+    host,
+  );
 }

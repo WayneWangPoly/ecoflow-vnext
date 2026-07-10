@@ -11,6 +11,8 @@
     "audit:ordermentum": "node scripts/audit-ordermentum-operational-readiness.mjs",
     "audit:release-gate": "node scripts/audit-ordermentum-release-gate.mjs",
     "audit:import-control": "node scripts/audit-ordermentum-import-control.mjs",
+    "audit:warehouse": "node scripts/audit-warehouse-productisation.mjs",
+    "test:warehouse": "node scripts/audit-warehouse-productisation.mjs",
     "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
     "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",
     "import:ordermentum:missing-invoices": "node scripts/refresh-ordermentum-missing-invoices.mjs",

@@ -1,0 +1,81 @@
+.barcode-actions button:nth-child(3) { display: inline-flex !important; align-items: center; justify-content: center; }
+.barcode-actions button:nth-child(4) { background: var(--ef-surface-2); color: var(--ef-text); border: 1px solid var(--ef-border-strong); }
+.barcode-package-buttons button:disabled { opacity: .28; cursor: not-allowed; }
+.barcode-master-screen .barcode-actions { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+
+.field-stage-head { display: flex !important; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.field-stage-head > div { display: grid; gap: 3px; }
+.field-stage-sync { flex: 0 0 auto; min-height: 25px; display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid var(--ef-border); border-radius: 999px; background: var(--ef-surface-2); color: var(--ef-text-2); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.field-stage-sync.sync-saving { color: var(--ef-info); background: var(--ef-info-bg); border-color: #c9d9ec; }
+.field-stage-sync.sync-saved { color: var(--ef-good); background: var(--ef-good-bg); border-color: #cfe7da; }
+.field-stage-sync.sync-offline { color: var(--ef-warn); background: var(--ef-warn-bg); border-color: #ead29b; }
+
+.warehouse-load-undo {
+  width: 100%;
+  min-height: 48px !important;
+  margin-top: 9px;
+  border-style: dashed !important;
+  font-weight: 650 !important;
+}
+.warehouse-load-undo:disabled { opacity: .35; }
+
+.warehouse-putaway-target-bridge {
+  order: -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #c9d9ec;
+  border-radius: 8px;
+  background: #eef5fb;
+  color: #174f86;
+}
+.warehouse-putaway-target-bridge > div { display: grid; gap: 2px; }
+.warehouse-putaway-target-bridge span { font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.warehouse-putaway-target-bridge strong { font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace; font-size: 16px; }
+.warehouse-putaway-target-bridge button { min-height: 40px; border: 1px solid #b9cce0; border-radius: 7px; background: #fff; color: #174f86; padding: 0 12px; font-weight: 650; }
+
+.warehouse-putaway-control { display: grid; gap: 12px; }
+.warehouse-putaway-target {
+  display: grid;
+  gap: 5px;
+  min-height: 150px;
+  align-content: center;
+  padding: 18px;
+  border: 1px solid #d8e0db;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #f8faf8, #edf3ef);
+}
+.warehouse-putaway-target span { color: #6b7a71; font-size: 10px; font-weight: 700; letter-spacing: .14em; }
+.warehouse-putaway-target strong { font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace; font-size: clamp(24px, 4vw, 38px); color: #0a2e22; letter-spacing: -.03em; }
+.warehouse-putaway-target p { margin: 2px 0 0; max-width: 620px; color: #5b6b62; font-size: 13px; line-height: 1.5; }
+.warehouse-putaway-actions { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+.warehouse-putaway-actions button,
+.warehouse-putaway-actions a {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c6d2cb;
+  border-radius: 8px;
+  background: #fff;
+  color: #15211b;
+  text-decoration: none;
+  font-weight: 650;
+}
+.warehouse-putaway-actions a { background: #0e6b47; border-color: #0e6b47; color: #fff; }
+.warehouse-putaway-actions button:disabled { opacity: .35; }
+.warehouse-putaway-notice { padding: 9px 11px; border: 1px solid #cfe7da; border-radius: 7px; background: #e7f5ee; color: #0e6b47; font-size: 12.5px; font-weight: 600; }
+
+@media (max-width: 760px) {
+  .barcode-master-screen .barcode-actions { grid-template-columns: 1fr 1fr !important; }
+  .warehouse-putaway-actions { grid-template-columns: 1fr; }
+  .warehouse-putaway-target-bridge { align-items: flex-start; }
+}
+
+@media (max-width: 460px) {
+  .barcode-master-screen .barcode-actions { grid-template-columns: 1fr !important; }
+  .field-stage-head { display: grid !important; }
+  .warehouse-putaway-target-bridge { display: grid; }
+}
