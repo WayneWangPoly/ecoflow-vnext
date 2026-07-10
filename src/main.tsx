@@ -30,6 +30,7 @@ import './warehouseReceivingFlow.css';
 import './warehouseBarcodeSprint.css';
 import './warehousePickHandoff.css';
 import './fieldOpsGuardRails.css';
+import './labelPrintBlackWhite.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
