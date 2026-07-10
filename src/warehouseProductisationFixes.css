@@ -3,6 +3,13 @@
 .barcode-package-buttons button:disabled { opacity: .28; cursor: not-allowed; }
 .barcode-master-screen .barcode-actions { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 
+.field-stage-head { display: flex !important; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.field-stage-head > div { display: grid; gap: 3px; }
+.field-stage-sync { flex: 0 0 auto; min-height: 25px; display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid var(--ef-border); border-radius: 999px; background: var(--ef-surface-2); color: var(--ef-text-2); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.field-stage-sync.sync-saving { color: var(--ef-info); background: var(--ef-info-bg); border-color: #c9d9ec; }
+.field-stage-sync.sync-saved { color: var(--ef-good); background: var(--ef-good-bg); border-color: #cfe7da; }
+.field-stage-sync.sync-offline { color: var(--ef-warn); background: var(--ef-warn-bg); border-color: #ead29b; }
+
 .warehouse-putaway-control { display: grid; gap: 12px; }
 .warehouse-putaway-target {
   display: grid;
@@ -42,4 +49,5 @@
 
 @media (max-width: 460px) {
   .barcode-master-screen .barcode-actions { grid-template-columns: 1fr !important; }
+  .field-stage-head { display: grid !important; }
 }
