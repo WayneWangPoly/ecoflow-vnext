@@ -87,7 +87,8 @@ jobs:
           for file in \
             supabase/migrations/20260710130000_warehouse_backend_hardening.sql \
             supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql \
-            supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql
+            supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql \
+            supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql
           do
             echo "==> $file" | tee -a warehouse-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a warehouse-db-contract.log
