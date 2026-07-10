@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
+import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
 export function WarehouseBarcodeSprintMount() {
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -40,5 +41,5 @@ export function WarehouseBarcodeSprintMount() {
     return () => observer.disconnect();
   }, []);
 
-  return host ? createPortal(<><WarehouseReceivingFlow /><WarehouseBarcodeSprint /></>, host) : null;
+  return host ? createPortal(<><WarehouseReceivingFlow /><WarehouseReturnsPanel /><WarehouseBarcodeSprint /></>, host) : null;
 }
