@@ -5,6 +5,7 @@ import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
 import { DriverDeliveryExceptionEnhancer } from './DriverDeliveryExceptionEnhancer';
 import { DriverPodQualityEnhancer } from './DriverPodQualityEnhancer';
+import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { FieldOpsGuardRails } from './FieldOpsGuardRails';
 import { InventoryControlCenter } from './InventoryControlCenter';
@@ -38,6 +39,7 @@ import './stageAndLoadExecution.css';
 import './labelPrintBlackWhite.css';
 import './driverPodQuality.css';
 import './deliveryOperations.css';
+import './returnZoneOperations.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -49,6 +51,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <StageAndLoadExecution />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
+      <DriverReturnZoneCheckin />
       <RoleAwareDesktopNavigation />
       <OwnerCommandCenter />
       <OwnerDeliveryAlerts />
