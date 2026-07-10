@@ -17,6 +17,7 @@ import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
 import { StageAndLoadExecution } from './StageAndLoadExecution';
+import { TextEncodingRepair } from './TextEncodingRepair';
 import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
 import { WarehouseCameraScanner } from './WarehouseCameraScanner';
 import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
@@ -47,6 +48,7 @@ import './returnZoneCopyFix.css';
 import './returnZoneGeofence.css';
 import './industrialTheme.css';
 import './warehouseProductisation.css';
+import './warehouseProductisationFixes.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -54,6 +56,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <ProductionWriteSafety />
+      <TextEncodingRepair />
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
