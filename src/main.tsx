@@ -21,6 +21,7 @@ import { TextEncodingRepair } from './TextEncodingRepair';
 import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
 import { WarehouseCameraScanner } from './WarehouseCameraScanner';
 import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
+import { WarehouseMapPutawayControl } from './WarehouseMapPutawayControl';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
 import './styles.css';
@@ -75,6 +76,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <OrderPlatformExperience />
       <WarehouseCameraScanner />
       <WarehouseMapOwnerEdit />
+      <WarehouseMapPutawayControl />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
     </BrowserRouter>
   </React.StrictMode>,
