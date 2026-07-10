@@ -1,8 +1,13 @@
 import { useEffect } from 'react';
+import { loadStagePreparations, saveStagePreparation } from '@/data/repositories/stageExecution';
 
-type PrepState = Record<string, { sealed: boolean; labelled: boolean }>;
+type PrepEntry = { sealed: boolean; labelled: boolean; sealedAt?: string | null; labelAppliedAt?: string | null };
+type PrepState = Record<string, PrepEntry>;
+type DayContext = { businessDay: string; orderByBox: Record<string, string> };
 
-const STORAGE_KEY = 'ecoflow-stage-prep-v1';
+const STORAGE_KEY = 'ecoflow-stage-prep-v2';
+let hydratedDay = '';
+let hydrating = false;
 
 function loadState(): PrepState {
   try {
@@ -16,14 +21,70 @@ function saveState(state: PrepState) {
   window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function resolveDayContext(): DayContext | null {
+  const candidates: Array<{ businessDay: string; pick: { boxCodes?: Record<string, string> } }> = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key?.startsWith('ecoflow-driver-day:')) continue;
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(key) || '{}') as { businessDay?: string; pick?: { boxCodes?: Record<string, string> } };
+      if (parsed.businessDay && parsed.pick?.boxCodes) candidates.push({ businessDay: parsed.businessDay, pick: parsed.pick });
+    } catch {
+      // Ignore corrupt historic local state.
+    }
+  }
+  const latest = candidates.sort((a, b) => b.businessDay.localeCompare(a.businessDay))[0];
+  if (!latest) return null;
+  const orderByBox: Record<string, string> = {};
+  Object.entries(latest.pick.boxCodes || {}).forEach(([orderId, box]) => { orderByBox[String(box)] = orderId; });
+  return { businessDay: latest.businessDay, orderByBox };
+}
+
 function text(root: ParentNode | null | undefined, selector: string) {
   return root?.querySelector<HTMLElement>(selector)?.textContent?.trim() || '';
 }
 
-function stopKey(card: HTMLElement) {
+function cardIdentity(card: HTMLElement) {
   const box = text(card, '.box-chip') || 'BOX';
-  const stop = text(card, '.pick-task-copy strong') || card.textContent?.trim() || 'STOP';
-  return `${box}|${stop}`;
+  const context = resolveDayContext();
+  const orderId = context?.orderByBox[box] || null;
+  const fallback = `${box}|${text(card, '.pick-task-copy strong') || card.textContent?.trim() || 'STOP'}`;
+  return { key: orderId || fallback, orderId, businessDay: context?.businessDay || null };
+}
+
+async function hydrateSharedPreparation() {
+  const context = resolveDayContext();
+  if (!context || hydrating || hydratedDay === context.businessDay) return;
+  hydrating = true;
+  try {
+    const shared = await loadStagePreparations(context.businessDay);
+    const next = loadState();
+    Object.entries(shared).forEach(([orderId, prep]) => {
+      next[orderId] = {
+        sealed: Boolean(prep.sealedAt),
+        labelled: Boolean(prep.labelAppliedAt),
+        sealedAt: prep.sealedAt || null,
+        labelAppliedAt: prep.labelAppliedAt || null,
+      };
+    });
+    saveState(next);
+    hydratedDay = context.businessDay;
+    runEnhancement();
+  } catch {
+    // Local operation remains available when network sync is temporarily unavailable.
+  } finally {
+    hydrating = false;
+  }
+}
+
+function persistShared(card: HTMLElement, entry: PrepEntry) {
+  const identity = cardIdentity(card);
+  if (!identity.orderId || !identity.businessDay) return;
+  void saveStagePreparation({
+    businessDay: identity.businessDay,
+    orderId: identity.orderId,
+    preparation: { sealedAt: entry.sealedAt || null, labelAppliedAt: entry.labelAppliedAt || null },
+  }).catch(() => undefined);
 }
 
 function button(label: string, className: string, disabled: boolean, onClick: () => void) {
@@ -40,23 +101,13 @@ function renderStageCard(card: HTMLElement, allState: PrepState) {
   const original = Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find((item) =>
     /Seal, label and stage|Allocate \d+ more SKU/i.test(item.textContent || '')
   );
-  const unstage = Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find((item) => /Unstage/i.test(item.textContent || ''));
-  const key = stopKey(card);
-
-  if (unstage && unstage.dataset.prepClearBound !== 'true') {
-    unstage.dataset.prepClearBound = 'true';
-    unstage.addEventListener('click', () => {
-      const next = loadState();
-      delete next[key];
-      saveState(next);
-    });
-  }
-
   if (!original) {
     card.querySelector('.field-stage-execution')?.remove();
     return;
   }
 
+  const identity = cardIdentity(card);
+  const key = identity.key;
   original.classList.add('field-original-stage-action');
   const allocationReady = !original.disabled && /Seal, label and stage/i.test(original.textContent || '');
   const state = allState[key] || { sealed: false, labelled: false };
@@ -77,14 +128,25 @@ function renderStageCard(card: HTMLElement, allState: PrepState) {
   steps.className = 'field-stage-steps';
   const seal = button(state.sealed ? '✓ 1. Cartons sealed' : '1. Seal cartons', `field-stage-step ${state.sealed ? 'done' : ''}`, !allocationReady, () => {
     const next = loadState();
-    next[key] = { sealed: !state.sealed, labelled: state.sealed ? false : state.labelled };
+    const nextEntry: PrepEntry = state.sealed
+      ? { sealed: false, labelled: false, sealedAt: null, labelAppliedAt: null }
+      : { sealed: true, labelled: false, sealedAt: new Date().toISOString(), labelAppliedAt: null };
+    next[key] = nextEntry;
     saveState(next);
+    persistShared(card, nextEntry);
     runEnhancement();
   });
   const label = button(state.labelled ? '✓ 2. Labels applied' : '2. Apply every label', `field-stage-step ${state.labelled ? 'done' : ''}`, !allocationReady || !state.sealed, () => {
     const next = loadState();
-    next[key] = { sealed: true, labelled: !state.labelled };
+    const nextEntry: PrepEntry = {
+      sealed: true,
+      labelled: !state.labelled,
+      sealedAt: state.sealedAt || new Date().toISOString(),
+      labelAppliedAt: state.labelled ? null : new Date().toISOString(),
+    };
+    next[key] = nextEntry;
     saveState(next);
+    persistShared(card, nextEntry);
     runEnhancement();
   });
   const stage = button('3. Stage for driver', 'field-stage-step field-stage-final', !allocationReady || !state.sealed || !state.labelled, () => {
@@ -146,6 +208,7 @@ function runEnhancement() {
 
 export function StageAndLoadExecution() {
   useEffect(() => {
+    void hydrateSharedPreparation();
     runEnhancement();
     let pending = false;
     const observer = new MutationObserver(() => {
@@ -153,11 +216,15 @@ export function StageAndLoadExecution() {
       pending = true;
       window.setTimeout(() => {
         pending = false;
+        void hydrateSharedPreparation();
         runEnhancement();
       }, 120);
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled'] });
-    const timer = window.setInterval(runEnhancement, 900);
+    const timer = window.setInterval(() => {
+      void hydrateSharedPreparation();
+      runEnhancement();
+    }, 900);
     return () => {
       observer.disconnect();
       window.clearInterval(timer);
