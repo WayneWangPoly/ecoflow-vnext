@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: ecoflow-supabase-production-migrations
@@ -22,10 +23,20 @@ jobs:
     timeout-minutes: 20
     environment: production
     env:
+      GH_TOKEN: ${{ github.token }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      - name: Publish pending migration status
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context='Supabase migrations' \
+            -f description='Production database migration is running' \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
       - name: Require production migration credentials
@@ -49,3 +60,21 @@ jobs:
         run: supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD"
       - name: Apply pending migrations
         run: supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD"
+      - name: Publish final migration status
+        if: always()
+        shell: bash
+        env:
+          JOB_RESULT: ${{ job.status }}
+        run: |
+          if [ "$JOB_RESULT" = 'success' ]; then
+            STATE='success'
+            DESCRIPTION='Production database migrations applied successfully'
+          else
+            STATE='failure'
+            DESCRIPTION='Production database migration failed; inspect workflow log'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" \
+            -f context='Supabase migrations' \
+            -f description="$DESCRIPTION" \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
