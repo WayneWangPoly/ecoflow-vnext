@@ -14,6 +14,8 @@ const safety = read('src/ProductionWriteSafety.tsx');
 const textRepair = read('src/TextEncodingRepair.tsx');
 const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
+const loadRecovery = read('src/LoadRecoveryControl.tsx');
+const guardrails = read('src/FieldOpsGuardRails.tsx');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -26,6 +28,8 @@ assert.match(main, /ProductionWriteSafety/, 'Production write safety must be mou
 assert.match(main, /WarehouseCameraScanner/, 'Mobile warehouse camera scanner must be mounted.');
 assert.match(main, /WarehouseMapOwnerEdit/, 'Owner layout editor must be mounted.');
 assert.match(main, /WarehouseMapPutawayControl/, 'Warehouse map must mount the controlled putaway surface.');
+assert.match(main, /WarehousePutawayTargetBridge/, 'Map putaway target must return to controlled receiving.');
+assert.match(main, /LoadRecoveryControl/, 'Controlled loading recovery must be mounted.');
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
 assert.match(ownerEdit, /OWNER|ADMIN/, 'Warehouse layout editing must be owner/admin gated.');
 assert.match(putaway, /All stock increases still go through the controlled Receive batch/, 'Map must explain the single receiving path.');
@@ -37,5 +41,8 @@ assert.match(textRepair, /脳.*×|路.*·/s, 'Known legacy mojibake must be repa
 assert.doesNotMatch(stage, /@ts-nocheck/, 'Stage and load execution must remain type checked.');
 assert.match(stage, /Offline · saved on this device/, 'Stage preparation must expose offline sync state.');
 assert.match(stage, /syncByKey/, 'Stage preparation sync state must be tracked per stop.');
+assert.match(loadRecovery, /Undo last load/, 'The most recent load confirmation must be reversible.');
+assert.match(guardrails, /querySelectorAll<HTMLButtonElement>\('\.load-row'\)/, 'Route start must be gated from load row state.');
+assert.doesNotMatch(guardrails, /stops loaded\//i, 'Route start must not parse loaded progress copy.');
 
 console.log('Warehouse productisation audit passed.');
