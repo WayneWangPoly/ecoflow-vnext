@@ -21,6 +21,7 @@ const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
 const backendMigration = read('supabase/migrations/20260710_warehouse_backend_hardening.sql');
 const backendFollowup = read('supabase/migrations/20260710_warehouse_backend_hardening_followup.sql');
+const qualifiedFunctions = read('supabase/migrations/20260710_warehouse_backend_function_qualification.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -72,5 +73,9 @@ assert.match(backendMigration, /revoke execute[^;]+from anon/gi, 'Warehouse writ
 assert.match(backendFollowup, /v_existing_found := found/, 'Barcode existence must not depend on a later SELECT FOUND state.');
 assert.match(backendFollowup, /where is_active/, 'Operational barcode views must ignore retired codes.');
 assert.match(backendFollowup, /ecoflow_barcode_units_positive_integer/, 'Package conversion must be a positive whole number.');
+assert.match(qualifiedFunctions, /select r\.\* into v_registry/, 'Receiving barcode lookup must qualify registry columns.');
+assert.match(qualifiedFunctions, /where l\.batch_id=p_batch_id/g, 'Receiving batch line references must be explicitly qualified.');
+assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retirement must qualify barcode columns.');
+assert.match(qualifiedFunctions, /where vel\.sku = v_sku/, 'Barcode product lookup must qualify SKU columns.');
 
 console.log('Warehouse productisation and backend hardening audit passed.');
