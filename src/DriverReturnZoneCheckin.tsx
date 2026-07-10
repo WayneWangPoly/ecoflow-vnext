@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, CheckCircle2, PackageCheck, RotateCcw, X } from 'lucide-react';
+import { Camera, CheckCircle2, MapPin, PackageCheck, RotateCcw, X } from 'lucide-react';
 import { driverDropReturn, loadOpenReturnZoneItems } from '@/data/repositories/returnZoneOperations';
 import type { OpenDeliveryReturn } from '@/data/repositories/deliveryOperations';
 
@@ -28,12 +28,35 @@ async function detectBarcode(file: File) {
   }
 }
 
+function getCurrentPosition() {
+  return new Promise<{ latitude: number; longitude: number; accuracyMetres: number }>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('This phone cannot provide GPS location. Use a GPS-enabled phone at the warehouse.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyMetres: position.coords.accuracy,
+      }),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) reject(new Error('Location permission is required. Allow precise location and scan again.'));
+        else if (error.code === error.TIMEOUT) reject(new Error('GPS timed out. Move near the warehouse entrance and try again.'));
+        else reject(new Error('Current warehouse location could not be verified. Try again with precise location enabled.'));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 15000 },
+    );
+  });
+}
+
 function ZoneDialog({ row, onClose, onSaved }: { row: OpenDeliveryReturn; onClose: () => void; onSaved: () => void }) {
   const [zoneCode, setZoneCode] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [distance, setDistance] = useState<number | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const codeRef = useRef<HTMLInputElement | null>(null);
 
@@ -41,11 +64,20 @@ function ZoneDialog({ row, onClose, onSaved }: { row: OpenDeliveryReturn; onClos
 
   async function confirm(codeOverride?: string) {
     const code = (codeOverride ?? zoneCode).trim().toUpperCase();
-    if (!code) { setError('Scan the fixed barcode attached to the warehouse returns area.'); return; }
+    if (!code) { setError('Scan the fixed QR code attached to the warehouse returns area.'); return; }
     setBusy(true);
     setError('');
     try {
-      await driverDropReturn({ exceptionId: row.id, zoneCode: code, note, driver: actorLabel() });
+      const position = await getCurrentPosition();
+      const result = await driverDropReturn({
+        exceptionId: row.id,
+        zoneCode: code,
+        note,
+        driver: actorLabel(),
+        ...position,
+      });
+      const first = result[0] as { distance_metres?: number | string } | undefined;
+      setDistance(first?.distance_metres == null ? null : num(first.distance_metres));
       setSaved(true);
       await onSaved();
     } catch (err) {
@@ -80,20 +112,21 @@ function ZoneDialog({ row, onClose, onSaved }: { row: OpenDeliveryReturn; onClos
         </header>
         {!saved ? (
           <>
-            <div className="driver-return-zone-rule"><PackageCheck size={21} /><div><strong>Put the goods inside the marked Returns Area.</strong><span>Then scan the one fixed barcode attached to that area. This proves the return is physically back at the warehouse.</span></div></div>
-            <input ref={codeRef} value={zoneCode} onChange={(event) => setZoneCode(event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void confirm(); }} placeholder="Scan RETURNS AREA code" />
-            <button type="button" className="driver-return-camera" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={19} /> Scan zone code with camera</button>
+            <div className="driver-return-zone-rule"><PackageCheck size={21} /><div><strong>Put the goods inside the marked Returns Area.</strong><span>Scan the fixed wall QR. The code and phone GPS must both verify within 500 metres of the warehouse.</span></div></div>
+            <div className="driver-return-zone-geo"><MapPin size={18} /><div><strong>500 m warehouse geofence</strong><span>Precise location is checked only when this return is confirmed.</span></div></div>
+            <input ref={codeRef} value={zoneCode} onChange={(event) => setZoneCode(event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void confirm(); }} placeholder="Scan RETURNS AREA QR" />
+            <button type="button" className="driver-return-camera" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={19} /> Scan zone QR with camera</button>
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => void readCamera(event.target.files?.[0])} />
             <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional: where placed / condition" />
             {error ? <div className="driver-return-zone-error">{error}</div> : null}
-            <button type="button" className="driver-return-zone-primary" disabled={busy} onClick={() => void confirm()}>{busy ? 'Checking return area…' : 'Confirm placed in returns area'}</button>
-            <p className="driver-return-zone-footnote">The RET number identifies this return. Do not scan the RET number here—the warehouse area code is the proof of arrival.</p>
+            <button type="button" className="driver-return-zone-primary" disabled={busy} onClick={() => void confirm()}>{busy ? 'Checking QR + warehouse GPS…' : 'Confirm placed in returns area'}</button>
+            <p className="driver-return-zone-footnote">The RET number identifies this return. The fixed wall QR plus GPS proves it was physically brought back.</p>
           </>
         ) : (
           <section className="driver-return-zone-success">
             <CheckCircle2 size={40} />
             <h3>Return placed in warehouse area</h3>
-            <p>{row.return_code} is now waiting for warehouse inspection. It has not been added back to sellable stock.</p>
+            <p>{row.return_code} is waiting for warehouse inspection. GPS verified{distance == null ? '' : ` at ${Math.round(distance)} m from the return zone`}. It has not been added to sellable stock.</p>
             <button type="button" className="driver-return-zone-primary" onClick={onClose}>Done</button>
           </section>
         )}
@@ -165,7 +198,7 @@ export function DriverReturnZoneCheckin() {
   return createPortal(
     <>
       <section className="driver-return-zone-card">
-        <header><div><span>RETURN RUN</span><h2>{pending.length} return item{pending.length === 1 ? '' : 's'} still with driver</h2><p>At the warehouse, place each item in the marked Returns Area and scan the fixed area code.</p></div><button type="button" onClick={() => void reload()}><RotateCcw size={16} /></button></header>
+        <header><div><span>RETURN RUN</span><h2>{pending.length} return item{pending.length === 1 ? '' : 's'} still with driver</h2><p>At the warehouse, place each item in the marked Returns Area and scan the fixed QR. Confirmation is accepted only within 500 metres.</p></div><button type="button" onClick={() => void reload()}><RotateCcw size={16} /></button></header>
         {error ? <div className="driver-return-zone-error">{error}</div> : null}
         <div>{pending.map((row) => <ReturnRow key={row.id} row={row} onOpen={setSelected} />)}</div>
       </section>
