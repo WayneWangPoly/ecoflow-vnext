@@ -217,7 +217,7 @@ function syncLoadRowCheck(row: HTMLElement) {
   const store = textOf(row, '.load-copy strong') || 'stop';
   const key = `ecoflow-load-check-${safeKey(`${box}-${store}`)}`;
   const checked = loaded || window.sessionStorage.getItem(key) === 'true';
-  let check = row.nextElementSibling instanceof HTMLElement && row.nextElementSibling.classList.contains('field-load-row-check')
+  let check: HTMLButtonElement | null = row.nextElementSibling instanceof HTMLButtonElement && row.nextElementSibling.classList.contains('field-load-row-check')
     ? row.nextElementSibling
     : null;
   if (!check) {
@@ -237,6 +237,8 @@ function syncLoadRowCheck(row: HTMLElement) {
   if (!loaded) {
     button.disabled = !checked;
     button.title = checked ? '' : `Check the A6 label box code ${box} before ticking this stop loaded.`;
+  } else {
+    button.disabled = false;
   }
 }
 
