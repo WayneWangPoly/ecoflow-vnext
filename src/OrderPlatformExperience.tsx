@@ -137,24 +137,6 @@ function useOrdersPortalHost() {
   return host;
 }
 
-function ReviewStrip({ title, helper, rows, tone }: { title: string; helper: string; rows: OrderPlatformLatestOrderRow[]; tone: 'warn' | 'blue' }) {
-  return (
-    <section className={`order-platform-review-panel order-platform-review-${tone}`}>
-      <header>
-        <div>
-          <h3>{title}</h3>
-          <p>{helper}</p>
-        </div>
-        <MiniPill tone={tone}>{rows.length}</MiniPill>
-      </header>
-      <div className="order-platform-review-list">
-        {rows.slice(0, 8).map((order) => <OrderCard key={`${title}-${order.lifecycle_id}-${order.order_number}`} order={order} />)}
-        {!rows.length ? <div className="order-platform-empty">No rows in this bucket.</div> : null}
-      </div>
-    </section>
-  );
-}
-
 function CompactOrderTable({
   mode,
   rows,
@@ -412,20 +394,6 @@ function OrderPlatformContent() {
         onLegacyDecision={decideLegacy}
       />
 
-      <section className="order-platform-review-grid">
-        <ReviewStrip
-          title="Legacy internal review"
-          helper="Quarantined historical internal drafts. Do not pick, route, or driver-release until owner/accounts decide archive, cancel, or rebuild."
-          rows={legacyRows}
-          tone="warn"
-        />
-        <ReviewStrip
-          title="Archive preview"
-          helper="Completed and historical imports stay searchable, but outside the active workflow hot path."
-          rows={archiveRows}
-          tone="blue"
-        />
-      </section>
     </section>
   );
 }

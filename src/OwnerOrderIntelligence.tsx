@@ -70,7 +70,8 @@ function useOrdersHost() {
       if (!mount) {
         mount = document.createElement('section');
         mount.className = 'owner-order-intelligence-mount';
-        panel.insertAdjacentElement('beforebegin', mount);
+        // Sales analytics render BELOW the operational Order Platform - operations stay above the fold.
+        panel.insertAdjacentElement('afterend', mount);
       }
       setHost(mount);
     }

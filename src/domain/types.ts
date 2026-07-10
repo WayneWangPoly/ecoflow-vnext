@@ -106,6 +106,7 @@ export type ImportedOrder = {
   requiredQuantity?: number;
   mappedAvailableQuantity?: number;
   canCreateInternalOrder?: boolean;
+  hasInternalOrder?: boolean;
   lines: OrderLine[];
 };
 

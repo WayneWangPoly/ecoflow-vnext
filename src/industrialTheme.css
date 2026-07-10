@@ -1,0 +1,315 @@
+/* ============================================================
+   Industrial theme override layer — loaded last.
+   Normalises every enhancer surface (owner command, order platform,
+   intelligence, accounts, inventory, warehouse, driver add-ons) to the
+   token system in styles.css: pine heroes with engineering grid,
+   hairline borders, radius 5/8/10/12, weight scale 400-800.
+   ============================================================ */
+
+/* ---------- dark hero panels ---------- */
+.owner-command-hero,
+.owner-insight-hero,
+.owner-store-hero,
+.accounts-hero,
+.inventory-hero,
+.order-platform-hero,
+.barcode-sprint-hero,
+.warehouse-receive-hero,
+.warehouse-returns-head {
+  background: var(--ef-grid-texture), linear-gradient(160deg, #0c3527 0%, var(--ef-pine-900) 65%, #093124 100%) !important;
+  background-size: 28px 28px, 28px 28px, auto !important;
+  border: 1px solid rgba(255, 255, 255, .07) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+:is(.owner-command-hero, .owner-insight-hero, .owner-store-hero, .accounts-hero, .inventory-hero, .order-platform-hero, .barcode-sprint-hero, .warehouse-receive-hero, .warehouse-returns-head) :is(h1, h2) {
+  font-weight: 700 !important;
+  letter-spacing: -.02em !important;
+  font-size: clamp(19px, 2.4vw, 26px) !important;
+  line-height: 1.15 !important;
+}
+:is(.owner-command-hero, .owner-insight-hero, .owner-store-hero, .accounts-hero, .inventory-hero, .order-platform-hero, .barcode-sprint-hero, .warehouse-receive-hero, .warehouse-returns-head) > div > span,
+:is(.owner-command-hero, .owner-insight-hero, .owner-store-hero, .accounts-hero, .inventory-hero, .order-platform-hero, .barcode-sprint-hero, .warehouse-receive-hero, .warehouse-returns-head) span:first-child {
+  font-size: 10.5px !important;
+  letter-spacing: .14em !important;
+  font-weight: 650 !important;
+  color: #7fc8a4 !important;
+  text-transform: uppercase;
+}
+:is(.owner-command-hero, .owner-insight-hero, .owner-store-hero, .accounts-hero, .inventory-hero, .order-platform-hero, .barcode-sprint-hero, .warehouse-receive-hero, .warehouse-returns-head) p {
+  color: rgba(255, 255, 255, .68) !important;
+  font-weight: 450 !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+:is(.owner-command-hero, .owner-insight-hero, .owner-store-hero, .accounts-hero, .inventory-hero, .order-platform-hero, .barcode-sprint-hero, .warehouse-returns-head, .warehouse-receive-hero) button {
+  border-radius: 7px !important;
+  border: 1px solid rgba(255, 255, 255, .22) !important;
+  background: rgba(255, 255, 255, .07) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+
+/* hero side card inside owner command centre */
+.owner-command-hero-card {
+  background: rgba(255, 255, 255, .06) !important;
+  border: 1px solid rgba(255, 255, 255, .13) !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+.owner-command-hero-card strong { font-weight: 650 !important; letter-spacing: -.01em !important; }
+.owner-command-hero-card button { background: var(--ef-green-600) !important; border: 0 !important; }
+
+/* ---------- light panels ---------- */
+.owner-command-panel,
+.owner-insight-panel,
+.owner-store-panel,
+.accounts-panel,
+.accounts-detail,
+.inventory-panel,
+.inventory-detail,
+.order-platform-compact-table-panel,
+.order-platform-board,
+.order-platform-lane,
+.barcode-panel,
+.barcode-form-card,
+.warehouse-receive-panel,
+.warehouse-receive-form,
+.warehouse-return-inspection,
+.owner-delivery-alerts-panel,
+.warehouse-pick-handoff-card,
+.driver-return-zone-card,
+.quick-ops-panel {
+  background: var(--ef-surface) !important;
+  border: 1px solid var(--ef-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--ef-shadow-1) !important;
+}
+:is(.owner-command-panel, .owner-insight-panel, .owner-store-panel, .accounts-panel, .inventory-panel, .order-platform-compact-table-panel, .order-platform-board, .barcode-panel, .warehouse-receive-panel, .owner-delivery-alerts-panel) :is(h3, h4) {
+  font-size: 14.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.01em !important;
+}
+:is(.owner-command-panel, .owner-insight-panel, .owner-store-panel, .accounts-panel, .inventory-panel, .order-platform-compact-table-panel, .order-platform-board, .owner-delivery-alerts-panel) header p {
+  color: var(--ef-text-3) !important;
+  font-weight: 450 !important;
+  font-size: 12.5px !important;
+}
+
+/* ---------- metric cards ---------- */
+.owner-command-metric,
+.owner-insight-metric,
+.owner-store-metric,
+.accounts-metric,
+.inventory-metric,
+.order-platform-metric {
+  background: var(--ef-surface) !important;
+  border: 1px solid var(--ef-border) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--ef-shadow-1) !important;
+}
+:is(.owner-command-metric, .owner-insight-metric, .owner-store-metric, .accounts-metric, .inventory-metric, .order-platform-metric) strong {
+  font-size: 22px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.01em !important;
+}
+:is(.owner-command-metric, .owner-insight-metric, .owner-store-metric, .accounts-metric, .inventory-metric, .order-platform-metric) span {
+  font-size: 10.5px !important;
+  font-weight: 650 !important;
+  letter-spacing: .07em !important;
+  text-transform: uppercase;
+  color: var(--ef-text-3) !important;
+}
+:is(.owner-command-metric, .owner-insight-metric, .owner-store-metric, .accounts-metric, .inventory-metric, .order-platform-metric) small {
+  color: var(--ef-text-3) !important;
+  font-weight: 450 !important;
+}
+
+/* ---------- status chips across all enhancers ---------- */
+.owner-command-pill,
+.owner-insight-pill,
+.owner-store-pill,
+.accounts-pill,
+.inventory-pill,
+.order-platform-pill,
+.barcode-pill,
+.warehouse-receive-pill,
+.quick-ops-label-chip,
+.lifecycle-inline-pill {
+  border-radius: 5px !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  letter-spacing: .05em !important;
+  text-transform: uppercase;
+  padding: 2px 7px !important;
+  box-shadow: none !important;
+}
+
+/* ---------- list rows: flatten candy cards ---------- */
+.owner-command-attention-row,
+.owner-hot-sku-row,
+.owner-sku-report-row,
+.owner-daily-row,
+.owner-status-row,
+.owner-store-row,
+.owner-store-sku-row,
+.owner-store-pressure-row,
+.owner-store-gap-row,
+.accounts-customer-row,
+.accounts-invoice-row,
+.accounts-followup-row,
+.inventory-sku-row,
+.inventory-movement-row,
+.inventory-location-row,
+.order-platform-order,
+.order-platform-table-row,
+.barcode-queue-row,
+.barcode-scan-row,
+.warehouse-scan-line,
+.warehouse-receive-movement-row,
+.warehouse-return-row,
+.quick-ops-row,
+.owner-delivery-alert {
+  border-radius: 8px !important;
+  border: 1px solid var(--ef-border) !important;
+  background: var(--ef-surface) !important;
+  box-shadow: none !important;
+}
+:is(.owner-store-row, .accounts-customer-row, .inventory-sku-row):hover { background: var(--ef-surface-2) !important; }
+.inventory-sku-row.selected, .accounts-customer-row.selected { border-color: var(--ef-green-600) !important; background: #f4faf6 !important; }
+
+/* ---------- controls ---------- */
+:is(.owner-insight-controlbar, .owner-store-controlbar, .accounts-controlbar, .inventory-controlbar, .order-platform-toolbar) :is(input, select) {
+  border: 1px solid var(--ef-border-strong) !important;
+  border-radius: 8px !important;
+  background: var(--ef-surface) !important;
+  font-weight: 500 !important;
+  font-size: 13.5px !important;
+  box-shadow: none !important;
+}
+:is(.owner-store-action-panel, .inventory-action-panel, .inventory-movement-panel, .accounts-action-card, .warehouse-receive-form, .barcode-form-card, .warehouse-return-inspection) :is(input, select, textarea) {
+  border: 1px solid var(--ef-border-strong) !important;
+  border-radius: 8px !important;
+  background: var(--ef-surface) !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+:is(.owner-store-action-panel, .inventory-action-panel, .inventory-movement-panel, .accounts-action-card, .warehouse-receive-form, .barcode-form-card, .warehouse-return-inspection, .order-platform-action-cell, .order-platform-pagination) button {
+  border-radius: 7px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+/* window toggles + mode tabs */
+:is(.owner-window-toggle, .order-platform-mode-tabs) button {
+  border-radius: 7px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+/* ---------- notices ---------- */
+.owner-command-error, .owner-insight-error, .owner-store-error, .accounts-error, .inventory-error,
+.order-platform-error, .barcode-error, .warehouse-receive-error, .warehouse-return-error,
+.driver-return-zone-error, .pod-quality-error, .delivery-exception-error {
+  border-radius: 8px !important;
+  font-weight: 550 !important;
+  box-shadow: none !important;
+}
+.owner-store-notice, .accounts-notice, .inventory-notice, .order-platform-notice, .barcode-notice, .warehouse-receive-notice {
+  border-radius: 8px !important;
+  font-weight: 550 !important;
+  box-shadow: none !important;
+}
+
+/* ---------- field-mode / floor aids ---------- */
+.field-pick-gate-hint, .field-load-gate-hint {
+  border-radius: 7px !important;
+  font-weight: 500 !important;
+  font-size: 12.5px !important;
+}
+.field-stage-execution { border-radius: 10px !important; }
+.field-stage-step { border-radius: 8px !important; font-weight: 600 !important; }
+.field-load-sequence-strip {
+  border-radius: 10px !important;
+  background: var(--ef-grid-texture), linear-gradient(160deg, #0c3527, var(--ef-pine-900)) !important;
+  background-size: 24px 24px, 24px 24px, auto !important;
+}
+.field-load-sequence-strip strong { font-weight: 650 !important; font-size: 14.5px !important; }
+.field-load-sequence-strip span { font-weight: 450 !important; }
+
+/* quick-ops queue */
+.quick-ops-policy { font-size: 12px !important; }
+.quick-ops-action { border-radius: 7px !important; font-weight: 600 !important; }
+
+/* driver return-run card: calm body text, accent header */
+.driver-return-zone-card header span { color: var(--ef-green-600) !important; font-weight: 650 !important; letter-spacing: .12em !important; font-size: 10px !important; }
+.driver-return-zone-card h2 { font-size: 17px !important; font-weight: 700 !important; letter-spacing: -.01em !important; }
+.driver-return-zone-card header p, .driver-return-zone-row small { font-weight: 450 !important; color: var(--ef-text-2) !important; }
+
+/* ---------- driver add-on sheets ---------- */
+.delivery-exception-sheet, .driver-return-zone-sheet {
+  border-radius: 14px !important;
+  box-shadow: var(--ef-shadow-overlay) !important;
+}
+:is(.delivery-exception-sheet, .driver-return-zone-sheet) h2 { font-weight: 700 !important; letter-spacing: -.01em !important; }
+:is(.delivery-exception-sheet, .driver-return-zone-sheet) :is(input, textarea) {
+  border-radius: 8px !important;
+  border: 1px solid var(--ef-border-strong) !important;
+  font-weight: 500 !important;
+}
+.delivery-exception-primary, .driver-return-zone-primary {
+  background: var(--ef-green-600) !important;
+  border-radius: 9px !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+}
+.delivery-exception-open { border-radius: 8px !important; font-weight: 600 !important; }
+.delivery-outcome-grid button { border-radius: 7px !important; font-weight: 600 !important; }
+.pod-quality-capture { border-radius: 10px !important; font-weight: 650 !important; }
+.pod-quality-gate { border-radius: 8px !important; }
+.pod-quality-gate strong { font-weight: 650 !important; letter-spacing: .04em !important; }
+
+/* ---------- return zone sign keeps print contrast, soften screen frame ---------- */
+.return-zone-sign { border-radius: 12px !important; box-shadow: var(--ef-shadow-1) !important; }
+
+/* ---------- warehouse map page ---------- */
+.warehouse-map-card { border-radius: 12px !important; border: 1px solid var(--ef-border) !important; box-shadow: var(--ef-shadow-1) !important; }
+.quick-customer-save { border-radius: 8px !important; font-weight: 600 !important; box-shadow: none !important; }
+
+/* ---------- typography normalisation inside enhancer shells ---------- */
+:is(.owner-command-shell, .owner-insight-shell, .owner-store-shell, .accounts-shell, .inventory-shell, .order-platform-shell, .barcode-sprint-screen, .warehouse-receive-screen, .warehouse-returns-panel, .quick-ops-panel, .warehouse-pick-handoff-card, .owner-delivery-alerts-panel) strong {
+  font-weight: 650;
+}
+:is(.owner-command-shell, .owner-insight-shell, .owner-store-shell, .accounts-shell, .inventory-shell, .order-platform-shell, .barcode-sprint-screen, .warehouse-receive-screen, .warehouse-returns-panel) :is(small, span) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- brand lockup ---------- */
+.brand-logo-lockup strong { font-weight: 750 !important; letter-spacing: -.025em !important; }
+.brand-logo-lockup span { font-weight: 650 !important; letter-spacing: .18em !important; }
+/* mobile topbars carry the role text already - the big lockup overlapped it */
+.driver-topbar-brand .brand-logo-lockup,
+.mobile-topbar .brand-logo-lockup,
+.label-toolbar .brand-logo-lockup { display: none !important; }
+.driver-topbar-brand strong { font-size: 15px !important; }
+.mobile-topbar strong { font-size: 15px !important; }
+/* login card is a light surface: dark wordmark, and the duplicate text block goes */
+.login-brand-row .brand-logo-lockup strong { color: var(--ef-pine-900) !important; }
+.login-brand-row .brand-logo-lockup span { color: var(--ef-green-600) !important; }
+.login-brand-row > div:not(.brand-logo-lockup) { display: none; }
+
+/* SKU / code identifiers read as engineering data */
+.pick-location,
+.inventory-sku-row > div > strong,
+.owner-hot-sku-row > div > strong,
+.owner-sku-report-row strong,
+.barcode-queue-row > div > strong,
+.warehouse-scan-line .warehouse-scan-copy strong,
+.warehouse-return-code-block strong,
+.order-platform-table-row > span:first-child strong {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  letter-spacing: 0;
+}

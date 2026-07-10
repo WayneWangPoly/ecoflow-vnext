@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { loadOrderLifecycleBoard, type OrderLifecycleRow, type OrderLifecycleStatus } from '@/data/repositories/orderLifecycle';
 import {
   loadCustomerOpsQueue,
@@ -155,16 +155,6 @@ export function FieldModeEnhancer() {
       if (new URLSearchParams(window.location.search).get('tab') !== 'inventory') return;
       const button = Array.from(document.querySelectorAll<HTMLButtonElement>('.sidebar-nav button')).find((item) => item.textContent?.trim().toLowerCase() === 'inventory');
       if (button && !button.classList.contains('active')) button.click();
-    }
-
-    function patchWarehouseReceiveCard() {
-      document.querySelectorAll<HTMLElement>('.mobile-card').forEach((card) => {
-        if (card.querySelector('h2')?.textContent?.trim() !== 'Inbound receiving') return;
-        const button = card.querySelector<HTMLButtonElement>('button.primary-button');
-        if (!button) return;
-        button.textContent = 'Open map';
-        button.onclick = () => { window.location.assign('/warehouse-map?quickIssue=1'); };
-      });
     }
 
     function renderInventoryPanel(panel: HTMLElement) {
@@ -337,10 +327,12 @@ export function FieldModeEnhancer() {
       if (panel.dataset.renderKey === key) return;
       panel.dataset.renderKey = key;
       panel.textContent = '';
-      const head = document.createElement('div'); head.className = 'driver-card-head quick-ops-head'; const h2 = document.createElement('h2'); h2.textContent = mode === 'warehouse' ? 'Quick customer handoff' : 'Quick deliveries'; const meta = document.createElement('span'); meta.textContent = opsError ? 'schema pending' : opsRows ? `${opsRows.length} open` : 'loading'; head.append(h2, meta); panel.appendChild(head);
-      const policy = document.createElement('p'); policy.className = 'driver-card-meta quick-ops-policy'; policy.textContent = 'Sorting rule: normal Ordermentum stops and A–F labels stay unchanged. Quick items use QI number only; driver handles them as separate add-ons after/around the normal run.'; panel.appendChild(policy);
-      if (opsError || !opsRows) { const note = document.createElement('div'); note.className = 'driver-inline-hint'; note.textContent = opsError || 'Loading quick customer stock queue…'; panel.appendChild(note); return; }
-      if (!opsRows.length) { const empty = document.createElement('div'); empty.className = 'empty-state'; empty.textContent = 'No released quick customer stock tasks.'; panel.appendChild(empty); return; }
+      // Invisible while loading and when the queue is empty — no dead panel on the floor screens.
+      if (!opsError && (!opsRows || !opsRows.length)) { panel.hidden = true; return; }
+      panel.hidden = false;
+      const head = document.createElement('div'); head.className = 'driver-card-head quick-ops-head'; const h2 = document.createElement('h2'); h2.textContent = mode === 'warehouse' ? 'Quick customer handoff' : 'Quick deliveries'; const meta = document.createElement('span'); meta.textContent = opsError ? 'schema pending' : `${opsRows?.length ?? 0} open`; head.append(h2, meta); panel.appendChild(head);
+      const policy = document.createElement('p'); policy.className = 'driver-card-meta quick-ops-policy'; policy.textContent = 'Quick items use their QI number — normal stops and A–F labels stay unchanged.'; panel.appendChild(policy);
+      if (opsError || !opsRows) { const note = document.createElement('div'); note.className = 'driver-inline-hint'; note.textContent = opsError; panel.appendChild(note); return; }
       const list = document.createElement('div'); list.className = 'quick-ops-list';
       opsRows.forEach((row) => {
         const card = document.createElement('article'); card.className = `quick-ops-row quick-ops-${row.ops_status.toLowerCase()}`;
@@ -375,62 +367,19 @@ export function FieldModeEnhancer() {
 
     function patchDriverMobileOpsPanel() {
       const content = document.querySelector<HTMLElement>('.driver-content');
-      if (!content) return;
-      let panel = document.querySelector<HTMLElement>('.driver-mobile-quick-ops-panel');
+      const activeNav = Array.from(document.querySelectorAll<HTMLButtonElement>('.driver-nav button')).find((button) => button.classList.contains('active'))?.textContent?.trim();
+      const existing = document.querySelector<HTMLElement>('.driver-mobile-quick-ops-panel');
+      // Quick add-on deliveries belong on Today only — never on top of picking or stop navigation.
+      if (!content || activeNav !== 'Today') { existing?.remove(); return; }
+      let panel = existing;
       if (!panel) { panel = document.createElement('section'); panel.className = 'driver-card quick-ops-panel driver-mobile-quick-ops-panel'; content.insertAdjacentElement('afterbegin', panel); }
       renderOpsQueuePanel(panel, 'driver');
       ensureOps(patchDriverMobileOpsPanel);
     }
 
-    function renderLifecyclePanel(panel: HTMLElement, mode: 'ordermentum' | 'orders') {
-      const key = `${mode}|${lifecycleError}|${lifecycleRows?.map((row) => `${row.lifecycle_id}:${row.lifecycle_status}:${row.lifecycle_updated_at}`).join('|') ?? 'loading'}`;
-      if (panel.dataset.renderKey === key) return;
-      panel.dataset.renderKey = key;
-      panel.textContent = '';
-      const head = document.createElement('div'); head.className = 'panel-head lifecycle-head'; const h2 = document.createElement('h2'); h2.textContent = mode === 'ordermentum' ? 'Lifecycle gate' : 'Order lifecycle status'; const meta = document.createElement('span'); meta.textContent = lifecycleError ? 'schema pending' : lifecycleRows ? `${lifecycleRows.length} orders` : 'loading'; head.append(h2, meta); panel.appendChild(head);
-      const policy = document.createElement('p'); policy.className = 'lifecycle-policy'; policy.textContent = 'Gate rule: Ordermentum completed/closed/delivered/fulfilled orders are EcoFlow COMPLETED and cannot be released, internalised, picked, or routed again.'; panel.appendChild(policy);
-      if (lifecycleError || !lifecycleRows) { const note = document.createElement('div'); note.className = 'driver-inline-hint lifecycle-error'; note.textContent = lifecycleError || 'Loading lifecycle board…'; panel.appendChild(note); return; }
-      const counts = lifecycleRows.reduce<Record<string, number>>((acc, row) => { acc[row.lifecycle_status] = (acc[row.lifecycle_status] || 0) + 1; return acc; }, {});
-      const statGrid = document.createElement('div'); statGrid.className = 'lifecycle-stat-grid';
-      [['READY_TO_INTERNALISE', 'Ready'], ['BLOCKED_DATA', 'Data blocked'], ['BLOCKED_MAPPING', 'Mapping blocked'], ['INTERNAL_ORDER_CREATED', 'Internal'], ['PICKING', 'Picking'], ['STAGED', 'Staged'], ['COMPLETED', 'Completed']].forEach(([status, label]) => { const item = document.createElement('div'); item.className = `lifecycle-stat lifecycle-stat-${status.toLowerCase()}`; const strong = document.createElement('strong'); strong.textContent = String(counts[status] || 0); const span = document.createElement('span'); span.textContent = label; item.append(strong, span); statGrid.appendChild(item); });
-      panel.appendChild(statGrid);
-      const table = document.createElement('div'); table.className = 'table-like lifecycle-table'; const header = document.createElement('div'); header.className = 'table-head'; ['Order', 'OM status', 'Internal', 'Lifecycle', 'Gate', 'Value'].forEach((label) => { const span = document.createElement('span'); span.textContent = label; header.appendChild(span); }); table.appendChild(header);
-      lifecycleRows.slice(0, mode === 'ordermentum' ? 12 : 20).forEach((row) => {
-        const item = document.createElement('div'); item.className = `table-row lifecycle-board-row lifecycle-status-${row.lifecycle_status.toLowerCase()}`;
-        const order = document.createElement('span'); const orderStrong = document.createElement('strong'); orderStrong.textContent = row.order_number || row.lifecycle_id || 'Unknown order'; const invoice = document.createElement('small'); invoice.textContent = row.invoice_number || 'no invoice'; order.append(orderStrong, invoice);
-        const om = document.createElement('span'); om.textContent = [row.ordermentum_order_status, row.ordermentum_invoice_status].filter(Boolean).join(' / ') || '—';
-        const internal = document.createElement('span'); const internalStrong = document.createElement('strong'); internalStrong.textContent = row.internal_order_id ? 'created' : 'not created'; const internalSmall = document.createElement('small'); internalSmall.textContent = [row.internalisation_status, row.warehouse_gate_status].filter(Boolean).join(' · ') || 'no internal state'; internal.append(internalStrong, internalSmall);
-        const lifecycle = document.createElement('span'); lifecycle.appendChild(pill(lifecycleLabel(row.lifecycle_status), lifecycleTone(row.lifecycle_status), 'lifecycle-pill'));
-        const gate = document.createElement('span'); gate.appendChild(pill(row.can_internalise ? 'CAN INTERNALISE' : row.lifecycle_status === 'COMPLETED' ? 'COMPLETED GATE' : 'LOCKED', row.can_internalise ? 'good' : row.lifecycle_status === 'COMPLETED' ? 'good' : 'warn')); const gateSmall = document.createElement('small'); gateSmall.textContent = shortTime(row.lifecycle_updated_at); gate.appendChild(gateSmall);
-        const value = document.createElement('span'); value.textContent = moneyText(row.invoice_total);
-        item.append(order, om, internal, lifecycle, gate, value); table.appendChild(item);
-      });
-      panel.appendChild(table);
-    }
-
-    function patchLifecycleTabs() {
-      const ordermentumHeading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((item) => item.textContent?.trim() === 'Daily order intake');
-      if (ordermentumHeading) {
-        const host = ordermentumHeading.closest<HTMLElement>('.panel');
-        if (host) {
-          let panel = document.querySelector<HTMLElement>('.lifecycle-ordermentum-panel');
-          if (!panel) { panel = document.createElement('section'); panel.className = 'panel lifecycle-panel lifecycle-ordermentum-panel'; host.insertAdjacentElement('afterend', panel); }
-          renderLifecyclePanel(panel, 'ordermentum');
-        }
-      }
-      const ordersHeading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((item) => item.textContent?.trim() === 'Order control');
-      if (ordersHeading) {
-        const host = ordersHeading.closest<HTMLElement>('.panel');
-        if (host) {
-          let panel = document.querySelector<HTMLElement>('.lifecycle-orders-panel');
-          if (!panel) { panel = document.createElement('section'); panel.className = 'panel lifecycle-panel lifecycle-orders-panel'; host.insertAdjacentElement('beforebegin', panel); }
-          renderLifecyclePanel(panel, 'orders');
-        }
-      }
-      ensureLifecycle(patchLifecycleTabs);
-    }
 
     function patchRowsWithLifecycle() {
+      ensureLifecycle(patchRowsWithLifecycle);
       if (!lifecycleRows?.length) return;
       Array.from(document.querySelectorAll<HTMLElement>('.inbox-table-like .table-row, .panel .table-like > .table-row, .order-list-item')).forEach((node) => {
         if (node.classList.contains('lifecycle-board-row')) return;
@@ -459,13 +408,11 @@ export function FieldModeEnhancer() {
 
     function patchAll() {
       openRequestedInventoryTab();
-      patchWarehouseReceiveCard();
       patchInventoryMapEntry();
       patchInventoryLocationsPanel();
       patchQuickCustomerStockPanel();
       patchWarehouseMobileOpsPanel();
       patchDriverMobileOpsPanel();
-      patchLifecycleTabs();
       patchRowsWithLifecycle();
       patchCompletedLabels();
     }

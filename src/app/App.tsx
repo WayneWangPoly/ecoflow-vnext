@@ -18,6 +18,7 @@ import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTyp
 import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
+import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import type {
   Activity,
   CatalogRow,
@@ -87,7 +88,7 @@ function canManageTeam(profile?: EcoFlowAuthProfile | null) {
 }
 
 function appRoleDisplay(profile?: EcoFlowAuthProfile | null) {
-  return profile ? `${profile.app_role}${profile.email ? ` 路 ${profile.email}` : ''}` : 'Legacy local role';
+  return profile ? `${profile.app_role}${profile.email ? ` · ${profile.email}` : ''}` : 'Legacy local role';
 }
 
 function syncTone(status: ImportedOrder['syncStatus']): 'good' | 'blue' | 'neutral' {
@@ -229,12 +230,11 @@ function QualityRow({ item }: { item: DataQualityItem }) {
 }
 
 
-function DesktopShell({ role, tab, setTab, onLogout, onUndo, children }: {
+function DesktopShell({ role, tab, setTab, onLogout, children }: {
   role: Role;
   tab: DesktopTab;
   setTab: (tab: DesktopTab) => void;
   onLogout: () => void;
-  onUndo: () => void;
   children: ReactNode;
 }) {
   return (
@@ -263,7 +263,6 @@ function DesktopShell({ role, tab, setTab, onLogout, onUndo, children }: {
             </div>
           </div>
           <div className="topbar-actions">
-            <button type="button" onClick={onUndo}>Undo</button>
             <button type="button" onClick={onLogout}>Logout</button>
           </div>
         </header>
@@ -285,30 +284,30 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
     <>
       <section className="hero-card">
         <div className="hero-copy">
-          <span>ECOFLOW CONTROL ROOM 路 ORDERMENTUM INBOX</span>
+          <span>ECOFLOW CONTROL ROOM · ORDERMENTUM INBOX</span>
           <h1>Build the supply chain<br />behind a cleaner food future.</h1>
-          <div className="date-chip">{syncBatch.businessDay.label} 路 cutoff {syncBatch.businessDay.cutoffTime} 路 {syncBatch.source}</div>
+          <div className="date-chip">{syncBatch.businessDay.label} · cutoff {syncBatch.businessDay.cutoffTime} · {syncBatch.source}</div>
         </div>
         <div className="hero-metrics">
           <MetricCard label="NEW TODAY" value={count('newToday')} helper="first seen" />
           <MetricCard label="UPDATED TODAY" value={count('updatedToday')} tone="blue" helper="changed" />
-          <MetricCard label="ACTIVE ORDERS" value={activeOrders} tone="gold" helper={`${syncBatch.fetched} retained raw`} />
+          <MetricCard label="ACTIVE ORDERS" value={activeOrders} tone="gold" helper={`${orders.length} in database`} />
           <MetricCard label="OPEN AR" value={money(openAR)} tone="mint" helper="unpaid only" />
         </div>
       </section>
 
       <section className="quick-stats">
-        <MetricCard label="ORDERS IN DATABASE" value={orders.length} tone="green" />
-        <MetricCard label="ACTIVE ORDERS" value={activeOrders} tone="gold" />
         <MetricCard label="EXCEPTIONS" value={count('exceptions')} tone="mint" />
-        <MetricCard label="OPEN AR" value={money(openAR)} tone="blue" />
+        <MetricCard label="READY TO RELEASE" value={orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE').length} tone="green" />
+        <MetricCard label="OUT FOR DELIVERY" value={orders.filter((order) => order.status === 'OUT_FOR_DELIVERY').length} tone="blue" />
+        <MetricCard label="DELIVERED TODAY" value={delivered} tone="gold" />
       </section>
 
       <section className="dashboard-grid">
         <div className="panel large-panel">
           <div className="panel-head">
             <h2>{role === 'account' ? 'Ordermentum inbox' : 'Daily control queue'}</h2>
-            <span>{syncBatch.created} new 路 {syncBatch.updated} updated 路 {syncBatch.unchanged} unchanged</span>
+            <span>{syncBatch.created} new · {syncBatch.updated} updated · {syncBatch.unchanged} unchanged</span>
           </div>
           <div className="list-stack">
             {sortOrdersForOperations(orders).filter((order) => order.syncStatus !== 'UNCHANGED' || order.openExceptionCount > 0).slice(0, 10).map((order) => (
@@ -339,7 +338,7 @@ function HeroDashboard({ role, orders, stock, dataQuality, syncBatch, bucketCoun
           <div className="stock-watch">
             {lowStock.slice(0, 8).map((row) => (
               <div className="stock-watch-row" key={row.sku}>
-                <div><strong>{row.sku}</strong><span>{row.location} 路 reserved {row.reserved}</span></div>
+                <div><strong>{row.sku}</strong><span>{row.location} · reserved {row.reserved}</span></div>
                 <Pill tone={row.onHand < row.reserved ? 'danger' : 'warn'}>{row.onHand < row.reserved ? 'INSUFFICIENT' : 'LOW'}</Pill>
               </div>
             ))}
@@ -362,13 +361,13 @@ function OrderListItem({ order, selectable, onToggle }: { order: ImportedOrder; 
       {selectable ? <input type="checkbox" checked={order.selected} onChange={onToggle} aria-label={`select ${order.orderNo}`} /> : null}
       <div className="order-main-copy">
         <div className="order-title-line"><strong>{order.orderNo}</strong><StatusPill status={order.status} /><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill>{order.releaseGateStatus ? <Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill> : null}</div>
-        <span>{order.store} 路 {order.suburb} 路 {order.priceTier}</span>
-        <small>{order.lines.map((line) => `${line.sku} 脳 ${line.qty} ${line.unit}`).join(' 路 ')}</small>
+        <span>{order.store} · {order.suburb} · {order.priceTier}</span>
+        <small>{order.lines.map((line) => `${line.sku} 脳 ${line.qty} ${line.unit}`).join(' · ')}</small>
         {order.releaseBlockers ? <small className="release-blockers">{order.releaseBlockers}</small> : null}
       </div>
       <div className="order-side-copy">
         <strong>{money(order.amount)}</strong>
-        <small>{order.packageCount} labels 路 due {formatBusinessDate(order.deliveryDate || order.dueAt)}</small>
+        <small>{order.packageCount} labels · due {formatBusinessDate(order.deliveryDate || order.dueAt)}</small>
       </div>
     </article>
   );
@@ -392,11 +391,13 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
     const order = orders.find((item) => item.id === exception.orderId);
     return order ? order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0 : true;
   });
-  const ready = orders.filter((order) => order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false && !day.releasedOrders[order.id]);
+  // Releasable: gate passed and either the internal order already exists (normal path) or it can be created.
+  const releasable = (order: ImportedOrder) => order.status === 'RELEASE_READY' && (order.hasInternalOrder || order.canCreateInternalOrder !== false);
+  const ready = orders.filter((order) => releasable(order) && !day.releasedOrders[order.id]);
   const selectedReady = ready.filter((order) => order.selected).length;
   const releasedCount = Object.keys(day.releasedOrders).length;
 
-  // Formal internal-order creation lives in the database RPC 鈥?never a front-end status flip.
+  // Formal internal-order creation lives in the database RPC —never a front-end status flip.
   async function internaliseEligible() {
     setInternalising(true);
     setInternaliseResult('');
@@ -412,7 +413,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
     }
   }
 
-  /** Adds the order to today's shared run 鈥?synced to every device through day state. */
+  /** Adds the order to today's shared run —synced to every device through day state. */
   function releaseToRun(orderId: string) {
     setDay((current) => ({ ...current, releasedOrders: { ...current.releasedOrders, [orderId]: new Date().toISOString() } }));
     setOrders((current) => current.map((order) => order.id === orderId ? { ...order, selected: false } : order));
@@ -435,7 +436,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
         <div className="sync-header-block">
           <span className="section-eyebrow">ORDERMENTUM INBOX</span>
           <h2>Daily order intake</h2>
-          <div className="sync-meta-line">Business day {data.businessDay.label} 路 last sync {formatDateTime(data.syncBatch.completedAt)}</div>
+          <div className="sync-meta-line">Business day {data.businessDay.label} · last sync {formatDateTime(data.syncBatch.completedAt)}</div>
         </div>
         <div className="sync-strip">
           <div><strong>{data.syncBatch.fetched}</strong><span>Fetched</span></div>
@@ -447,7 +448,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
         <div className="release-gate-strip">
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE').length}</strong><span>ready to internalise</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_MAPPING').length}</strong><span>mapping blocked</span></div>
-          <div><strong>{releasedCount}</strong><span>in today鈥檚 run</span></div>
+          <div><strong>{releasedCount}</strong><span>in today’s run</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'REVIEW_PAYMENT').length}</strong><span>payment review</span></div>
           <div><strong>{orders.filter((order) => order.releaseGateStatus === 'BLOCKED_DATA').length}</strong><span>data blocked</span></div>
         </div>
@@ -472,7 +473,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
           {bucketRows.map((order) => (
             <div className="table-row" key={order.id}>
               <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
-              <span><strong>{order.store}</strong><small>{order.priceTier} 路 {order.suburb}</small></span>
+              <span><strong>{order.store}</strong><small>{order.priceTier} · {order.suburb}</small></span>
               <span>{formatDateTime(order.firstSeenAt)}<small>{order.firstSeenBusinessDay}</small></span>
               <span>{formatDateTime(order.lastSeenAt)}<small>{order.changeSummary}</small></span>
               <span>{formatBusinessDate(order.deliveryDate || order.dueAt)}<small>{order.requestedDeliveryBusinessDay}</small></span>
@@ -480,7 +481,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
               <span><Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill><small>{order.unmappedLineCount ? `${order.unmappedLineCount} unmapped` : order.stockShortageCount ? `${order.stockShortageCount} stock short` : changeImpactLabel(order.changeImpact)}</small></span>
               <span className="row-actions">
                 {day.releasedOrders[order.id] ? <Pill tone="good">IN RUN</Pill>
-                  : order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false
+                  : releasable(order)
                     ? <button className="soft-button" type="button" onClick={() => releaseToRun(order.id)}>Release to run</button>
                     : <StatusPill status={order.status} />}
               </span>
@@ -496,9 +497,9 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
           <div className="list-stack">
             {visibleExceptions.slice(0, 14).map((exception) => (
               <article className="exception-card" key={exception.id}>
-                <div><strong>{exception.orderNo}</strong><span>{exception.store} 路 {exception.category.replace(/_/g, ' ')}</span></div>
+                <div><strong>{exception.orderNo}</strong><span>{exception.store} · {exception.category.replace(/_/g, ' ')}</span></div>
                 <p>{exception.summary}</p>
-                <small>{exception.detail} Fix the underlying data (mapping / invoice detail) 鈥?exceptions clear on the next sync.</small>
+                <small>{exception.detail}</small>
               </article>
             ))}
             {!visibleExceptions.length ? <div className="empty-state">No open exception.</div> : null}
@@ -513,23 +514,10 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
         </div>
       </section>
 
-      <section className="split-grid">
-        <div className="panel">
-          <div className="panel-head"><h2>Import checks</h2><Pill tone={data.dataQuality.some((item) => item.severity === 'danger') ? 'danger' : 'warn'}>{data.dataQuality.length} checks</Pill></div>
-          <div className="quality-stack compact-quality-stack">
-            {data.dataQuality.map((item) => <QualityRow key={`${item.area}-${item.message}`} item={item} />)}
-          </div>
-        </div>
-        <div className="panel">
-          <div className="panel-head"><h2>Price groups</h2><span>{data.priceGroups.length} active</span></div>
-          <div className="price-group-list">
-            {data.priceGroups.map((group) => (
-              <article className="price-group-card" key={group.id}>
-                <div><strong>{group.name}</strong><span>{group.default ? 'Default group' : 'Custom group'}</span></div>
-                <Pill tone={group.default ? 'good' : 'blue'}>{group.retailersTotal} retailers</Pill>
-              </article>
-            ))}
-          </div>
+      <section className="panel">
+        <div className="panel-head"><h2>Import checks</h2><Pill tone={data.dataQuality.some((item) => item.severity === 'danger') ? 'danger' : 'warn'}>{data.dataQuality.length} checks</Pill></div>
+        <div className="quality-stack compact-quality-stack">
+          {data.dataQuality.map((item) => <QualityRow key={`${item.area}-${item.message}`} item={item} />)}
         </div>
       </section>
     </section>
@@ -540,7 +528,7 @@ function OrdersPanel({ orders }: { orders: ImportedOrder[] }) {
   // Read-only: status changes only happen through release, picking and delivery actions.
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum 路 status follows the real workflow</span></div>
+      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum · status follows the real workflow</span></div>
       <div className="table-like">
         <div className="table-head"><span>Order</span><span>Store</span><span>Tier</span><span>Status</span><span>Value</span><span>POD</span></div>
         {orders.map((order) => (
@@ -576,10 +564,10 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
         <MetricCard label="RELEASED TO RUN" value={stops.length} tone="green" helper={businessDay.label} />
         <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Not locked'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'driver locks remotely'} />
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
-        <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` 路 ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
+        <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>Run board</h2><span>shared facts 鈥?same data the driver and warehouse see</span></div>
+        <div className="panel-head"><h2>Run board</h2><span>shared facts —same data the driver and warehouse see</span></div>
         <div className="list-stack">
           {stops.map((stop) => {
             const progress = progressFor(stop.orderId);
@@ -596,11 +584,11 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
               <article className="stop-row" key={stop.orderId}>
                 <b>{stop.stopNumber}</b>
                 <div>
-                  <strong>{stop.boxCode} 路 {stop.store}</strong>
+                  <strong>{stop.boxCode} · {stop.store}</strong>
                   <span>
-                    {stop.cartons} ctn 路 {stopStatusLabelDesk(status)}
+                    {stop.cartons} ctn · {stopStatusLabelDesk(status)}
                     {progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}
-                    {pod?.receiverName ? ` 路 received by ${pod.receiverName}` : ''}
+                    {pod?.receiverName ? ` · received by ${pod.receiverName}` : ''}
                   </span>
                   {pod?.photoPath || pod?.signaturePath ? (
                     <span className="pod-links">
@@ -613,28 +601,16 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
               </article>
             );
           })}
-          {!stops.length ? <div className="empty-state">No orders released into today鈥檚 run yet 鈥?release them from the Ordermentum tab.</div> : null}
+          {!stops.length ? <div className="empty-state">No orders released into today’s run yet —release them from the Ordermentum tab.</div> : null}
         </div>
       </section>
     </section>
   );
 }
 
-function InventoryPanel({ stock, catalog, summary }: { stock: StockRow[]; catalog: CatalogRow[]; summary: EcoFlowDataSet['summary'] }) {
+function InventoryPanel({ stock, catalog }: { stock: StockRow[]; catalog: CatalogRow[] }) {
   return (
     <section className="workspace-stack">
-      {!stock.length ? (
-        <section className="panel">
-          <div className="panel-head"><h2>Stock ledger not connected</h2><Pill tone="warn">NO LIVE STOCK</Pill></div>
-          <p className="panel-note">Real stock levels need the inventory ledger (receive / reserve / pick movements). Until then this page will not show fabricated numbers.</p>
-        </section>
-      ) : null}
-      <section className="quick-stats">
-        <MetricCard label="STOCK ROWS" value={stock.length} tone="green" />
-        <MetricCard label="CATALOG COVERAGE" value={catalog.length} tone="blue" />
-        <MetricCard label="PRODUCT TOTAL" value={summary.productCatalogTotal} tone="gold" />
-        <MetricCard label="VARIANT TOTAL" value={summary.variantCatalogTotal} tone="mint" />
-      </section>
       <section className="panel">
         <div className="panel-head"><h2>Inventory watch</h2><span>location, reserved, reorder pressure</span></div>
         <div className="table-like inventory-table-like">
@@ -672,21 +648,17 @@ function InventoryPanel({ stock, catalog, summary }: { stock: StockRow[]; catalo
   );
 }
 
-function StoresPanel({ stores, priceGroups }: { stores: StoreProfile[]; priceGroups: PriceGroupRow[] }) {
+function StoresPanel({ stores }: { stores: StoreProfile[] }) {
   return (
     <section className="workspace-stack">
-      <section className="quick-stats"><MetricCard label="Stores" value={stores.length} /><MetricCard label="Price groups" value={priceGroups.length} tone="blue" /><MetricCard label="Ready" value={stores.filter((store) => store.status === 'OK').length} tone="mint" /><MetricCard label="Needs review" value={stores.filter((store) => store.status !== 'OK').length} tone="gold" /></section>
-      <section className="panel"><div className="panel-head"><h2>Store master</h2><span>address + price tier</span></div><div className="store-grid">{stores.map((store) => <article className="store-card" key={store.id}><div><strong>{store.name}</strong><span>{store.address || `${store.suburb} 路 address pending`}</span><small>{store.statementGroup} 路 {store.paymentTerms}</small></div><Pill tone={store.status === 'OK' ? 'good' : 'warn'}>{store.status}</Pill></article>)}</div></section>
+      <section className="panel"><div className="panel-head"><h2>Store master</h2><span>address + price tier</span></div><div className="store-grid">{stores.map((store) => <article className="store-card" key={store.id}><div><strong>{store.name}</strong><span>{store.address || `${store.suburb} · address pending`}</span><small>{store.statementGroup} · {store.paymentTerms}</small></div><Pill tone={store.status === 'OK' ? 'good' : 'warn'}>{store.status}</Pill></article>)}</div></section>
     </section>
   );
 }
 
-function ReconciliationPanel({ orders, summary }: { orders: ImportedOrder[]; summary: EcoFlowDataSet['summary'] }) {
-  const paid = orders.filter((order) => order.paymentStatus === 'PAID').reduce((sum, order) => sum + order.amount, 0);
-  const outstanding = orders.filter((order) => order.paymentStatus !== 'PAID').reduce((sum, order) => sum + order.amount, 0);
+function ReconciliationPanel({ orders }: { orders: ImportedOrder[] }) {
   return (
     <section className="workspace-stack">
-      <section className="quick-stats"><MetricCard label="Invoices" value={orders.length} /><MetricCard label="Paid value" value={money(paid)} tone="mint" /><MetricCard label="Outstanding" value={money(outstanding)} tone="gold" /><MetricCard label="Total imported" value={money(summary.invoiceTotal)} tone="blue" /></section>
       <section className="panel"><div className="panel-head"><h2>Reconciliation queue</h2><span>payments and POD variance</span></div><div className="table-like"><div className="table-head"><span>Invoice</span><span>Store</span><span>Payment</span><span>Amount</span><span>Status</span></div>{orders.slice(0, 20).map((order) => <div className="table-row" key={order.id}><span><strong>{order.invoiceNo}</strong><small>{order.orderNo}</small></span><span>{order.store}</span><span>{order.paymentStatus}</span><span>{money(order.amount)}</span><span><StatusPill status={order.status} /></span></div>)}</div></section>
     </section>
   );
@@ -700,7 +672,7 @@ function LogsPanel({ logs }: { logs: Activity[] }) {
         {logs.map((log) => (
           <article className="log-row" key={`${log.at}-${log.detail}`}>
             <b>{log.at}</b>
-            <div><strong>{log.actor} 路 {log.action}</strong><span>{log.detail}</span></div>
+            <div><strong>{log.actor} · {log.action}</strong><span>{log.detail}</span></div>
           </article>
         ))}
       </div>
@@ -713,11 +685,11 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
   return (
     <section className="workspace-stack">
       <section className="panel settings-panel">
-        <div><h2>Settings</h2><p>Control how Ordermentum intake, release rules, statements and POD requirements are handled.</p></div>
-        <label><span>Ordermentum import mode</span><select defaultValue="current"><option value="current">current Ordermentum data</option><option>manual upload</option><option>scheduled API</option></select></label>
-        <label><span>Release rule</span><select defaultValue="review"><option>review</option><option>auto-release safe orders</option></select></label>
-        <label><span>Statement period</span><select defaultValue="weekly"><option>weekly</option><option>fortnightly</option><option>monthly</option></select></label>
-        <label><span>Driver POD required</span><select defaultValue="photo"><option>photo</option><option>signature + photo</option></select></label>
+        <div><h2>Operating rules</h2><p>These rules are enforced by the workflow itself - listed here so every role knows the contract.</p></div>
+        <label><span>Order release</span><strong>Internal orders are created only by the database RPC after the release gate passes - never a front-end status flip.</strong></label>
+        <label><span>Picking</span><strong>Every SKU must scan a matching product barcode before it can be picked; stock is deducted from the live ledger.</strong></label>
+        <label><span>Driver POD</span><strong>Two photos required: store/drop point and all goods placed. Confirmation notifies the office automatically.</strong></label>
+        <label><span>Returns</span><strong>Returned goods re-enter sellable stock only after warehouse inspection; drop-off needs the fixed zone QR within 500 m GPS.</strong></label>
       </section>
       <section className="panel">
         <div className="panel-head"><h2>Integration readiness</h2><Pill tone={blocking ? 'warn' : 'good'}>{blocking} blockers / warnings</Pill></div>
@@ -787,15 +759,15 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   const effectiveOrders = useMemo(() => applyDayStateToOrders(orders, day), [orders, day]);
 
   return (
-    <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout} onUndo={() => undefined}>
-      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load 鈥?the data below is fallback/demo, not live. {loadError}</div> : null}
+    <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
+      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load —the data below is fallback/demo, not live. {loadError}</div> : null}
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
       {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} businessDay={data.businessDay} /> : null}
-      {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} summary={data.summary} /> : null}
-      {tab === 'stores' ? <StoresPanel stores={stores} priceGroups={data.priceGroups} /> : null}
-      {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} summary={data.summary} /> : null}
+      {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} /> : null}
+      {tab === 'stores' ? <StoresPanel stores={stores} /> : null}
+      {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} /> : null}
       {tab === 'logs' ? <LogsPanel logs={logs} /> : null}
       {tab === 'settings' ? <SettingsPanel summary={data.summary} dataQuality={data.dataQuality} authProfile={authProfile} /> : null}
     </DesktopShell>
@@ -814,7 +786,37 @@ function MobileShell({ role, onLogout, children }: { role: Role; onLogout: () =>
   );
 }
 
-function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout, actorLabel }: { orders: ImportedOrder[]; stock: StockRow[]; businessDay: EcoFlowDataSet['businessDay']; loadError?: string; onLogout?: () => void; actorLabel?: string }) {
+function WarehouseLiveStock() {
+  const [rows, setRows] = useState<WarehouseLocationItemRow[]>([]);
+  const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    loadWarehouseLocationItems()
+      .then((next) => { if (active) { setRows(next); setError(''); setLoaded(true); } })
+      .catch((err) => { if (active) { setError(err instanceof Error ? err.message : String(err)); setLoaded(true); } });
+    return () => { active = false; };
+  }, []);
+
+  const liveRows = rows.filter((row) => row.item_id && row.sku && Number(row.quantity) > 0);
+  if (!loaded) return <div className="mobile-card"><span>Loading live stock...</span></div>;
+  if (error) return <div className="mobile-card"><strong>Live stock unavailable</strong><span>{error}</span></div>;
+  if (!liveRows.length) return <div className="mobile-card"><strong>No live stock yet</strong><span>Receive stock on the receive tab - posted lines appear here per location.</span></div>;
+  return (
+    <div className="mobile-stack">
+      {liveRows.slice(0, 40).map((row) => (
+        <article className="mobile-card" key={`${row.location_code}-${row.sku}-${row.unit_level}`}>
+          <strong>{row.sku}</strong>
+          <span>{row.product_name || 'warehouse stock'}</span>
+          <span>{row.location_code} · {Number(row.quantity)} {row.unit_level || 'unit'}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function WarehouseWorkspace({ orders, businessDay, loadError, onLogout, actorLabel }: { orders: ImportedOrder[]; businessDay: EcoFlowDataSet['businessDay']; loadError?: string; onLogout?: () => void; actorLabel?: string }) {
   const [tab, setTab] = useState<WarehouseTab>('pick');
   const [day, setDay] = useState(() => loadDriverDayState(businessDay.date));
   useEffect(() => saveDriverDayState(day), [day]);
@@ -823,14 +825,13 @@ function WarehouseWorkspace({ orders, stock, businessDay, loadError, onLogout, a
   return (
     <MobileShell role="warehouse" onLogout={onLogout ?? (() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); })}>
       <section className="mobile-content">
-        {loadError ? <div className="sync-error-banner">Supabase orders failed to load 鈥?showing fallback data. {loadError}</div> : null}
+        {loadError ? <div className="sync-error-banner">Supabase orders failed to load —showing fallback data. {loadError}</div> : null}
         <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick and stock control.</p></div>
         <nav className="mobile-tabs">
           {(['receive', 'pick', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
         </nav>
-        {tab === 'receive' ? <div className="mobile-card"><h2>Inbound receiving</h2><p>Confirm received stock and put away to mapped locations.</p><button className="primary-button">Scan receiving dock</button></div> : null}
         {tab === 'pick' ? <PickBoard orders={orders} businessDay={businessDay} day={day} setDay={setDay} syncStatus={syncStatus} /> : null}
-        {tab === 'stock' ? <div className="mobile-stack">{stock.slice(0, 18).map((row) => <article className="mobile-card" key={row.sku}><strong>{row.sku}</strong><span>{row.location}</span><span>On hand {row.onHand} 路 reserved {row.reserved}</span></article>)}</div> : null}
+        {tab === 'stock' ? <WarehouseLiveStock /> : null}
       </section>
     </MobileShell>
   );
@@ -942,7 +943,7 @@ export function App() {
 
   if (!authEnabled) {
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
-    if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
+    if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
     if (legacyRole === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
     return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
   }
@@ -952,7 +953,7 @@ export function App() {
   if (!authProfile.is_active || authProfile.team_status === 'SUSPENDED' || authProfile.team_status === 'DISABLED') return <AccessPendingScreen profile={authProfile} onLogout={() => void logout()} />;
 
   const role = roleFromAppRole(authProfile.app_role);
-  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} stock={data.stock} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
+  if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} />;
 
   return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;

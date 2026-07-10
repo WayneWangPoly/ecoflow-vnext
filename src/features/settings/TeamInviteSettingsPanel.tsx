@@ -163,7 +163,7 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
       </div>
 
       <p>{roleDescription[appRole]}</p>
-      {message ? <div className="sync-error-banner">{message}</div> : null}
+      {message ? <div className="success-message">{message}</div> : null}
       {error ? <div className="error-message">{error}</div> : null}
 
       <div className="readiness-grid">

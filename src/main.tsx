@@ -42,6 +42,7 @@ import './deliveryOperations.css';
 import './returnZoneOperations.css';
 import './returnZoneCopyFix.css';
 import './returnZoneGeofence.css';
+import './industrialTheme.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 

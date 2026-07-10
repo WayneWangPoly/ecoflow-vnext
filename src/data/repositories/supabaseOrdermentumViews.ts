@@ -277,13 +277,15 @@ function orderStatus(row: SupabaseInboxRow, draft?: SupabaseDraftRow): OrderStat
   if (isLegacyDraft(draft)) return 'MAPPING_EXCEPTION';
   const normalized = String(row.order_status || '').toLowerCase();
   if (normalized === 'cancelled' || normalized === 'canceled') return 'CANCELLED';
-  if (draft?.internal_order_id) return 'IMPORTED';
   if (row.invoice_detail_missing || row.line_items_missing) return 'MAPPING_EXCEPTION';
   const internalisation = String(draft?.internalisation_status || '').toUpperCase();
   const gate = String(draft?.warehouse_gate_status || '').toUpperCase();
   if (['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(internalisation) || ['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(gate)) return 'MAPPING_EXCEPTION';
   if (['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(internalisation) || ['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(gate)) return 'MAPPING_EXCEPTION';
   if (String(draft?.account_release_status || '') === 'HOLD_PAYMENT_REVIEW') return 'IMPORTED';
+  // Internal order created and nothing blocking: the order stays releasable to today's run.
+  // (Previously this returned IMPORTED, which removed internalised orders from the release queue.)
+  if (draft?.internal_order_id) return 'RELEASE_READY';
   if (normalized === 'processing') return 'IMPORTED';
   return 'RELEASE_READY';
 }
@@ -456,6 +458,7 @@ function buildOrders(
       requiredQuantity: numberValue(row.total_units, numberValue(om?.total_quantity, 0)),
       mappedAvailableQuantity: 0,
       canCreateInternalOrder: !completed && !hasInternalOrder && status === 'RELEASE_READY' && (draft ? String(draft.internalisation_status || '') === 'READY_TO_INTERNALISE' : true),
+      hasInternalOrder,
       lines: itemLines
     };
   });
