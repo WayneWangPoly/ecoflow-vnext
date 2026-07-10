@@ -29,7 +29,7 @@ function timeText(value?: string | null) {
   return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
 }
 
-function Pill({ children, kind = 'neutral' }: { children: any; kind?: string }) {
+function Pill({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
   return <span className={`warehouse-receive-pill warehouse-receive-pill-${kind}`}>{children}</span>;
 }
 
@@ -38,7 +38,7 @@ function LineRow({ line, busy, onTick }: { line: StagedReceivingLine; busy: stri
   const checked = Boolean(line.confirmation_checked) || posted;
   return (
     <article className={`warehouse-scan-line ${checked ? 'checked' : ''} ${posted ? 'posted' : ''}`}>
-      <button type="button" disabled={posted || Boolean(busy)} className="warehouse-scan-check" onClick={() => onTick(line)} aria-label="Confirm receiving line">
+      <button type="button" disabled={posted || Boolean(busy)} className="warehouse-scan-check" onClick={() => onTick(line)} aria-label={`Confirm ${line.sku || 'receiving'} line`}>
         {checked ? '✓' : ''}
       </button>
       <div className="warehouse-scan-copy">
@@ -46,7 +46,7 @@ function LineRow({ line, busy, onTick }: { line: StagedReceivingLine; busy: stri
         <span>{line.product_name || 'Unknown product'}</span>
         <small>{title(line.package_level)} · barcode {line.barcode}</small>
       </div>
-      <div className="warehouse-scan-number"><strong>{num(line.qty_packages)}</strong><span>packs</span></div>
+      <div className="warehouse-scan-number"><strong>{num(line.qty_packages)}</strong><span>packages</span></div>
       <div className="warehouse-scan-number"><strong>{num(line.units_received)}</strong><span>units</span></div>
       <Pill kind={posted ? 'good' : checked ? 'blue' : 'warn'}>{posted ? 'IN STOCK' : checked ? 'TICKED' : 'CHECK'}</Pill>
       <div className="warehouse-scan-location">{line.suggested_location || 'RECEIVING'}</div>
@@ -67,6 +67,7 @@ function MovementRow({ row }: { row: WarehouseReceivingMovementRow }) {
 export function WarehouseReceivingFlow() {
   const [form, setForm] = useState(defaultForm);
   const [batch, setBatch] = useState<StagedReceivingBatch | null>(null);
+  const [openBatches, setOpenBatches] = useState<StagedReceivingBatch[]>([]);
   const [lines, setLines] = useState<StagedReceivingLine[]>([]);
   const [movements, setMovements] = useState<WarehouseReceivingMovementRow[]>([]);
   const [busy, setBusy] = useState('');
@@ -81,10 +82,12 @@ export function WarehouseReceivingFlow() {
   async function reload(targetBatchId?: string | null) {
     setError('');
     try {
-      const [openBatches, nextMovements] = await Promise.all([loadOpenStagedReceivingBatches(), loadWarehouseReceivingMovements()]);
-      const activeBatch = targetBatchId ? openBatches.find((item) => item.id === targetBatchId) : openBatches[0];
-      setBatch(activeBatch ?? null);
+      const [nextBatches, nextMovements] = await Promise.all([loadOpenStagedReceivingBatches(), loadWarehouseReceivingMovements()]);
+      setOpenBatches(nextBatches);
       setMovements(nextMovements);
+      const preferredId = targetBatchId === undefined ? batch?.id : targetBatchId;
+      const activeBatch = preferredId ? nextBatches.find((item) => item.id === preferredId) : nextBatches[0];
+      setBatch(activeBatch ?? null);
       if (activeBatch?.id) setLines(await loadStagedReceivingLines(activeBatch.id));
       else setLines([]);
     } catch (err) {
@@ -92,7 +95,7 @@ export function WarehouseReceivingFlow() {
     }
   }
 
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => { void reload(null); }, []);
   useEffect(() => { scanRef.current?.focus(); }, [batch?.id]);
 
   async function ensureBatch() {
@@ -100,19 +103,35 @@ export function WarehouseReceivingFlow() {
     const rows = await startStagedReceivingBatch();
     const first = rows[0];
     if (!first?.batch_id) throw new Error('Could not start receiving batch.');
-    setBatch({ id: first.batch_id, batch_no: first.batch_no, batch_status: first.batch_status, line_count: 0, confirmed_count: 0, posted_count: 0, total_units: 0, receive_signal: 'SCAN_FIRST_ITEM' });
+    const nextBatch: StagedReceivingBatch = {
+      id: first.batch_id,
+      batch_no: first.batch_no,
+      batch_status: first.batch_status,
+      line_count: 0,
+      confirmed_count: 0,
+      posted_count: 0,
+      total_units: 0,
+      receive_signal: 'SCAN_FIRST_ITEM',
+    };
+    setBatch(nextBatch);
+    setOpenBatches((current) => [nextBatch, ...current.filter((item) => item.id !== nextBatch.id)]);
     return first.batch_id;
   }
 
   async function startNewBatch() {
+    if (openBatches.length > 0) {
+      const confirmed = window.confirm(`There ${openBatches.length === 1 ? 'is' : 'are'} ${openBatches.length} open receiving batch${openBatches.length === 1 ? '' : 'es'}. Start another only when the existing work belongs to a separate delivery. Continue?`);
+      if (!confirmed) return;
+    }
     setBusy('start');
     setNotice('');
     setError('');
     try {
       const rows = await startStagedReceivingBatch();
       const first = rows[0];
-      setNotice(`Receiving batch ${first?.batch_no || ''} started.`);
-      await reload(first?.batch_id);
+      if (!first?.batch_id) throw new Error('Could not start receiving batch.');
+      setNotice(`Receiving batch ${first.batch_no || ''} started.`);
+      await reload(first.batch_id);
       window.setTimeout(() => scanRef.current?.focus(), 60);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -121,18 +140,31 @@ export function WarehouseReceivingFlow() {
     }
   }
 
+  async function resumeBatch(batchId: string) {
+    setBusy('resume');
+    setNotice('');
+    try {
+      await reload(batchId || null);
+      window.setTimeout(() => scanRef.current?.focus(), 60);
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function scanLine() {
     const barcode = form.barcode.trim();
+    const qty = Number(form.qty);
     if (!barcode) { setError('Scan barcode first.'); return; }
+    if (!Number.isInteger(qty) || qty <= 0) { setError('Package quantity must be a whole number greater than zero.'); return; }
     setBusy('scan');
     setError('');
     setNotice('');
     try {
       const batchId = await ensureBatch();
-      const result = await stageReceivingScan({ batchId, barcode, qtyPackages: form.qty || 1, targetLocation: form.location || null, note: form.note || null });
+      const result = await stageReceivingScan({ batchId, barcode, qtyPackages: qty, targetLocation: form.location || null, note: form.note || null });
       const first = result[0];
-      setNotice(`${first?.sku || 'SKU'} found. Check quantity/location, then tick it.`);
-      setForm((current) => ({ ...current, barcode: '', note: '' }));
+      setNotice(`${first?.sku || 'SKU'} found. Check package quantity and shelf, then tick the line.`);
+      setForm((current) => ({ ...current, barcode: '', qty: '1', note: '' }));
       await reload(batchId);
       window.setTimeout(() => scanRef.current?.focus(), 60);
     } catch (err) {
@@ -185,8 +217,8 @@ export function WarehouseReceivingFlow() {
       <section className="warehouse-receive-hero">
         <div>
           <span>DAILY RECEIVING</span>
-          <h2>Scan, check, tick, complete.</h2>
-          <p>One barcode at a time. The system shows SKU, quantity and shelf. Stock is posted only when every line is ticked and receiving is completed.</p>
+          <h2>Scan. Verify. Post once.</h2>
+          <p>One live batch at a time wherever possible. Every line is checked before the database posts stock to the ledger.</p>
         </div>
         <button type="button" onClick={() => void reload(batch?.id)}>Refresh</button>
       </section>
@@ -197,26 +229,39 @@ export function WarehouseReceivingFlow() {
       <section className="warehouse-receive-form warehouse-stage-form">
         <div className="warehouse-batch-row">
           <div><strong>{batch?.batch_no || 'No active receiving batch'}</strong><span>{title(batch?.receive_signal || 'SCAN FIRST ITEM')}</span></div>
-          <button type="button" disabled={Boolean(busy)} onClick={() => void startNewBatch()}>{batch ? 'New batch' : 'Start receiving'}</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void startNewBatch()}>{batch ? 'New delivery batch' : 'Start receiving'}</button>
         </div>
-        <input ref={scanRef} value={form.barcode} onChange={(e) => update('barcode', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void scanLine(); }} placeholder="Scan one barcode, then Enter" />
+
+        {openBatches.length ? (
+          <div className="warehouse-batch-control">
+            <label>Open receiving work
+              <select value={batch?.id || ''} disabled={Boolean(busy)} onChange={(event) => void resumeBatch(event.target.value)}>
+                {openBatches.map((item) => <option key={item.id} value={item.id}>{item.batch_no} · {title(item.batch_status)} · {num(item.confirmed_count)}/{num(item.line_count)} checked</option>)}
+              </select>
+            </label>
+            <Pill kind={openBatches.length > 1 ? 'warn' : 'blue'}>{openBatches.length} OPEN</Pill>
+          </div>
+        ) : null}
+        {openBatches.length > 1 ? <div className="warehouse-open-batch-warning">Multiple deliveries are open. Resume the correct batch before scanning so stock is not posted against the wrong inbound delivery.</div> : null}
+
+        <input ref={scanRef} value={form.barcode} onChange={(event) => update('barcode', event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void scanLine(); }} placeholder="Scan one carton or sleeve barcode, then Enter" autoComplete="off" />
         <div className="warehouse-receive-grid warehouse-stage-grid">
-          <input value={form.qty} onChange={(e) => update('qty', e.target.value)} inputMode="decimal" placeholder="Quantity / packages" />
-          <input value={form.location} onChange={(e) => update('location', e.target.value.toUpperCase())} placeholder="Blank = system shelf" />
-          <input value={form.note} onChange={(e) => update('note', e.target.value)} placeholder="Supplier order / invoice / note" />
+          <input type="number" min="1" step="1" value={form.qty} onChange={(event) => update('qty', event.target.value)} inputMode="numeric" placeholder="Package quantity" />
+          <input value={form.location} onChange={(event) => update('location', event.target.value.toUpperCase())} placeholder="Blank = system shelf" autoCapitalize="characters" />
+          <input value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Supplier order / invoice / note" />
         </div>
-        <button type="button" disabled={Boolean(busy)} onClick={() => void scanLine()}>{busy === 'scan' ? 'Checking barcode…' : 'Add line to receiving'}</button>
+        <button type="button" disabled={Boolean(busy)} onClick={() => void scanLine()}>{busy === 'scan' ? 'Checking barcode…' : 'Add scanned package'}</button>
       </section>
 
       <section className="warehouse-receive-kpis">
-        <div><strong>{checkedLines}/{totalLines}</strong><span>lines ticked</span></div>
+        <div><strong>{checkedLines}/{totalLines}</strong><span>lines verified</span></div>
         <div><strong>{num(totalUnits)}</strong><span>units waiting to post</span></div>
       </section>
 
       <section className="warehouse-receive-panel warehouse-scan-panel">
-        <header><h3>Scanned receiving lines</h3><Pill kind={allChecked ? 'good' : 'warn'}>{allChecked ? 'READY' : 'CHECK EACH LINE'}</Pill></header>
-        <div>{lines.map((line) => <LineRow key={line.id} line={line} busy={busy} onTick={tickLine} />)}{!lines.length ? <div className="warehouse-receive-empty">Scan the first incoming barcode. Nothing enters stock until receiving is completed.</div> : null}</div>
-        <button type="button" className="warehouse-complete-receiving-button" disabled={!allChecked || Boolean(busy)} onClick={() => void completeBatch()}>{busy === 'complete' ? 'Posting stock…' : 'Complete receiving into stock'}</button>
+        <header><h3>Current batch lines</h3><Pill kind={allChecked ? 'good' : 'warn'}>{allChecked ? 'READY TO POST' : 'VERIFY EACH LINE'}</Pill></header>
+        <div>{lines.map((line) => <LineRow key={line.id} line={line} busy={busy} onTick={tickLine} />)}{!lines.length ? <div className="warehouse-receive-empty">Scan the first package. Nothing enters stock until every line is verified and the batch is completed.</div> : null}</div>
+        <button type="button" className="warehouse-complete-receiving-button" disabled={!allChecked || Boolean(busy)} onClick={() => void completeBatch()}>{busy === 'complete' ? 'Posting stock once…' : 'Complete batch and post stock'}</button>
       </section>
 
       <section className="warehouse-receive-panel">
