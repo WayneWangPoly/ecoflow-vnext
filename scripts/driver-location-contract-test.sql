@@ -28,7 +28,8 @@ declare
   v_first uuid;
   v_retry uuid;
   v_throttled uuid;
-  v_count integer;
+  v_event uuid;
+  v_visible_count integer;
   v_blocked boolean;
 begin
   select r.location_id into v_first
@@ -82,7 +83,8 @@ begin
     raise exception 'automatic sample rate limit did not reuse latest sample';
   end if;
 
-  perform * from public.ecoflow_record_driver_location_sample(
+  select r.location_id into v_event
+  from public.ecoflow_record_driver_location_sample(
     p_business_day => current_date,
     p_route_id => 'RUN-CI-A',
     p_latitude => -34.9010,
@@ -93,12 +95,17 @@ begin
     p_client_sample_id => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
     p_captured_at => now(),
     p_driver_label => 'CI Driver'
-  );
+  ) r;
 
-  select count(*) into v_count
-  from public.ecoflow_driver_location_samples s
-  where s.driver_user_id='22222222-2222-2222-2222-222222222222';
-  if v_count <> 2 then raise exception 'expected 2 persisted location samples, got %',v_count; end if;
+  if v_event is null or v_event = v_first then
+    raise exception 'event location sample was not persisted separately';
+  end if;
+
+  -- Driver is write-only for this data: RLS must hide both the base table and Owner view.
+  select count(*) into v_visible_count from public.ecoflow_driver_location_samples;
+  if v_visible_count <> 0 then raise exception 'Driver could read raw location history'; end if;
+  select count(*) into v_visible_count from public.v_ecoflow_owner_driver_location_timeline;
+  if v_visible_count <> 0 then raise exception 'Driver could read Owner location timeline'; end if;
 
   v_blocked := false;
   begin
