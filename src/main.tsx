@@ -14,9 +14,12 @@ import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
 import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
+import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
 import { StageAndLoadExecution } from './StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
+import { WarehouseCameraScanner } from './WarehouseCameraScanner';
+import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
 import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
 import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
 import './styles.css';
@@ -43,12 +46,14 @@ import './returnZoneOperations.css';
 import './returnZoneCopyFix.css';
 import './returnZoneGeofence.css';
 import './industrialTheme.css';
+import './warehouseProductisation.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
+      <ProductionWriteSafety />
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
@@ -65,7 +70,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <WarehousePickHandoffStatus />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
+      <WarehouseCameraScanner />
+      <WarehouseMapOwnerEdit />
       {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
     </BrowserRouter>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
