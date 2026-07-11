@@ -26,7 +26,12 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Audit operational invariants
-        run: npm run audit:warehouse
+        id: operational_audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run audit:warehouse 2>&1 | tee operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -37,12 +42,16 @@ jobs:
         run: |
           set -o pipefail
           node ./node_modules/vite/bin/vite.js build 2>&1 | tee vite-build.log
+      - name: Enforce operational audit result
+        if: steps.operational_audit.outcome == 'failure'
+        run: exit 1
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: operational-validation-logs
           path: |
+            operational-audit.log
             typecheck.log
             vite-build.log
           if-no-files-found: warn
