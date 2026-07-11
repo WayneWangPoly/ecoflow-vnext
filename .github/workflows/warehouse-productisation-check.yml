@@ -9,6 +9,7 @@ on:
       - 'agent/warehouse-backend-hardening'
       - 'agent/owner-driver-tracking-map'
       - 'agent/fix-supabase-production-ref'
+      - 'agent/web-location-and-migration-baseline'
 
 permissions:
   contents: read
@@ -87,6 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           for file in \
+            supabase/migrations/20260624_remote_production_baseline.sql \
             supabase/migrations/20260710130000_warehouse_backend_hardening.sql \
             supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql \
             supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql \

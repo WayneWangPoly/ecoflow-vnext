@@ -22,6 +22,7 @@ const guardrails = read('src/FieldOpsGuardRails.tsx');
 const driverTracker = read('src/DriverLocationTracker.tsx');
 const ownerTracking = read('src/OwnerDriverTrackingMap.tsx');
 const driverLocationRepository = read('src/data/repositories/driverLocation.ts');
+const migrationBaseline = read('supabase/migrations/20260624_remote_production_baseline.sql');
 const backendMigration = read('supabase/migrations/20260710130000_warehouse_backend_hardening.sql');
 const backendFollowup = read('supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql');
 const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql');
@@ -68,6 +69,8 @@ assert.match(loadRecovery, /Undo last load/, 'The most recent load confirmation 
 assert.match(guardrails, /querySelectorAll<HTMLButtonElement>\('\.load-row'\)/, 'Route start must be gated from load row state.');
 assert.doesNotMatch(guardrails, /stops loaded\//i, 'Route start must not parse loaded progress copy.');
 
+assert.match(migrationBaseline, /intentionally a no-op/i, 'The legacy production migration version must remain represented locally.');
+assert.match(migrationBaseline, /20260624/, 'The local baseline must match the remote migration version.');
 assert.match(backendMigration, /uq_receiving_line_idempotency/, 'Database must enforce one line per receiving idempotency key.');
 assert.match(backendMigration, /DIRECT_RECEIVE_DISABLED/g, 'Legacy direct receiving RPCs must be blocked.');
 assert.match(backendMigration, /trg_ecoflow_controlled_receive_source/, 'Ledger RECEIVE writes must come from controlled batches only.');
@@ -86,10 +89,12 @@ assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retiremen
 assert.match(qualifiedFunctions, /where vel\.sku = v_sku/, 'Barcode product lookup must qualify SKU columns.');
 assert.match(conflictQualification, /on conflict on constraint ecoflow_inventory_sku_controls_pkey/, 'Barcode control upsert must use the named primary-key constraint.');
 
-assert.match(driverTracker, /3 \* 60 \* 1000/, 'Automatic driver position sampling must use the three-minute cadence.');
+assert.match(driverTracker, /10 \* 60 \* 1000/, 'Automatic driver position persistence must use the ten-minute cadence.');
+assert.match(driverTracker, /watchPosition/, 'The web driver surface must keep a best-effort geolocation watch while the route is active.');
+assert.match(driverTracker, /enableHighAccuracy: true/, 'Driver route tracking must request high-accuracy positions where the device permits it.');
+assert.match(driverTracker, /window\.addEventListener\('pageshow'/, 'Returning from navigation must trigger a fresh position attempt.');
 assert.match(driverTracker, /routeStartedAt && !day\.routeEndedAt/, 'Driver tracking must stop when the route ends.');
 assert.match(driverTracker, /!current\.active && source !== 'ROUTE_END'/, 'Only the final route-end event may be sampled after tracking stops.');
-assert.match(driverTracker, /document\.visibilityState === 'visible'/, 'Automatic browser sampling must only run while the Driver app is visible.');
 assert.match(driverTracker, /STOP_ARRIVAL|DELIVERY|ROUTE_END/, 'Operational route events must create timeline markers.');
 assert.match(driverTracker, /recordDriverLocationSample/, 'Driver samples must use the controlled database RPC.');
 assert.match(ownerTracking, /No delivery sequence is exposed/, 'Owner map must not display driver delivery order.');
