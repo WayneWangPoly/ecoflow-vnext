@@ -1,0 +1,19 @@
+.inventory-receive-policy {
+  margin: 10px 0 14px;
+  border: 1px solid #d1b26f;
+  border-radius: 7px;
+  background: #fff7e3;
+  color: #5b430d;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-receive-policy strong {
+  font-size: .9rem;
+}
+
+.inventory-receive-policy span {
+  font-size: .8rem;
+  line-height: 1.4;
+}
