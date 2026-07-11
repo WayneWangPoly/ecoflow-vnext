@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   apply_native_patch:
-    if: github.event_name == 'push' && github.ref_name == 'agent/production-workflow-consolidation'
+    if: >-
+      (github.event_name == 'push' && github.ref_name == 'agent/production-workflow-consolidation') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'agent/production-workflow-consolidation')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -50,7 +52,7 @@ jobs:
       - name: Checkout latest validated source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || github.sha }}
+          ref: ${{ (github.event_name == 'pull_request' && github.head_ref == 'agent/production-workflow-consolidation') && github.head_ref || (github.event_name == 'push' && github.ref_name) || github.sha }}
       - name: Use Node 22
         uses: actions/setup-node@v4
         with:
@@ -118,7 +120,7 @@ jobs:
       - name: Checkout latest validated source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || github.sha }}
+          ref: ${{ (github.event_name == 'pull_request' && github.head_ref == 'agent/production-workflow-consolidation') && github.head_ref || (github.event_name == 'push' && github.ref_name) || github.sha }}
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Load current operational schema contract
