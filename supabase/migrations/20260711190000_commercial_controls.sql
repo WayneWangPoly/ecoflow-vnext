@@ -350,7 +350,6 @@ where public.ecoflow_active_app_role() in ('OWNER','ADMIN','ACCOUNT');
 grant select on public.v_ecoflow_accounts_live_statement_lines to authenticated;
 
 create or replace view public.v_ecoflow_accounts_live_statement_customers
-with (security_invoker=true)
 as
 with sums as (
   select l.store_id,max(l.store_name) store_name,
@@ -379,7 +378,8 @@ select s.store_id,s.store_name,p.suburb,p.address,p.contact_phone,p.price_group_
 from sums s
 left join public.v_ecoflow_owner_store_performance p on p.store_id=s.store_id
 left join public.v_ecoflow_accounts_statement_latest_actions la on la.store_id=s.store_id
-left join public.ecoflow_accounts_billing_contacts bc on bc.store_id=s.store_id;
+left join public.ecoflow_accounts_billing_contacts bc on bc.store_id=s.store_id
+where public.ecoflow_active_app_role() in ('OWNER','ADMIN','ACCOUNT');
 
 grant select on public.v_ecoflow_accounts_live_statement_customers to authenticated;
 
