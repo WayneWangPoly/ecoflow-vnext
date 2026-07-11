@@ -40,15 +40,26 @@ jobs:
       - name: Commit product changes
         shell: bash
         run: |
-          set -euo pipefail
-          if git diff --quiet; then
-            echo 'Product changes already applied.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src scripts/audit-warehouse-productisation.mjs
-          git commit -m 'Harden Admin and Viewer workspace access'
-          git fetch origin agent/admin-viewer-workspaces
-          git rebase origin/agent/admin-viewer-workspaces
-          git push origin HEAD:agent/admin-viewer-workspaces
+          set -o pipefail
+          {
+            set -eux
+            if git diff --quiet; then
+              echo 'Product changes already applied.'
+              exit 0
+            fi
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git status --short
+            git add src scripts/audit-warehouse-productisation.mjs
+            git commit -m 'Harden Admin and Viewer workspace access'
+            git fetch origin agent/admin-viewer-workspaces
+            git rebase origin/agent/admin-viewer-workspaces
+            git push --verbose origin HEAD:agent/admin-viewer-workspaces
+          } 2>&1 | tee role-hardening-push.log
+      - name: Upload push diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: role-hardening-push-diagnostic
+          path: role-hardening-push.log
+          if-no-files-found: warn
