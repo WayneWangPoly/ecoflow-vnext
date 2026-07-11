@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type OrdermentumSyncMode = 'orders_only' | 'master_only' | 'standard' | 'catchup';
+export type OrdermentumSyncMode = 'orders_invoices' | 'stores_only' | 'sku_only' | 'standard' | 'catchup';
 
 export type TriggerOrdermentumSyncResult = {
   ok: boolean;
