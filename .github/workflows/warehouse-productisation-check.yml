@@ -99,7 +99,8 @@ jobs:
             supabase/migrations/20260710130500_layout_conflict_qualification.sql \
             supabase/migrations/20260710140000_owner_driver_location_tracking.sql \
             supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql \
-            supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql
+            supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql \
+            supabase/migrations/20260711100100_notification_contact_conflict_qualification.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
