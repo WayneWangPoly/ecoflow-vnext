@@ -45,8 +45,8 @@ end $$;
 reset role;
 insert into public.fixture_store_performance values('STORE-1','Cafe One','Adelaide','1 King St','0400000000','TIER2',8,1200,'CUP-12W','12oz White Cup');
 insert into public.fixture_accounts_lines values
- ('STORE-1','Cafe One','ORDER-1','ORD-1','INV-1',now()-interval '40 days',now()-interval '20 days',100,40,20,'OVERDUE','OPEN','RELEASED','READY','OVERDUE'),
- ('STORE-1','Cafe One','ORDER-2','ORD-2','INV-2',now()-interval '10 days',now()+interval '4 days',200,10,0,'OPEN','OPEN','RELEASED','READY','DUE_THIS_WEEK');
+ ('STORE-1','Cafe One','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','ORD-1','INV-1',now()-interval '40 days',now()-interval '20 days',100,40,20,'OVERDUE','OPEN','RELEASED','READY','OVERDUE'),
+ ('STORE-1','Cafe One','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2','ORD-2','INV-2',now()-interval '10 days',now()+interval '4 days',200,10,0,'OPEN','OPEN','RELEASED','READY','DUE_THIS_WEEK');
 
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
 set role authenticated;
@@ -64,8 +64,8 @@ select * from public.ecoflow_record_customer_payment('STORE-1','Cafe One',150,cu
 
 do $$ begin
   if (select count(*) from public.ecoflow_customer_payment_receipts where store_id='STORE-1')<>1 then raise exception 'payment idempotency failed'; end if;
-  if (select outstanding_amount from public.v_ecoflow_accounts_live_statement_lines where internal_order_id='ORDER-1')<>0 then raise exception 'oldest invoice not cleared'; end if;
-  if (select outstanding_amount from public.v_ecoflow_accounts_live_statement_lines where internal_order_id='ORDER-2')<>150 then raise exception 'second invoice allocation incorrect'; end if;
+  if (select outstanding_amount from public.v_ecoflow_accounts_live_statement_lines where internal_order_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1')<>0 then raise exception 'oldest invoice not cleared'; end if;
+  if (select outstanding_amount from public.v_ecoflow_accounts_live_statement_lines where internal_order_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2')<>150 then raise exception 'second invoice allocation incorrect'; end if;
   if (select open_ar_value from public.v_ecoflow_accounts_live_ar_kpis)<>150 then raise exception 'live AR did not reduce'; end if;
 end $$;
 

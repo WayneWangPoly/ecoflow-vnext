@@ -340,16 +340,16 @@ grant select on public.ecoflow_accounts_billing_contacts,public.ecoflow_customer
 create or replace view public.v_ecoflow_accounts_live_statement_lines
 as
 with allocated as (
-  select a.internal_order_id,sum(a.allocated_amount)::numeric as allocated_amount
-  from public.ecoflow_customer_payment_allocations a group by a.internal_order_id
+  select a.internal_order_id::text as internal_order_id,sum(a.allocated_amount)::numeric as allocated_amount
+  from public.ecoflow_customer_payment_allocations a group by a.internal_order_id::text
 ), base as (
   select l.*,coalesce(a.allocated_amount,0)::numeric as allocated_amount,
     case when l.statement_status='CLOSED' then 0::numeric
          else greatest(coalesce(l.invoice_value,0)-coalesce(a.allocated_amount,0),0)::numeric end as outstanding_amount
   from public.v_ecoflow_accounts_statement_lines l
-  left join allocated a on a.internal_order_id=l.internal_order_id
+  left join allocated a on a.internal_order_id=l.internal_order_id::text
 )
-select b.store_id,b.store_name,b.internal_order_id,b.order_number,b.invoice_number,b.order_ts,b.due_at,
+select b.store_id,b.store_name,b.internal_order_id::text as internal_order_id,b.order_number,b.invoice_number,b.order_ts,b.due_at,
   b.invoice_value,b.allocated_amount,b.outstanding_amount,b.age_days,b.overdue_days,
   case when b.outstanding_amount<=0 then 'PAID'
        when b.due_at<now() then 'OVERDUE' else 'OPEN' end as statement_status,
