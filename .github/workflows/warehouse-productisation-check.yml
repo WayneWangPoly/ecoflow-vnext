@@ -1,4 +1,4 @@
-name: Apply final EcoFlow production consolidation
+name: Diagnose verified final EcoFlow consolidation
 
 on:
   pull_request:
@@ -12,10 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,37 +24,32 @@ jobs:
         with:
           ref: agent/production-workflow-consolidation
           fetch-depth: 0
-      - name: Assemble and verify exact patch
+      - name: Assemble corrected patch
         shell: bash
         run: |
           set -euo pipefail
-          cat scripts/final-consolidation.patch.part-* > /tmp/final-consolidation.patch
+          cat scripts/final-consolidation.patch.part-* > corrected-final-consolidation.patch
           python - <<'PY'
           from pathlib import Path
-          path=Path('/tmp/final-consolidation.patch')
+          path=Path('corrected-final-consolidation.patch')
           source=path.read_text()
           extra="+  left join public.v_ecoflow_day_state) days\n"
-          if source.count(extra) != 1:
-              raise SystemExit(f'expected one known transfer boundary line, found {source.count(extra)}')
-          path.write_text(source.replace(extra,''))
+          count=source.count(extra)
+          with open('patch-diagnostic.txt','w') as log:
+              log.write(f'known_extra_count={count}\n')
+          if count == 1:
+              path.write_text(source.replace(extra,''))
           PY
-          test "$(wc -c < /tmp/final-consolidation.patch | tr -d ' ')" = "122606"
-          echo "fcf84dc1e37ac77cb74ddc8258deeabd6fed287ddc1026b94e3e57f1783d89d7  /tmp/final-consolidation.patch" | sha256sum -c -
-          git apply --check /tmp/final-consolidation.patch
-      - name: Apply production changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git apply --whitespace=nowarn /tmp/final-consolidation.patch
-          cp scripts/final-warehouse-productisation-check.yml .github/workflows/warehouse-productisation-check.yml
-          rm -f scripts/final-consolidation.patch.part-*
-          rm -f scripts/final-warehouse-productisation-check.yml
-      - name: Commit final source
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Complete production workflows, multi-run state and secure field operations"
-          git push origin HEAD:agent/production-workflow-consolidation
+          wc -c corrected-final-consolidation.patch | tee -a patch-diagnostic.txt
+          sha256sum corrected-final-consolidation.patch | tee -a patch-diagnostic.txt
+          echo '--- git apply check ---' | tee -a patch-diagnostic.txt
+          git apply --check --verbose corrected-final-consolidation.patch 2>&1 | tee -a patch-diagnostic.txt || true
+      - name: Upload corrected patch diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corrected-final-consolidation-diagnostic
+          path: |
+            corrected-final-consolidation.patch
+            patch-diagnostic.txt
+          if-no-files-found: error
