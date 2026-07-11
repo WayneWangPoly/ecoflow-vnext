@@ -131,8 +131,9 @@ assert.match(ownerGovernance, /Driver declaration &amp; customer notices/, 'Owne
 assert.match(departureMigration, /uq_driver_departure_policy/, 'Departure declarations must be idempotent per policy and route.');
 assert.match(departureMigration, /uq_delivery_notification_route_store/, 'Customer notices must be idempotent per route and store.');
 assert.match(departureMigration, /does not displace statutory/i, 'Departure records must not claim to waive statutory duties.');
+assert.match(departureMigration, /ecoflow_delivery_notification_contacts/, 'Customer contact emails must remain in a protected table.');
 assert.match(notificationFunction, /ecoflow_driver_departure_acknowledgements/, 'Notification sending must require the driver declaration.');
-assert.match(notificationFunction, /ecoflow_store_sites/, 'Email recipients must be loaded server-side from the store master.');
+assert.match(notificationFunction, /ecoflow_delivery_notification_contacts/, 'Email recipients must be loaded server-side from the protected contact table.');
 assert.match(notificationFunction, /ALREADY_SENT/, 'Duplicate Start route events must not duplicate customer emails.');
 assert.match(notificationFunction, /RESEND_API_KEY/, 'Customer emails must use a server-side provider secret.');
 assert.doesNotMatch(notificationFunction, /body\.(email|recipient|to)/, 'The browser must not supply arbitrary customer recipients.');
