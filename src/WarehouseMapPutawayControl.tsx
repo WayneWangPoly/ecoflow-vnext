@@ -16,8 +16,6 @@ export function WarehouseMapPutawayControl() {
     function locate() {
       const bottom = document.querySelector<HTMLElement>('.warehouse-bottom-grid');
       const cards = bottom ? Array.from(bottom.querySelectorAll<HTMLElement>(':scope > .warehouse-map-card')) : [];
-      const legacyReceive = cards.find((card) => card.querySelector('h2')?.textContent?.trim() === 'Receive + putaway');
-      if (legacyReceive) legacyReceive.hidden = true;
       const locationCard = cards.find((card) => card.querySelector('h2')?.textContent?.trim() === 'Location');
       if (!locationCard) { setHost(null); return; }
       let mount = bottom?.querySelector<HTMLElement>('.warehouse-putaway-control-mount');

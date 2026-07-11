@@ -179,7 +179,7 @@ export function OwnerDriverTrackingMap() {
         cursorRef.current = rows[rows.length - 1].updated_at;
         dayRef.current = mergeRowsIntoDay(dayRef.current, rows);
       }
-      const run = buildDriverRun(base.data.orders, businessDay, dayRef.current.releasedOrders);
+      const run = buildDriverRun(base.data.orders, businessDay, dayRef.current.releasedOrders, dayRef.current.runCode);
       const samples = await loadOwnerDriverLocationTimeline(businessDay);
       const next: TrackingData = {
         businessDay,

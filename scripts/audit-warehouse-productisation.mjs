@@ -41,6 +41,10 @@ const warehouseMigration = read('supabase/migrations/20260710130000_warehouse_ba
 const pickClaimMigration = read('supabase/migrations/20260711170000_pick_task_ownership.sql');
 const trackingMigration = read('supabase/migrations/20260710140000_owner_driver_location_tracking.sql');
 const departureMigration = read('supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql');
+const unknownMigration = read('supabase/migrations/20260711180000_unknown_barcode_quarantine.sql');
+const stateHardeningMigration = read('supabase/migrations/20260711181000_operational_state_auth_hardening.sql');
+const multiRunMigration = read('supabase/migrations/20260711182000_multi_run_day_state.sql');
+const warehouseMapPage = read('src/features/warehouse/WarehouseMapPage.tsx');
 
 // Receiving and inventory source of truth.
 has(receiving, 'Open receiving work', 'Receiving must expose resumable open batches.');
@@ -49,6 +53,12 @@ has(receiving, 'Complete batch and post stock', 'Receiving must keep one explici
 has(receiving, 'Number.isInteger(qty)', 'Receiving package quantity must be a positive whole number.');
 has(receiving, 'crypto.randomUUID()', 'Receiving scans must generate idempotency keys.');
 has(stagedReceiving, 'ecoflow_stage_receiving_scan_v2', 'Receiving must use the idempotent database RPC.');
+has(receiving, 'stageUnknownBarcodeIntake', 'Unknown barcodes must be preserved in a TEMP quarantine intake.');
+has(receiving, 'Retry after mapping', 'Warehouse must be able to convert a quarantined barcode after Owner mapping.');
+has(unknownMigration, 'UNRESOLVED_UNKNOWN_BARCODES', 'Unresolved unknown codes must block stock posting.');
+has(unknownMigration, 'uq_unknown_barcode_intake_idempotency', 'Unknown intake retries must be idempotent.');
+lacks(warehouseMapPage, 'receiveWarehouseStock', 'Warehouse Map must not contain a hidden direct receiving implementation.');
+lacks(warehouseMapPage, 'Receive + putaway', 'Warehouse Map must be read-only for stock changes.');
 has(warehouseMigration, 'DIRECT_RECEIVE_DISABLED', 'Database must block legacy direct receiving.');
 has(warehouseMigration, 'WAREHOUSE_RECEIVING_LINE', 'Ledger and location balance must share receiving-line references.');
 lacks(barcodeSetup, 'Save + receive stock', 'Barcode setup must never become a stock receiving path.');
@@ -82,6 +92,12 @@ has(driverRun, 'Math.floor(value / 26) - 1', 'Box codes must continue A-Z, AA, A
 lacks(driverRun, 'index % BOX_CODES.length', 'Box codes must never repeat through modulo.');
 has(pickSync, 'Authenticated EcoFlow session is required', 'Shared operational state must require a signed-in user.');
 has(pickSync, 'data.session?.access_token', 'Shared operational state must use the user JWT.');
+has(driverRun, 'runCode: string', 'Day state must identify the active sequential delivery run.');
+has(driverRun, 'startFreshRun', 'Completed Run A must be able to start a separate Run B state.');
+has(pickSync, "'run-control'", 'Shared state must publish the active run control record.');
+has(pickSync, 'run:${day.runCode', 'Operational scopes must be namespaced by run.');
+has(app, 'Start next delivery run', 'Owner or Accounts must be able to open the next run after completion.');
+has(multiRunMigration, 'v_ecoflow_active_run', 'Database projections must follow the active run namespace.');
 
 // Shared pick ownership.
 has(pickOwnership, 'Take task', 'Warehouse staff must explicitly claim a shared pick task.');
@@ -101,6 +117,12 @@ lacks(driverApp, 'function SignaturePad', 'Driver POD must not request a signatu
 lacks(driverApp, 'Received by', 'Driver POD must not request or display a receiver name.');
 has(podRepository, 'POD1_DROP_POINT', 'POD 1 must persist with a typed proof kind.');
 has(podRepository, 'POD2_GOODS_PLACED', 'POD 2 must persist with a typed proof kind.');
+has(pickSync, 'createPodAssetSignedUrl', 'Private POD evidence must use signed URLs.');
+lacks(pickSync, '/object/public/', 'POD evidence must not use public Storage URLs.');
+has(stateHardeningMigration, 'update storage.buckets set public=false', 'POD Storage bucket must be private.');
+has(stateHardeningMigration, "POD1_DROP_POINT','POD2_GOODS_PLACED", 'Database must accept exactly the two required POD proof types.');
+has(stateHardeningMigration, 'revoke all on public.ecoflow_day_state from anon', 'Anonymous shared-state access must be removed.');
+has(stateHardeningMigration, 'ecoflow_can_write_day_scope', 'Shared-state writes must be role and scope constrained.');
 
 // Web location tracking and driver declaration privacy.
 has(tracker, '10 * 60 * 1000', 'Automatic web location persistence must use the ten-minute cadence.');

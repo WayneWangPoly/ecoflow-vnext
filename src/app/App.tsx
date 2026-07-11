@@ -2,16 +2,17 @@
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
-import { callInternaliseOrders, podAssetUrl } from '@/data/repositories/pickSync';
+import { callInternaliseOrders, setActiveRunCode } from '@/data/repositories/pickSync';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import { BrandMark } from './Brand';
 import { PickBoard } from './PickBoard';
+import { PodAssetLink } from './PodAsset';
 
 // The driver bundle (route map, POD capture, label sheets) is code-split so
 // office and warehouse devices never download it.
 const DriverApp = lazy(() => import('./DriverApp').then((m) => ({ default: m.DriverApp })));
-import { applyDayStateToOrders, boxCodeForStop, buildDriverRun, formatClockTime, loadDriverDayState, optimiseStopOrder, reconcileStopOrder, saveDriverDayState } from '@/domain/driverRun';
+import { applyDayStateToOrders, boxCodeForStop, buildDriverRun, formatClockTime, loadDriverDayState, optimiseStopOrder, reconcileStopOrder, saveDriverDayState, startFreshRun } from '@/domain/driverRun';
 import type { DriverDayState } from '@/domain/driverRun';
 import { usePickSync } from './usePickSync';
 import { AuthCallbackScreen } from '@/features/auth/AuthCallbackScreen';
@@ -560,7 +561,7 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
   businessDay: EcoFlowDataSet['businessDay'];
   canPlan: boolean;
 }) {
-  const run = buildDriverRun(orders, businessDay.date, day.releasedOrders);
+  const run = buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode);
   const orderedIds = reconcileStopOrder(day.pick?.stopOrder || day.stopOrder, run.stops);
   const byId = new Map(run.stops.map((stop) => [stop.orderId, stop]));
   const stops = orderedIds.map((orderId, index) => {
@@ -593,10 +594,16 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
     setRouteOrder(optimiseStopOrder(run.stops, run.warehousePoint));
   }
 
-  function lockRoute() {
+  async function lockRoute() {
     if (!canPlan || day.pick || !stops.length) return;
     const stopOrder = reconcileStopOrder(day.stopOrder, run.stops);
     const boxCodes = Object.fromEntries(stopOrder.map((orderId, index) => [orderId, boxCodeForStop(index)]));
+    try {
+      await setActiveRunCode(businessDay.date, day.runCode, 'Office route approval');
+    } catch (error) {
+      window.alert(`Route was not locked: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
     setDay((current) => ({
       ...current,
       stopOrder,
@@ -617,20 +624,40 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
     setDay((current) => ({ ...current, pick: undefined }));
   }
 
+  async function startNextRun() {
+    if (!canPlan || !day.routeEndedAt) return;
+    const next = startFreshRun(day);
+    if (!window.confirm(`Start Run ${next.runCode}? Run ${day.runCode} remains in the server history and new releases will belong to the new run.`)) return;
+    try {
+      await setActiveRunCode(businessDay.date, next.runCode, 'Office next run');
+    } catch (error) {
+      window.alert(`Next run was not started: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    setDay(next);
+  }
+
+
   return (
     <section className="workspace-stack">
       <section className="quick-stats">
-        <MetricCard label="RELEASED TO RUN" value={stops.length} tone="green" helper={businessDay.label} />
+        <MetricCard label={`RUN ${day.runCode} RELEASED`} value={stops.length} tone="green" helper={businessDay.label} />
         <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Office planning'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'Owner/office approves order'} />
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
         <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
+      {canPlan && day.routeEndedAt ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Run {day.runCode} completed</h2><span>Previous run facts remain archived in their own server namespace</span></div>
+          <button className="primary-small" type="button" onClick={() => void startNextRun()}>Start next delivery run</button>
+        </section>
+      ) : null}
       {canPlan && !day.routeStartedAt ? (
         <section className="panel">
           <div className="panel-head"><h2>Office route approval</h2><span>Labels and picking use this locked order</span></div>
           <div className="row-actions">
             <button className="soft-button" type="button" disabled={Boolean(day.pick) || !stops.length} onClick={optimiseRoute}>Optimise draft</button>
-            {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length} onClick={lockRoute}>Approve &amp; lock route</button> : null}
+            {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length} onClick={() => void lockRoute()}>Approve &amp; lock route</button> : null}
             {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={unlockRoute}>Unlock before picking</button> : null}
           </div>
           <div className="list-stack">
@@ -666,8 +693,8 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
                   <span>{stop.cartons} ctn · {stopStatusLabelDesk(status)}{progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}</span>
                   {pod?.pod1Path || pod?.pod2Path || pod?.photoPath || pod?.signaturePath ? (
                     <span className="pod-links">
-                      {pod.pod1Path || pod.photoPath ? <a href={podAssetUrl(pod.pod1Path || pod.photoPath!)} target="_blank" rel="noreferrer">POD 1 · location</a> : null}
-                      {pod.pod2Path || pod.signaturePath ? <a href={podAssetUrl(pod.pod2Path || pod.signaturePath!)} target="_blank" rel="noreferrer">POD 2 · all goods</a> : null}
+                      {pod.pod1Path || pod.photoPath ? <PodAssetLink path={pod.pod1Path || pod.photoPath}>POD 1 · location</PodAssetLink> : null}
+                      {pod.pod2Path || pod.signaturePath ? <PodAssetLink path={pod.pod2Path || pod.signaturePath}>POD 2 · all goods</PodAssetLink> : null}
                     </span>
                   ) : pod ? <span className="pod-links">POD upload pending</span> : null}
                 </div>
@@ -839,7 +866,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
-      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner'} /> : null}
+      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner' || role === 'account'} /> : null}
       {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} /> : null}
       {tab === 'stores' ? <StoresPanel stores={stores} /> : null}
       {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} /> : null}

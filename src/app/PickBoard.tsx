@@ -290,7 +290,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
   const [savingPickSku, setSavingPickSku] = useState<string | null>(null);
   const [pickPersistErrors, setPickPersistErrors] = useState<Record<string, string>>({});
 
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders), [orders, businessDay.date, day.releasedOrders]);
+  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode), [orders, businessDay.date, day.releasedOrders, day.runCode]);
   const pick = day.pick;
   const stops: RunStop[] = useMemo(() => (pick ? stopsInLockedOrder(run.stops, pick) : []), [run.stops, pick]);
   const baseTasks = useMemo(() => buildBulkTasks(stops), [stops]);

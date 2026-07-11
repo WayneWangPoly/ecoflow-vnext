@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   Camera,
   CheckCircle2,
   ChevronLeft,
@@ -12,11 +10,9 @@ import {
   Clock,
   Coffee,
   Flag,
-  GripVertical,
   History,
   Home,
   List,
-  Lock,
   Map as MapIcon,
   MapPin,
   Navigation,
@@ -27,13 +23,11 @@ import {
   Route,
   SkipForward,
   Truck,
-  Unlock,
   Warehouse as WarehouseIcon,
   X
 } from 'lucide-react';
 import {
   appleMapsUrl,
-  boxCodeForStop,
   buildDriverRun,
   capturePosition,
   formatClockTime,
@@ -44,7 +38,6 @@ import {
   initialStopProgress,
   lastEventOfType,
   loadDriverDayState,
-  optimiseStopOrder,
   reconcileStopOrder,
   RUN_SIZE_WARNING,
   saveDriverDayState,
@@ -55,7 +48,6 @@ import {
   WAREHOUSE,
   wazeUrl
 } from '@/domain/driverRun';
-import { podAssetUrl } from '@/data/repositories/pickSync';
 import { saveDropPointProof, saveGoodsPlacedProof } from '@/data/repositories/deliveryPodQuality';
 import { dispatchDeliveryNotifications, queueDeliveryNotifications } from '@/data/repositories/deliveryOperations';
 import { readImageDownscaled } from '@/lib/downscaleImage';
@@ -64,6 +56,7 @@ import { stopsInLockedOrder } from '@/domain/driverRun';
 import { BoxChip, BrandMark } from './Brand';
 import { LabelSheet } from './LabelSheet';
 import { PickBoard } from './PickBoard';
+import { PodAssetImage } from './PodAsset';
 import { usePickSync } from './usePickSync';
 import type {
   DriverDayState,
@@ -254,7 +247,6 @@ function FailSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; st
 function PodSummary({ pod }: { pod: PodRecord }) {
   const pod1 = pod.pod1Photo || pod.pod1Path || pod.photo || pod.photoPath;
   const pod2 = pod.pod2Photo || pod.pod2Path || pod.signature || pod.signaturePath;
-  const src = (value?: string) => value ? (value.startsWith('data:') ? value : podAssetUrl(value)) : undefined;
   return (
     <div className="pod-summary">
       <div className="pod-summary-head"><CheckCircle2 size={18} /> Delivered {formatClockTime(pod.capturedAt)}</div>
@@ -263,8 +255,8 @@ function PodSummary({ pod }: { pod: PodRecord }) {
         {pod.note ? <span>“{pod.note}”</span> : null}
       </div>
       <div className="pod-summary-thumbs">
-        {pod1 ? <img src={src(pod1)} alt="POD 1 store or placement point" loading="lazy" /> : null}
-        {pod2 ? <img src={src(pod2)} alt="POD 2 all delivered goods" loading="lazy" /> : null}
+        {pod1 ? <PodAssetImage path={pod1} alt="POD 1 store or placement point" /> : null}
+        {pod2 ? <PodAssetImage path={pod2} alt="POD 2 all delivered goods" /> : null}
       </div>
     </div>
   );
@@ -381,7 +373,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   actorLabel?: string;
 }) {
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(businessDay.date));
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders), [orders, businessDay.date, day.releasedOrders]);
+  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode), [orders, businessDay.date, day.releasedOrders, day.runCode]);
   const [tab, setTab] = useState<DriverTab>('today');
   const [stopsView, setStopsView] = useState<'map' | 'list'>('map');
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
@@ -389,10 +381,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   const [failOpen, setFailOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [drag, setDrag] = useState<{ id: string; offset: number } | null>(null);
-  const dragRef = useRef<{ id: string; offset: number } | null>(null);
-  const dragStartY = useRef(0);
-  const dragRowHeight = useRef(68);
 
   useEffect(() => saveDriverDayState(day), [day]);
   useEffect(() => {
@@ -402,15 +390,9 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
 
   const pickSyncStatus = usePickSync(businessDay.date, day, setDay, actorLabel || 'Driver');
 
-  // First look at the day: seed the driving order with the optimised route from the warehouse.
-  useEffect(() => {
-    if (!run.stops.length) return;
-    setDay((current) => current.stopOrder ? current : { ...current, stopOrder: optimiseStopOrder(run.stops, run.warehousePoint) });
-  }, [run.stops]);
-
   const orderIds = useMemo(
-    () => day.stopOrder ? reconcileStopOrder(day.stopOrder, run.stops) : optimiseStopOrder(run.stops, run.warehousePoint),
-    [day.stopOrder, run.stops]
+    () => reconcileStopOrder(day.pick?.stopOrder || day.stopOrder, run.stops),
+    [day.pick?.stopOrder, day.stopOrder, run.stops]
   );
 
   const rows: StopWithProgress[] = useMemo(() => {
@@ -558,91 +540,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
 
   function toggleLoaded(row: StopWithProgress) {
     patchStop(row.stop.orderId, { loaded: !row.progress.loaded });
-  }
-
-  function moveStop(orderId: string, delta: number) {
-    setDay((current) => {
-      const order = reconcileStopOrder(current.stopOrder, run.stops);
-      const from = order.indexOf(orderId);
-      if (from < 0) return current;
-      const to = Math.max(0, Math.min(order.length - 1, from + delta));
-      if (to === from) return current;
-      const next = [...order];
-      next.splice(from, 1);
-      next.splice(to, 0, orderId);
-      return { ...current, stopOrder: next };
-    });
-  }
-
-  function lockRoute() {
-    const boxCodes: Record<string, string> = {};
-    rows.forEach((row, index) => { boxCodes[row.stop.orderId] = boxCodeForStop(index); });
-    setDay((current) => ({
-      ...current,
-      stopOrder: [...orderIds],
-      pick: {
-        lockedAt: nowIso(),
-        stopOrder: [...orderIds],
-        boxCodes,
-        taskState: {},
-        allocDone: {},
-        stagedStops: {}
-      }
-    }));
-    setTab('pick');
-  }
-
-  function unlockRoute() {
-    const confirmed = window.confirm('Unlock the route? Printed labels become invalid and the pick plan is cleared.');
-    if (!confirmed) return;
-    setDay((current) => ({ ...current, pick: undefined }));
-  }
-
-  function applyOptimise() {
-    const closedRowsInOrder = rows.filter((row) => isClosed(row.progress.status));
-    const openStops = rows.filter((row) => !isClosed(row.progress.status)).map((row) => row.stop);
-    const startPoint = closedRowsInOrder.length
-      ? closedRowsInOrder[closedRowsInOrder.length - 1].stop.mapPoint
-      : run.warehousePoint;
-    const nextOrder = [
-      ...closedRowsInOrder.map((row) => row.stop.orderId),
-      ...optimiseStopOrder(openStops, startPoint)
-    ];
-    setDay((current) => ({ ...current, stopOrder: nextOrder }));
-  }
-
-  function handleDragStart(event: React.PointerEvent<HTMLButtonElement>, orderId: string) {
-    const rowEl = event.currentTarget.closest('.reorder-row');
-    dragRowHeight.current = rowEl instanceof HTMLElement ? rowEl.offsetHeight + 9 : 68;
-    dragStartY.current = event.clientY;
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // capture can fail for exotic pointer sources; drag still tracks via move events
-    }
-    dragRef.current = { id: orderId, offset: 0 };
-    setDrag(dragRef.current);
-  }
-
-  function handleDragMove(event: React.PointerEvent<HTMLButtonElement>, orderId: string) {
-    if (dragRef.current?.id !== orderId) return;
-    dragRef.current = { id: orderId, offset: event.clientY - dragStartY.current };
-    setDrag(dragRef.current);
-  }
-
-  function handleDragEnd(orderId: string) {
-    const active = dragRef.current;
-    dragRef.current = null;
-    setDrag(null);
-    if (active && active.id === orderId) {
-      const delta = Math.round(active.offset / dragRowHeight.current);
-      if (delta) moveStop(orderId, delta);
-    }
-  }
-
-  function handleDragCancel() {
-    dragRef.current = null;
-    setDrag(null);
   }
 
   const shiftDuration = clockInEvent && shiftStatus !== 'OFF_SHIFT'
@@ -840,12 +737,10 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
             {rows.map((row, index) => {
               const closed = isClosed(row.progress.status);
               const isCurrent = routeStatus === 'IN_PROGRESS' && currentRow?.stop.orderId === row.stop.orderId;
-              const dragging = drag?.id === row.stop.orderId;
               return (
                 <div
                   key={row.stop.orderId}
-                  className={cls('reorder-row', isCurrent && 'current', closed && 'closed', dragging && 'dragging')}
-                  style={dragging ? { transform: `translateY(${drag.offset}px)` } : undefined}
+                  className={cls('reorder-row', isCurrent && 'current', closed && 'closed')}
                 >
                   <span className={cls('reorder-num', isCurrent && 'current')}>{row.displayNumber}</span>
                   <BoxChip code={row.stop.boxCode} />
@@ -1026,8 +921,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   ) : (
     <section className="driver-card">
       <div className="driver-card-head"><h2><ClipboardList size={18} /> Picking</h2></div>
-      <p className="driver-card-meta">Lock the route first — the pick plan and box letters come from the locked stop order.</p>
-      <button type="button" className="driver-primary-button" onClick={() => setTab('stops')}><Route size={18} /> Review &amp; lock route</button>
+      <p className="driver-card-meta">Waiting for Owner or office to approve and lock today’s route. Picking and labels become available automatically.</p>
     </section>
   );
 

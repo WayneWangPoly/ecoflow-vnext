@@ -12,6 +12,22 @@ export type StagedReceivingBatch = {
   receive_signal: string | null;
 };
 
+
+export type UnknownBarcodeIntake = {
+  id: string;
+  batch_id: string;
+  batch_no: string | null;
+  batch_status: string | null;
+  barcode: string;
+  qty_packages: number | string;
+  target_location: string;
+  intake_note: string | null;
+  intake_status: 'PENDING_MAPPING' | 'READY_TO_CONVERT' | 'CONVERTED' | 'CANCELLED';
+  idempotency_key: string;
+  scanned_at: string;
+  converted_line_id: string | null;
+};
+
 export type StagedReceivingLine = {
   id: string;
   batch_id: string;
@@ -128,4 +144,44 @@ export async function cancelStagedReceivingBatch(input: { batchId: string; reaso
   });
   if (error) throw new Error(message(error));
   return (data ?? []) as Array<{ batch_id: string; batch_no: string; batch_status: string; cancelled_at: string }>;
+}
+
+
+export async function loadUnknownBarcodeIntakes(batchId: string, client?: SupabaseClient | null) {
+  const { data, error } = await activeClient(client)
+    .from('v_ecoflow_unknown_barcode_intakes')
+    .select('*')
+    .eq('batch_id', batchId)
+    .order('scanned_at', { ascending: false })
+    .limit(120);
+  if (error) throw new Error(message(error));
+  return (data ?? []) as UnknownBarcodeIntake[];
+}
+
+export async function stageUnknownBarcodeIntake(input: {
+  batchId: string;
+  barcode: string;
+  qtyPackages: number;
+  note?: string | null;
+  idempotencyKey: string;
+  clientScannedAt?: string | null;
+}, client?: SupabaseClient | null) {
+  const { data, error } = await activeClient(client).rpc('ecoflow_stage_unknown_barcode_intake', {
+    p_batch_id: input.batchId,
+    p_barcode: input.barcode,
+    p_qty_packages: input.qtyPackages,
+    p_note: input.note ?? null,
+    p_idempotency_key: input.idempotencyKey,
+    p_client_scanned_at: input.clientScannedAt ?? new Date().toISOString(),
+  });
+  if (error) throw new Error(message(error));
+  return (data ?? []) as Array<{ intake_id: string; batch_id: string; barcode: string; qty_packages: number | string; target_location: string; intake_status: string; scanned_at: string }>;
+}
+
+export async function convertUnknownBarcodeIntake(intakeId: string, client?: SupabaseClient | null) {
+  const { data, error } = await activeClient(client).rpc('ecoflow_convert_unknown_barcode_intake', {
+    p_intake_id: intakeId,
+  });
+  if (error) throw new Error(message(error));
+  return (data ?? []) as Array<{ intake_id: string; converted_line_id: string; batch_id: string; sku: string; product_name: string | null; units_received: number | string; suggested_location: string; intake_status: string }>;
 }

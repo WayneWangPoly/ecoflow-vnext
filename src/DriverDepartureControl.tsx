@@ -99,7 +99,7 @@ function latestDay(): DriverDayState | null {
 }
 
 function routeId(day: DriverDayState) {
-  return `RUN-${day.businessDay.replace(/-/g, '')}-A`;
+  return `RUN-${day.businessDay.replace(/-/g, '')}-${day.runCode || 'A'}`;
 }
 
 function isStartRouteButton(button: HTMLButtonElement) {
