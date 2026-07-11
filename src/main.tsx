@@ -20,20 +20,21 @@ const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthC
 // so the localStorage quota never fills up from weeks of accumulated day states.
 pruneEcoflowStorage();
 
-// Role bundles are isolated so each device downloads only its operational surface.
+// Surface modules are isolated so each device downloads only its operational UI.
+// Warehouse Map is a protected route feature, not an authentication role.
 const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
 const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
-const WarehouseMapEnhancers = lazy(() => import('./enhancers/WarehouseMapEnhancers'));
-const WarehouseMapPage = lazy(() => import('./features/warehouse/WarehouseMapPage').then((module) => ({ default: module.WarehouseMapPage })));
+const WarehouseMapRouteModules = lazy(() => import('./enhancers/WarehouseMapRouteModules'));
+const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
 
 type DesktopRole = 'owner' | 'account' | null;
-type ShellGroups = {
+type SurfaceGroups = {
   desktopRole: DesktopRole;
   driver: boolean;
   warehouseOps: boolean;
-  warehouseMap: boolean;
+  warehouseMapRoute: boolean;
 };
 
 function detectDesktopRole(): DesktopRole {
@@ -46,31 +47,31 @@ function detectDesktopRole(): DesktopRole {
   return null;
 }
 
-function detectShells(): ShellGroups {
+function detectSurfaces(): SurfaceGroups {
   const desktopPresent = Boolean(document.querySelector('.desktop-app'));
   return {
     desktopRole: desktopPresent ? detectDesktopRole() : null,
     driver: Boolean(document.querySelector('.driver-shell')),
     warehouseOps: !isWarehouseMapRoute && Boolean(document.querySelector('.mobile-shell')),
-    warehouseMap: isWarehouseMapRoute,
+    warehouseMapRoute: isWarehouseMapRoute,
   };
 }
 
-function sameShells(left: ShellGroups, right: ShellGroups) {
+function sameSurfaces(left: SurfaceGroups, right: SurfaceGroups) {
   return left.desktopRole === right.desktopRole
     && left.driver === right.driver
     && left.warehouseOps === right.warehouseOps
-    && left.warehouseMap === right.warehouseMap;
+    && left.warehouseMapRoute === right.warehouseMapRoute;
 }
 
-function EnhancerGate() {
-  const [groups, setGroups] = useState<ShellGroups>(detectShells);
+function SurfaceModuleGate() {
+  const [groups, setGroups] = useState<SurfaceGroups>(detectSurfaces);
 
   useEffect(() => {
     const stopObserving = observeBody(() => {
       setGroups((previous) => {
-        const next = detectShells();
-        return sameShells(previous, next) ? previous : next;
+        const next = detectSurfaces();
+        return sameSurfaces(previous, next) ? previous : next;
       });
     });
     return stopObserving;
@@ -82,7 +83,7 @@ function EnhancerGate() {
       {groups.desktopRole === 'account' ? <AccountEnhancers /> : null}
       {groups.driver ? <DriverEnhancers /> : null}
       {groups.warehouseOps ? <WarehouseOpsEnhancers /> : null}
-      {groups.warehouseMap ? <WarehouseMapEnhancers /> : null}
+      {groups.warehouseMapRoute ? <WarehouseMapRouteModules /> : null}
     </Suspense>
   );
 }
@@ -111,10 +112,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <ProductionWriteSafety />
           <TextEncodingRepair />
           <FieldModeEnhancer />
-          <EnhancerGate />
+          <SurfaceModuleGate />
           {isWarehouseMapRoute ? (
-            <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Loading warehouse map…</div></main>}>
-              <WarehouseMapPage />
+            <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}>
+              <WarehouseMapRoute />
             </Suspense>
           ) : (
             <App />
