@@ -88,13 +88,24 @@ jobs:
         run: |
           set -o pipefail
           supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee supabase-migration-deploy.log
+      - name: Resolve pooler database URL
+        shell: bash
+        run: |
+          # GitHub runners have no IPv6, and the direct db.<ref>.supabase.co host is
+          # IPv6-only - connections time out. The session pooler host is IPv4.
+          set -euo pipefail
+          POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
+          ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
+          SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
       - name: Inspect migration history
         shell: bash
         run: |
           set -o pipefail
           # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
           for attempt in 1 2 3; do
-            if supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+            if supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
             fi
             echo "migration list attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
@@ -106,7 +117,7 @@ jobs:
         run: |
           set -o pipefail
           for attempt in 1 2 3; do
-            if supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+            if supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
             fi
             echo "db push dry-run attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
@@ -118,7 +129,7 @@ jobs:
         run: |
           set -o pipefail
           for attempt in 1 2 3; do
-            if supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+            if supabase db push --db-url "$SUPABASE_DB_URL" --include-all --yes 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
             fi
             echo "db push attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
