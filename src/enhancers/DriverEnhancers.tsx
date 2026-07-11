@@ -4,6 +4,7 @@ import { DriverLocationTracker } from '../DriverLocationTracker';
 import { DriverPodQualityEnhancer } from '../DriverPodQualityEnhancer';
 import { DriverReturnZoneCheckin } from '../DriverReturnZoneCheckin';
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
+import { LoadRecoveryControl } from '../LoadRecoveryControl';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import '../fieldOpsGuardRails.css';
@@ -17,13 +18,14 @@ import '../returnZoneCopyFix.css';
 import '../returnZoneGeofence.css';
 import '../driverDeparture.css';
 
-/** Driver-shell enhancer bundle - loaded only when the driver app mounts. */
+/** Driver-shell modules - loaded only when the driver app mounts. */
 export default function DriverEnhancers() {
   return (
     <>
       <FieldOpsGuardRails />
       <PickTaskOwnership />
       <StageAndLoadExecution />
+      <LoadRecoveryControl />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />
