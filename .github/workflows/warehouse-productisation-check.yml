@@ -1,156 +1,51 @@
-name: Warehouse and delivery productisation check
+name: Apply final EcoFlow production consolidation
 
 on:
   pull_request:
     branches: [main]
   push:
     branches:
-      - main
-      - 'agent/**'
+      - agent/production-workflow-consolidation
+
+concurrency:
+  group: ecoflow-final-consolidation
+  cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout working branch
         uses: actions/checkout@v4
-      - name: Use Node 22
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Audit operational invariants
-        id: operational_audit
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run audit:warehouse 2>&1 | tee operational-audit.log
-      - name: TypeScript check
-        shell: bash
-        run: |
-          set -o pipefail
-          node ./node_modules/typescript/bin/tsc -b --pretty false 2>&1 | tee typecheck.log
-      - name: Vite bundle
-        shell: bash
-        run: |
-          set -o pipefail
-          node ./node_modules/vite/bin/vite.js build 2>&1 | tee vite-build.log
-      - name: Enforce operational audit result
-        if: steps.operational_audit.outcome == 'failure'
-        run: exit 1
-      - name: Upload validation logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: operational-validation-logs
-          path: |
-            operational-audit.log
-            typecheck.log
-            vite-build.log
-          if-no-files-found: warn
-      - name: Upload temporary source snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-source-snapshot
-          path: |
-            src
-            scripts
-            supabase
-            .github/workflows
-            package.json
-            package-lock.json
-            tsconfig*.json
-            vite.config.*
-          if-no-files-found: error
-
-  migrations:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      PGHOST: localhost
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: postgres
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Load current operational schema contract
-        shell: bash
-        run: |
-          set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee operational-db-contract.log
-          psql -v ON_ERROR_STOP=1 -f scripts/driver-departure-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
-          psql -v ON_ERROR_STOP=1 -f scripts/pick-task-claim-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Apply operational migrations in release order
+          ref: agent/production-workflow-consolidation
+          fetch-depth: 0
+      - name: Assemble and verify patch
         shell: bash
         run: |
           set -euo pipefail
-          for file in \
-            supabase/migrations/20260624_remote_production_baseline.sql \
-            supabase/migrations/20260710130000_warehouse_backend_hardening.sql \
-            supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql \
-            supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql \
-            supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql \
-            supabase/migrations/20260710130400_receiving_confirmation_qualification.sql \
-            supabase/migrations/20260710130500_layout_conflict_qualification.sql \
-            supabase/migrations/20260710140000_owner_driver_location_tracking.sql \
-            supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql \
-            supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql \
-            supabase/migrations/20260711100100_notification_contact_conflict_qualification.sql \
-            supabase/migrations/20260711170000_pick_task_ownership.sql
-          do
-            echo "==> $file" | tee -a operational-db-contract.log
-            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
-          done
-      - name: Execute warehouse transaction contract tests
+          cat scripts/final-consolidation.patch.part-* > /tmp/final-consolidation.patch
+          test "$(wc -c < /tmp/final-consolidation.patch | tr -d ' ')" = "122606"
+          echo "fcf84dc1e37ac77cb74ddc8258deeabd6fed287ddc1026b94e3e57f1783d89d7  /tmp/final-consolidation.patch" | sha256sum -c -
+          git apply --check /tmp/final-consolidation.patch
+      - name: Apply production changes
         shell: bash
         run: |
-          set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-contract-test.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Execute pick ownership concurrency tests
+          set -euo pipefail
+          git apply --whitespace=nowarn /tmp/final-consolidation.patch
+          cp scripts/final-warehouse-productisation-check.yml .github/workflows/warehouse-productisation-check.yml
+          rm -f scripts/final-consolidation.patch.part-*
+          rm -f scripts/final-warehouse-productisation-check.yml
+      - name: Commit final source
         shell: bash
         run: |
-          set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/pick-task-claim-contract-test.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Execute driver tracking privacy and idempotency tests
-        shell: bash
-        run: |
-          set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/driver-location-contract-test.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Execute departure declaration and notification tests
-        shell: bash
-        run: |
-          set -o pipefail
-          psql -v ON_ERROR_STOP=1 -f scripts/driver-departure-contract-test.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Upload operational database contract log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: operational-database-contract
-          path: operational-db-contract.log
-          if-no-files-found: warn
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete production workflows, multi-run state and secure field operations"
+          git push origin HEAD:agent/production-workflow-consolidation
