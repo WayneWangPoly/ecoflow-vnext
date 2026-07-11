@@ -15,9 +15,9 @@ insert into public.ecoflow_store_sites(retailer_id,store_name,suburb,verified)
 values ('STORE-1','Contract Test Cafe','Adelaide',true)
 on conflict (store_name) do nothing;
 
-set local role authenticated;
-select set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',true);
-select set_config('request.jwt.claim.role','authenticated',true);
+set role authenticated;
+select set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',false);
+select set_config('request.jwt.claim.role','authenticated',false);
 
 select * from public.ecoflow_record_driver_departure_acknowledgement(
   '2026-07-11'::date,
@@ -66,9 +66,9 @@ begin
 end $$;
 
 reset role;
-set local role authenticated;
-select set_config('request.jwt.claim.sub','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',true);
-select set_config('request.jwt.claim.role','authenticated',true);
+set role authenticated;
+select set_config('request.jwt.claim.sub','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',false);
+select set_config('request.jwt.claim.role','authenticated',false);
 
 select * from public.ecoflow_upsert_store_delivery_notification_contact(
   'STORE-1','Contract Test Cafe','STORE-1','delivery@example.com','Cafe Manager',true
@@ -82,9 +82,9 @@ insert into public.ecoflow_delivery_notification_log(
   array['ORDER-1'],array['1001'],'SENT','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 );
 
-set local role authenticated;
-select set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',true);
-select set_config('request.jwt.claim.role','authenticated',true);
+set role authenticated;
+select set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',false);
+select set_config('request.jwt.claim.role','authenticated',false);
 do $$
 begin
   if (select count(*) from public.ecoflow_delivery_notification_log) <> 0 then
@@ -95,7 +95,7 @@ begin
   end if;
 end $$;
 
-select set_config('request.jwt.claim.sub','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',true);
+select set_config('request.jwt.claim.sub','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',false);
 do $$
 begin
   if (select count(*) from public.ecoflow_delivery_notification_log) <> 1 then
