@@ -30,7 +30,7 @@ jobs:
       - name: Apply role and workspace patch
         run: python scripts/apply-admin-viewer-workspaces.py
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
       - name: Validate semantic contracts
         run: npm run audit:warehouse
       - name: TypeScript check
