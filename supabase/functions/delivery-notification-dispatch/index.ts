@@ -21,29 +21,81 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-async function signedPodLink(supabase: ReturnType<typeof createClient>, path: string | null) {
-  if (!path) return '';
-  const { data, error } = await supabase.storage.from('pod-photos').createSignedUrl(path, 60 * 60 * 24 * 7);
-  if (error) throw error;
-  return data.signedUrl;
+type PodAsset = {
+  url: string;
+  filename: string;
+  label: string;
+  base64: string | null;
+};
+
+function toBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
 }
 
-async function sendEmail(row: NotificationRow, podLink: string) {
+/** Signed link plus downloaded bytes so the photo can ride inside the email itself. */
+async function podAsset(
+  supabase: ReturnType<typeof createClient>,
+  path: string | null,
+  filename: string,
+  label: string,
+): Promise<PodAsset | null> {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from('pod-photos').createSignedUrl(path, 60 * 60 * 24 * 7);
+  if (error) throw error;
+  let base64: string | null = null;
+  try {
+    const { data: file, error: downloadError } = await supabase.storage.from('pod-photos').download(path);
+    if (!downloadError && file && file.size <= 5 * 1024 * 1024) {
+      base64 = toBase64(await file.arrayBuffer());
+    }
+  } catch {
+    // The inline <img> via signed URL still shows the photo; attachment is best-effort.
+  }
+  return { url: data.signedUrl, filename, label, base64 };
+}
+
+async function sendEmail(row: NotificationRow, assets: PodAsset[]) {
   const apiKey = Deno.env.get('RESEND_API_KEY');
   const from = Deno.env.get('DELIVERY_FROM_EMAIL');
   const sender = Deno.env.get('DELIVERY_SENDER_NAME') || 'EcoFlow Packaging';
   if (!apiKey || !from) throw new Error('WAITING_CONFIG: RESEND_API_KEY and DELIVERY_FROM_EMAIL are required.');
   if (!row.recipient) throw new Error('WAITING_CONTACT: email recipient is missing.');
 
-  const linkText = podLink || 'Proof of delivery is available from EcoFlow Packaging.';
+  const primaryLink = assets[0]?.url || '';
+  const linkText = primaryLink || 'Proof of delivery is available from EcoFlow Packaging.';
   const text = row.message_text.replaceAll('{{POD_LINK}}', linkText);
-  let html = (row.message_html || `<p>${row.message_text}</p>`).replaceAll('{{POD_LINK}}', podLink || '#');
-  if (podLink) html += `<p><a href="${podLink}">Open proof of delivery</a></p><p><img src="${podLink}" alt="Proof of delivery" style="max-width:560px;width:100%;height:auto;border-radius:12px" /></p>`;
+  let html = (row.message_html || `<p>${row.message_text}</p>`).replaceAll('{{POD_LINK}}', primaryLink || '#');
+  // Photos are the message: render each POD inline so the store sees the proof
+  // without opening anything. Attachments below cover clients that block remote images.
+  for (const asset of assets) {
+    html += `<div style="margin:16px 0">`
+      + `<p style="margin:0 0 6px;font:600 13px/1.4 -apple-system,Segoe UI,Arial,sans-serif;color:#0a2e22">${asset.label}</p>`
+      + `<img src="${asset.url}" alt="${asset.label}" style="max-width:560px;width:100%;height:auto;border-radius:10px;border:1px solid #dfe7e2" />`
+      + `<p style="margin:6px 0 0;font:400 12px/1.4 -apple-system,Segoe UI,Arial,sans-serif"><a href="${asset.url}">Open full-size photo</a></p>`
+      + `</div>`;
+  }
+
+  const attachments = assets
+    .filter((asset) => asset.base64)
+    .map((asset) => ({ filename: asset.filename, content: asset.base64 }));
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: `${sender} <${from}>`, to: [row.recipient], subject: row.subject || 'EcoFlow Packaging delivery update', text, html }),
+    body: JSON.stringify({
+      from: `${sender} <${from}>`,
+      to: [row.recipient],
+      subject: row.subject || 'EcoFlow Packaging delivery update',
+      text,
+      html,
+      ...(attachments.length ? { attachments } : {}),
+    }),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Resend ${response.status}: ${JSON.stringify(result)}`);
@@ -90,8 +142,12 @@ Deno.serve(async (request) => {
   for (const row of (data || []) as NotificationRow[]) {
     await supabase.from('ecoflow_delivery_notifications').update({ notification_status: 'SENDING', error_message: null }).eq('id', row.id);
     try {
-      const podLink = await signedPodLink(supabase, row.pod2_path || row.pod1_path);
-      const providerId = row.channel === 'EMAIL' ? await sendEmail(row, podLink) : await sendSms(row, podLink);
+      const assets = (await Promise.all([
+        podAsset(supabase, row.pod2_path, 'pod-goods-delivered.jpg', 'All goods delivered'),
+        podAsset(supabase, row.pod1_path, 'pod-drop-point.jpg', 'Store / drop point'),
+      ])).filter((asset): asset is PodAsset => Boolean(asset));
+      const podLink = assets[0]?.url || '';
+      const providerId = row.channel === 'EMAIL' ? await sendEmail(row, assets) : await sendSms(row, podLink);
       await supabase.from('ecoflow_delivery_notifications').update({ notification_status: 'SENT', provider_message_id: providerId, sent_at: new Date().toISOString(), error_message: null }).eq('id', row.id);
       results.push({ id: row.id, status: 'SENT', providerId });
     } catch (err) {

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
@@ -6,8 +6,11 @@ import { callInternaliseOrders, podAssetUrl } from '@/data/repositories/pickSync
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import { BrandMark } from './Brand';
-import { DriverApp } from './DriverApp';
 import { PickBoard } from './PickBoard';
+
+// The driver bundle (route map, POD capture, label sheets) is code-split so
+// office and warehouse devices never download it.
+const DriverApp = lazy(() => import('./DriverApp').then((m) => ({ default: m.DriverApp })));
 import { applyDayStateToOrders, buildDriverRun, formatClockTime, loadDriverDayState, saveDriverDayState, stopsInLockedOrder } from '@/domain/driverRun';
 import type { DriverDayState } from '@/domain/driverRun';
 import { usePickSync } from './usePickSync';
@@ -944,7 +947,7 @@ export function App() {
   if (!authEnabled) {
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
     if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
-    if (legacyRole === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} />;
+    if (legacyRole === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} /></Suspense>;
     return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
   }
 
@@ -954,7 +957,7 @@ export function App() {
 
   const role = roleFromAppRole(authProfile.app_role);
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
-  if (role === 'driver') return <DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} />;
+  if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 
   return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;
 }

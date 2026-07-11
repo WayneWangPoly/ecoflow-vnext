@@ -1,34 +1,12 @@
-import React from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { AccountsStatementWorkbench } from './AccountsStatementWorkbench';
 import { App } from './app/App';
-import { DriverDeliveryExceptionEnhancer } from './DriverDeliveryExceptionEnhancer';
-import { DriverDepartureControl } from './DriverDepartureControl';
-import { DriverLocationTracker } from './DriverLocationTracker';
-import { DriverPodQualityEnhancer } from './DriverPodQualityEnhancer';
-import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
-import { FieldOpsGuardRails } from './FieldOpsGuardRails';
-import { InventoryControlCenter } from './InventoryControlCenter';
-import { OrderPlatformExperience } from './OrderPlatformExperience';
-import { OwnerCommandCenter } from './OwnerCommandCenter';
-import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
-import { OwnerDeliveryGovernance } from './OwnerDeliveryGovernance';
-import { OwnerDriverTrackingMap } from './OwnerDriverTrackingMap';
-import { OwnerOrderIntelligence } from './OwnerOrderIntelligence';
-import { OwnerStoreIntelligence } from './OwnerStoreIntelligence';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
-import { RoleAwareDesktopNavigation } from './RoleAwareDesktopNavigation';
-import { StageAndLoadExecution } from './StageAndLoadExecution';
 import { TextEncodingRepair } from './TextEncodingRepair';
-import { WarehouseBarcodeSprintMount } from './WarehouseBarcodeSprintMount';
-import { WarehouseCameraScanner } from './WarehouseCameraScanner';
-import { WarehouseMapOwnerEdit } from './WarehouseMapOwnerEdit';
-import { WarehouseMapPutawayControl } from './WarehouseMapPutawayControl';
-import { WarehousePutawayTargetBridge } from './WarehousePutawayTargetBridge';
-import { WarehouseMapPage } from './features/warehouse/WarehouseMapPage';
-import { WarehousePickHandoffStatus } from './WarehousePickHandoffStatus';
+import { observeBody } from './lib/domObserver';
+import { pruneEcoflowStorage } from './domain/driverRun';
 import './styles.css';
 import './fieldMode.css';
 import './brandLockup.css';
@@ -58,13 +36,55 @@ import './warehouseProductisationFixes.css';
 import './ownerDriverTracking.css';
 import './driverDeparture.css';
 
-import { pruneEcoflowStorage } from '@/domain/driverRun';
-
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
 // Drop day-scoped storage older than the retention window before anything mounts,
 // so the localStorage quota never fills up from weeks of accumulated day states.
 pruneEcoflowStorage();
+
+// Role bundles: a driver phone must not download owner analytics, and the owner
+// desktop must not download the warehouse camera scanner. Each group loads only
+// when its shell is actually on screen.
+const DesktopEnhancers = lazy(() => import('./enhancers/DesktopEnhancers'));
+const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
+const WarehouseEnhancers = lazy(() => import('./enhancers/WarehouseEnhancers'));
+const WarehouseMapPage = lazy(() => import('./features/warehouse/WarehouseMapPage').then((m) => ({ default: m.WarehouseMapPage })));
+
+type ShellGroups = { desktop: boolean; driver: boolean; warehouse: boolean };
+
+function detectShells(): ShellGroups {
+  return {
+    desktop: Boolean(document.querySelector('.desktop-app')),
+    driver: Boolean(document.querySelector('.driver-shell')),
+    warehouse: isWarehouseMapRoute || Boolean(document.querySelector('.mobile-shell')),
+  };
+}
+
+function sameShells(a: ShellGroups, b: ShellGroups) {
+  return a.desktop === b.desktop && a.driver === b.driver && a.warehouse === b.warehouse;
+}
+
+function EnhancerGate() {
+  const [groups, setGroups] = useState<ShellGroups>(detectShells);
+
+  useEffect(() => {
+    const stopObserving = observeBody(() => {
+      setGroups((previous) => {
+        const next = detectShells();
+        return sameShells(previous, next) ? previous : next;
+      });
+    });
+    return stopObserving;
+  }, []);
+
+  return (
+    <Suspense fallback={null}>
+      {groups.desktop ? <DesktopEnhancers /> : null}
+      {groups.driver ? <DriverEnhancers /> : null}
+      {groups.warehouse ? <WarehouseEnhancers /> : null}
+    </Suspense>
+  );
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -72,30 +92,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ProductionWriteSafety />
       <TextEncodingRepair />
       <FieldModeEnhancer />
-      <FieldOpsGuardRails />
-      <StageAndLoadExecution />
-      <DriverPodQualityEnhancer />
-      <DriverDeliveryExceptionEnhancer />
-      <DriverReturnZoneCheckin />
-      <DriverLocationTracker />
-      <DriverDepartureControl />
-      <RoleAwareDesktopNavigation />
-      <OwnerCommandCenter />
-      <OwnerDeliveryAlerts />
-      <OwnerDriverTrackingMap />
-      <OwnerDeliveryGovernance />
-      <OwnerOrderIntelligence />
-      <OwnerStoreIntelligence />
-      <InventoryControlCenter />
-      <WarehouseBarcodeSprintMount />
-      <WarehousePutawayTargetBridge />
-      <WarehousePickHandoffStatus />
-      <AccountsStatementWorkbench />
-      <OrderPlatformExperience />
-      <WarehouseCameraScanner />
-      <WarehouseMapOwnerEdit />
-      <WarehouseMapPutawayControl />
-      {isWarehouseMapRoute ? <WarehouseMapPage /> : <App />}
+      <EnhancerGate />
+      {isWarehouseMapRoute ? (
+        <Suspense fallback={null}>
+          <WarehouseMapPage />
+        </Suspense>
+      ) : (
+        <App />
+      )}
     </BrowserRouter>
   </React.StrictMode>,
 );

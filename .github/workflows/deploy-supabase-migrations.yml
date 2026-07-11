@@ -113,6 +113,11 @@ jobs:
         run: |
           set -o pipefail
           supabase functions deploy notify-route-start --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Deploy delivery notification dispatch
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase functions deploy delivery-notification-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
