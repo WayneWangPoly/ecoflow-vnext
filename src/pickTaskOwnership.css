@@ -1,0 +1,112 @@
+.pick-task-claim-mount {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin: 0 0 8px;
+}
+
+.pick-claim-button,
+.pick-claim-release {
+  min-height: 42px;
+  border: 1px solid #2b5f4b;
+  border-radius: 7px;
+  background: #123f32;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  padding: 9px 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.pick-claim-button:disabled,
+.pick-claim-release:disabled {
+  opacity: .55;
+}
+
+.pick-claim-owned-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pick-claim-chip {
+  min-height: 38px;
+  border-radius: 7px;
+  padding: 8px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .82rem;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
+.pick-claim-yours,
+.pick-claim-complete {
+  border: 1px solid #7eb69d;
+  background: #e9f5ef;
+  color: #174c3b;
+}
+
+.pick-claim-other {
+  width: 100%;
+  border: 1px solid #d9ad56;
+  background: #fff4d8;
+  color: #6a4700;
+}
+
+.pick-claim-release {
+  min-height: 38px;
+  background: #fff;
+  color: #214b3d;
+}
+
+.pick-task.pick-task-claim-blocked {
+  border-color: #c9ad73;
+  box-shadow: inset 4px 0 0 #d0a042;
+}
+
+.pick-task.pick-task-claim-blocked button[data-pick-claim-blocked="true"],
+.pick-task.pick-task-claim-blocked button[aria-disabled="true"] {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.pick-task.pick-task-claim-owned {
+  border-color: #5f9f84;
+  box-shadow: inset 4px 0 0 #2f7a5d;
+}
+
+.pick-claim-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  margin: 0 0 10px;
+  border: 1px solid #9fb9ae;
+  border-radius: 7px;
+  background: #eef7f3;
+  color: #173f32;
+  padding: 10px 12px;
+  font-size: .88rem;
+  font-weight: 750;
+}
+
+.pick-claim-banner.error {
+  border-color: #d6948f;
+  background: #fff0ef;
+  color: #7b211b;
+}
+
+@media (max-width: 720px) {
+  .pick-claim-button,
+  .pick-claim-release,
+  .pick-claim-chip {
+    min-height: 46px;
+    font-size: .9rem;
+  }
+}
