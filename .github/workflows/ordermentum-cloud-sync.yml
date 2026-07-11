@@ -6,17 +6,16 @@ on:
       mode:
         description: "Sync mode to run manually"
         required: true
-        default: "orders_only"
+        default: "orders_invoices"
         type: choice
         options:
-          - orders_only
-          - master_only
-          - standard
+          - orders_invoices
+          - stores_only
+          - sku_only
           - catchup
+          - standard
   schedule:
-    # Orders are time-sensitive: run every hour.
-    # Master data is intentionally not scheduled here because it can take ~30 minutes;
-    # Owner/Admin can trigger it from EcoFlow Settings -> Integrations when needed.
+    # Time-sensitive operational delta only. Store and SKU masters are Owner-triggered.
     - cron: "17 * * * *"
 
 concurrency:
@@ -26,7 +25,7 @@ concurrency:
 jobs:
   ordermentum-cloud-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 40
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -59,8 +58,8 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "SYNC_MODE=orders_only" >> "$GITHUB_ENV"
-            echo "Scheduled hourly run: orders_only"
+            echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
+            echo "Scheduled hourly run: orders_invoices only"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
             echo "Manual run: ${{ inputs.mode }}"
@@ -80,5 +79,5 @@ jobs:
             exit 1
           fi
 
-      - name: Run Ordermentum cloud sync
+      - name: Run isolated Ordermentum sync
         run: node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE"
