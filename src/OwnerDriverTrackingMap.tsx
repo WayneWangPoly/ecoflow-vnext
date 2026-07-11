@@ -18,6 +18,7 @@ type TrackingData = {
   businessLabel: string;
   stops: RunStop[];
   day: DriverDayState;
+  routeId: string;
   samples: DriverLocationSample[];
   loadedAt: string;
 };
@@ -180,19 +181,20 @@ export function OwnerDriverTrackingMap() {
         dayRef.current = mergeRowsIntoDay(dayRef.current, rows);
       }
       const run = buildDriverRun(base.data.orders, businessDay, dayRef.current.releasedOrders, dayRef.current.runCode);
-      const samples = await loadOwnerDriverLocationTimeline(businessDay);
+      const samples = await loadOwnerDriverLocationTimeline(businessDay, run.id);
       const next: TrackingData = {
         businessDay,
         businessLabel: base.data.businessDay.label,
         stops: run.stops,
         day: dayRef.current,
+        routeId: run.id,
         samples,
         loadedAt: new Date().toISOString(),
       };
       setData(next);
       setError('');
       const newest = [...next.samples].sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0];
-      setSelectedDriver((current) => current || newest?.driver_user_id || '');
+      setSelectedDriver((current) => next.samples.some((sample) => sample.driver_user_id === current) ? current : newest?.driver_user_id || '');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -242,8 +244,8 @@ export function OwnerDriverTrackingMap() {
       <div className="owner-tracking-head">
         <div>
           <span className="section-eyebrow">OWNER DELIVERY VISIBILITY</span>
-          <h2>Driver position timeline</h2>
-          <p>Store distribution plus approximate driver positions recorded during the active route. No delivery sequence is exposed on this map.</p>
+          <h2>Driver position timeline · Run {data?.day.runCode || 'A'}</h2>
+          <p>Store distribution plus approximate driver positions for the active run only. Earlier run samples remain archived under their own route IDs. No delivery sequence is exposed on this map.</p>
         </div>
         <div className="owner-tracking-actions">
           {drivers.length > 1 ? (
@@ -259,9 +261,9 @@ export function OwnerDriverTrackingMap() {
 
       <div className="owner-tracking-stats">
         <div><Store size={17} /><strong>{data?.stops.length ?? 0}</strong><span>delivery stores</span></div>
-        <div><LocateFixed size={17} /><strong>{driverSamples.length}</strong><span>position samples</span></div>
+        <div><LocateFixed size={17} /><strong>{driverSamples.length}</strong><span>Run {data?.day.runCode || 'A'} position samples</span></div>
         <div className={staleMinutes > 10 ? 'stale' : ''}><Clock3 size={17} /><strong>{ageText(latest?.captured_at)}</strong><span>last driver update</span></div>
-        <div><Truck size={17} /><strong>{routeActive ? 'IN PROGRESS' : data?.day.routeEndedAt ? 'COMPLETED' : 'NOT STARTED'}</strong><span>{data?.businessLabel || 'business day'}</span></div>
+        <div><Truck size={17} /><strong>{routeActive ? 'IN PROGRESS' : data?.day.routeEndedAt ? 'COMPLETED' : 'NOT STARTED'}</strong><span>{data?.routeId || data?.businessLabel || 'business day'}</span></div>
       </div>
 
       <div className="owner-tracking-layout">
