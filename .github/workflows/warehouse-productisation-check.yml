@@ -27,14 +27,34 @@ jobs:
           ref: agent/production-workflow-consolidation
           fetch-depth: 0
       - name: Apply one-shot native field patch when present
+        id: native_patch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ ! -f scripts/apply-native-field-consolidation.mjs ]; then
+            echo "No one-shot patch pending." | tee native-patch.log
+            exit 0
+          fi
+          node scripts/apply-native-field-consolidation.mjs 2>&1 | tee native-patch.log
+      - name: Upload native patch diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-field-patch-log
+          path: native-patch.log
+          if-no-files-found: warn
+      - name: Enforce native patch result
+        if: steps.native_patch.outcome == 'failure'
+        shell: bash
+        run: |
+          tail -120 native-patch.log || true
+          exit 1
+      - name: Commit native consolidation
+        if: steps.native_patch.outcome == 'success' && hashFiles('scripts/apply-native-field-consolidation.mjs') != ''
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f scripts/apply-native-field-consolidation.mjs ]; then
-            echo "No one-shot patch pending."
-            exit 0
-          fi
-          node scripts/apply-native-field-consolidation.mjs
           rm -f scripts/apply-native-field-consolidation.mjs
           rm -f .github/workflows/apply-native-field-consolidation.yml
           git config user.name "github-actions[bot]"
