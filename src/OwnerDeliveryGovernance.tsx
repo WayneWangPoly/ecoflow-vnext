@@ -15,10 +15,16 @@ type StoreSite = {
   retailer_id: string | null;
   store_name: string | null;
   suburb: string | null;
-  contact_email: string | null;
-  notification_contact_name: string | null;
-  delivery_notification_enabled: boolean | null;
   verified: boolean | null;
+};
+
+type StoreContact = {
+  store_key: string;
+  retailer_id: string | null;
+  store_name: string;
+  contact_email: string | null;
+  contact_name: string | null;
+  enabled: boolean;
 };
 
 type NotificationRow = {
@@ -146,20 +152,34 @@ function StoreNotificationContacts() {
 
   const reload = useCallback(async () => {
     if (!supabase) return;
-    const { data, error } = await supabase
-      .from('ecoflow_store_sites')
-      .select('retailer_id,store_name,suburb,contact_email,notification_contact_name,delivery_notification_enabled,verified')
-      .order('store_name', { ascending: true })
-      .limit(1000);
-    if (error) throw error;
-    const rows = (data ?? []) as StoreSite[];
+    const [siteResult, contactResult] = await Promise.all([
+      supabase
+        .from('ecoflow_store_sites')
+        .select('retailer_id,store_name,suburb,verified')
+        .order('store_name', { ascending: true })
+        .limit(1000),
+      supabase
+        .from('ecoflow_delivery_notification_contacts')
+        .select('store_key,retailer_id,store_name,contact_email,contact_name,enabled')
+        .limit(1000),
+    ]);
+    if (siteResult.error) throw siteResult.error;
+    if (contactResult.error) throw contactResult.error;
+    const rows = (siteResult.data ?? []) as StoreSite[];
+    const contacts = (contactResult.data ?? []) as StoreContact[];
+    const contactByKey = new Map<string, StoreContact>();
+    contacts.forEach((contact) => {
+      contactByKey.set(contact.store_key, contact);
+      if (contact.retailer_id) contactByKey.set(contact.retailer_id, contact);
+    });
     setStores(rows);
     setDrafts(Object.fromEntries(rows.map((store) => {
       const key = store.retailer_id || String(store.store_name || '').toUpperCase();
+      const contact = contactByKey.get(key);
       return [key, {
-        email: store.contact_email || '',
-        name: store.notification_contact_name || '',
-        enabled: store.delivery_notification_enabled !== false,
+        email: contact?.contact_email || '',
+        name: contact?.contact_name || '',
+        enabled: contact?.enabled !== false,
       }];
     })));
   }, []);
@@ -196,7 +216,7 @@ function StoreNotificationContacts() {
         <div>
           <span className="section-eyebrow">DELIVERY CARE</span>
           <h2>Store delivery-notification emails</h2>
-          <p>One route-start email is sent per enabled store. No delivery order or driver live location is shared.</p>
+          <p>One route-start email is sent per enabled store. Contact addresses are Owner-only and are not exposed to the driver.</p>
         </div>
         <button type="button" onClick={() => void reload()}><RefreshCw size={15} /> Refresh</button>
       </div>
