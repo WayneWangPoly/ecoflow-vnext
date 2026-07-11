@@ -36,9 +36,9 @@ function latestOrderRun(runs: OrderSyncRunRow[]) {
 }
 
 const syncButtons: Array<{ mode: OrdermentumSyncMode; label: string; detail: string }> = [
-  { mode: 'orders_only', label: 'Sync orders now', detail: 'Fast incremental order refresh.' },
-  { mode: 'master_only', label: 'Sync master data', detail: 'Customers, stores, SKU, price groups, invoices and leads.' },
-  { mode: 'standard', label: 'Full standard sync', detail: 'Orders plus full master-data refresh.' },
+  { mode: 'orders_invoices', label: 'Sync orders + invoices now', detail: 'Fast high-watermark delta. Fetches changed orders and their invoice detail only.' },
+  { mode: 'stores_only', label: 'Sync stores', detail: 'Manual purchaser/store and price-group master refresh.' },
+  { mode: 'sku_only', label: 'Sync SKU', detail: 'Manual product and variant master refresh.' },
 ];
 
 export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: SupabaseClient }) {
@@ -82,7 +82,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         mode,
         reason: `Triggered from EcoFlow Settings at ${new Date().toISOString()}`,
       });
-      setMessage(`${result.mode} started in GitHub Actions. Refresh this panel in a few minutes to see the latest status.`);
+      setMessage(`${result.mode} started in GitHub Actions. Refresh this panel shortly to see the latest status.`);
       window.setTimeout(() => void refresh(), 5000);
     } catch (triggerError) {
       setError(triggerError instanceof Error ? triggerError.message : String(triggerError));
@@ -96,15 +96,15 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
       <div className="panel-head">
         <div>
           <h2>Ordermentum integration</h2>
-          <span>Cloud sync control for orders, customer master, SKU master and price tiers.</span>
+          <span>Hourly automation is limited to order and invoice deltas. Store and SKU masters run only when Owner/Admin requests them.</span>
         </div>
         <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh status'}</button>
       </div>
 
       <div className="readiness-grid">
-        <div><strong>{formatTime(latestOrder?.finished_at ?? latestOrder?.started_at)}</strong><span>latest order sync</span></div>
-        <div><strong>{latestOrder?.status ?? '—'}</strong><span>order sync status</span></div>
-        <div><strong>{formatTime(latestMaster)}</strong><span>latest master-data sync</span></div>
+        <div><strong>{formatTime(latestOrder?.finished_at ?? latestOrder?.started_at)}</strong><span>latest order + invoice delta</span></div>
+        <div><strong>{latestOrder?.status ?? '—'}</strong><span>incremental sync status</span></div>
+        <div><strong>{formatTime(latestMaster)}</strong><span>latest manual master sync</span></div>
         <div><strong>{masterHealth.length || '—'}</strong><span>master resources tracked</span></div>
       </div>
 
@@ -127,6 +127,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         ))}
       </div>
 
+      <p className="panel-note">Catch-up and full diagnostic modes remain available in GitHub Actions for exceptional recovery only; they are never scheduled.</p>
       {message ? <div className="sync-error-banner">{message}</div> : null}
       {error ? <div className="sync-error-banner desktop-error-banner">Failed to trigger sync: {error}</div> : null}
       {snapshotWarning ? <p className="panel-note">Status warning: {snapshotWarning}</p> : null}
@@ -142,7 +143,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
           </div>
         ))}
         {!masterHealth.length ? (
-          <div className="table-row"><span>No master-data sync status yet.</span><span>—</span><span>—</span><span>Run master sync first.</span></div>
+          <div className="table-row"><span>No master-data sync status yet.</span><span>—</span><span>—</span><span>Run Store or SKU sync when required.</span></div>
         ) : null}
       </div>
     </section>
