@@ -7,12 +7,14 @@ import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { TextEncodingRepair } from './TextEncodingRepair';
 import { observeBody } from './lib/domObserver';
 import { pruneEcoflowStorage } from './domain/driverRun';
+import { hasSupabaseAuthClient } from './lib/supabaseClient';
 import './styles.css';
 import './fieldMode.css';
 import './brandLockup.css';
 import './industrialTheme.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
+const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthClient();
 
 // Drop day-scoped storage older than the retention window before anything mounts,
 // so the localStorage quota never fills up from weeks of accumulated day states.
@@ -85,19 +87,39 @@ function EnhancerGate() {
   );
 }
 
+function ProductionConfigurationError() {
+  return (
+    <main className="login-page">
+      <section className="login-card" role="alert">
+        <div className="login-brand-name">EcoFlow</div>
+        <div className="login-brand-subtitle">SECURE ACCESS REQUIRED</div>
+        <h1>Production configuration is incomplete</h1>
+        <p>The live Supabase URL or anonymous access key is missing. EcoFlow is locked rather than falling back to shared role passcodes.</p>
+        <p>Restore the production environment variables and redeploy before warehouse, driver, accounts or owner work continues.</p>
+      </section>
+    </main>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ProductionWriteSafety />
-      <TextEncodingRepair />
-      <FieldModeEnhancer />
-      <EnhancerGate />
-      {isWarehouseMapRoute ? (
-        <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Loading warehouse map…</div></main>}>
-          <WarehouseMapPage />
-        </Suspense>
+      {productionConfigurationMissing ? (
+        <ProductionConfigurationError />
       ) : (
-        <App />
+        <>
+          <ProductionWriteSafety />
+          <TextEncodingRepair />
+          <FieldModeEnhancer />
+          <EnhancerGate />
+          {isWarehouseMapRoute ? (
+            <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Loading warehouse map…</div></main>}>
+              <WarehouseMapPage />
+            </Suspense>
+          ) : (
+            <App />
+          )}
+        </>
       )}
     </BrowserRouter>
   </React.StrictMode>,
