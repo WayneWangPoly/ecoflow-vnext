@@ -4,13 +4,6 @@
 
 begin;
 
-alter table if exists public.ecoflow_store_sites
-  add column if not exists contact_email text,
-  add column if not exists delivery_notification_enabled boolean not null default true,
-  add column if not exists notification_contact_name text,
-  add column if not exists notification_updated_at timestamptz,
-  add column if not exists notification_updated_by uuid;
-
 create table if not exists public.ecoflow_driver_departure_acknowledgements (
   id uuid primary key default gen_random_uuid(),
   business_day date not null,
@@ -31,6 +24,21 @@ create table if not exists public.ecoflow_driver_departure_acknowledgements (
 
 create index if not exists idx_driver_departure_day_route
   on public.ecoflow_driver_departure_acknowledgements(business_day, route_id, accepted_at desc);
+
+create table if not exists public.ecoflow_delivery_notification_contacts (
+  store_key text primary key,
+  retailer_id text,
+  store_name text not null,
+  contact_email text,
+  contact_name text,
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now(),
+  updated_by uuid
+);
+
+create unique index if not exists uq_delivery_notification_contact_retailer
+  on public.ecoflow_delivery_notification_contacts(retailer_id)
+  where retailer_id is not null;
 
 create table if not exists public.ecoflow_delivery_notification_log (
   id uuid primary key default gen_random_uuid(),
@@ -76,11 +84,16 @@ $$;
 grant execute on function public.ecoflow_is_active_owner_admin() to authenticated;
 
 alter table public.ecoflow_driver_departure_acknowledgements enable row level security;
+alter table public.ecoflow_delivery_notification_contacts enable row level security;
 alter table public.ecoflow_delivery_notification_log enable row level security;
 
 revoke all on public.ecoflow_driver_departure_acknowledgements from anon;
 revoke insert, update, delete on public.ecoflow_driver_departure_acknowledgements from authenticated;
 grant select on public.ecoflow_driver_departure_acknowledgements to authenticated;
+
+revoke all on public.ecoflow_delivery_notification_contacts from anon;
+revoke insert, update, delete on public.ecoflow_delivery_notification_contacts from authenticated;
+grant select on public.ecoflow_delivery_notification_contacts to authenticated;
 
 revoke all on public.ecoflow_delivery_notification_log from anon;
 revoke insert, update, delete on public.ecoflow_delivery_notification_log from authenticated;
@@ -91,6 +104,12 @@ create policy ecoflow_departure_driver_or_owner_read
 on public.ecoflow_driver_departure_acknowledgements
 for select
 using (driver_user_id = auth.uid() or public.ecoflow_is_active_owner_admin());
+
+drop policy if exists ecoflow_delivery_notification_contact_owner_read on public.ecoflow_delivery_notification_contacts;
+create policy ecoflow_delivery_notification_contact_owner_read
+on public.ecoflow_delivery_notification_contacts
+for select
+using (public.ecoflow_is_active_owner_admin());
 
 drop policy if exists ecoflow_delivery_notification_owner_read on public.ecoflow_delivery_notification_log;
 create policy ecoflow_delivery_notification_owner_read
@@ -202,32 +221,39 @@ set search_path = public
 as $$
 declare
   v_key text := upper(trim(coalesce(p_store_key, '')));
+  v_name text := nullif(trim(coalesce(p_store_name, '')), '');
+  v_retailer text := nullif(trim(coalesce(p_retailer_id, '')), '');
   v_email text := lower(nullif(trim(coalesce(p_email, '')), ''));
-  v_row public.ecoflow_store_sites%rowtype;
+  v_site_exists boolean;
 begin
   if not public.ecoflow_is_active_owner_admin() then raise exception 'OWNER_OR_ADMIN_REQUIRED'; end if;
   if v_key = '' then raise exception 'STORE_KEY_REQUIRED'; end if;
+  if v_name is null then raise exception 'STORE_NAME_REQUIRED'; end if;
   if v_email is not null and v_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$' then
     raise exception 'VALID_EMAIL_REQUIRED';
   end if;
 
-  select s.* into v_row
-  from public.ecoflow_store_sites s
-  where (p_retailer_id is not null and s.retailer_id = p_retailer_id)
-     or upper(coalesce(s.store_name, '')) = v_key
-  order by case when p_retailer_id is not null and s.retailer_id = p_retailer_id then 0 else 1 end
-  limit 1;
+  select exists(
+    select 1 from public.ecoflow_store_sites s
+    where (v_retailer is not null and s.retailer_id = v_retailer)
+       or upper(coalesce(s.store_name, '')) = v_key
+  ) into v_site_exists;
+  if not v_site_exists then raise exception 'STORE_SITE_NOT_FOUND'; end if;
 
-  if not found then raise exception 'STORE_SITE_NOT_FOUND'; end if;
-
-  update public.ecoflow_store_sites s
-  set contact_email = v_email,
-      notification_contact_name = nullif(trim(coalesce(p_contact_name, '')), ''),
-      delivery_notification_enabled = coalesce(p_enabled, true),
-      notification_updated_at = now(),
-      notification_updated_by = auth.uid()
-  where s.retailer_id is not distinct from v_row.retailer_id
-    and s.store_name is not distinct from v_row.store_name;
+  insert into public.ecoflow_delivery_notification_contacts(
+    store_key, retailer_id, store_name, contact_email, contact_name, enabled, updated_at, updated_by
+  ) values (
+    v_key, v_retailer, v_name, v_email,
+    nullif(trim(coalesce(p_contact_name, '')), ''), coalesce(p_enabled, true), now(), auth.uid()
+  )
+  on conflict (store_key) do update set
+    retailer_id = excluded.retailer_id,
+    store_name = excluded.store_name,
+    contact_email = excluded.contact_email,
+    contact_name = excluded.contact_name,
+    enabled = excluded.enabled,
+    updated_at = now(),
+    updated_by = auth.uid();
 
   return query select v_key, v_email, coalesce(p_enabled, true);
 end;
@@ -235,15 +261,6 @@ $$;
 
 grant execute on function public.ecoflow_upsert_store_delivery_notification_contact(text,text,text,text,text,boolean) to authenticated;
 revoke execute on function public.ecoflow_upsert_store_delivery_notification_contact(text,text,text,text,text,boolean) from anon;
-
--- Owner/Admin may maintain customer notification contacts; other roles do not see contact emails.
-alter table public.ecoflow_store_sites enable row level security;
-drop policy if exists ecoflow_store_sites_owner_notification_update on public.ecoflow_store_sites;
-create policy ecoflow_store_sites_owner_notification_update
-on public.ecoflow_store_sites
-for update
-using (public.ecoflow_is_active_owner_admin())
-with check (public.ecoflow_is_active_owner_admin());
 
 drop view if exists public.v_ecoflow_owner_driver_departure_acknowledgements cascade;
 create view public.v_ecoflow_owner_driver_departure_acknowledgements
