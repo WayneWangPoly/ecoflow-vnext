@@ -571,7 +571,7 @@ select g.business_day,g.run_code,'RUN-'||replace(g.business_day,'-','')||'-'||g.
        when g.route_locked_at is not null then 'LOCKED'
        when g.released_stops>0 then 'PLANNING' else 'EMPTY' end run_status,
   coalesce(l.location_samples,0) location_samples,coalesce(l.driver_count,0) driver_count,l.first_location_at,l.last_location_at,g.last_updated_at
-from grouped g left join locations l on l.business_day=g.business_day and l.route_id='RUN-'||replace(g.business_day,'-','')||'-'||g.run_code;
+from grouped g left join locations l on l.business_day::text=g.business_day::text and l.route_id='RUN-'||replace(g.business_day::text,'-','')||'-'||g.run_code;
 
 grant select on public.v_ecoflow_delivery_run_catalog to authenticated;
 
