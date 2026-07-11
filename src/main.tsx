@@ -10,31 +10,7 @@ import { pruneEcoflowStorage } from './domain/driverRun';
 import './styles.css';
 import './fieldMode.css';
 import './brandLockup.css';
-import './orderPlatformTable.css';
-import './ownerOrderIntelligence.css';
-import './ownerStoreIntelligence.css';
-import './storeStatementPressure.css';
-import './accountsStatementWorkbench.css';
-import './roleAwareNavigation.css';
-import './ownerCommandCenter.css';
-import './inventoryControlCenter.css';
-import './inventoryMovementLedger.css';
-import './warehouseReceivingFlow.css';
-import './warehouseBarcodeSprint.css';
-import './warehousePickHandoff.css';
-import './fieldOpsGuardRails.css';
-import './stageAndLoadExecution.css';
-import './labelPrintBlackWhite.css';
-import './driverPodQuality.css';
-import './deliveryOperations.css';
-import './returnZoneOperations.css';
-import './returnZoneCopyFix.css';
-import './returnZoneGeofence.css';
 import './industrialTheme.css';
-import './warehouseProductisation.css';
-import './warehouseProductisationFixes.css';
-import './ownerDriverTracking.css';
-import './driverDeparture.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 
@@ -42,26 +18,47 @@ const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 // so the localStorage quota never fills up from weeks of accumulated day states.
 pruneEcoflowStorage();
 
-// Role bundles: a driver phone must not download owner analytics, and the owner
-// desktop must not download the warehouse camera scanner. Each group loads only
-// when its shell is actually on screen.
-const DesktopEnhancers = lazy(() => import('./enhancers/DesktopEnhancers'));
+// Role bundles are isolated so each device downloads only its operational surface.
+const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
+const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
-const WarehouseEnhancers = lazy(() => import('./enhancers/WarehouseEnhancers'));
-const WarehouseMapPage = lazy(() => import('./features/warehouse/WarehouseMapPage').then((m) => ({ default: m.WarehouseMapPage })));
+const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
+const WarehouseMapEnhancers = lazy(() => import('./enhancers/WarehouseMapEnhancers'));
+const WarehouseMapPage = lazy(() => import('./features/warehouse/WarehouseMapPage').then((module) => ({ default: module.WarehouseMapPage })));
 
-type ShellGroups = { desktop: boolean; driver: boolean; warehouse: boolean };
+type DesktopRole = 'owner' | 'account' | null;
+type ShellGroups = {
+  desktopRole: DesktopRole;
+  driver: boolean;
+  warehouseOps: boolean;
+  warehouseMap: boolean;
+};
+
+function detectDesktopRole(): DesktopRole {
+  const roleText = document.querySelector<HTMLElement>('.sidebar-brand span')?.textContent?.trim().toUpperCase() || '';
+  if (roleText.includes('ACCOUNT')) return 'account';
+  if (roleText.includes('OWNER') || roleText.includes('ADMIN')) return 'owner';
+  const stored = window.localStorage.getItem('ecoflow-role');
+  if (stored === 'account') return 'account';
+  if (stored === 'owner') return 'owner';
+  return null;
+}
 
 function detectShells(): ShellGroups {
+  const desktopPresent = Boolean(document.querySelector('.desktop-app'));
   return {
-    desktop: Boolean(document.querySelector('.desktop-app')),
+    desktopRole: desktopPresent ? detectDesktopRole() : null,
     driver: Boolean(document.querySelector('.driver-shell')),
-    warehouse: isWarehouseMapRoute || Boolean(document.querySelector('.mobile-shell')),
+    warehouseOps: !isWarehouseMapRoute && Boolean(document.querySelector('.mobile-shell')),
+    warehouseMap: isWarehouseMapRoute,
   };
 }
 
-function sameShells(a: ShellGroups, b: ShellGroups) {
-  return a.desktop === b.desktop && a.driver === b.driver && a.warehouse === b.warehouse;
+function sameShells(left: ShellGroups, right: ShellGroups) {
+  return left.desktopRole === right.desktopRole
+    && left.driver === right.driver
+    && left.warehouseOps === right.warehouseOps
+    && left.warehouseMap === right.warehouseMap;
 }
 
 function EnhancerGate() {
@@ -79,9 +76,11 @@ function EnhancerGate() {
 
   return (
     <Suspense fallback={null}>
-      {groups.desktop ? <DesktopEnhancers /> : null}
+      {groups.desktopRole === 'owner' ? <OwnerEnhancers /> : null}
+      {groups.desktopRole === 'account' ? <AccountEnhancers /> : null}
       {groups.driver ? <DriverEnhancers /> : null}
-      {groups.warehouse ? <WarehouseEnhancers /> : null}
+      {groups.warehouseOps ? <WarehouseOpsEnhancers /> : null}
+      {groups.warehouseMap ? <WarehouseMapEnhancers /> : null}
     </Suspense>
   );
 }
@@ -94,7 +93,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <FieldModeEnhancer />
       <EnhancerGate />
       {isWarehouseMapRoute ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Loading warehouse map…</div></main>}>
           <WarehouseMapPage />
         </Suspense>
       ) : (
