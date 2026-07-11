@@ -1,12 +1,11 @@
 name: Apply final EcoFlow production consolidation
 
 on:
-  push:
-    branches:
-      - agent/production-workflow-consolidation
+  pull_request:
+    branches: [main]
 
 concurrency:
-  group: ecoflow-final-consolidation-branch
+  group: ecoflow-final-consolidation-pr
   cancel-in-progress: true
 
 permissions:
@@ -70,12 +69,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Complete production workflows, multi-run state and secure field operations"
-          for attempt in 1 2 3; do
-            git fetch origin agent/production-workflow-consolidation
-            if git rebase origin/agent/production-workflow-consolidation && git push origin HEAD:agent/production-workflow-consolidation; then
-              exit 0
-            fi
-            git rebase --abort 2>/dev/null || true
-            sleep $((attempt * 2))
-          done
-          exit 1
+          git fetch origin agent/production-workflow-consolidation
+          git rebase origin/agent/production-workflow-consolidation
+          git push origin HEAD:agent/production-workflow-consolidation
