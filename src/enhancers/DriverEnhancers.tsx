@@ -4,8 +4,10 @@ import { DriverLocationTracker } from '../DriverLocationTracker';
 import { DriverPodQualityEnhancer } from '../DriverPodQualityEnhancer';
 import { DriverReturnZoneCheckin } from '../DriverReturnZoneCheckin';
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
+import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import '../fieldOpsGuardRails.css';
+import '../pickTaskOwnership.css';
 import '../stageAndLoadExecution.css';
 import '../labelPrintBlackWhite.css';
 import '../driverPodQuality.css';
@@ -20,6 +22,7 @@ export default function DriverEnhancers() {
   return (
     <>
       <FieldOpsGuardRails />
+      <PickTaskOwnership />
       <StageAndLoadExecution />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
