@@ -56,6 +56,8 @@ jobs:
         run: npm install --global supabase@latest
       - name: Link production project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Inspect migration history
+        run: supabase migration list --linked --password "$SUPABASE_DB_PASSWORD"
       - name: Preview pending migrations
         run: supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD"
       - name: Apply pending migrations
