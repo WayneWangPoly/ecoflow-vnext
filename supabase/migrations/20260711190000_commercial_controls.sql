@@ -578,7 +578,7 @@ with run_rows as (
     min(l.captured_at) first_location_at,max(l.captured_at) last_location_at
   from public.ecoflow_driver_location_samples l group by l.business_day,l.route_id
 )
-select g.business_day,g.run_code,'RUN-'||replace(g.business_day,'-','')||'-'||g.run_code route_id,
+select g.business_day,g.run_code,'RUN-'||replace(g.business_day::text,'-','')||'-'||g.run_code route_id,
   g.route_locked_at::timestamptz,g.route_started_at::timestamptz,g.route_ended_at::timestamptz,g.route_locked_by,
   g.released_stops,g.staged_stops,g.delivered_stops,g.failed_stops,
   case when g.route_ended_at is not null then 'COMPLETED'
@@ -615,7 +615,7 @@ with stop_rows as (
     coalesce(a.meta->'boxCodes'->>a.order_id,'') box_code
   from all_orders a
 )
-select s.business_day,s.run_code,'RUN-'||replace(s.business_day,'-','')||'-'||s.run_code route_id,s.order_id,s.stop_number,s.box_code,
+select s.business_day,s.run_code,'RUN-'||replace(s.business_day::text,'-','')||'-'||s.run_code route_id,s.order_id,s.stop_number,s.box_code,
   coalesce(nullif(o.retailer_name,''),nullif(site.store_name,''),s.order_id) store_name,
   coalesce(nullif(site.formatted_address,''),concat_ws(', ',nullif(site.street1,''),nullif(site.suburb,''),nullif(site.state,''),nullif(site.postcode,''))) address,
   site.suburb,site.latitude,site.longitude,o.order_number,

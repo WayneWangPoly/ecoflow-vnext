@@ -44,6 +44,6 @@ has(runUi, 'Run history and replay', 'Delivery page must expose run history repl
 has(runUi, 'Archive data is read-only', 'Historical runs must remain read-only.');
 has(runRepo, 'v_ecoflow_delivery_run_catalog', 'Run history must load from server catalog.');
 has(migration, 'v_ecoflow_delivery_run_stop_history', 'Run A/B/C stop histories must remain separate.');
-has(migration, "'RUN-'||replace(g.business_day,'-','')||'-'||g.run_code", 'Historical route IDs must preserve run code.');
+has(migration, "'RUN-'||replace(g.business_day::text,'-','')||'-'||g.run_code", 'Historical route IDs must preserve run code.');
 
 console.log('Commercial pricing, statements, payment reconciliation and run history audit passed.');

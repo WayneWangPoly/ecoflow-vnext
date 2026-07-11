@@ -18,7 +18,7 @@ alter table storage.objects enable row level security;
 insert into storage.buckets(id,name,public) values ('pod-photos','pod-photos',true) on conflict(id) do update set public=true;
 
 create table if not exists public.ecoflow_day_state (
-  business_day text not null,
+  business_day date not null,
   scope text not null,
   payload jsonb not null default '{}'::jsonb,
   updated_by text,
