@@ -1,4 +1,4 @@
-﻿import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
@@ -64,6 +64,25 @@ const desktopTabs: { id: DesktopTab; label: string }[] = [
   { id: 'settings', label: 'Settings' }
 ];
 
+const roleLabels: Record<Role, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  account: 'Account',
+  warehouse: 'Warehouse',
+  driver: 'Driver',
+  viewer: 'Viewer',
+};
+
+const desktopTabAccess: Partial<Record<Role, ReadonlySet<DesktopTab>>> = {
+  account: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'stores', 'reconciliation', 'settings']),
+  viewer: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'inventory', 'stores', 'reconciliation', 'logs']),
+};
+
+function availableDesktopTabs(role: Role) {
+  const allowed = desktopTabAccess[role];
+  return allowed ? desktopTabs.filter((tab) => allowed.has(tab.id)) : desktopTabs;
+}
+
 function cls(...values: Array<string | false | undefined>) {
   return values.filter(Boolean).join(' ');
 }
@@ -77,10 +96,12 @@ function statusLabel(status: OrderStatus) {
 }
 
 function roleLabel(role: Role) {
-  return roleOptions.find((item) => item.role === role)?.label ?? role;
+  return roleLabels[role];
 }
 
 function roleFromAppRole(appRole: EcoFlowAppRole): Role {
+  if (appRole === 'ADMIN') return 'admin';
+  if (appRole === 'VIEWER') return 'viewer';
   if (appRole === 'WAREHOUSE') return 'warehouse';
   if (appRole === 'DRIVER') return 'driver';
   if (appRole === 'ACCOUNT') return 'account';
@@ -252,7 +273,7 @@ function DesktopShell({ role, tab, setTab, onLogout, children }: {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {desktopTabs.map((item) => (
+          {availableDesktopTabs(role).map((item) => (
             <button key={item.id} type="button" className={cls(tab === item.id && 'active')} onClick={() => setTab(item.id)}>{item.label}</button>
           ))}
         </nav>
@@ -267,6 +288,22 @@ function DesktopShell({ role, tab, setTab, onLogout, children }: {
             </div>
           </div>
           <div className="topbar-actions">
+            {role === 'owner' || role === 'admin' ? (
+              <select
+                aria-label="Open workspace"
+                defaultValue=""
+                onChange={(event) => {
+                  const target = event.currentTarget.value;
+                  if (target) window.open(target, '_blank', 'noopener,noreferrer');
+                  event.currentTarget.value = '';
+                }}
+              >
+                <option value="">Open workspace…</option>
+                <option value="/warehouse-map">Warehouse Map</option>
+                <option value="/?workspace=warehouse">Warehouse Operations</option>
+                <option value="/?workspace=driver">Driver Operations</option>
+              </select>
+            ) : null}
             <button type="button" onClick={onLogout}>Logout</button>
           </div>
         </header>
@@ -863,10 +900,11 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
       {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load —the data below is fallback/demo, not live. {loadError}</div> : null}
+      {role === 'viewer' ? <div className="sync-error-banner desktop-readonly-banner">Viewer workspace is read-only. Operational changes, route approval, integrations and team administration are hidden.</div> : null}
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
-      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner' || role === 'account'} /> : null}
+      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner' || role === 'admin' || role === 'account'} /> : null}
       {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} /> : null}
       {tab === 'stores' ? <StoresPanel stores={stores} /> : null}
       {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} /> : null}
@@ -1055,6 +1093,9 @@ export function App() {
   if (!authProfile.is_active || authProfile.team_status === 'SUSPENDED' || authProfile.team_status === 'DISABLED') return <AccessPendingScreen profile={authProfile} onLogout={() => void logout()} />;
 
   const role = roleFromAppRole(authProfile.app_role);
+  const workspace = canManageTeam(authProfile) ? new URLSearchParams(window.location.search).get('workspace') : null;
+  if (workspace === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
+  if (workspace === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 

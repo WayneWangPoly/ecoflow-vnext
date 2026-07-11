@@ -39,7 +39,6 @@ import {
   lastEventOfType,
   loadDriverDayState,
   reconcileStopOrder,
-  RUN_SIZE_WARNING,
   saveDriverDayState,
   shiftEventLabel,
   shiftStatusFromEvents,
@@ -597,10 +596,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
       </section>
 
       {shiftCard}
-
-      {rows.length > RUN_SIZE_WARNING ? (
-        <p className="driver-inline-hint">{rows.length} stops in one run — consider splitting into Run A / Run B from the office before locking.</p>
-      ) : null}
 
       <section className="driver-card">
         <div className="driver-card-head">

@@ -10,7 +10,8 @@ const businessLabels: Record<string, string> = {
 function normaliseRole(value?: string | null) {
   const text = String(value || '').toUpperCase();
   if (text.includes('ACCOUNT')) return 'ACCOUNT';
-  if (text.includes('OWNER') || text.includes('ADMIN')) return 'OWNER';
+  if (text.includes('ADMIN')) return 'ADMIN';
+  if (text.includes('OWNER')) return 'OWNER';
   if (text.includes('WAREHOUSE')) return 'WAREHOUSE';
   if (text.includes('DRIVER')) return 'DRIVER';
   const stored = window.localStorage.getItem('ecoflow-role');
@@ -44,7 +45,7 @@ export function RoleAwareDesktopNavigation() {
       if (!buttons.length) return;
 
       nav.classList.toggle('role-nav-account', role === 'ACCOUNT');
-      nav.classList.toggle('role-nav-owner', role === 'OWNER');
+      nav.classList.toggle('role-nav-owner', role === 'OWNER' || role === 'ADMIN');
 
       buttons.forEach((button) => {
         const base = buttonBaseLabel(button);
@@ -63,7 +64,9 @@ export function RoleAwareDesktopNavigation() {
       }
       helper.textContent = role === 'ACCOUNT'
         ? 'Accounts workspace: route planning, statements, stores and order controls.'
-        : 'Owner workspace: full operating command centre.';
+        : role === 'ADMIN'
+          ? 'Admin workspace: full operations, security and workspace access.'
+          : 'Owner workspace: full operating command centre.';
 
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {
         const accountsButton = buttons.find((button) => buttonBaseLabel(button) === 'Reconciliation');

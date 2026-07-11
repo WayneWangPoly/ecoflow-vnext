@@ -1,4 +1,4 @@
-export type Role = 'owner' | 'account' | 'warehouse' | 'driver';
+export type Role = 'owner' | 'admin' | 'account' | 'warehouse' | 'driver' | 'viewer';
 export type DesktopTab = 'dashboard' | 'ordermentum' | 'orders' | 'delivery' | 'inventory' | 'stores' | 'reconciliation' | 'logs' | 'settings';
 export type WarehouseTab = 'receive' | 'pick' | 'stock';
 export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
