@@ -92,17 +92,39 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
+          # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
+          for attempt in 1 2 3; do
+            if supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+              exit 0
+            fi
+            echo "migration list attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            sleep 20
+          done
+          exit 1
       - name: Preview pending migrations
         shell: bash
         run: |
           set -o pipefail
-          supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
+          for attempt in 1 2 3; do
+            if supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+              exit 0
+            fi
+            echo "db push dry-run attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            sleep 20
+          done
+          exit 1
       - name: Apply pending migrations
         shell: bash
         run: |
           set -o pipefail
-          supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
+          for attempt in 1 2 3; do
+            if supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log; then
+              exit 0
+            fi
+            echo "db push attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            sleep 20
+          done
+          exit 1
       - name: Deploy Ordermentum sync trigger
         shell: bash
         run: |
