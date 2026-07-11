@@ -130,6 +130,7 @@ has(tracker, 'watchPosition', 'Driver web surface must use best-effort geolocati
 has(tracker, "window.addEventListener('pageshow'", 'Returning from navigation must request a new point.');
 has(ownerTracking, 'Driver position timeline', 'Owner must see a time-labelled location history.');
 has(ownerTracking, 'staleMinutes > 10', 'Owner map must flag stale positions.');
+has(ownerTracking, 'loadOwnerDriverLocationTimeline(businessDay, run.id)', 'Owner map must isolate samples to the active run ID.');
 has(trackingMigration, 'ecoflow_can_view_driver_location', 'Location history must remain Owner/Admin gated.');
 has(departure, 'Accept declaration and start route', 'Driver must explicitly accept the departure declaration.');
 has(departure, 'locationConsent', 'Route-location consent must be explicit.');
