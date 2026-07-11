@@ -5,12 +5,8 @@ on:
     branches: [main]
   push:
     branches:
-      - 'agent/warehouse-productisation'
-      - 'agent/warehouse-backend-hardening'
-      - 'agent/owner-driver-tracking-map'
-      - 'agent/fix-supabase-production-ref'
-      - 'agent/web-location-and-migration-baseline'
-      - 'agent/driver-departure-notifications-sync-optimisation'
+      - main
+      - 'agent/**'
 
 permissions:
   contents: read
