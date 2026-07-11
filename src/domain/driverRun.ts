@@ -44,17 +44,21 @@ export const WAREHOUSE = {
 };
 
 export type PodRecord = {
-  /** Local data URL cache — device-only, stripped before sync. */
-  photo?: string;
-  /** Local data URL cache — device-only, stripped before sync. */
-  signature?: string;
-  /** Supabase Storage path once uploaded — the shared source of truth. */
-  photoPath?: string;
-  signaturePath?: string;
-  receiverName?: string;
+  /** Device-only caches; stripped before shared day-state sync. */
+  pod1Photo?: string;
+  pod2Photo?: string;
+  /** Supabase Storage paths and the shared POD source of truth. */
+  pod1Path?: string;
+  pod2Path?: string;
   note?: string;
   location?: GeoPoint;
   capturedAt: string;
+  /** Legacy aliases retained only so historic synced records remain readable. */
+  photo?: string;
+  signature?: string;
+  photoPath?: string;
+  signaturePath?: string;
+  receiverName?: string;
 };
 
 export type StopException = {
@@ -149,7 +153,6 @@ export function stopsInLockedOrder(stops: RunStop[], pick: PickState): RunStop[]
 
 const RUN_STATUSES: OrderStatus[] = ['RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const READY_STATUSES: OrderStatus[] = ['STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
-const BOX_CODES = ['A', 'B', 'C', 'D', 'E', 'F'];
 /** Soft guidance only — the run is never silently truncated. */
 export const RUN_SIZE_WARNING = 16;
 
@@ -164,7 +167,13 @@ export function hasVerifiedAddress(address: string | undefined): boolean {
 }
 
 export function boxCodeForStop(index: number): string {
-  return BOX_CODES[index % BOX_CODES.length];
+  let value = Math.max(0, Math.floor(index));
+  let code = '';
+  do {
+    code = String.fromCharCode(65 + (value % 26)) + code;
+    value = Math.floor(value / 26) - 1;
+  } while (value >= 0);
+  return code;
 }
 
 function hashString(value: string): number {

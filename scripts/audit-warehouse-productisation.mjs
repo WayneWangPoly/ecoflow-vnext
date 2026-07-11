@@ -19,6 +19,9 @@ const warehouseOpsBundle = read('src/enhancers/WarehouseOpsEnhancers.tsx');
 const warehouseMapModules = read('src/enhancers/WarehouseMapRouteModules.tsx');
 const warehouseMapRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
 const driverApp = read('src/app/DriverApp.tsx');
+const driverRun = read('src/domain/driverRun.ts');
+const pickSync = read('src/data/repositories/pickSync.ts');
+const inventoryControl = read('src/InventoryControlCenter.tsx');
 const ownerEdit = read('src/WarehouseMapOwnerEdit.tsx');
 const putaway = read('src/WarehouseMapPutawayControl.tsx');
 const safety = read('src/ProductionWriteSafety.tsx');
@@ -28,7 +31,6 @@ const stage = read('src/StageAndLoadExecution.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
 const pickOwnership = read('src/PickTaskOwnership.tsx');
 const pickClaimRepository = read('src/data/repositories/pickTaskClaims.ts');
-const podQuality = read('src/DriverPodQualityEnhancer.tsx');
 const podRepository = read('src/data/repositories/deliveryPodQuality.ts');
 const driverTracker = read('src/DriverLocationTracker.tsx');
 const ownerTracking = read('src/OwnerDriverTrackingMap.tsx');
@@ -84,7 +86,8 @@ assert.match(driverBundle, /DriverLocationTracker/, 'Driver surface must mount r
 assert.match(driverBundle, /DriverDepartureControl/, 'Driver surface must mount the departure gate.');
 assert.match(ownerBundle, /OwnerDriverTrackingMap/, 'Owner surface must mount protected driver tracking.');
 assert.match(ownerBundle, /OwnerDeliveryGovernance/, 'Owner surface must mount delivery governance.');
-assert.match(ownerBundle, /InventoryMovementPolicy/, 'Owner inventory must block uncontrolled receiving.');
+assert.doesNotMatch(ownerBundle, /InventoryMovementPolicy/, 'Owner must not rely on a DOM patch to hide uncontrolled receiving.');
+assert.doesNotMatch(inventoryControl, /option value="RECEIVE"/, 'Inventory ledger must not expose a direct Receive movement.');
 assert.doesNotMatch(accountBundle, /OwnerDriverTrackingMap|OwnerDeliveryGovernance|InventoryControlCenter/, 'Accounts must not download owner tracking, governance or warehouse inventory controls.');
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
 
@@ -118,12 +121,17 @@ assert.match(pickClaimMigration, /PICK_TASK_CLAIM_REQUIRED/, 'Stock deduction mu
 assert.match(pickClaimMigration, /ecoflow_record_pick_movement_unchecked_20260711/, 'The proven pick implementation must remain behind the claim-checking wrapper.');
 assert.match(pickClaimMigration, /ecoflow_pick_task_claim_audit/, 'Claims, takeover and release must be audited.');
 
-assert.match(podQuality, /saveDropPointProof/, 'POD 1 must be uploaded as the store or placement-point proof.');
-assert.match(podQuality, /saveGoodsPlacedProof/, 'POD 2 must be uploaded as the all-goods proof.');
-assert.match(podQuality, /no receiver name required/, 'Receiver name must not be required for delivery completion.');
-assert.match(podQuality, /pod1Path[\s\S]+pod2Path/, 'Both uploaded POD paths must reach the notification queue.');
+assert.match(driverApp, /Take POD 1 · store / placement point/, 'DriverApp must natively request POD 1.');
+assert.match(driverApp, /Take POD 2 · all goods/, 'DriverApp must natively request POD 2.');
+assert.match(driverApp, /saveDropPointProof[\s\S]+saveGoodsPlacedProof/, 'Both proof uploads must complete before delivery status changes.');
+assert.doesNotMatch(driverApp, /function SignaturePad|Received by/, 'Driver POD must not request signature or receiver name.');
+assert.match(driverApp, /await queueDeliveryNotifications/, 'Delivery notification queueing must be part of the native delivery transaction.');
 assert.match(podRepository, /POD1_DROP_POINT/, 'POD 1 must persist as a typed proof record.');
 assert.match(podRepository, /POD2_GOODS_PLACED/, 'POD 2 must persist as a typed proof record.');
+assert.match(driverRun, /Math\.floor\(value / 26\) - 1/, 'Box codes must continue beyond Z without repeating.');
+assert.doesNotMatch(driverRun, /index % BOX_CODES\.length/, 'Box codes must never wrap back to A.');
+assert.match(pickSync, /Authenticated EcoFlow session is required/, 'Shared day state must require a signed-in user JWT.');
+assert.match(pickSync, /Bearer \${token}/, 'Operational REST and storage writes must use the user access token.');
 
 assert.match(migrationBaseline, /intentionally a no-op/i, 'The legacy production migration version must remain represented locally.');
 assert.match(migrationBaseline, /20260624/, 'The local baseline must match the remote migration version.');

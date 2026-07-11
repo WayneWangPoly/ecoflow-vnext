@@ -1,7 +1,6 @@
 import { DriverDeliveryExceptionEnhancer } from '../DriverDeliveryExceptionEnhancer';
 import { DriverDepartureControl } from '../DriverDepartureControl';
 import { DriverLocationTracker } from '../DriverLocationTracker';
-import { DriverPodQualityEnhancer } from '../DriverPodQualityEnhancer';
 import { DriverReturnZoneCheckin } from '../DriverReturnZoneCheckin';
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
 import { PickTaskOwnership } from '../PickTaskOwnership';
@@ -24,7 +23,6 @@ export default function DriverEnhancers() {
       <FieldOpsGuardRails />
       <PickTaskOwnership />
       <StageAndLoadExecution />
-      <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />
       <DriverLocationTracker />

@@ -1,5 +1,6 @@
 import type { DriverDayState, PodRecord, StopProgress } from '@/domain/driverRun';
 import type { PickState, PickTaskState } from '@/domain/pickPlan';
+import { supabase } from '@/lib/supabaseClient';
 
 export type PickSyncRow = {
   business_day: string;
@@ -23,9 +24,14 @@ export function pickSyncAvailable(): boolean {
   return Boolean(envValue('VITE_SUPABASE_URL') && envValue('VITE_SUPABASE_ANON_KEY'));
 }
 
-function baseHeaders(): Record<string, string> {
+async function authenticatedHeaders(): Promise<Record<string, string>> {
   const anonKey = envValue('VITE_SUPABASE_ANON_KEY');
-  return { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Authenticated EcoFlow session is required for shared operational state.');
+  return { apikey: anonKey, Authorization: `Bearer ${token}` };
 }
 
 async function rest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -33,7 +39,7 @@ async function rest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
     ...init,
     headers: {
-      ...baseHeaders(),
+      ...(await authenticatedHeaders()),
       Accept: 'application/json',
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers
@@ -81,7 +87,7 @@ export async function uploadPodAsset(path: string, dataUrl: string): Promise<str
     const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
     const response = await fetch(`${baseUrl}/storage/v1/object/${POD_BUCKET}/${path}`, {
       method: 'POST',
-      headers: { ...baseHeaders(), 'Content-Type': mime, 'x-upsert': 'true' },
+      headers: { ...(await authenticatedHeaders()), 'Content-Type': mime, 'x-upsert': 'true' },
       body: bytes
     });
     return response.ok ? path : null;
@@ -115,7 +121,7 @@ export async function callInternaliseOrders(limit = 50, dryRun = false): Promise
 /** POD data-URLs never travel through day state — only storage paths do. */
 function stripPod(pod: PodRecord | undefined): PodRecord | undefined {
   if (!pod) return undefined;
-  const { photo: _photo, signature: _signature, ...rest } = pod;
+  const { photo: _photo, signature: _signature, pod1Photo: _pod1Photo, pod2Photo: _pod2Photo, ...rest } = pod;
   return rest;
 }
 
@@ -228,7 +234,13 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
       const local = stopProgress[orderId];
       // Keep this device's photo cache when it is the same capture the path refers to.
       const pod = incoming.pod && local?.pod && incoming.pod.capturedAt === local.pod.capturedAt
-        ? { ...incoming.pod, photo: local.pod.photo, signature: local.pod.signature }
+        ? {
+            ...incoming.pod,
+            photo: local.pod.photo,
+            signature: local.pod.signature,
+            pod1Photo: local.pod.pod1Photo,
+            pod2Photo: local.pod.pod2Photo,
+          }
         : incoming.pod;
       stopProgress = { ...stopProgress, [orderId]: { ...incoming, pod } };
       return;

@@ -20,7 +20,6 @@ import {
   Map as MapIcon,
   MapPin,
   Navigation,
-  PenLine,
   Phone,
   Play,
   Printer,
@@ -56,7 +55,9 @@ import {
   WAREHOUSE,
   wazeUrl
 } from '@/domain/driverRun';
-import { podAssetUrl, uploadPodAsset } from '@/data/repositories/pickSync';
+import { podAssetUrl } from '@/data/repositories/pickSync';
+import { saveDropPointProof, saveGoodsPlacedProof } from '@/data/repositories/deliveryPodQuality';
+import { dispatchDeliveryNotifications, queueDeliveryNotifications } from '@/data/repositories/deliveryOperations';
 import { readImageDownscaled } from '@/lib/downscaleImage';
 import { allStopsStaged, buildRunCartons } from '@/domain/pickPlan';
 import { stopsInLockedOrder } from '@/domain/driverRun';
@@ -135,142 +136,58 @@ function PhotoField({ label, value, onChange }: { label: string; value?: string;
   );
 }
 
-function SignaturePad({ onChange }: { onChange: (dataUrl?: string) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawing = useRef(false);
-  const hasInk = useRef(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    ctx.lineWidth = 2.4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#123528';
-  }, []);
-
-  function point(event: React.PointerEvent<HTMLCanvasElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
-
-  function handleDown(event: React.PointerEvent<HTMLCanvasElement>) {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drawing.current = true;
-    const { x, y } = point(event);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }
-
-  function handleMove(event: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawing.current) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = point(event);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    hasInk.current = true;
-  }
-
-  function handleUp() {
-    if (!drawing.current) return;
-    drawing.current = false;
-    const canvas = canvasRef.current;
-    if (canvas && hasInk.current) onChange(canvas.toDataURL('image/png'));
-  }
-
-  function clear() {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    hasInk.current = false;
-    onChange(undefined);
-  }
-
-  return (
-    <div className="signature-block">
-      <canvas
-        ref={canvasRef}
-        className="signature-canvas"
-        onPointerDown={handleDown}
-        onPointerMove={handleMove}
-        onPointerUp={handleUp}
-        onPointerCancel={handleUp}
-      />
-      <div className="signature-hint-row">
-        <span><PenLine size={14} /> Customer signs above</span>
-        <button type="button" className="driver-ghost-button" onClick={clear}>Clear</button>
-      </div>
-    </div>
-  );
-}
-
-function PodSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; stopNumber: number; onCancel: () => void; onSubmit: (pod: PodRecord) => void }) {
-  const [photo, setPhoto] = useState<string | undefined>();
-  const [signature, setSignature] = useState<string | undefined>();
-  const [receiverName, setReceiverName] = useState('');
+function PodSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; stopNumber: number; onCancel: () => void; onSubmit: (pod: PodRecord) => Promise<void> }) {
+  const [pod1Photo, setPod1Photo] = useState<string | undefined>();
+  const [pod2Photo, setPod2Photo] = useState<string | undefined>();
   const [note, setNote] = useState('');
   const [location, setLocation] = useState<GeoPoint | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
-    capturePosition().then((point) => {
-      if (active) setLocation(point);
-    });
-    return () => {
-      active = false;
-    };
+    capturePosition().then((point) => { if (active) setLocation(point); });
+    return () => { active = false; };
   }, []);
 
-  const canSubmit = Boolean(photo || signature);
+  const canSubmit = Boolean(pod1Photo && pod2Photo) && !busy;
+
+  async function submit() {
+    if (!pod1Photo || !pod2Photo || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSubmit({
+        pod1Photo,
+        pod2Photo,
+        note: note.trim() || undefined,
+        location,
+        capturedAt: nowIso(),
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="driver-overlay" role="dialog" aria-label={`Proof of delivery for ${stop.store}`}>
       <div className="driver-bottom-sheet">
         <div className="sheet-grab" />
         <div className="sheet-head">
-          <div>
-            <strong>Proof of delivery</strong>
-            <span>Stop {stopNumber} · {stop.store}</span>
-          </div>
-          <button type="button" className="driver-icon-button" onClick={onCancel} aria-label="Close"><X size={20} /></button>
+          <div><strong>Proof of delivery</strong><span>Stop {stopNumber} · {stop.store}</span></div>
+          <button type="button" className="driver-icon-button" disabled={busy} onClick={onCancel} aria-label="Close"><X size={20} /></button>
         </div>
-        <PhotoField label="Take delivery photo" value={photo} onChange={setPhoto} />
-        <SignaturePad onChange={setSignature} />
-        <label className="pod-input">
-          <span>Received by</span>
-          <input value={receiverName} placeholder="Name of person on site" onChange={(event) => setReceiverName(event.target.value)} />
-        </label>
-        <label className="pod-input">
-          <span>Delivery note</span>
-          <input value={note} placeholder="Left at counter, cool room, etc." onChange={(event) => setNote(event.target.value)} />
-        </label>
+        <div className="pod-quality-pod1-note"><b>1</b><span><strong>Store / placement point</strong><small>Show signage, entrance, counter or another recognisable delivery point.</small></span></div>
+        <PhotoField label="Take POD 1 · store / placement point" value={pod1Photo} onChange={setPod1Photo} />
+        <div className="pod-quality-pod1-note"><b>2</b><span><strong>All goods</strong><small>Show every delivered carton together at the agreed placement point.</small></span></div>
+        <PhotoField label="Take POD 2 · all goods" value={pod2Photo} onChange={setPod2Photo} />
+        <label className="pod-input"><span>Delivery note (optional)</span><input value={note} placeholder="Left at counter, rear door, etc." onChange={(event) => setNote(event.target.value)} /></label>
         <div className="pod-meta-line"><MapPin size={14} /> {formatGeoPoint(location)} · {formatClockTime(nowIso())}</div>
-        {!canSubmit ? <div className="pod-requirement">A photo or a signature is required to complete this delivery.</div> : null}
-        <button
-          type="button"
-          className="driver-primary-button"
-          disabled={!canSubmit}
-          onClick={() => onSubmit({
-            photo,
-            signature,
-            receiverName: receiverName.trim() || undefined,
-            note: note.trim() || undefined,
-            location,
-            capturedAt: nowIso()
-          })}
-        >
-          <CheckCircle2 size={20} /> Confirm delivered
+        {!pod1Photo || !pod2Photo ? <div className="pod-requirement">POD 1 and POD 2 are required. Receiver name and signature are not required.</div> : null}
+        {error ? <div className="pod-requirement">Not completed: {error}</div> : null}
+        <button type="button" className="driver-primary-button" disabled={!canSubmit} onClick={() => void submit()}>
+          <CheckCircle2 size={20} /> {busy ? 'Uploading proof…' : 'Confirm delivered'}
         </button>
       </div>
     </div>
@@ -335,17 +252,19 @@ function FailSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; st
 }
 
 function PodSummary({ pod }: { pod: PodRecord }) {
+  const pod1 = pod.pod1Photo || pod.pod1Path || pod.photo || pod.photoPath;
+  const pod2 = pod.pod2Photo || pod.pod2Path || pod.signature || pod.signaturePath;
+  const src = (value?: string) => value ? (value.startsWith('data:') ? value : podAssetUrl(value)) : undefined;
   return (
     <div className="pod-summary">
       <div className="pod-summary-head"><CheckCircle2 size={18} /> Delivered {formatClockTime(pod.capturedAt)}</div>
       <div className="pod-summary-meta">
-        {pod.receiverName ? <span>Received by {pod.receiverName}</span> : <span>No receiver name recorded</span>}
         <span><MapPin size={13} /> {formatGeoPoint(pod.location)}</span>
         {pod.note ? <span>“{pod.note}”</span> : null}
       </div>
       <div className="pod-summary-thumbs">
-        {pod.photo || pod.photoPath ? <img src={pod.photo || podAssetUrl(pod.photoPath!) || undefined} alt="Delivery photo" loading="lazy" /> : null}
-        {pod.signature || pod.signaturePath ? <img className="pod-signature-thumb" src={pod.signature || podAssetUrl(pod.signaturePath!) || undefined} alt="Customer signature" loading="lazy" /> : null}
+        {pod1 ? <img src={src(pod1)} alt="POD 1 store or placement point" loading="lazy" /> : null}
+        {pod2 ? <img src={src(pod2)} alt="POD 2 all delivered goods" loading="lazy" /> : null}
       </div>
     </div>
   );
@@ -580,45 +499,43 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   }
 
   async function completeDelivery(row: StopWithProgress, pod: PodRecord) {
-    // Record locally first (offline-safe), then upload assets and sync the storage paths.
-    patchStop(row.stop.orderId, { status: 'DELIVERED', completedAt: pod.capturedAt, pod });
+    if (!pod.pod1Photo || !pod.pod2Photo) throw new Error('POD 1 and POD 2 are both required.');
+    const context = {
+      businessDay: businessDay.date,
+      orderId: row.stop.orderId,
+      orderNumber: row.stop.orderNo,
+      stopNumber: row.displayNumber,
+      boxCode: row.stop.boxCode,
+      storeName: row.stop.store,
+      actorLabel: actorLabel || 'Driver',
+    };
+    const [pod1Path, pod2Path] = await Promise.all([
+      saveDropPointProof({ context, dataUrl: pod.pod1Photo }),
+      saveGoodsPlacedProof({ context, dataUrl: pod.pod2Photo }),
+    ]);
+    await queueDeliveryNotifications({
+      ...context,
+      outcome: 'DELIVERED',
+      eventKey: `${businessDay.date}:${row.stop.orderId}:DELIVERED`,
+      storePhone: row.stop.phone || null,
+      pod1Path,
+      pod2Path,
+      internalDetail: 'Full delivery completed with required two-photo POD.',
+    });
+    void dispatchDeliveryNotifications({ businessDay: businessDay.date, orderId: row.stop.orderId }).catch(() => undefined);
+
+    const savedPod: PodRecord = {
+      note: pod.note,
+      location: pod.location,
+      capturedAt: pod.capturedAt,
+      pod1Path,
+      pod2Path,
+    };
+    patchStop(row.stop.orderId, { status: 'DELIVERED', completedAt: pod.capturedAt, pod: savedPod });
     setOrderStatus(row.stop.orderId, 'DELIVERED', true);
     setPodOpen(false);
     setActiveStopId(null);
     setTab('stops');
-    const stamp = pod.capturedAt.replace(/[:.]/g, '-');
-    const prefix = `${businessDay.date}/${row.stop.orderId}`;
-    const [photoPath, signaturePath] = await Promise.all([
-      pod.photo ? uploadPodAsset(`${prefix}/photo-${stamp}.jpg`, pod.photo) : Promise.resolve(null),
-      pod.signature ? uploadPodAsset(`${prefix}/signature-${stamp}.png`, pod.signature) : Promise.resolve(null)
-    ]);
-    if (photoPath || signaturePath) {
-      setDay((current) => {
-        const progress = current.stopProgress[row.stop.orderId];
-        if (!progress?.pod || progress.pod.capturedAt !== pod.capturedAt) return current;
-        // Once an asset is safely in storage, drop its base64 copy from day state.
-        // Keeping megabytes of photo data in localStorage exhausts the ~5MB quota
-        // within days and silently stops all progress persistence.
-        const nextPhotoPath = photoPath ?? progress.pod.photoPath;
-        const nextSignaturePath = signaturePath ?? progress.pod.signaturePath;
-        return {
-          ...current,
-          stopProgress: {
-            ...current.stopProgress,
-            [row.stop.orderId]: {
-              ...progress,
-              pod: {
-                ...progress.pod,
-                photoPath: nextPhotoPath,
-                signaturePath: nextSignaturePath,
-                photo: nextPhotoPath ? undefined : progress.pod.photo,
-                signature: nextSignaturePath ? undefined : progress.pod.signature
-              }
-            }
-          }
-        };
-      });
-    }
   }
 
   function failDelivery(row: StopWithProgress, exception: StopException) {

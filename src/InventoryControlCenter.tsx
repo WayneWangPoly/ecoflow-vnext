@@ -123,13 +123,12 @@ function MovementPanel({ movementDrafts, setMovementDrafts, busyMovement, onMove
   const set = (key: keyof MovementDrafts, value: string) => setMovementDrafts({ ...movementDrafts, [key]: value });
   const type = movementDrafts.movementType;
   const needsFrom = type === 'PUTAWAY' || type === 'DISPATCH' || type === 'ADJUST_OUT';
-  const needsTo = type === 'PUTAWAY' || type === 'RECEIVE' || type === 'ADJUST_IN' || type === 'RETURN_IN';
+  const needsTo = type === 'PUTAWAY' || type === 'ADJUST_IN' || type === 'RETURN_IN';
   return (
     <section className="inventory-movement-panel">
       <header><h4>Live movement ledger</h4><Pill tone="blue">stock source</Pill></header>
       <div className="inventory-movement-grid">
         <select value={movementDrafts.movementType} onChange={(e) => set('movementType', e.target.value as InventoryMovementType)}>
-          <option value="RECEIVE">Receive</option>
           <option value="PUTAWAY">Putaway</option>
           <option value="DISPATCH">Dispatch</option>
           <option value="ADJUST_IN">Adjust in</option>
@@ -193,7 +192,7 @@ function InventoryContent() {
   const [sort, setSort] = useState<SortMode>('rank');
   const [selectedSku, setSelectedSku] = useState('');
   const [drafts, setDrafts] = useState<Drafts>({ shelf: '', barcode: '', reorder: '', onHand: '', note: '', status: 'ACTIVE' });
-  const [movementDrafts, setMovementDrafts] = useState<MovementDrafts>({ movementType: 'RECEIVE', qty: '', from: '', to: 'RECEIVING', reference: '', note: '' });
+  const [movementDrafts, setMovementDrafts] = useState<MovementDrafts>({ movementType: 'PUTAWAY', qty: '', from: '', to: 'RECEIVING', reference: '', note: '' });
   const [busyAction, setBusyAction] = useState('');
   const [busyMovement, setBusyMovement] = useState('');
   const [notice, setNotice] = useState('');
