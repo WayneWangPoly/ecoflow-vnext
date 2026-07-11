@@ -53,7 +53,7 @@ with sku_ranked as (
     s.last_synced_at,
     row_number() over (
       partition by nullif(trim(s.external_sku_code),'')
-      order by case when s.resource_type in ('variants','variant_detail') then 0 else 1 end,
+      order by case when s.source_type = 'variant' then 0 else 1 end,
                s.last_synced_at desc nulls last
     ) as rn
   from public.v_ecoflow_ordermentum_sku_master_v1 s
