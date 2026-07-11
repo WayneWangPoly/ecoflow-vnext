@@ -52,15 +52,13 @@ jobs:
           test "$(wc -c < /tmp/final-consolidation.patch | tr -d ' ')" = "119755"
           echo "470a2504c6a8913032bb7e15c0fdbc011186a7e1a7c284d403cd5f6f0d7d2c62  /tmp/final-consolidation.patch" | sha256sum -c -
           git apply --check --verbose /tmp/final-consolidation.patch
-      - name: Apply production changes
+      - name: Apply production source changes
         shell: bash
         run: |
           set -euo pipefail
           git apply --whitespace=nowarn /tmp/final-consolidation.patch
           rm -f src/driverPodQuality.css
-          cp scripts/final-warehouse-productisation-check.yml .github/workflows/warehouse-productisation-check.yml
           rm -f scripts/final-consolidation.patch.part-*
-          rm -f scripts/final-warehouse-productisation-check.yml
       - name: Commit and push final source
         shell: bash
         run: |
