@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, RotateCcw } from 'lucide-react';
-import { resolveOrderIdForBox, saveGoodsPlacedProof, type PodQualityContext } from '@/data/repositories/deliveryPodQuality';
+import {
+  resolveOrderIdForBox,
+  saveDropPointProof,
+  saveGoodsPlacedProof,
+  type PodQualityContext,
+} from '@/data/repositories/deliveryPodQuality';
 import { dispatchDeliveryNotifications, queueDeliveryNotifications, type DeliveryOutcome } from '@/data/repositories/deliveryOperations';
 import { readImageDownscaled } from '@/lib/downscaleImage';
-
-function readImageAsDataUrl(file: File): Promise<string> {
-  return readImageDownscaled(file, 1100, 0.68);
-}
 
 function activeBusinessDay() {
   const candidates: Array<{ businessDay: string; active: boolean }> = [];
@@ -23,7 +24,7 @@ function activeBusinessDay() {
       candidates.push({ businessDay: key.slice('ecoflow-driver-day:'.length), active: false });
     }
   }
-  return candidates.sort((a, b) => Number(b.active) - Number(a.active) || b.businessDay.localeCompare(a.businessDay))[0]?.businessDay || new Date().toISOString().slice(0, 10);
+  return candidates.sort((left, right) => Number(right.active) - Number(left.active) || right.businessDay.localeCompare(left.businessDay))[0]?.businessDay || new Date().toISOString().slice(0, 10);
 }
 
 function text(root: ParentNode | null | undefined, selector: string) {
@@ -47,7 +48,12 @@ function readContext(sheet: HTMLElement) {
   };
 }
 
-function Pod2Capture({ contextSeed, onReadyChange }: { contextSeed: ReturnType<typeof readContext>; onReadyChange: (path: string) => void }) {
+function contextKey(context: ReturnType<typeof readContext> | null) {
+  if (!context) return '';
+  return [context.businessDay, context.stopNumber, context.storeName, context.orderNumber, context.boxCode, context.actorLabel].join('|');
+}
+
+function Pod2Capture({ context, onReadyChange }: { context: PodQualityContext; onReadyChange: (path: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [preview, setPreview] = useState('');
   const [uploadedPath, setUploadedPath] = useState('');
@@ -56,7 +62,7 @@ function Pod2Capture({ contextSeed, onReadyChange }: { contextSeed: ReturnType<t
 
   useEffect(() => onReadyChange(uploadedPath), [uploadedPath, onReadyChange]);
 
-  const contextLabel = useMemo(() => [contextSeed.boxCode, contextSeed.storeName].filter(Boolean).join(' · '), [contextSeed.boxCode, contextSeed.storeName]);
+  const contextLabel = useMemo(() => [context.boxCode, context.storeName].filter(Boolean).join(' · '), [context.boxCode, context.storeName]);
 
   async function capture(file?: File) {
     if (!file) return;
@@ -64,15 +70,12 @@ function Pod2Capture({ contextSeed, onReadyChange }: { contextSeed: ReturnType<t
     setError('');
     setUploadedPath('');
     try {
-      const dataUrl = await readImageAsDataUrl(file);
+      const dataUrl = await readImageDownscaled(file, 1100, 0.68);
       setPreview(dataUrl);
-      const orderId = contextSeed.boxCode ? await resolveOrderIdForBox({ businessDay: contextSeed.businessDay, boxCode: contextSeed.boxCode }) : null;
-      if (!orderId) throw new Error('Locked route order could not be resolved for this BOX. Refresh the route sync and try again.');
-      const context: PodQualityContext = { ...contextSeed, orderId };
       const path = await saveGoodsPlacedProof({ context, dataUrl });
       setUploadedPath(path);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -89,32 +92,58 @@ function Pod2Capture({ contextSeed, onReadyChange }: { contextSeed: ReturnType<t
   return (
     <section className="pod-quality-pod2">
       <div className="pod-quality-step-head">
-        <div><b>2</b><span><strong>All goods placed</strong><small>Show every carton together at the agreed drop point. Labels should be visible where practical.</small></span></div>
+        <div><b>2</b><span><strong>All goods</strong><small>Show all delivered cartons together at the agreed placement point. Labels should be visible where practical.</small></span></div>
         {uploadedPath ? <em><CheckCircle2 size={16} /> Saved</em> : null}
       </div>
       {preview ? (
         <div className="pod-quality-preview">
-          <img src={preview} alt="All delivered goods placed" />
+          <img src={preview} alt="All delivered goods" />
           <button type="button" disabled={busy} onClick={reset}><RotateCcw size={15} /> Retake</button>
         </div>
       ) : (
         <button type="button" className="pod-quality-capture" disabled={busy} onClick={() => inputRef.current?.click()}>
-          <Camera size={20} /> {busy ? 'Uploading photo…' : 'Take POD 2 photo'}
+          <Camera size={20} /> {busy ? 'Uploading POD 2…' : 'Take POD 2 · all goods'}
         </button>
       )}
       <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => void capture(event.target.files?.[0])} />
-      <p className="pod-quality-context">{contextLabel || 'Current delivery stop'} · photo uploads before delivery can be completed.</p>
+      <p className="pod-quality-context">{contextLabel || 'Current delivery stop'} · confirmation remains locked until this photo is uploaded.</p>
       {error ? <div className="pod-quality-error">{error}</div> : null}
     </section>
   );
 }
 
+function hideLegacyOptionalFields(sheet: HTMLElement) {
+  const signature = sheet.querySelector<HTMLElement>('.signature-block');
+  if (signature) signature.hidden = true;
+
+  const receiverLabel = Array.from(sheet.querySelectorAll<HTMLElement>('label.pod-input')).find((label) => /received by/i.test(label.textContent || ''));
+  if (receiverLabel) {
+    receiverLabel.hidden = true;
+    const input = receiverLabel.querySelector<HTMLInputElement>('input');
+    if (input?.value) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      nativeSetter?.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  const requirement = sheet.querySelector<HTMLElement>('.pod-requirement');
+  if (requirement) requirement.textContent = 'POD 1 and POD 2 are both required. Signature and receiver name are not required.';
+}
+
 export function DriverPodQualityEnhancer() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState<HTMLElement | null>(null);
-  const [pod2Path, setPod2Path] = useState('');
-  const [pod1Ready, setPod1Ready] = useState(false);
   const [contextSeed, setContextSeed] = useState<ReturnType<typeof readContext> | null>(null);
+  const [resolvedContext, setResolvedContext] = useState<PodQualityContext | null>(null);
+  const [pod1DataUrl, setPod1DataUrl] = useState('');
+  const [pod1Path, setPod1Path] = useState('');
+  const [pod1Busy, setPod1Busy] = useState(false);
+  const [pod1Error, setPod1Error] = useState('');
+  const [pod2Path, setPod2Path] = useState('');
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueError, setQueueError] = useState('');
+  const bypassRef = useRef(false);
 
   useEffect(() => {
     function locate() {
@@ -122,21 +151,34 @@ export function DriverPodQualityEnhancer() {
       if (!nextSheet) {
         setHost(null);
         setSheet(null);
-        setPod1Ready(false);
-        setPod2Path('');
         setContextSeed(null);
+        setResolvedContext(null);
+        setPod1DataUrl('');
+        setPod1Path('');
+        setPod1Error('');
+        setPod2Path('');
+        setQueueError('');
         return;
       }
 
+      hideLegacyOptionalFields(nextSheet);
       const firstField = nextSheet.querySelector<HTMLElement>('.pod-field');
       const firstButton = firstField?.querySelector<HTMLButtonElement>('.pod-capture-button');
-      if (firstButton) firstButton.innerHTML = '<span aria-hidden="true">📷</span> Take POD 1 · store / drop point';
+      if (firstButton) firstButton.innerHTML = '<span aria-hidden="true">📷</span> Take POD 1 · store / placement point';
+
       let firstNote = nextSheet.querySelector<HTMLElement>('.pod-quality-pod1-note');
       if (!firstNote && firstField) {
         firstNote = document.createElement('div');
         firstNote.className = 'pod-quality-pod1-note';
-        firstNote.innerHTML = '<b>1</b><span><strong>Store / drop location</strong><small>Include store signage, entrance or another recognisable delivery point.</small></span>';
+        firstNote.innerHTML = '<b>1</b><span><strong>Store / placement point</strong><small>Include store signage, entrance, counter or another recognisable placement point.</small></span>';
         firstField.insertAdjacentElement('beforebegin', firstNote);
+      }
+
+      let firstStatus = nextSheet.querySelector<HTMLElement>('.pod-quality-pod1-status');
+      if (!firstStatus && firstField) {
+        firstStatus = document.createElement('div');
+        firstStatus.className = 'pod-quality-context pod-quality-pod1-status';
+        firstField.insertAdjacentElement('afterend', firstStatus);
       }
 
       let mount = nextSheet.querySelector<HTMLElement>('.driver-pod-quality-mount');
@@ -148,21 +190,74 @@ export function DriverPodQualityEnhancer() {
         else nextSheet.appendChild(mount);
       }
 
+      const nextContext = readContext(nextSheet);
+      setContextSeed((current) => contextKey(current) === contextKey(nextContext) ? current : nextContext);
       setSheet(nextSheet);
       setHost(mount);
-      setContextSeed(readContext(nextSheet));
-      setPod1Ready(Boolean(firstField?.querySelector('.pod-photo-preview img')));
+
+      const imageSource = firstField?.querySelector<HTMLImageElement>('.pod-photo-preview img')?.src || '';
+      setPod1DataUrl((current) => current === imageSource ? current : imageSource);
     }
 
-    const stopObserving = observeBody(locate);
-    return stopObserving;
+    return observeBody(locate);
   }, []);
 
   useEffect(() => {
-    if (!sheet || !contextSeed) return;
+    if (!contextSeed?.boxCode) {
+      setResolvedContext(null);
+      return;
+    }
+    let active = true;
+    void resolveOrderIdForBox({ businessDay: contextSeed.businessDay, boxCode: contextSeed.boxCode })
+      .then((orderId) => {
+        if (!active) return;
+        if (!orderId) throw new Error('Locked route order could not be resolved for this box. Refresh route sync and try again.');
+        setResolvedContext({ ...contextSeed, orderId });
+      })
+      .catch((reason) => {
+        if (!active) return;
+        setResolvedContext(null);
+        setQueueError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { active = false; };
+  }, [contextSeed]);
+
+  useEffect(() => {
+    if (!pod1DataUrl) {
+      setPod1Path('');
+      setPod1Error('');
+      return;
+    }
+    if (!resolvedContext || pod1Path) return;
+    let active = true;
+    setPod1Busy(true);
+    setPod1Error('');
+    void saveDropPointProof({ context: resolvedContext, dataUrl: pod1DataUrl })
+      .then((path) => { if (active) setPod1Path(path); })
+      .catch((reason) => { if (active) setPod1Error(reason instanceof Error ? reason.message : String(reason)); })
+      .finally(() => { if (active) setPod1Busy(false); });
+    return () => { active = false; };
+  }, [pod1DataUrl, resolvedContext, pod1Path]);
+
+  useEffect(() => {
+    if (!sheet) return;
+    const status = sheet.querySelector<HTMLElement>('.pod-quality-pod1-status');
+    if (!status) return;
+    status.textContent = pod1Busy
+      ? 'Uploading POD 1…'
+      : pod1Path
+        ? 'POD 1 uploaded and saved.'
+        : pod1Error
+          ? `POD 1 not saved: ${pod1Error}`
+          : 'Take POD 1 to continue.';
+    status.classList.toggle('pod-quality-error', Boolean(pod1Error));
+  }, [sheet, pod1Busy, pod1Path, pod1Error]);
+
+  useEffect(() => {
+    if (!sheet || !resolvedContext) return;
     const confirm = Array.from(sheet.querySelectorAll<HTMLButtonElement>('button')).find((button) => /Confirm delivered/i.test(button.textContent || ''));
     if (!confirm) return;
-    const ready = pod1Ready && Boolean(pod2Path);
+    const ready = Boolean(pod1Path && pod2Path) && !pod1Busy && !queueBusy;
     confirm.disabled = !ready;
     confirm.dataset.podQualityReady = ready ? 'true' : 'false';
 
@@ -172,48 +267,59 @@ export function DriverPodQualityEnhancer() {
       gate.className = 'pod-quality-gate';
       confirm.insertAdjacentElement('beforebegin', gate);
     }
-    gate.innerHTML = `<strong>${ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED'}</strong><span>POD 1 ${pod1Ready ? '✓' : '—'} · POD 2 ${pod2Path ? '✓' : '—'} · confirmation message queues automatically</span>`;
+    gate.innerHTML = `<strong>${ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED'}</strong><span>POD 1 ${pod1Path ? '✓' : '—'} · POD 2 ${pod2Path ? '✓' : '—'} · no receiver name required</span>${queueError ? `<small>${queueError}</small>` : ''}`;
 
     const handle = (event: Event) => {
-      if (confirm.dataset.podQualityReady !== 'true') {
-        event.preventDefault();
-        event.stopPropagation();
+      if (bypassRef.current) {
+        bypassRef.current = false;
         return;
       }
-      if (confirm.dataset.notificationQueued === 'true') return;
-      confirm.dataset.notificationQueued = 'true';
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (!ready || queueBusy) return;
+
+      setQueueBusy(true);
+      setQueueError('');
       void (async () => {
         try {
-          const orderId = contextSeed.boxCode ? await resolveOrderIdForBox({ businessDay: contextSeed.businessDay, boxCode: contextSeed.boxCode }) : null;
-          if (!orderId) throw new Error('Could not resolve order for delivery notification.');
           const phoneHref = document.querySelector<HTMLAnchorElement>('.driver-sheet a.phone-link')?.getAttribute('href') || '';
-          const storedKey = `ecoflow-delivery-outcome:${contextSeed.businessDay}:${orderId}`;
+          const storedKey = `ecoflow-delivery-outcome:${resolvedContext.businessDay}:${resolvedContext.orderId}`;
           let stored: { outcome?: DeliveryOutcome; exceptionId?: string } | null = null;
           try { stored = JSON.parse(window.localStorage.getItem(storedKey) || 'null'); } catch { stored = null; }
           const outcome: DeliveryOutcome = stored?.outcome === 'PARTIAL' || stored?.outcome === 'MISSING_CARTON' ? stored.outcome : 'DELIVERED';
-          const eventKey = stored?.exceptionId ? `${contextSeed.businessDay}:${orderId}:EXCEPTION:${stored.exceptionId}` : `${contextSeed.businessDay}:${orderId}:DELIVERED`;
+          const eventKey = stored?.exceptionId
+            ? `${resolvedContext.businessDay}:${resolvedContext.orderId}:EXCEPTION:${stored.exceptionId}`
+            : `${resolvedContext.businessDay}:${resolvedContext.orderId}:DELIVERED`;
+
           await queueDeliveryNotifications({
-            ...contextSeed,
-            orderId,
+            ...resolvedContext,
             outcome,
             eventKey,
             storePhone: phoneHref.replace(/^tel:/i, '').trim() || null,
+            pod1Path,
             pod2Path,
-            internalDetail: outcome === 'DELIVERED' ? 'Full delivery completed with two-photo POD.' : 'Partial delivery completed for the cartons placed on site.',
+            internalDetail: outcome === 'DELIVERED'
+              ? 'Full delivery completed with required two-photo POD.'
+              : 'Partial delivery completed with required two-photo POD for goods placed on site.',
           });
-          void dispatchDeliveryNotifications({ businessDay: contextSeed.businessDay, orderId }).catch(() => undefined);
+          void dispatchDeliveryNotifications({ businessDay: resolvedContext.businessDay, orderId: resolvedContext.orderId }).catch(() => undefined);
           if (stored?.exceptionId) window.localStorage.removeItem(storedKey);
-        } catch (err) {
-          confirm.dataset.notificationQueued = 'false';
-          console.error('Delivery notification queue failed', err);
+          bypassRef.current = true;
+          confirm.click();
+        } catch (reason) {
+          setQueueError(reason instanceof Error ? reason.message : String(reason));
+        } finally {
+          setQueueBusy(false);
         }
       })();
     };
+
     confirm.addEventListener('click', handle, true);
     return () => confirm.removeEventListener('click', handle, true);
-  }, [sheet, contextSeed, pod1Ready, pod2Path]);
+  }, [sheet, resolvedContext, pod1Path, pod2Path, pod1Busy, queueBusy, queueError]);
 
-  return host && sheet && contextSeed
-    ? createPortal(<Pod2Capture key={`${contextSeed.businessDay}-${contextSeed.boxCode}-${contextSeed.stopNumber}`} contextSeed={contextSeed} onReadyChange={setPod2Path} />, host)
+  return host && resolvedContext
+    ? createPortal(<Pod2Capture key={`${resolvedContext.businessDay}-${resolvedContext.orderId}`} context={resolvedContext} onReadyChange={setPod2Path} />, host)
     : null;
 }
