@@ -1,256 +1,86 @@
 import { useEffect, useMemo, useState } from 'react';
-import { observeBody } from '@/lib/domObserver';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  loadAccountsArKpis,
-  loadAccountsFollowupQueue,
-  loadAccountsStatementCustomers,
-  loadAccountsStatementExportRows,
-  loadAccountsStatementLines,
-  recordAccountsStatementAction,
-  type AccountsArKpis,
-  type AccountsFollowupRow,
-  type AccountsStatementAction,
-  type AccountsStatementCustomerRow,
-  type AccountsStatementLineRow,
-} from '@/data/repositories/accountsStatement';
-
+import { observeBody } from '@/lib/domObserver';
+import { createStatementDocument, dispatchStatement, loadAccountsArKpis, loadAccountsFollowupQueue, loadAccountsStatementCustomers, loadAccountsStatementExportRows, loadAccountsStatementLines, loadPaymentHistory, loadStatementDocuments, recordAccountsStatementAction, recordCustomerPayment, saveBillingContact, statementSignedUrl, type AccountsArKpis, type AccountsFollowupRow, type AccountsStatementAction, type AccountsStatementCustomerRow, type AccountsStatementLineRow, type PaymentReceiptRow, type StatementDocumentRow, } from '@/data/repositories/accountsStatement';
 type PriorityFilter = 'ALL' | 'URGENT_COLLECTION' | 'COLLECTION' | 'SEND_STATEMENT' | 'ON_HOLD' | 'CLEAR';
 type CustomerSort = 'priority' | 'open' | 'overdue' | 'recent' | 'name';
-
-function num(value: unknown) {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+function num(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
+function money(value: unknown) { return num(value).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2 }); }
+function units(value: unknown) { return num(value).toLocaleString('en-AU', { maximumFractionDigits: 0 }); }
+function dateText(value?: string | null) { if (!value) return '—'; const d = new Date(value); return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }); }
+function title(value?: string | null) { return String(value || 'UNKNOWN').replace(/_/g, ' '); }
+function tone(value?: string | null): 'good' | 'warn' | 'danger' | 'blue' | 'neutral' { if (value === 'CLEAR' || value === 'PAID' || value === 'SENT' || value === 'GENERATED') return 'good'; if (value?.includes('URGENT') || value?.includes('30_PLUS') || value === 'ON_HOLD' || value === 'FAILED') return 'danger'; if (value?.includes('OVERDUE') || value?.includes('COLLECTION') || value?.includes('HOLD') || value === 'CONFIGURATION_REQUIRED') return 'warn'; if (value?.includes('OPEN') || value?.includes('SEND') || value?.includes('DUE') || value === 'DRAFT') return 'blue'; return 'neutral'; }
+function priorityWeight(value?: string | null) { return value === 'ON_HOLD' ? 0 : value === 'URGENT_COLLECTION' ? 1 : value === 'COLLECTION' ? 2 : value === 'SEND_STATEMENT' ? 3 : 4; }
+function Pill({ children, tone: pillTone = 'neutral' }: { children: ReactNode; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral'; }) { return <span className={`accounts-pill accounts-pill-${pillTone}`}>{children}</span>; }
+function Metric({ label, value, helper, tone: metricTone = 'neutral' }: { label: string; value: string | number; helper: string; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral'; }) { return <article className={`accounts-metric accounts-metric-${metricTone}`}><strong>{value}</strong><span>{label}</span><small>{helper}</small></article>; }
+function useAccountsHost() { const [host, setHost] = useState<HTMLElement | null>(null); useEffect(() => observeBody(() => { const heading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find(n => n.textContent?.trim() === 'Reconciliation queue'); const panel = heading?.closest<HTMLElement>('.panel'); if (!panel) { setHost(null); return; } panel.classList.add('accounts-native-reconciliation-panel-soft-hide'); let mount = document.querySelector<HTMLElement>('.accounts-statement-workbench-mount'); if (!mount) { mount = document.createElement('section'); mount.className = 'accounts-statement-workbench-mount'; panel.insertAdjacentElement('beforebegin', mount); } setHost(mount); }), []); return host; }
+function csvEscape(value: unknown) { const text = value == null ? '' : String(value); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
+function downloadCsv(filename: string, rows: Record<string, unknown>[]) { if (!rows.length) return; const headers = Object.keys(rows[0]); const csv = [headers.join(','), ...rows.map(row => headers.map(h => csvEscape(row[h])).join(','))].join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
+function CustomerRow({ row, selected, onSelect }: { row: AccountsStatementCustomerRow; selected: boolean; onSelect: () => void; }) { return <article className={`accounts-customer-row ${selected ? 'selected' : ''}`} onClick={onSelect}><div><strong>{row.store_name || 'Unknown store'}</strong><span>{row.suburb || 'Suburb pending'} · {row.billing_email || row.contact_phone || 'billing contact pending'}</span><small>{row.latest_action ? `${title(row.latest_action)} · ${dateText(row.latest_action_at)}` : 'No accounts action yet'}</small></div><div><strong>{money(row.open_statement_value)}</strong><span>open</span></div><div><strong>{money(row.overdue_statement_value)}</strong><span>overdue</span></div><div><strong>{units(row.worst_overdue_days)}</strong><span>days</span></div><Pill tone={tone(row.accounts_priority)}>{title(row.accounts_priority)}</Pill></article>; }
+function InvoiceRow({ row }: { row: AccountsStatementLineRow; }) { return <article className="accounts-invoice-row"><div><strong>{row.invoice_number || 'No invoice'}</strong><span>{row.order_number || 'order pending'} · {dateText(row.order_ts)}</span></div><span>{dateText(row.due_at)}</span><strong>{money(row.outstanding_amount)}</strong><span>{money(row.allocated_amount)} paid</span><Pill tone={tone(row.accounts_signal)}>{title(row.accounts_signal)}</Pill></article>; }
+function FollowupRow({ row }: { row: AccountsFollowupRow; }) { return <article className="accounts-followup-row"><div><strong>{row.store_name}</strong><span>{title(row.next_action)} · {row.billing_email || row.contact_phone || 'contact pending'}</span></div><span>{money(row.open_statement_value)}</span><span>{money(row.overdue_statement_value)}</span><Pill tone={tone(row.accounts_priority)}>{title(row.accounts_priority)}</Pill></article>; }
+function StatementHistory({ documents, onOpen }: { documents: StatementDocumentRow[]; onOpen: (row: StatementDocumentRow) => void; }) { return <div className="accounts-document-list">{documents.slice(0, 10).map(row => <article key={row.id}><div><strong>{row.statement_number}</strong><span>{dateText(row.period_start)} – {dateText(row.period_end)} · {row.line_count} lines</span></div><strong>{money(row.closing_balance)}</strong><Pill tone={tone(row.document_status)}>{title(row.document_status)}</Pill>{row.storage_path ? <button type="button" onClick={() => onOpen(row)}>Open PDF</button> : null}{row.error_message ? <small>{row.error_message}</small> : null}</article>)}{!documents.length ? <p className="accounts-empty">No formal statement has been generated for this customer.</p> : null}</div>; }
+function PaymentHistory({ rows }: { rows: PaymentReceiptRow[]; }) { return <div className="accounts-payment-list">{rows.slice(0, 10).map(row => <article key={row.id}><div><strong>{row.payment_reference}</strong><span>{dateText(row.paid_at)} · {title(row.payment_method)}</span></div><strong>{money(row.amount)}</strong><span>{money(row.allocated_amount)} allocated</span>{num(row.unapplied_amount) > 0 ? <Pill tone="warn">{money(row.unapplied_amount)} unapplied</Pill> : <Pill tone="good">ALLOCATED</Pill>}</article>)}{!rows.length ? <p className="accounts-empty">No EcoFlow payment allocation has been recorded.</p> : null}</div>; }
+function CustomerDetail({ customer, lines, documents, payments, busy, onAction, onReload }: { customer?: AccountsStatementCustomerRow; lines: AccountsStatementLineRow[]; documents: StatementDocumentRow[]; payments: PaymentReceiptRow[]; busy: string; onAction: (action: AccountsStatementAction, note?: string, value?: string) => void; onReload: () => Promise<void>; }) {
+    const [note, setNote] = useState('');
+    const [email, setEmail] = useState('');
+    const [contact, setContact] = useState('');
+    const [emailEnabled, setEmailEnabled] = useState(true);
+    const [periodStart, setPeriodStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; });
+    const [periodEnd, setPeriodEnd] = useState(() => new Date().toISOString().slice(0, 10));
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER');
+    const [paymentRef, setPaymentRef] = useState('');
+    const [paymentNote, setPaymentNote] = useState('');
+    const [localBusy, setLocalBusy] = useState('');
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+    useEffect(() => { setNote(''); setEmail(customer?.billing_email || ''); setContact(customer?.billing_contact_name || ''); setEmailEnabled(customer?.billing_enabled !== false); setMessage(''); setError(''); setPaymentAmount(''); setPaymentRef(''); }, [customer?.store_id]);
+    if (!customer?.store_id) return <section className="accounts-detail accounts-empty">Select a customer to review statement detail.</section>;
+    async function saveContact() { setLocalBusy('contact'); setError(''); try { await saveBillingContact({ storeId: customer!.store_id!, storeName: customer!.store_name || customer!.store_id!, email, contactName: contact, enabled: emailEnabled }); setMessage('Billing contact saved.'); await onReload(); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } finally { setLocalBusy(''); } }
+    async function generate(send: boolean) { setLocalBusy(send ? 'send' : 'generate'); setError(''); setMessage(''); try { const created = await createStatementDocument({ storeId: customer!.store_id!, periodStart, periodEnd }); const statement = created[0]; if (!statement?.id) throw new Error('Statement snapshot was not created.'); const result = await dispatchStatement({ statementId: statement.id, send }); setMessage(send ? `Statement ${statement.statement_number} processed: ${title(String(result.status || 'GENERATED'))}.` : `Statement ${statement.statement_number} PDF generated.`); await onReload(); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } finally { setLocalBusy(''); } }
+    async function recordPayment() { const amount = Number(paymentAmount); if (!Number.isFinite(amount) || amount <= 0 || !paymentRef.trim()) { setError('Enter a positive payment amount and unique reference.'); return; } setLocalBusy('payment'); setError(''); try { const result = await recordCustomerPayment({ storeId: customer!.store_id!, storeName: customer!.store_name || customer!.store_id!, amount, paidAt: paymentDate, method: paymentMethod, reference: paymentRef, note: paymentNote }); const row = (result as Array<Record<string, unknown>>)[0]; setMessage(`Payment recorded. ${money(row?.allocated_amount)} allocated; ${money(row?.unapplied_amount)} unapplied.`); setPaymentAmount(''); setPaymentRef(''); setPaymentNote(''); await onReload(); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } finally { setLocalBusy(''); } }
+    async function openPdf(row: StatementDocumentRow) { if (!row.storage_path) return; try { window.open(await statementSignedUrl(row.storage_path), '_blank', 'noopener,noreferrer'); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } }
+    return <section className="accounts-detail"><section className="accounts-detail-hero"><div><span>STATEMENT DETAIL</span><h3>{customer.store_name}</h3><p>{customer.address || 'Address pending'} · {customer.contact_phone || 'phone pending'}</p></div><Pill tone={tone(customer.accounts_priority)}>{title(customer.accounts_priority)}</Pill></section>
+    {error ? <div className="accounts-error">{error}</div> : null}{message ? <div className="accounts-notice">{message}</div> : null}
+    <section className="accounts-detail-metrics"><div><strong>{money(customer.open_statement_value)}</strong><span>open statement</span></div><div><strong>{money(customer.overdue_statement_value)}</strong><span>overdue</span></div><div><strong>{units(customer.open_invoice_count)}</strong><span>open invoices</span></div><div><strong>{units(customer.worst_overdue_days)}</strong><span>worst days</span></div></section>
+    <section className="accounts-commercial-grid"><div className="accounts-form-card"><h4>Billing contact</h4><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="accounts@customer.com"/><input value={contact} onChange={e => setContact(e.target.value)} placeholder="Contact name (optional)"/><label><input type="checkbox" checked={emailEnabled} onChange={e => setEmailEnabled(e.target.checked)}/> Enable statement email</label><button type="button" disabled={localBusy === 'contact'} onClick={() => void saveContact()}>Save billing contact</button></div>
+    <div className="accounts-form-card"><h4>Formal statement</h4><label>Period start<input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)}/></label><label>Period end<input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)}/></label><div><button type="button" disabled={Boolean(localBusy)} onClick={() => void generate(false)}>Generate PDF</button><button type="button" disabled={Boolean(localBusy) || !emailEnabled || !email} onClick={() => void generate(true)}>Generate & send</button></div></div>
+    <div className="accounts-form-card"><h4>Record payment</h4><input type="number" min="0" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="Amount"/><input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}/><select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>BANK_TRANSFER</option><option>CARD</option><option>CASH</option><option>DIRECT_DEBIT</option><option>OTHER</option></select><input value={paymentRef} onChange={e => setPaymentRef(e.target.value)} placeholder="Unique payment reference"/><input value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="Note (optional)"/><button type="button" disabled={localBusy === 'payment'} onClick={() => void recordPayment()}>Allocate oldest invoices</button></div></section>
+    <section className="accounts-action-card"><textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Accounts note, promise, dispute or hold reason…"/><div><button type="button" disabled={busy === 'MARK_REVIEWED'} onClick={() => onAction('MARK_REVIEWED', note || 'Statement reviewed')}>Mark reviewed</button><button type="button" disabled={busy === 'PROMISE_TO_PAY'} onClick={() => onAction('PROMISE_TO_PAY', note || 'Promise to pay recorded')}>Promise to pay</button><button type="button" disabled={busy === 'DISPUTE_RAISED'} onClick={() => onAction('DISPUTE_RAISED', note || 'Dispute raised')}>Dispute</button><button type="button" disabled={busy === 'HOLD_ACCOUNT'} onClick={() => onAction('HOLD_ACCOUNT', note || 'Account hold recorded')}>Hold account</button><button type="button" disabled={busy === 'CLEAR_HOLD'} onClick={() => onAction('CLEAR_HOLD', note || 'Account hold cleared')}>Clear hold</button></div></section>
+    <section className="accounts-invoice-list">{lines.filter(l => num(l.outstanding_amount) > 0).slice(0, 16).map(line => <InvoiceRow key={`${line.internal_order_id}-${line.invoice_number}`} row={line}/>)}{!lines.some(l => num(l.outstanding_amount) > 0) ? <div className="accounts-empty">No outstanding invoices.</div> : null}</section>
+    <section className="accounts-history-grid"><div><h4>Statement history</h4><StatementHistory documents={documents} onOpen={openPdf}/></div><div><h4>Payment history</h4><PaymentHistory rows={payments}/></div></section>
+  </section>;
 }
-
-function money(value: unknown) {
-  return num(value).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
-}
-
-function units(value: unknown) {
-  return num(value).toLocaleString('en-AU', { maximumFractionDigits: 0 });
-}
-
-function dateText(value?: string | null) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
-}
-
-function title(value: string | null | undefined) {
-  return String(value || 'UNKNOWN').replace(/_/g, ' ');
-}
-
-function tone(value?: string | null): 'good' | 'warn' | 'danger' | 'blue' | 'neutral' {
-  if (value === 'CLEAR' || value === 'MARK_REVIEWED') return 'good';
-  if (value?.includes('URGENT') || value?.includes('OVERDUE_30') || value === 'ON_HOLD') return 'danger';
-  if (value?.includes('OVERDUE') || value?.includes('COLLECTION') || value?.includes('HOLD')) return 'warn';
-  if (value?.includes('OPEN') || value?.includes('SEND') || value?.includes('DUE')) return 'blue';
-  return 'neutral';
-}
-
-function priorityWeight(value?: string | null) {
-  if (value === 'ON_HOLD') return 0;
-  if (value === 'URGENT_COLLECTION') return 1;
-  if (value === 'COLLECTION') return 2;
-  if (value === 'SEND_STATEMENT') return 3;
-  return 4;
-}
-
-function Pill({ children, tone: pillTone = 'neutral' }: { children: ReactNode; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral' }) {
-  return <span className={`accounts-pill accounts-pill-${pillTone}`}>{children}</span>;
-}
-
-function Metric({ label, value, helper, tone: metricTone = 'neutral' }: { label: string; value: string | number; helper: string; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral' }) {
-  return <article className={`accounts-metric accounts-metric-${metricTone}`}><strong>{value}</strong><span>{label}</span><small>{helper}</small></article>;
-}
-
-function useAccountsHost() {
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    function locate() {
-      const heading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((node) => node.textContent?.trim() === 'Reconciliation queue');
-      const panel = heading?.closest<HTMLElement>('.panel');
-      if (!panel) { setHost(null); return; }
-      panel.classList.add('accounts-native-reconciliation-panel-soft-hide');
-      let mount = document.querySelector<HTMLElement>('.accounts-statement-workbench-mount');
-      if (!mount) { mount = document.createElement('section'); mount.className = 'accounts-statement-workbench-mount'; panel.insertAdjacentElement('beforebegin', mount); }
-      setHost(mount);
-    }
-    const stopObserving = observeBody(locate);
-    return stopObserving;
-  }, []);
-  return host;
-}
-
-function csvEscape(value: unknown) {
-  const text = value == null ? '' : String(value);
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
-function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
-  if (!rows.length) return;
-  const headers = Object.keys(rows[0]);
-  const csv = [headers.join(','), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function CustomerRow({ row, selected, onSelect }: { row: AccountsStatementCustomerRow; selected: boolean; onSelect: () => void }) {
-  return (
-    <article className={`accounts-customer-row ${selected ? 'selected' : ''}`} onClick={onSelect}>
-      <div><strong>{row.store_name || 'Unknown store'}</strong><span>{row.suburb || 'Suburb pending'} · {row.contact_phone || 'phone pending'}</span><small>{row.latest_action ? `${title(row.latest_action)} · ${dateText(row.latest_action_at)}` : 'No accounts action yet'}</small></div>
-      <div><strong>{money(row.open_statement_value)}</strong><span>open</span></div>
-      <div><strong>{money(row.overdue_statement_value)}</strong><span>overdue</span></div>
-      <div><strong>{units(row.worst_overdue_days)}</strong><span>days</span></div>
-      <Pill tone={tone(row.accounts_priority)}>{title(row.accounts_priority)}</Pill>
-    </article>
-  );
-}
-
-function InvoiceRow({ row }: { row: AccountsStatementLineRow }) {
-  return (
-    <article className="accounts-invoice-row">
-      <div><strong>{row.invoice_number || 'No invoice'}</strong><span>{row.order_number || 'order pending'} · {dateText(row.order_ts)}</span></div>
-      <span>{dateText(row.due_at)}</span>
-      <strong>{money(row.invoice_value)}</strong>
-      <span>{units(row.overdue_days)} days</span>
-      <Pill tone={tone(row.accounts_signal)}>{title(row.accounts_signal)}</Pill>
-    </article>
-  );
-}
-
-function FollowupRow({ row }: { row: AccountsFollowupRow }) {
-  return (
-    <article className="accounts-followup-row">
-      <div><strong>{row.store_name}</strong><span>{title(row.next_action)} · {row.contact_phone || 'phone pending'}</span></div>
-      <span>{money(row.open_statement_value)}</span>
-      <span>{money(row.overdue_statement_value)}</span>
-      <Pill tone={tone(row.accounts_priority)}>{title(row.accounts_priority)}</Pill>
-    </article>
-  );
-}
-
-function CustomerDetail({ customer, lines, busy, onAction }: { customer?: AccountsStatementCustomerRow; lines: AccountsStatementLineRow[]; busy: string; onAction: (action: AccountsStatementAction, note?: string, value?: string) => void }) {
-  const [note, setNote] = useState('');
-  useEffect(() => setNote(''), [customer?.store_id]);
-  if (!customer) return <section className="accounts-detail accounts-empty">Select a customer to review statement detail.</section>;
-  return (
-    <section className="accounts-detail">
-      <section className="accounts-detail-hero">
-        <div><span>STATEMENT DETAIL</span><h3>{customer.store_name}</h3><p>{customer.address || 'Address pending'} · {customer.contact_phone || 'phone pending'}</p></div>
-        <Pill tone={tone(customer.accounts_priority)}>{title(customer.accounts_priority)}</Pill>
-      </section>
-      <section className="accounts-detail-metrics">
-        <div><strong>{money(customer.open_statement_value)}</strong><span>open statement</span></div>
-        <div><strong>{money(customer.overdue_statement_value)}</strong><span>overdue</span></div>
-        <div><strong>{units(customer.open_invoice_count)}</strong><span>open invoices</span></div>
-        <div><strong>{units(customer.worst_overdue_days)}</strong><span>worst days</span></div>
-      </section>
-      <section className="accounts-action-card">
-        <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Accounts note, reminder, promised payment date, dispute reason…" />
-        <div>
-          <button type="button" disabled={busy === 'SEND_STATEMENT_DRAFT'} onClick={() => onAction('SEND_STATEMENT_DRAFT', note || 'Statement draft prepared')}>{busy === 'SEND_STATEMENT_DRAFT' ? 'Recording…' : 'Send statement draft'}</button>
-          <button type="button" disabled={busy === 'MARK_REVIEWED'} onClick={() => onAction('MARK_REVIEWED', note || 'Statement reviewed')}>{busy === 'MARK_REVIEWED' ? 'Recording…' : 'Mark reviewed'}</button>
-          <button type="button" disabled={busy === 'PROMISE_TO_PAY'} onClick={() => onAction('PROMISE_TO_PAY', note || 'Promise to pay recorded')}>{busy === 'PROMISE_TO_PAY' ? 'Recording…' : 'Promise to pay'}</button>
-          <button type="button" disabled={busy === 'DISPUTE_RAISED'} onClick={() => onAction('DISPUTE_RAISED', note || 'Dispute raised')}>{busy === 'DISPUTE_RAISED' ? 'Recording…' : 'Dispute'}</button>
-          <button type="button" disabled={busy === 'HOLD_ACCOUNT'} onClick={() => onAction('HOLD_ACCOUNT', note || 'Account hold recorded')}>{busy === 'HOLD_ACCOUNT' ? 'Recording…' : 'Hold account'}</button>
-          <button type="button" disabled={busy === 'CLEAR_HOLD'} onClick={() => onAction('CLEAR_HOLD', note || 'Account hold cleared')}>{busy === 'CLEAR_HOLD' ? 'Recording…' : 'Clear hold'}</button>
-        </div>
-      </section>
-      <section className="accounts-invoice-list">
-        {lines.slice(0, 12).map((line) => <InvoiceRow key={`${line.internal_order_id}-${line.invoice_number}`} row={line} />)}
-        {!lines.length ? <div className="accounts-empty">No statement lines for this customer.</div> : null}
-      </section>
-    </section>
-  );
-}
-
 function AccountsContent() {
-  const [kpis, setKpis] = useState<AccountsArKpis | null>(null);
-  const [customers, setCustomers] = useState<AccountsStatementCustomerRow[]>([]);
-  const [lines, setLines] = useState<AccountsStatementLineRow[]>([]);
-  const [followups, setFollowups] = useState<AccountsFollowupRow[]>([]);
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<PriorityFilter>('ALL');
-  const [sort, setSort] = useState<CustomerSort>('priority');
-  const [selectedStoreId, setSelectedStoreId] = useState('');
-  const [busy, setBusy] = useState('');
-  const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
-  const [loadedAt, setLoadedAt] = useState('');
-
-  async function reload() {
-    setError('');
-    try {
-      const [nextKpis, nextCustomers, nextLines, nextFollowups] = await Promise.all([loadAccountsArKpis(), loadAccountsStatementCustomers(), loadAccountsStatementLines(), loadAccountsFollowupQueue()]);
-      setKpis(nextKpis); setCustomers(nextCustomers); setLines(nextLines); setFollowups(nextFollowups); setSelectedStoreId((current) => current || nextCustomers[0]?.store_id || ''); setLoadedAt(new Date().toISOString());
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-  }
-
-  useEffect(() => { void reload(); }, []);
-
-  const visibleCustomers = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const filtered = customers.filter((customer) => {
-      if (filter !== 'ALL' && customer.accounts_priority !== filter) return false;
-      if (!needle) return true;
-      return [customer.store_name, customer.suburb, customer.contact_phone, customer.invoice_count, customer.accounts_priority, customer.statement_signal, customer.latest_action, customer.top_sku_30d].filter(Boolean).join(' ').toLowerCase().includes(needle);
-    });
-    return [...filtered].sort((a, b) => {
-      if (sort === 'open') return num(b.open_statement_value) - num(a.open_statement_value);
-      if (sort === 'overdue') return num(b.overdue_statement_value) - num(a.overdue_statement_value);
-      if (sort === 'recent') return new Date(b.latest_invoice_at || 0).getTime() - new Date(a.latest_invoice_at || 0).getTime();
-      if (sort === 'name') return String(a.store_name || '').localeCompare(String(b.store_name || ''));
-      return priorityWeight(a.accounts_priority) - priorityWeight(b.accounts_priority) || num(b.open_statement_value) - num(a.open_statement_value);
-    });
-  }, [customers, filter, query, sort]);
-
-  const selectedCustomer = customers.find((customer) => customer.store_id === selectedStoreId) || visibleCustomers[0];
-  const selectedLines = lines.filter((line) => line.store_id === selectedCustomer?.store_id);
-  const latest = loadedAt ? new Date(loadedAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'loading';
-
-  async function runAction(action: AccountsStatementAction, note?: string, value?: string) {
-    if (!selectedCustomer?.store_id) return;
-    setBusy(action); setError(''); setNotice('');
-    try {
-      const result = await recordAccountsStatementAction({ storeId: selectedCustomer.store_id, action, note, value });
-      setNotice(`${selectedCustomer.store_name || selectedCustomer.store_id}: ${title(result[0]?.action_status || 'RECORDED')}.`);
-      await reload();
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(''); }
-  }
-
-  async function exportCsv() {
-    try {
-      const rows = await loadAccountsStatementExportRows();
-      downloadCsv(`ecoflow-statement-${new Date().toISOString().slice(0, 10)}.csv`, rows);
-      setNotice(`${rows.length} statement rows exported.`);
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-  }
-
-  return (
-    <section className="accounts-shell">
-      <section className="accounts-hero"><div><span>ACCOUNTS STATEMENT WORKBENCH</span><h2>Statements, overdue risk and customer follow-up in one place.</h2><p>Built from imported invoices and store intelligence, with auditable accounts actions.</p></div><div className="accounts-actions"><button type="button" onClick={() => void reload()}>Refresh accounts</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>
-      {error ? <div className="accounts-error">{error}</div> : null}
-      {notice ? <div className="accounts-notice">{notice}</div> : null}
-      <section className="accounts-metrics"><Metric label="Open AR" value={money(kpis?.open_ar_value)} helper={`${units(kpis?.open_invoices)} open invoices`} tone="blue" /><Metric label="Overdue AR" value={money(kpis?.overdue_ar_value)} helper={`${units(kpis?.overdue_customers)} overdue customers`} tone={num(kpis?.overdue_ar_value) ? 'warn' : 'good'} /><Metric label="Urgent customers" value={units(kpis?.urgent_customers)} helper={`worst ${units(kpis?.worst_overdue_days)} days`} tone={num(kpis?.urgent_customers) ? 'danger' : 'good'} /><Metric label="30d statement" value={money(kpis?.statement_value_30d)} helper={`latest ${dateText(kpis?.latest_invoice_at)}`} tone="good" /></section>
-      <section className="accounts-controlbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer, phone, SKU, action…" /><select value={filter} onChange={(event) => setFilter(event.target.value as PriorityFilter)}><option value="ALL">All priorities</option><option value="URGENT_COLLECTION">Urgent collection</option><option value="COLLECTION">Collection</option><option value="SEND_STATEMENT">Send statement</option><option value="ON_HOLD">On hold</option><option value="CLEAR">Clear</option></select><select value={sort} onChange={(event) => setSort(event.target.value as CustomerSort)}><option value="priority">Sort by priority</option><option value="open">Sort by open value</option><option value="overdue">Sort by overdue</option><option value="recent">Most recent invoice</option><option value="name">Customer name</option></select></section>
-      <section className="accounts-grid"><section className="accounts-panel"><header><div><h3>Customer statement queue</h3><p>Accounts ranked by collection risk and open value.</p></div><Pill tone="blue">{visibleCustomers.length}</Pill></header><div className="accounts-customer-list">{visibleCustomers.slice(0, 22).map((customer) => <CustomerRow key={customer.store_id || customer.store_name || Math.random()} row={customer} selected={customer.store_id === selectedCustomer?.store_id} onSelect={() => setSelectedStoreId(customer.store_id || '')} />)}{!visibleCustomers.length ? <div className="accounts-empty">No customers match this filter.</div> : null}</div></section><CustomerDetail customer={selectedCustomer} lines={selectedLines} busy={busy} onAction={runAction} /></section>
-      <section className="accounts-panel"><header><div><h3>Follow-up queue</h3><p>What accounts should do next.</p></div><Pill tone={followups.length ? 'warn' : 'good'}>{followups.length}</Pill></header><div className="accounts-followup-list">{followups.slice(0, 12).map((row) => <FollowupRow key={`${row.store_id}-${row.next_action}`} row={row} />)}{!followups.length ? <div className="accounts-empty">No statement follow-up required.</div> : null}</div></section>
-    </section>
-  );
+    const [kpis, setKpis] = useState<AccountsArKpis | null>(null);
+    const [customers, setCustomers] = useState<AccountsStatementCustomerRow[]>([]);
+    const [lines, setLines] = useState<AccountsStatementLineRow[]>([]);
+    const [followups, setFollowups] = useState<AccountsFollowupRow[]>([]);
+    const [documents, setDocuments] = useState<StatementDocumentRow[]>([]);
+    const [payments, setPayments] = useState<PaymentReceiptRow[]>([]);
+    const [query, setQuery] = useState('');
+    const [filter, setFilter] = useState<PriorityFilter>('ALL');
+    const [sort, setSort] = useState<CustomerSort>('priority');
+    const [selectedStoreId, setSelectedStoreId] = useState('');
+    const [busy, setBusy] = useState('');
+    const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
+    const [latest, setLatest] = useState('');
+    async function reload() { setError(''); try { const [nextKpis, nextCustomers, nextLines, nextFollowups, nextDocuments, nextPayments] = await Promise.all([loadAccountsArKpis(), loadAccountsStatementCustomers(), loadAccountsStatementLines(), loadAccountsFollowupQueue(), loadStatementDocuments(), loadPaymentHistory()]); setKpis(nextKpis); setCustomers(nextCustomers); setLines(nextLines); setFollowups(nextFollowups); setDocuments(nextDocuments); setPayments(nextPayments); setSelectedStoreId(current => current || nextCustomers[0]?.store_id || ''); setLatest(new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } }
+    useEffect(() => { void reload(); }, []);
+    const visibleCustomers = useMemo(() => { const needle = query.trim().toLowerCase(); const filtered = customers.filter(c => (filter === 'ALL' || c.accounts_priority === filter) && (!needle || [c.store_name, c.suburb, c.contact_phone, c.billing_email, c.top_sku_30d, c.latest_action].filter(Boolean).join(' ').toLowerCase().includes(needle))); return [...filtered].sort((a, b) => sort === 'open' ? num(b.open_statement_value) - num(a.open_statement_value) : sort === 'overdue' ? num(b.overdue_statement_value) - num(a.overdue_statement_value) : sort === 'recent' ? new Date(b.latest_invoice_at || 0).getTime() - new Date(a.latest_invoice_at || 0).getTime() : sort === 'name' ? String(a.store_name).localeCompare(String(b.store_name)) : priorityWeight(a.accounts_priority) - priorityWeight(b.accounts_priority) || num(b.open_statement_value) - num(a.open_statement_value)); }, [customers, filter, query, sort]);
+    const selectedCustomer = customers.find(c => c.store_id === selectedStoreId) || visibleCustomers[0];
+    const selectedLines = lines.filter(l => l.store_id === selectedCustomer?.store_id);
+    const selectedDocs = documents.filter(d => d.store_id === selectedCustomer?.store_id);
+    const selectedPayments = payments.filter(p => p.store_id === selectedCustomer?.store_id);
+    async function runAction(action: AccountsStatementAction, note?: string, value?: string) { if (!selectedCustomer?.store_id) return; setBusy(action); setError(''); try { const result = await recordAccountsStatementAction({ storeId: selectedCustomer.store_id, action, note, value }); setNotice(`${selectedCustomer.store_name}: ${title(result[0]?.action_status || 'RECORDED')}.`); await reload(); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } finally { setBusy(''); } }
+    async function exportCsv() { try { const rows = await loadAccountsStatementExportRows(); downloadCsv(`ecoflow-statement-${new Date().toISOString().slice(0, 10)}.csv`, rows); setNotice(`${rows.length} live statement rows exported.`); } catch (r) { setError(r instanceof Error ? r.message : String(r)); } }
+    return <section className="accounts-shell"><section className="accounts-hero"><div><span>ACCOUNTS STATEMENT WORKBENCH</span><h2>Statements, payments and collection follow-up in one place.</h2><p>Formal PDF statements are immutable snapshots; payments are allocated oldest-due first with a full audit trail.</p></div><div className="accounts-actions"><button type="button" onClick={() => void reload()}>Refresh accounts</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>{error ? <div className="accounts-error">{error}</div> : null}{notice ? <div className="accounts-notice">{notice}</div> : null}<section className="accounts-metrics"><Metric label="Open AR" value={money(kpis?.open_ar_value)} helper={`${units(kpis?.open_invoices)} open invoices`} tone="blue"/><Metric label="Overdue AR" value={money(kpis?.overdue_ar_value)} helper={`${units(kpis?.overdue_customers)} overdue customers`} tone={num(kpis?.overdue_ar_value) ? 'warn' : 'good'}/><Metric label="Urgent customers" value={units(kpis?.urgent_customers)} helper={`worst ${units(kpis?.worst_overdue_days)} days`} tone={num(kpis?.urgent_customers) ? 'danger' : 'good'}/><Metric label="30d invoiced" value={money(kpis?.statement_value_30d)} helper={`latest ${dateText(kpis?.latest_invoice_at)}`} tone="good"/></section>
+  <section className="accounts-controlbar"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer, billing email, phone or SKU"/><select value={filter} onChange={e => setFilter(e.target.value as PriorityFilter)}><option value="ALL">All priorities</option><option value="URGENT_COLLECTION">Urgent collection</option><option value="COLLECTION">Collection</option><option value="SEND_STATEMENT">Send statement</option><option value="ON_HOLD">On hold</option><option value="CLEAR">Clear</option></select><select value={sort} onChange={e => setSort(e.target.value as CustomerSort)}><option value="priority">Sort by priority</option><option value="open">Sort by open value</option><option value="overdue">Sort by overdue</option><option value="recent">Most recent invoice</option><option value="name">Customer name</option></select></section>
+  <section className="accounts-grid"><section className="accounts-panel"><header><div><h3>Customer statement queue</h3><p>Balances already reflect payments recorded in EcoFlow.</p></div><Pill tone="blue">{visibleCustomers.length}</Pill></header><div className="accounts-customer-list">{visibleCustomers.slice(0, 30).map(c => <CustomerRow key={c.store_id || c.store_name || Math.random()} row={c} selected={c.store_id === selectedCustomer?.store_id} onSelect={() => setSelectedStoreId(c.store_id || '')}/>)}{!visibleCustomers.length ? <div className="accounts-empty">No customers match this filter.</div> : null}</div></section><CustomerDetail customer={selectedCustomer} lines={selectedLines} documents={selectedDocs} payments={selectedPayments} busy={busy} onAction={runAction} onReload={reload}/></section>
+  <section className="accounts-panel"><header><div><h3>Follow-up queue</h3><p>Collection and statement actions after payment allocation.</p></div><Pill tone={followups.length ? 'warn' : 'good'}>{followups.length}</Pill></header><div className="accounts-followup-list">{followups.slice(0, 16).map(row => <FollowupRow key={row.store_id || row.store_name || Math.random()} row={row}/>)}{!followups.length ? <div className="accounts-empty">No accounts follow-up is required.</div> : null}</div></section></section>;
 }
-
-export function AccountsStatementWorkbench() {
-  const host = useAccountsHost();
-  return host ? createPortal(<AccountsContent />, host) : null;
-}
+export function AccountsStatementWorkbench() { const host = useAccountsHost(); return host ? createPortal(<AccountsContent />, host) : null; }
