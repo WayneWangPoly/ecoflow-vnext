@@ -1,3 +1,5 @@
+import { PriceMatrixWorkbench } from '../PriceMatrixWorkbench';
+import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
@@ -13,6 +15,8 @@ import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
 import '../storeStatementPressure.css';
 import '../accountsStatementWorkbench.css';
+import '../priceMatrixWorkbench.css';
+import '../deliveryRunHistory.css';
 import '../roleAwareNavigation.css';
 import '../ownerCommandCenter.css';
 import '../inventoryControlCenter.css';
@@ -30,9 +34,11 @@ export default function OwnerEnhancers() {
       <OwnerDriverTrackingMap />
       <OwnerDeliveryGovernance />
       <OwnerOrderIntelligence />
+      <PriceMatrixWorkbench />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
       <AccountsStatementWorkbench />
+      <DeliveryRunHistory />
       <OrderPlatformExperience />
     </>
   );

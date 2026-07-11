@@ -1,0 +1,109 @@
+name: Commercial controls check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'agent/**'
+
+permissions:
+  contents: read
+
+jobs:
+  semantic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Audit commercial controls
+        run: node scripts/audit-commercial-controls.mjs
+      - name: TypeScript check
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
+      - name: Vite production bundle
+        run: node ./node_modules/vite/bin/vite.js build
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Load operational fixtures
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/driver-departure-migration-fixture.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/pick-task-claim-migration-fixture.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/operational-state-migration-fixture.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/commercial-controls-migration-fixture.sql 2>&1 | tee -a commercial-controls-contract.log
+      - name: Apply prerequisite migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            supabase/migrations/20260624_remote_production_baseline.sql \
+            supabase/migrations/20260710130000_warehouse_backend_hardening.sql \
+            supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql \
+            supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql \
+            supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql \
+            supabase/migrations/20260710130400_receiving_confirmation_qualification.sql \
+            supabase/migrations/20260710130500_layout_conflict_qualification.sql \
+            supabase/migrations/20260710140000_owner_driver_location_tracking.sql \
+            supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql \
+            supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql \
+            supabase/migrations/20260711100100_notification_contact_conflict_qualification.sql \
+            supabase/migrations/20260711170000_pick_task_ownership.sql \
+            supabase/migrations/20260711180000_unknown_barcode_quarantine.sql \
+            supabase/migrations/20260711181000_operational_state_auth_hardening.sql \
+            supabase/migrations/20260711182000_multi_run_day_state.sql
+          do
+            echo "==> $file" | tee -a commercial-controls-contract.log
+            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a commercial-controls-contract.log
+          done
+      - name: Apply commercial controls migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260711190000_commercial_controls.sql 2>&1 | tee -a commercial-controls-contract.log
+      - name: Execute commercial controls contract
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/commercial-controls-contract-test.sql 2>&1 | tee -a commercial-controls-contract.log
+      - name: Upload database contract log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-controls-contract
+          path: commercial-controls-contract.log
+          if-no-files-found: warn

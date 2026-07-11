@@ -82,9 +82,6 @@ jobs:
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
       - name: Install Supabase CLI
-        # Pinned: 2.109.x ships a rewritten PgClient that times out against the
-        # session pooler even when raw TCP is open (verified by the probe step).
-        # 2.107.0 is the version proven to connect from the linked workstation.
         run: npm install --global supabase@2.107.0
       - name: Link production project
         shell: bash
@@ -94,8 +91,6 @@ jobs:
       - name: Resolve pooler database URL
         shell: bash
         run: |
-          # GitHub runners have no IPv6, and the direct db.<ref>.supabase.co host is
-          # IPv6-only - connections time out. The session pooler host is IPv4.
           set -euo pipefail
           POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
@@ -106,7 +101,6 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
           for attempt in 1 2 3; do
             if supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
@@ -154,6 +148,11 @@ jobs:
         run: |
           set -o pipefail
           supabase functions deploy delivery-notification-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Deploy account statement dispatch
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase functions deploy statement-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
