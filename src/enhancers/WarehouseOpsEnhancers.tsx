@@ -1,5 +1,4 @@
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
-import { LoadRecoveryControl } from '../LoadRecoveryControl';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
@@ -22,7 +21,6 @@ export default function WarehouseOpsEnhancers() {
       <FieldOpsGuardRails />
       <PickTaskOwnership />
       <StageAndLoadExecution />
-      <LoadRecoveryControl />
       <WarehouseBarcodeSprintMount />
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
