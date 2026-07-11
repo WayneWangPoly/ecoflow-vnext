@@ -55,13 +55,33 @@ jobs:
       - name: Install Supabase CLI
         run: npm install --global supabase@latest
       - name: Link production project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee supabase-migration-deploy.log
       - name: Inspect migration history
-        run: supabase migration list --linked --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Preview pending migrations
-        run: supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase db push --linked --include-all --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Apply pending migrations
-        run: supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Upload Supabase deployment log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-production-deploy-log
+          path: supabase-migration-deploy.log
+          if-no-files-found: warn
+          retention-days: 30
       - name: Publish final migration status
         if: always()
         shell: bash
@@ -73,7 +93,7 @@ jobs:
             DESCRIPTION='Production database migrations applied successfully'
           else
             STATE='failure'
-            DESCRIPTION='Production database migration failed; inspect workflow log'
+            DESCRIPTION='Production database migration failed; inspect workflow log artifact'
           fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$STATE" \
