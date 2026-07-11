@@ -20,7 +20,7 @@ create or replace view public.v_ecoflow_ordermentum_price_groups_v1 as
 select external_price_group_id,price_group_name,description,now() last_synced_at from public.fixture_commercial_price_groups;
 
 create table if not exists public.fixture_accounts_lines(
-  store_id text,store_name text,internal_order_id text primary key,order_number text,invoice_number text,order_ts timestamptz,due_at timestamptz,
+  store_id text,store_name text,internal_order_id uuid primary key,order_number text,invoice_number text,order_ts timestamptz,due_at timestamptz,
   invoice_value numeric,age_days numeric,overdue_days numeric,statement_status text,order_status text,account_release_status text,warehouse_gate_status text,accounts_signal text
 );
 create or replace view public.v_ecoflow_accounts_statement_lines as select * from public.fixture_accounts_lines;
