@@ -1,0 +1,246 @@
+electedLocation}>Use selected location</button>
+-            <button className="tactile" type="button" disabled={savingReceive || loadState === 'offline'} onClick={() => void submitReceive()}>{savingReceive ? 'Saving…' : qtyConfirmationRequired ? `Confirm qty ${receiveDraft.qty}` : 'Save live'}</button>
+-          </div>
+-          <div className="movement-log-list">
+-            {localMovements.map((movement, index) => <div key={`${movement}-${index}`}>{movement}</div>)}
+-          </div>
+-        </section>
+       </section>
+     </main>
+   );
+--- a/supabase/migrations/20260711180000_unknown_barcode_quarantine.sql
++++ b/supabase/migrations/20260711180000_unknown_barcode_quarantine.sql
+@@ -0,0 +1,255 @@
++-- Preserve inbound delivery evidence when a supplier barcode has not been mapped yet.
++-- Unknown codes are quarantined against the receiving batch and never affect stock
++-- until an active barcode mapping exists and the intake is converted to a normal line.
++
++create table if not exists public.ecoflow_unknown_barcode_intakes (
++  id uuid primary key default gen_random_uuid(),
++  batch_id uuid not null references public.ecoflow_warehouse_receiving_batches(id) on delete cascade,
++  barcode text not null,
++  qty_packages numeric not null,
++  target_location text not null default 'TEMP',
++  intake_note text,
++  intake_status text not null default 'PENDING_MAPPING',
++  idempotency_key text not null,
++  client_scanned_at timestamptz,
++  scanned_by uuid,
++  scanned_at timestamptz not null default now(),
++  converted_line_id uuid references public.ecoflow_warehouse_receiving_lines(id),
++  converted_by uuid,
++  converted_at timestamptz,
++  cancelled_at timestamptz,
++  updated_at timestamptz not null default now(),
++  constraint ecoflow_unknown_barcode_qty_positive_integer check (qty_packages > 0 and qty_packages = trunc(qty_packages)),
++  constraint ecoflow_unknown_barcode_status_valid check (intake_status in ('PENDING_MAPPING','READY_TO_CONVERT','CONVERTED','CANCELLED')),
++  constraint uq_unknown_barcode_intake_idempotency unique(batch_id,idempotency_key)
++);
++
++create index if not exists idx_unknown_barcode_intakes_open
++  on public.ecoflow_unknown_barcode_intakes(batch_id,intake_status,scanned_at desc);
++
++alter table public.ecoflow_unknown_barcode_intakes enable row level security;
++revoke all on public.ecoflow_unknown_barcode_intakes from anon;
++grant select on public.ecoflow_unknown_barcode_intakes to authenticated;
++
++create policy ecoflow_unknown_barcode_intakes_select
++  on public.ecoflow_unknown_barcode_intakes for select to authenticated
++  using (public.ecoflow_can_manage_warehouse());
++
++create or replace function public.ecoflow_touch_unknown_barcode_intake()
++returns trigger language plpgsql set search_path=public as $$
++begin
++  new.updated_at := now();
++  return new;
++end;
++$$;
++
++drop trigger if exists trg_touch_unknown_barcode_intake on public.ecoflow_unknown_barcode_intakes;
++create trigger trg_touch_unknown_barcode_intake
++before update on public.ecoflow_unknown_barcode_intakes
++for each row execute function public.ecoflow_touch_unknown_barcode_intake();
++
++create or replace function public.ecoflow_stage_unknown_barcode_intake(
++  p_batch_id uuid,
++  p_barcode text,
++  p_qty_packages numeric default 1,
++  p_note text default null,
++  p_idempotency_key text default null,
++  p_client_scanned_at timestamptz default now()
++)
++returns table (
++  intake_id uuid,
++  batch_id uuid,
++  barcode text,
++  qty_packages numeric,
++  target_location text,
++  intake_status text,
++  scanned_at timestamptz
++)
++language plpgsql
++security definer
++set search_path=public
++as $$
++declare
++  v_batch public.ecoflow_warehouse_receiving_batches%rowtype;
++  v_barcode text := nullif(trim(coalesce(p_barcode,'')),'');
++  v_key text := nullif(trim(coalesce(p_idempotency_key,'')),'');
++  v_id uuid;
++begin
++  if not public.ecoflow_can_manage_warehouse() then raise exception 'OWNER_ADMIN_OR_WAREHOUSE_REQUIRED'; end if;
++  if p_batch_id is null then raise exception 'receiving batch is required'; end if;
++  if v_barcode is null then raise exception 'barcode is required'; end if;
++  if v_key is null then raise exception 'idempotency key is required'; end if;
++  if coalesce(p_qty_packages,0) <= 0 or p_qty_packages <> trunc(p_qty_packages) then
++    raise exception 'package quantity must be a positive whole number';
++  end if;
++
++  select b.* into v_batch
++  from public.ecoflow_warehouse_receiving_batches b
++  where b.id=p_batch_id
++  for update;
++  if not found then raise exception 'receiving batch not found'; end if;
++  if v_batch.batch_status not in ('SCANNING','READY_TO_POST') then
++    raise exception 'receiving batch is not open: %',v_batch.batch_status;
++  end if;
++
++  -- Once mapped, the normal receiving RPC should be used so units-per-package is known.
++  if exists(select 1 from public.ecoflow_sku_barcode_registry r where r.barcode=v_barcode and r.is_active) then
++    raise exception 'BARCODE_NOW_MAPPED: retry the normal receiving scan';
++  end if;
++  if exists(select 1 from public.ecoflow_sku_barcode_registry r where r.barcode=v_barcode and not r.is_active) then
++    raise exception 'BARCODE_RETIRED: scan the current packaging code';
++  end if;
++
++  insert into public.ecoflow_unknown_barcode_intakes(
++    batch_id,barcode,qty_packages,target_location,intake_note,intake_status,
++    idempotency_key,client_scanned_at,scanned_by,scanned_at
++  ) values (
++    p_batch_id,v_barcode,p_qty_packages,'TEMP',nullif(trim(coalesce(p_note,'')),''),'PENDING_MAPPING',
++    v_key,p_client_scanned_at,auth.uid(),now()
++  )
++  on conflict on constraint uq_unknown_barcode_intake_idempotency do update set
++    intake_note=coalesce(excluded.intake_note,public.ecoflow_unknown_barcode_intakes.intake_note)
++  returning id into v_id;
++
++  update public.ecoflow_warehouse_receiving_batches b
++  set batch_status='SCANNING',updated_at=now()
++  where b.id=p_batch_id;
++
++  insert into public.ecoflow_warehouse_receiving_audit(batch_id,action,detail)
++  values (p_batch_id,'UNKNOWN_BARCODE_QUARANTINED',v_barcode || ' · ' || p_qty_packages::text || ' packages · TEMP');
++
++  return query
++  select i.id,i.batch_id,i.barcode,i.qty_packages,i.target_location,i.intake_status,i.scanned_at
++  from public.ecoflow_unknown_barcode_intakes i where i.id=v_id;
++end;
++$$;
++
++create or replace function public.ecoflow_convert_unknown_barcode_intake(p_intake_id uuid)
++returns table (
++  intake_id uuid,
++  converted_line_id uuid,
++  batch_id uuid,
++  sku text,
++  product_name text,
++  units_received numeric,
++  suggested_location text,
++  intake_status text
++)
++language plpgsql
++security definer
++set search_path=public
++as $$
++declare
++  v_intake public.ecoflow_unknown_barcode_intakes%rowtype;
++  v_line record;
++begin
++  if not public.ecoflow_can_manage_warehouse() then raise exception 'OWNER_ADMIN_OR_WAREHOUSE_REQUIRED'; end if;
++  select i.* into v_intake
++  from public.ecoflow_unknown_barcode_intakes i
++  where i.id=p_intake_id
++  for update;
++  if not found then raise exception 'unknown barcode intake not found'; end if;
++
++  if v_intake.intake_status='CONVERTED' and v_intake.converted_line_id is not null then
++    return query
++    select i.id,i.converted_line_id,i.batch_id,l.sku,l.product_name,l.units_received,l.suggested_location,i.intake_status
++    from public.ecoflow_unknown_barcode_intakes i
++    join public.ecoflow_warehouse_receiving_lines l on l.id=i.converted_line_id
++    where i.id=p_intake_id;
++    return;
++  end if;
++  if v_intake.intake_status='CANCELLED' then raise exception 'cancelled unknown barcode intake cannot be converted'; end if;
++  if not exists(select 1 from public.ecoflow_sku_barcode_registry r where r.barcode=v_intake.barcode and r.is_active) then
++    raise exception 'BARCODE_STILL_UNMAPPED: create and verify the barcode mapping first';
++  end if;
++
++  select scanned.* into v_line
++  from public.ecoflow_stage_receiving_scan_v2(
++    v_intake.batch_id,
++    v_intake.barcode,
++    v_intake.qty_packages,
++    null,
++    coalesce(v_intake.intake_note,'Converted from TEMP unknown-barcode intake'),
++    'unknown-intake:' || v_intake.id::text,
++    coalesce(v_intake.client_scanned_at,v_intake.scanned_at)
++  ) scanned
++  limit 1;
++
++  update public.ecoflow_unknown_barcode_intakes i
++  set intake_status='CONVERTED',converted_line_id=v_line.line_id,converted_by=auth.uid(),converted_at=now()
++  where i.id=p_intake_id;
++
++  insert into public.ecoflow_warehouse_receiving_audit(batch_id,line_id,action,detail)
++  values (v_intake.batch_id,v_line.line_id,'UNKNOWN_BARCODE_CONVERTED',v_intake.barcode || ' · ' || v_line.sku);
++
++  return query
++  select i.id,i.converted_line_id,i.batch_id,l.sku,l.product_name,l.units_received,l.suggested_location,i.intake_status
++  from public.ecoflow_unknown_barcode_intakes i
++  join public.ecoflow_warehouse_receiving_lines l on l.id=i.converted_line_id
++  where i.id=p_intake_id;
++end;
++$$;
++
++create or replace view public.v_ecoflow_unknown_barcode_intakes
++with (security_invoker=true)
++as
++select i.*,b.batch_no,b.batch_status
++from public.ecoflow_unknown_barcode_intakes i
++join public.ecoflow_warehouse_receiving_batches b on b.id=i.batch_id;
++
++grant select on public.v_ecoflow_unknown_barcode_intakes to authenticated;
++revoke all on public.v_ecoflow_unknown_barcode_intakes from anon;
++
++grant execute on function public.ecoflow_stage_unknown_barcode_intake(uuid,text,numeric,text,text,timestamptz) to authenticated;
++grant execute on function public.ecoflow_convert_unknown_barcode_intake(uuid) to authenticated;
++revoke execute on function public.ecoflow_stage_unknown_barcode_intake(uuid,text,numeric,text,text,timestamptz) from anon;
++revoke execute on function public.ecoflow_convert_unknown_barcode_intake(uuid) from anon;
++
++-- Keep the proven posting implementation, but add a hard quarantine gate in front of it.
++do $$
++begin
++  if to_regprocedure('public.ecoflow_complete_warehouse_receiving_batch_unchecked_20260711(uuid,text)') is null then
++    alter function public.ecoflow_complete_warehouse_receiving_batch(uuid,text)
++      rename to ecoflow_complete_warehouse_receiving_batch_unchecked_20260711;
++  end if;
++end $$;
++
++create or replace function public.ecoflow_complete_warehouse_receiving_batch(
++  p_batch_id uuid,p_note text default null
++)
++returns table (batch_id uuid,batch_no text,posted_lines numeric,posted_units numeric,batch_status text,completed_at timestamptz)
++language plpgsql
++security definer
++set search_path=public
++as $$
++begin
++  if not public.ecoflow_can_manage_warehouse() then raise exception 'OWNER_ADMIN_OR_WAREHOUSE_REQUIRED'; end if;
++  if exists(
++    select 1 from public.ecoflow_unknown_barcode_intakes i
++    where i.batch_id=p_batch_id and i.intake_status in ('PENDING_MAPPING','READY_TO_CONVERT')
++  ) then
++    raise exception 'UNRESOLVED_UNKNOWN_BARCODES: map and convert all TEMP barcode intakes before posting stock';
++  end if;
++  return query select * from public.ecoflow_complete_wa
