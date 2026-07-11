@@ -58,11 +58,18 @@ DO $$ declare v_run text; v_locked text; begin
   if v_run<>'B' or v_locked is null then raise exception 'active Run B projection failed: %, %',v_run,v_locked; end if;
 end $$;
 
--- Both POD proof types are accepted; the bucket is private.
+-- Both POD proof types are accepted by Driver.
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
 insert into public.ecoflow_delivery_pod_proofs(business_day,order_id,proof_type,photo_path,captured_by)
 values ('2026-07-11','O-2','POD1_DROP_POINT','2026-07-11/O-2/pod1.jpg','Driver'),
        ('2026-07-11','O-2','POD2_GOODS_PLACED','2026-07-11/O-2/pod2.jpg','Driver');
+select count(*) as driver_visible_pod_count
+from public.ecoflow_delivery_pod_proofs
+where order_id='O-2';
+
+-- Storage bucket metadata is intentionally not readable by Driver. Inspect it as the
+-- PostgreSQL contract runner after leaving the authenticated application role.
+reset role;
 DO $$ declare v_count integer; v_public boolean; begin
   select count(*) into v_count from public.ecoflow_delivery_pod_proofs where order_id='O-2';
   if v_count<>2 then raise exception 'two typed POD proofs were not accepted'; end if;
@@ -70,5 +77,4 @@ DO $$ declare v_count integer; v_public boolean; begin
   if v_public then raise exception 'POD bucket remained public'; end if;
 end $$;
 
-reset role;
 select 'operational state auth and multi-run contract passed' as result;
