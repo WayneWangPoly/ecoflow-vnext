@@ -12,6 +12,8 @@ export type PodQualityContext = {
   actorLabel?: string | null;
 };
 
+type PodProofType = 'POD1_DROP_POINT' | 'POD2_GOODS_PLACED';
+
 function requireSupabase(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -41,12 +43,18 @@ export async function resolveOrderIdForBox(input: { businessDay: string; boxCode
   return Object.entries(payload.boxCodes ?? {}).find(([, code]) => code === input.boxCode)?.[0] ?? null;
 }
 
-export async function saveGoodsPlacedProof(input: { context: PodQualityContext; dataUrl: string }, client?: SupabaseClient | null) {
+async function saveProof(input: {
+  context: PodQualityContext;
+  dataUrl: string;
+  proofType: PodProofType;
+  filePrefix: string;
+  errorLabel: string;
+}, client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const path = `${input.context.businessDay}/${input.context.orderId}/goods-placed-${stamp}.jpg`;
+  const path = `${input.context.businessDay}/${input.context.orderId}/${input.filePrefix}-${stamp}.jpg`;
   const photoPath = await uploadPodAsset(path, input.dataUrl);
-  if (!photoPath) throw new Error('Goods placed photo could not be uploaded. Check connection and try again.');
+  if (!photoPath) throw new Error(`${input.errorLabel} photo could not be uploaded. Check connection and try again.`);
 
   const { error } = await active
     .from('ecoflow_delivery_pod_proofs')
@@ -57,11 +65,29 @@ export async function saveGoodsPlacedProof(input: { context: PodQualityContext; 
       stop_number: input.context.stopNumber ?? null,
       box_code: input.context.boxCode ?? null,
       store_name: input.context.storeName ?? null,
-      proof_type: 'POD2_GOODS_PLACED',
+      proof_type: input.proofType,
       photo_path: photoPath,
       captured_at: new Date().toISOString(),
       captured_by: input.context.actorLabel ?? 'Driver',
     }, { onConflict: 'business_day,order_id,proof_type' });
   if (error) throw new Error(errorMessage(error));
   return photoPath;
+}
+
+export function saveDropPointProof(input: { context: PodQualityContext; dataUrl: string }, client?: SupabaseClient | null) {
+  return saveProof({
+    ...input,
+    proofType: 'POD1_DROP_POINT',
+    filePrefix: 'drop-point',
+    errorLabel: 'Store / drop point',
+  }, client);
+}
+
+export function saveGoodsPlacedProof(input: { context: PodQualityContext; dataUrl: string }, client?: SupabaseClient | null) {
+  return saveProof({
+    ...input,
+    proofType: 'POD2_GOODS_PLACED',
+    filePrefix: 'goods-placed',
+    errorLabel: 'All goods placed',
+  }, client);
 }
