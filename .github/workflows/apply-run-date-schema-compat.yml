@@ -1,0 +1,73 @@
+name: Apply run-date schema compatibility
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-run-date-schema-compat
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/fix-commercial-run-date-schema'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-commercial-run-date-schema
+          fetch-depth: 0
+      - name: Normalise business-day route identifiers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          migration = Path('supabase/migrations/20260711190000_commercial_controls.sql')
+          source = migration.read_text()
+          replacements = [
+              ("replace(g.business_day,'-','')", "replace(g.business_day::text,'-','')"),
+              ("replace(s.business_day,'-','')", "replace(s.business_day::text,'-','')"),
+          ]
+          for old, new in replacements:
+              if old in source:
+                  source = source.replace(old, new, 1)
+              elif new not in source:
+                  raise SystemExit(f'Expected route-date fragment not found: {old}')
+          migration.write_text(source)
+
+          fixture = Path('scripts/operational-state-migration-fixture.sql')
+          fsource = fixture.read_text()
+          old_block = "create table if not exists public.ecoflow_day_state (\n  business_day text not null,"
+          new_block = "create table if not exists public.ecoflow_day_state (\n  business_day date not null,"
+          if old_block in fsource:
+              fixture.write_text(fsource.replace(old_block, new_block, 1))
+          elif new_block not in fsource:
+              raise SystemExit('Expected day-state fixture business_day type was not found')
+
+          audit = Path('scripts/audit-commercial-controls.mjs')
+          asource = audit.read_text()
+          old_audit = "'RUN-'||replace(g.business_day,'-','')||'-'||g.run_code"
+          new_audit = "'RUN-'||replace(g.business_day::text,'-','')||'-'||g.run_code"
+          if old_audit in asource:
+              audit.write_text(asource.replace(old_audit, new_audit, 1))
+          elif new_audit not in asource:
+              raise SystemExit('Expected run history audit fragment was not found')
+          PY
+      - name: Commit compatibility correction
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Compatibility correction already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/migrations/20260711190000_commercial_controls.sql scripts/operational-state-migration-fixture.sql scripts/audit-commercial-controls.mjs
+          git commit -m 'Normalise production run business-day identifiers'
+          git fetch origin agent/fix-commercial-run-date-schema
+          git rebase origin/agent/fix-commercial-run-date-schema
+          git push origin HEAD:agent/fix-commercial-run-date-schema
