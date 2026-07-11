@@ -82,7 +82,10 @@ jobs:
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
       - name: Install Supabase CLI
-        run: npm install --global supabase@latest
+        # Pinned: 2.109.x ships a rewritten PgClient that times out against the
+        # session pooler even when raw TCP is open (verified by the probe step).
+        # 2.107.0 is the version proven to connect from the linked workstation.
+        run: npm install --global supabase@2.107.0
       - name: Link production project
         shell: bash
         run: |
