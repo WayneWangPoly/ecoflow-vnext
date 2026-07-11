@@ -1,0 +1,208 @@
+ function stageUnknownBarcodeIntake(input: {
++  batchId: string;
++  barcode: string;
++  qtyPackages: number;
++  note?: string | null;
++  idempotencyKey: string;
++  clientScannedAt?: string | null;
++}, client?: SupabaseClient | null) {
++  const { data, error } = await activeClient(client).rpc('ecoflow_stage_unknown_barcode_intake', {
++    p_batch_id: input.batchId,
++    p_barcode: input.barcode,
++    p_qty_packages: input.qtyPackages,
++    p_note: input.note ?? null,
++    p_idempotency_key: input.idempotencyKey,
++    p_client_scanned_at: input.clientScannedAt ?? new Date().toISOString(),
++  });
++  if (error) throw new Error(message(error));
++  return (data ?? []) as Array<{ intake_id: string; batch_id: string; barcode: string; qty_packages: number | string; target_location: string; intake_status: string; scanned_at: string }>;
++}
++
++export async function convertUnknownBarcodeIntake(intakeId: string, client?: SupabaseClient | null) {
++  const { data, error } = await activeClient(client).rpc('ecoflow_convert_unknown_barcode_intake', {
++    p_intake_id: intakeId,
++  });
++  if (error) throw new Error(message(error));
++  return (data ?? []) as Array<{ intake_id: string; converted_line_id: string; batch_id: string; sku: string; product_name: string | null; units_received: number | string; suggested_location: string; intake_status: string }>;
++}
+--- a/src/domain/driverRun.ts
++++ b/src/domain/driverRun.ts
+@@ -122,6 +122,8 @@
+ export type DriverDayState = {
+   version: 1;
+   businessDay: string;
++  /** Active sequential delivery run for this business day: A, B, C... */
++  runCode: string;
+   /** orderId -> release timestamp; the shared fact of which orders are in today's run. */
+   releasedOrders: Record<string, string>;
+   stopProgress: Record<string, StopProgress>;
+@@ -295,8 +297,8 @@
+   };
+ }
+ 
+-export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>): DriverRun {
+-  const releasedIds = releasedOrders && Object.keys(releasedOrders).length ? releasedOrders : null;
++export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>, runCode = 'A'): DriverRun {
++  const releasedIds = releasedOrders === undefined ? null : releasedOrders;
+   const rawStops = [...orders]
+     .filter((order) => releasedIds
+       ? Boolean(releasedIds[order.id]) && order.status !== 'CANCELLED'
+@@ -328,14 +330,32 @@
+   const { stops, warehousePoint, geoProjected } = projectRunGeometry(rawStops);
+ 
+   return {
+-    id: `RUN-${businessDay.replace(/-/g, '')}-A`,
+-    label: 'Run A · Adelaide Metro',
++    id: `RUN-${businessDay.replace(/-/g, '')}-${runCode}`,
++    label: `Run ${runCode} · Adelaide Metro`,
+     businessDay,
+     stops,
+     totalCartons: stops.reduce((sum, stop) => sum + stop.cartons, 0),
+     readyStops: stops.filter((stop) => stop.warehouseReady).length,
+     warehousePoint,
+     geoProjected
++  };
++}
++
++export function nextRunCode(current = 'A'): string {
++  const clean = current.trim().toUpperCase() || 'A';
++  let value = 0;
++  for (const char of clean) value = value * 26 + (char.charCodeAt(0) - 64);
++  return boxCodeForStop(Math.max(0, value));
++}
++
++export function startFreshRun(current: DriverDayState, runCode = nextRunCode(current.runCode)): DriverDayState {
++  return {
++    version: 1,
++    businessDay: current.businessDay,
++    runCode,
++    releasedOrders: {},
++    stopProgress: {},
++    shiftEvents: current.shiftEvents,
+   };
+ }
+ 
+@@ -387,7 +407,7 @@
+ }
+ 
+ export function emptyDriverDayState(businessDay: string): DriverDayState {
+-  return { version: 1, businessDay, releasedOrders: {}, stopProgress: {}, shiftEvents: [] };
++  return { version: 1, businessDay, runCode: 'A', releasedOrders: {}, stopProgress: {}, shiftEvents: [] };
+ }
+ 
+ export function loadDriverDayState(businessDay: string): DriverDayState {
+@@ -396,7 +416,7 @@
+     if (!raw) return emptyDriverDayState(businessDay);
+     const parsed = JSON.parse(raw) as DriverDayState;
+     if (parsed && parsed.version === 1 && parsed.businessDay === businessDay) {
+-      return { ...parsed, releasedOrders: parsed.releasedOrders ?? {} };
++      return { ...parsed, runCode: parsed.runCode || 'A', releasedOrders: parsed.releasedOrders ?? {} };
+     }
+   } catch {
+     // corrupted or unavailable storage falls through to a clean day
+--- a/src/driverPodQuality.css
++++ b/src/driverPodQuality.css
+@@ -1 +0,0 @@
+-.pod-quality-pod1-note,.pod-quality-step-head>div{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start}.pod-quality-pod1-note{border-radius:15px;background:rgba(36,102,170,.09);padding:11px;margin-bottom:8px}.pod-quality-pod1-note>b,.pod-quality-step-head>div>b{display:grid;place-items:center;width:30px;height:30px;border-radius:999px;background:#102f28;color:#fff;font-size:14px;font-weight:950}.pod-quality-pod1-note span,.pod-quality-step-head span{display:grid;gap:2px}.pod-quality-pod1-note strong,.pod-quality-step-head strong{color:#102f28;font-weight:950}.pod-quality-pod1-note small,.pod-quality-step-head small{color:#60716a;font-size:12px;font-weight:850;line-height:1.35}.driver-pod-quality-mount{display:block}.pod-quality-pod2{border:1px solid rgba(16,47,40,.12);border-radius:18px;background:linear-gradient(135deg,#fff,rgba(236,248,240,.72));padding:12px;display:grid;gap:10px}.pod-quality-step-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}.pod-quality-step-head em{display:inline-flex;align-items:center;gap:5px;border-radius:999px;background:rgba(15,107,67,.12);color:#0f6b43;padding:6px 9px;font-size:11px;font-style:normal;font-weight:950}.pod-quality-capture{min-height:58px;border:2px dashed rgba(15,107,67,.38);border-radius:16px;background:#fff;color:#0f6b43;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:950}.pod-quality-capture:disabled{opacity:.55}.pod-quality-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}.pod-quality-preview img{width:100%;max-height:220px;object-fit:cover;border-radius:14px;border:1px solid rgba(16,47,40,.12)}.pod-quality-preview button{min-height:42px;border:0;border-radius:12px;background:rgba(96,113,106,.12);color:#102f28;display:flex;align-items:center;gap:6px;padding:0 12px;font-weight:950}.pod-quality-context{margin:0;color:#60716a;font-size:11px;font-weight:850}.pod-quality-error{border-radius:12px;background:rgba(192,50,33,.11);color:#9b2e24;padding:10px;font-size:12px;font-weight:900}.pod-quality-gate{border-radius:14px;background:rgba(213,121,18,.12);padding:10px 12px;display:grid;gap:2px}.pod-quality-gate strong{color:#8a4f0e;font-size:12px;font-weight:950;letter-spacing:.08em}.pod-quality-gate span{color:#6f5a3e;font-size:12px;font-weight:850}.pod-quality-gate:has(+button[data-pod-quality-ready="true"]){background:rgba(15,107,67,.12)}.pod-quality-gate:has(+button[data-pod-quality-ready="true"]) strong{color:#0f6b43}.pod-quality-gate:has(+button[data-pod-quality-ready="true"]) span{color:#35604c}@media(max-width:640px){.pod-quality-step-head,.pod-quality-preview{grid-template-columns:1fr}.pod-quality-preview button{justify-content:center;width:100%}}--- a/src/enhancers/DriverEnhancers.tsx
++++ b/src/enhancers/DriverEnhancers.tsx
+@@ -9,7 +9,6 @@
+ import '../pickTaskOwnership.css';
+ import '../stageAndLoadExecution.css';
+ import '../labelPrintBlackWhite.css';
+-import '../driverPodQuality.css';
+ import '../deliveryOperations.css';
+ import '../returnZoneOperations.css';
+ import '../returnZoneCopyFix.css';
+--- a/src/features/warehouse/WarehouseMapPage.tsx
++++ b/src/features/warehouse/WarehouseMapPage.tsx
+@@ -1,15 +1,11 @@
+ import { useEffect, useMemo, useState } from 'react';
+ import type { CSSProperties } from 'react';
+ import {
+-  loadReceivingBarcodeLookup,
+   loadWarehouseLocationItems,
+-  receiveWarehouseStock,
+-  type ReceivingBarcodeLookupRow,
+   type WarehouseLocationItemRow,
+ } from '@/data/repositories/warehouseLocations';
+ import './WarehouseMapPage.css';
+ import './WarehouseMapInteractions.css';
+-import './WarehouseReceiving.css';
+ 
+ type RackSide = 'left' | 'right' | 'front';
+ type RackMode = 'double' | 'single' | 'area';
+@@ -17,7 +13,6 @@
+ type HalfCode = 'A' | 'B';
+ type StockHealth = 'full' | 'normal' | 'low' | 'critical' | 'empty';
+ type LoadState = 'loading' | 'live' | 'empty' | 'offline';
+-type ReceiveMode = 'idle' | 'known' | 'unknown';
+ 
+ type RackDefinition = {
+   id: string;
+@@ -61,22 +56,6 @@
+   items: StockItem[];
+ };
+ 
+-type ReceiveDraft = {
+-  locationKey: string;
+-  barcode: string;
+-  qty: string;
+-  note: string;
+-};
+-
+-type ReceiveKnownProduct = {
+-  sku: string;
+-  name: string;
+-  barcode: string;
+-  unitLevel: 'carton' | 'sleeve' | 'each' | 'unknown';
+-  fixedLocation?: string;
+-  source: 'sku-master' | 'warehouse-stock';
+-};
+-
+ const RACKS: RackDefinition[] = [
+   { id: 'A4', title: 'A4', mode: 'double', bins: 4, categories: [], map: { x: 27, y: 7, w: 10.5, h: 52 } },
+   { id: 'A3', title: 'A3', mode: 'double', bins: 4, categories: ['Single Wall Cup (ART)', 'SO5 Bags / Paper Bags'], map: { x: 47, y: 7, w: 10.5, h: 52 } },
+@@ -119,18 +98,6 @@
+ function numberValue(value: unknown, fallback = 0) {
+   const parsed = typeof value === 'number' ? value : Number(value);
+   return Number.isFinite(parsed) ? parsed : fallback;
+-}
+-
+-function normaliseBarcode(value: string) {
+-  return value.trim().toLowerCase();
+-}
+-
+-function normaliseUnitLevel(value: string | null | undefined): 'carton' | 'sleeve' | 'each' | 'unknown' {
+-  const raw = String(value || '').toLowerCase();
+-  if (raw === 'carton') return 'carton';
+-  if (raw === 'sleeve') return 'sleeve';
+-  if (raw === 'each') return 'each';
+-  return 'unknown';
+ }
+ 
+ function locationCodeFor(rack: RackDefinition, side: RackSide, bin: string, level: LevelCode, half: HalfCode) {
+@@ -270,35 +237,8 @@
+   return slotKey('A2', 'left', '01', '02', 'A');
+ }
+ 
+-function findLocationByCode(locations: LocationSlot[], code?: string | null) {
+-  const raw = String(code || '').trim();
+-  if (!raw) return undefined;
+-  const exact = locations.find((slot) => slot.code.toLowerCase() === raw.toLowerCase());
+-  if (exact) return exact;
+-  const legacy = raw.match(/^([A-Z]\d)-(\d{2})-(\d{2}[A-B])$/i);
+-  if (legacy) {
+-    const [, rack, bin, levelHalf] = legacy;
+-    return locations.find((slot) => slot.code.toLowerCase() === `${rack}-l-${bin}-${levelHalf}`.toLowerCase())
+-      ?? locations.find((slot) => slot.code.toLowerCase().startsWith(`${rack}-`.toLowerCase()) && slot.code.toLowerCase().endsWith(`-${bin}-${levelHalf}`.toLowerCase()));
+-  }
+-  return locations.find((slot) => slot.code.toLowerCase().includes(raw.toLowerCase()));
+-}
+-
+-function productFromMaster(row: ReceivingBarcodeLookupRow): ReceiveKnownProduct {
+-  return {
+-    sku: row.sku,
+-    name: row.product_name || row.sku,
+-    barcode: row.barcode,
+-    unitLevel: normaliseUnitLevel(row.unit_level),
+-    fixedLocation: row.fixed_location || undefi
