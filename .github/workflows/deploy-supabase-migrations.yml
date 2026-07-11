@@ -99,13 +99,31 @@ jobs:
           SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
           echo "::add-mask::$SUPABASE_DB_URL"
           echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+      - name: Probe database connectivity
+        shell: bash
+        run: |
+          # Temporary diagnostic: prove which network path the runner can actually reach.
+          set +e
+          POOLER_HOST="$(tr -d '[:space:]' < supabase/.temp/pooler-url | sed -E 's|^.*@([^:/]+).*$|\1|')"
+          echo "pooler host: $POOLER_HOST" | tee -a supabase-migration-deploy.log
+          getent ahosts "$POOLER_HOST" | head -4 | tee -a supabase-migration-deploy.log
+          for port in 5432 6543; do
+            timeout 8 bash -c "cat </dev/null >/dev/tcp/$POOLER_HOST/$port" \
+              && echo "tcp $POOLER_HOST:$port OPEN" | tee -a supabase-migration-deploy.log \
+              || echo "tcp $POOLER_HOST:$port BLOCKED" | tee -a supabase-migration-deploy.log
+          done
+          getent ahosts "db.$SUPABASE_PROJECT_REF.supabase.co" | head -4 | tee -a supabase-migration-deploy.log
+          timeout 8 bash -c "cat </dev/null >/dev/tcp/db.$SUPABASE_PROJECT_REF.supabase.co/5432" \
+            && echo "tcp direct:5432 OPEN" | tee -a supabase-migration-deploy.log \
+            || echo "tcp direct:5432 BLOCKED" | tee -a supabase-migration-deploy.log
+          exit 0
       - name: Inspect migration history
         shell: bash
         run: |
           set -o pipefail
           # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
           for attempt in 1 2 3; do
-            if supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee -a supabase-migration-deploy.log; then
+            if supabase migration list --db-url "$SUPABASE_DB_URL" --debug 2>&1 | tail -40 | tee -a supabase-migration-deploy.log; then
               exit 0
             fi
             echo "migration list attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
