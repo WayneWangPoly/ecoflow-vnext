@@ -51,7 +51,7 @@ insert into public.fixture_accounts_lines values
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false);
 set role authenticated;
 select * from public.ecoflow_upsert_billing_contact('STORE-1','Cafe One','accounts@cafe.test','Sam',true);
-select * from public.ecoflow_create_statement_document('STORE-1',current_date-interval '1 month',current_date);
+select * from public.ecoflow_create_statement_document('STORE-1',(current_date-interval '1 month')::date,current_date);
 
 do $$ begin
   if (select count(*) from public.ecoflow_statement_documents where store_id='STORE-1')<>1 then raise exception 'statement snapshot missing'; end if;
