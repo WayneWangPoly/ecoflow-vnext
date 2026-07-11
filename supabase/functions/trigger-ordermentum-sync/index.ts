@@ -18,7 +18,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type SyncMode = 'orders_only' | 'master_only' | 'standard' | 'catchup';
+type SyncMode = 'orders_invoices' | 'stores_only' | 'sku_only' | 'standard' | 'catchup';
 
 type RequestBody = {
   mode?: SyncMode;
@@ -33,7 +33,11 @@ function json(status: number, body: unknown) {
 }
 
 function isSyncMode(value: unknown): value is SyncMode {
-  return value === 'orders_only' || value === 'master_only' || value === 'standard' || value === 'catchup';
+  return value === 'orders_invoices'
+    || value === 'stores_only'
+    || value === 'sku_only'
+    || value === 'standard'
+    || value === 'catchup';
 }
 
 Deno.serve(async (req) => {
@@ -87,7 +91,7 @@ Deno.serve(async (req) => {
     return json(400, { error: 'INVALID_JSON_BODY' });
   }
 
-  const mode = body.mode ?? 'orders_only';
+  const mode = body.mode ?? 'orders_invoices';
   if (!isSyncMode(mode)) return json(400, { error: 'INVALID_SYNC_MODE' });
 
   const endpoint = `https://api.github.com/repos/${repository}/actions/workflows/${encodeURIComponent(workflowId)}/dispatches`;
