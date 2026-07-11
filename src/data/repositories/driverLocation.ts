@@ -80,11 +80,13 @@ export async function recordDriverLocationSample(input: RecordDriverLocationInpu
   return (data ?? []) as DriverLocationSample[];
 }
 
-export async function loadOwnerDriverLocationTimeline(businessDay: string, active?: SupabaseClient | null) {
-  const { data, error } = await client(active)
+export async function loadOwnerDriverLocationTimeline(businessDay: string, routeId?: string | null, active?: SupabaseClient | null) {
+  let query = client(active)
     .from('v_ecoflow_owner_driver_location_timeline')
     .select('*')
-    .eq('business_day', businessDay)
+    .eq('business_day', businessDay);
+  if (routeId) query = query.eq('route_id', routeId);
+  const { data, error } = await query
     .order('captured_at', { ascending: true })
     .limit(600);
   if (error) throw new Error(errorMessage(error));
