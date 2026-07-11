@@ -1,4 +1,5 @@
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
+import { LoadRecoveryControl } from '../LoadRecoveryControl';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
@@ -14,13 +15,14 @@ import '../stageAndLoadExecution.css';
 import '../warehouseProductisation.css';
 import '../warehouseProductisationFixes.css';
 
-/** Warehouse phone operations: receive, pick, stage and scanner controls. */
+/** Warehouse phone modules: receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
   return (
     <>
       <FieldOpsGuardRails />
       <PickTaskOwnership />
       <StageAndLoadExecution />
+      <LoadRecoveryControl />
       <WarehouseBarcodeSprintMount />
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
