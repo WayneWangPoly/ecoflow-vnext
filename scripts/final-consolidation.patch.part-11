@@ -1,0 +1,240 @@
+rehouse_receiving_batch_unchecked_20260711(p_batch_id,p_note);
++end;
++$$;
++
++grant execute on function public.ecoflow_complete_warehouse_receiving_batch(uuid,text) to authenticated;
++revoke execute on function public.ecoflow_complete_warehouse_receiving_batch(uuid,text) from anon;
++
++create or replace function public.ecoflow_cancel_unknown_intakes_with_batch()
++returns trigger language plpgsql set search_path=public as $$
++begin
++  if new.batch_status='CANCELLED' and old.batch_status is distinct from new.batch_status then
++    update public.ecoflow_unknown_barcode_intakes i
++    set intake_status='CANCELLED',cancelled_at=now()
++    where i.batch_id=new.id and i.intake_status in ('PENDING_MAPPING','READY_TO_CONVERT');
++  end if;
++  return new;
++end;
++$$;
++
++drop trigger if exists trg_cancel_unknown_intakes_with_batch on public.ecoflow_warehouse_receiving_batches;
++create trigger trg_cancel_unknown_intakes_with_batch
++after update of batch_status on public.ecoflow_warehouse_receiving_batches
++for each row execute function public.ecoflow_cancel_unknown_intakes_with_batch();
+--- a/supabase/migrations/20260711181000_operational_state_auth_hardening.sql
++++ b/supabase/migrations/20260711181000_operational_state_auth_hardening.sql
+@@ -0,0 +1,135 @@
++-- Authenticate shared field state and make POD evidence private.
++
++create or replace function public.ecoflow_active_app_role()
++returns text
++language sql
++stable
++security definer
++set search_path=public
++as $$
++  select p.app_role
++  from public.app_user_profiles p
++  where p.user_id=auth.uid() and p.is_active=true and p.team_status='ACTIVE'
++  limit 1
++$$;
++
++grant execute on function public.ecoflow_active_app_role() to authenticated;
++revoke execute on function public.ecoflow_active_app_role() from anon;
++
++create or replace function public.ecoflow_can_write_day_scope(p_scope text)
++returns boolean
++language plpgsql
++stable
++security definer
++set search_path=public
++as $$
++declare
++  v_role text := public.ecoflow_active_app_role();
++  v_scope text := regexp_replace(coalesce(p_scope,''),'^run:[A-Z]+:','');
++begin
++  if v_role in ('OWNER','ADMIN') then return true; end if;
++  if p_scope='run-control' or v_scope='meta' or v_scope like 'release:%' then
++    return v_role='ACCOUNT';
++  end if;
++  if v_scope like 'task:%' or v_scope like 'alloc:%' or v_scope like 'stage:%' or v_scope like 'prep:%' then
++    return v_role in ('WAREHOUSE','DRIVER');
++  end if;
++  if v_scope like 'stop:%' or v_scope='route' or p_scope='shift' then
++    return v_role='DRIVER';
++  end if;
++  return false;
++end;
++$$;
++
++grant execute on function public.ecoflow_can_write_day_scope(text) to authenticated;
++revoke execute on function public.ecoflow_can_write_day_scope(text) from anon;
++
++alter table public.ecoflow_day_state enable row level security;
++revoke all on public.ecoflow_day_state from anon;
++grant select,insert,update on public.ecoflow_day_state to authenticated;
++
++drop policy if exists ecoflow_day_state_select on public.ecoflow_day_state;
++drop policy if exists ecoflow_day_state_insert on public.ecoflow_day_state;
++drop policy if exists ecoflow_day_state_update on public.ecoflow_day_state;
++drop policy if exists ecoflow_day_state_active_read on public.ecoflow_day_state;
++drop policy if exists ecoflow_day_state_scoped_insert on public.ecoflow_day_state;
++drop policy if exists ecoflow_day_state_scoped_update on public.ecoflow_day_state;
++
++create policy ecoflow_day_state_active_read
++on public.ecoflow_day_state for select to authenticated
++using (public.ecoflow_active_app_role() is not null);
++
++create policy ecoflow_day_state_scoped_insert
++on public.ecoflow_day_state for insert to authenticated
++with check (public.ecoflow_can_write_day_scope(scope));
++
++create policy ecoflow_day_state_scoped_update
++on public.ecoflow_day_state for update to authenticated
++using (public.ecoflow_can_write_day_scope(scope))
++with check (public.ecoflow_can_write_day_scope(scope));
++
++-- Both proof types are first-class records. Historic POD2 rows remain valid.
++do $$
++declare v_constraint text;
++begin
++  select c.conname into v_constraint
++  from pg_constraint c
++  where c.conrelid='public.ecoflow_delivery_pod_proofs'::regclass
++    and c.contype='c'
++    and pg_get_constraintdef(c.oid) ilike '%proof_type%'
++  limit 1;
++  if v_constraint is not null then
++    execute format('alter table public.ecoflow_delivery_pod_proofs drop constraint %I',v_constraint);
++  end if;
++end $$;
++
++alter table public.ecoflow_delivery_pod_proofs
++  add constraint ecoflow_delivery_pod_proofs_proof_type_check
++  check(proof_type in ('POD1_DROP_POINT','POD2_GOODS_PLACED'));
++
++alter table public.ecoflow_delivery_pod_proofs enable row level security;
++revoke all on public.ecoflow_delivery_pod_proofs from anon;
++revoke insert,update,delete on public.ecoflow_delivery_pod_proofs from authenticated;
++grant select,insert,update on public.ecoflow_delivery_pod_proofs to authenticated;
++
++drop policy if exists ecoflow_pod_proofs_active_read on public.ecoflow_delivery_pod_proofs;
++drop policy if exists ecoflow_pod_proofs_driver_write on public.ecoflow_delivery_pod_proofs;
++drop policy if exists ecoflow_pod_proofs_driver_update on public.ecoflow_delivery_pod_proofs;
++create policy ecoflow_pod_proofs_active_read
++on public.ecoflow_delivery_pod_proofs for select to authenticated
++using (public.ecoflow_active_app_role() is not null);
++create policy ecoflow_pod_proofs_driver_write
++on public.ecoflow_delivery_pod_proofs for insert to authenticated
++with check (public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'));
++create policy ecoflow_pod_proofs_driver_update
++on public.ecoflow_delivery_pod_proofs for update to authenticated
++using (public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'))
++with check (public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'));
++
++-- POD objects are private and signed URLs are generated for active users.
++update storage.buckets set public=false where id='pod-photos';
++drop policy if exists ecoflow_pod_photos_insert on storage.objects;
++drop policy if exists ecoflow_pod_photos_select on storage.objects;
++drop policy if exists ecoflow_pod_photos_update on storage.objects;
++drop policy if exists ecoflow_pod_private_read on storage.objects;
++drop policy if exists ecoflow_pod_private_insert on storage.objects;
++drop policy if exists ecoflow_pod_private_update on storage.objects;
++drop policy if exists ecoflow_pod_private_delete on storage.objects;
++
++create policy ecoflow_pod_private_read on storage.objects for select to authenticated
++using (bucket_id='pod-photos' and public.ecoflow_active_app_role() is not null);
++create policy ecoflow_pod_private_insert on storage.objects for insert to authenticated
++with check (bucket_id='pod-photos' and public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'));
++create policy ecoflow_pod_private_update on storage.objects for update to authenticated
++using (bucket_id='pod-photos' and public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'))
++with check (bucket_id='pod-photos' and public.ecoflow_active_app_role() in ('DRIVER','OWNER','ADMIN'));
++create policy ecoflow_pod_private_delete on storage.objects for delete to authenticated
++using (bucket_id='pod-photos' and public.ecoflow_active_app_role() in ('OWNER','ADMIN'));
++
++-- Remove anonymous access to the internal order creation RPC when it exists.
++do $$
++begin
++  if to_regprocedure('public.ecoflow_internalise_ordermentum_orders(integer,boolean,boolean)') is not null then
++    execute 'revoke execute on function public.ecoflow_internalise_ordermentum_orders(integer,boolean,boolean) from anon';
++  end if;
++end $$;
+--- a/supabase/migrations/20260711182000_multi_run_day_state.sql
++++ b/supabase/migrations/20260711182000_multi_run_day_state.sql
+@@ -0,0 +1,103 @@
++-- Current-run projections for sequential Run A / Run B / Run C delivery days.
++-- Historic run scopes remain in ecoflow_day_state and are not overwritten.
++
++create or replace view public.v_ecoflow_active_run
++with (security_invoker=true)
++as
++select distinct on (d.business_day)
++  d.business_day,
++  coalesce(nullif(d.payload->>'activeRunCode',''),'A') as run_code,
++  d.updated_by,
++  d.updated_at
++from public.ecoflow_day_state d
++where d.scope='run-control'
++order by d.business_day,d.updated_at desc;
++
++grant select on public.v_ecoflow_active_run to authenticated;
++revoke all on public.v_ecoflow_active_run from anon;
++
++create or replace view public.v_ecoflow_pick_handoff_meta
++with (security_invoker=true)
++as
++with active as (
++  select days.business_day,coalesce(r.run_code,'A') as run_code
++  from (select distinct business_day from public.ecoflow_day_state) days
++  left join public.v_ecoflow_active_run r using(business_day)
++), chosen as (
++  select a.business_day,a.run_code,d.payload,d.updated_by,d.updated_at
++  from active a
++  join public.ecoflow_day_state d on d.business_day=a.business_day
++   and d.scope in ('run:' || a.run_code || ':meta',case when a.run_code='A' then 'meta' else '__none__' end)
++  order by a.business_day,case when d.scope like 'run:%' then 0 else 1 end,d.updated_at desc
++)
++select distinct on (business_day)
++  business_day,
++  nullif(payload->>'lockedAt','') as locked_at,
++  payload->'stopOrder' as stop_order,
++  payload->'boxCodes' as box_codes,
++  updated_by as locked_by,
++  updated_at as route_lock_synced_at,
++  case when nullif(payload->>'lockedAt','') is not null then 'ROUTE_LOCKED' else 'WAITING_ROUTE_LOCK' end as handoff_status,
++  run_code
++from chosen
++order by business_day,updated_at desc;
++
++grant select on public.v_ecoflow_pick_handoff_meta to authenticated;
++revoke all on public.v_ecoflow_pick_handoff_meta from anon;
++
++create or replace view public.v_ecoflow_pick_task_progress
++with (security_invoker=true)
++as
++with active as (
++  select days.business_day,coalesce(r.run_code,'A') as run_code
++  from (select distinct business_day from public.ecoflow_day_state) days
++  left join public.v_ecoflow_active_run r using(business_day)
++)
++select d.business_day,
++  regexp_replace(d.scope,'^(run:[A-Z]+:)?task:','') as sku,
++  coalesce(d.payload->>'status','PENDING') as pick_status,
++  nullif(d.payload->>'scannedValue','') as scanned_value,
++  coalesce((d.payload->>'shortCartons')::numeric,0)::numeric as short_cartons,
++  coalesce((d.payload->>'shortSleeves')::numeric,0)::numeric as short_sleeves,
++  d.updated_by,d.updated_at,a.run_code
++from active a join public.ecoflow_day_state d on d.business_day=a.business_day
++where d.scope like 'run:' || a.run_code || ':task:%'
++   or (a.run_code='A' and d.scope like 'task:%');
++
++grant select on public.v_ecoflow_pick_task_progress to authenticated;
++revoke all on public.v_ecoflow_pick_task_progress from anon;
++
++create or replace view public.v_ecoflow_pick_allocation_progress
++with (security_invoker=true)
++as
++with active as (
++  select days.business_day,coalesce(r.run_code,'A') as run_code
++  from (select distinct business_day from public.ecoflow_day_state) days
++  left join public.v_ecoflow_
