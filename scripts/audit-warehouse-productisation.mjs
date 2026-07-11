@@ -11,6 +11,13 @@ const barcode = read('src/WarehouseBarcodeSprint.tsx');
 const barcodeLifecycle = read('src/data/repositories/barcodeLifecycle.ts');
 const layoutRepository = read('src/data/repositories/warehouseLayout.ts');
 const main = read('src/main.tsx');
+const authTypes = read('src/features/auth/authTypes.ts');
+const ownerBundle = read('src/enhancers/OwnerEnhancers.tsx');
+const accountBundle = read('src/enhancers/AccountEnhancers.tsx');
+const driverBundle = read('src/enhancers/DriverEnhancers.tsx');
+const warehouseOpsBundle = read('src/enhancers/WarehouseOpsEnhancers.tsx');
+const warehouseMapModules = read('src/enhancers/WarehouseMapRouteModules.tsx');
+const warehouseMapRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
 const ownerEdit = read('src/WarehouseMapOwnerEdit.tsx');
 const putaway = read('src/WarehouseMapPutawayControl.tsx');
 const safety = read('src/ProductionWriteSafety.tsx');
@@ -19,6 +26,10 @@ const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
 const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
+const pickOwnership = read('src/PickTaskOwnership.tsx');
+const pickClaimRepository = read('src/data/repositories/pickTaskClaims.ts');
+const podQuality = read('src/DriverPodQualityEnhancer.tsx');
+const podRepository = read('src/data/repositories/deliveryPodQuality.ts');
 const driverTracker = read('src/DriverLocationTracker.tsx');
 const ownerTracking = read('src/OwnerDriverTrackingMap.tsx');
 const driverLocationRepository = read('src/data/repositories/driverLocation.ts');
@@ -37,6 +48,7 @@ const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_ba
 const conflictQualification = read('supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql');
 const driverTrackingMigration = read('supabase/migrations/20260710140000_owner_driver_location_tracking.sql');
 const departureMigration = read('supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql');
+const pickClaimMigration = read('supabase/migrations/20260711170000_pick_task_ownership.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -52,17 +64,32 @@ assert.match(barcode, /Stock was not changed/, 'Barcode setup must explicitly co
 assert.match(barcode, /levelAllowed/, 'Barcode package mode must constrain package level.');
 assert.match(barcode, /retireCurrentBarcode/, 'Owner must be able to retire obsolete packaging codes.');
 assert.match(barcodeLifecycle, /ecoflow_retire_barcode_mapping/, 'Barcode retirement must use the controlled RPC.');
+
 assert.match(main, /ProductionWriteSafety/, 'Production write safety must be mounted.');
-assert.match(main, /WarehouseCameraScanner/, 'Mobile warehouse camera scanner must be mounted.');
-assert.match(main, /WarehouseMapOwnerEdit/, 'Owner layout editor must be mounted.');
-assert.match(main, /WarehouseMapPutawayControl/, 'Warehouse map must mount the controlled putaway surface.');
-assert.match(main, /WarehousePutawayTargetBridge/, 'Map putaway target must return to controlled receiving.');
-assert.match(main, /LoadRecoveryControl/, 'Controlled loading recovery must be mounted.');
+assert.match(main, /productionConfigurationMissing[\s\S]+ProductionConfigurationError/, 'Production must lock when secure auth configuration is missing.');
+assert.match(main, /SurfaceModuleGate/, 'Role-specific code must load through a surface module gate.');
+assert.match(main, /Warehouse Map is a protected route feature, not an authentication role/, 'Warehouse Map must be modelled as a route feature, not a role.');
+assert.match(main, /WarehouseMapRouteModules/, 'Warehouse Map route modules must be isolated from warehouse phone operations.');
+assert.match(main, /WarehouseMapRoute/, 'Warehouse Map must pass through a protected route component.');
+assert.doesNotMatch(authTypes, /WAREHOUSE_MAP/, 'Warehouse Map must never become an authentication role.');
+assert.match(warehouseMapRoute, /\['OWNER', 'ADMIN', 'WAREHOUSE'\]/, 'Only Owner, Admin and Warehouse accounts may open Warehouse Map.');
+assert.match(warehouseMapRoute, /EmailLoginScreen/, 'Warehouse Map must require secure sign-in.');
+assert.match(warehouseMapRoute, /team_status === 'SUSPENDED'|team_status === 'DISABLED'/, 'Warehouse Map must reject inactive accounts.');
+assert.match(warehouseMapModules, /WarehouseMapOwnerEdit/, 'Owner layout editing must be mounted only in Warehouse Map route modules.');
+assert.match(warehouseMapModules, /WarehouseMapPutawayControl/, 'Controlled putaway guidance must be mounted in Warehouse Map route modules.');
+assert.doesNotMatch(warehouseMapModules, /WarehouseCameraScanner|StageAndLoadExecution|FieldOpsGuardRails/, 'Warehouse Map must not download warehouse pick/load/scanner observers.');
+assert.match(warehouseOpsBundle, /WarehouseCameraScanner/, 'Warehouse phone operations must mount the camera scanner.');
+assert.match(warehouseOpsBundle, /WarehousePutawayTargetBridge/, 'Warehouse phone operations must receive map putaway targets.');
+assert.match(warehouseOpsBundle, /LoadRecoveryControl/, 'Warehouse loading must retain controlled undo.');
+assert.match(driverBundle, /DriverLocationTracker/, 'Driver surface must mount route location sampling.');
+assert.match(driverBundle, /DriverDepartureControl/, 'Driver surface must mount the departure gate.');
+assert.match(driverBundle, /LoadRecoveryControl/, 'Driver loading must retain controlled undo.');
+assert.match(ownerBundle, /OwnerDriverTrackingMap/, 'Owner surface must mount protected driver tracking.');
+assert.match(ownerBundle, /OwnerDeliveryGovernance/, 'Owner surface must mount delivery governance.');
+assert.match(ownerBundle, /InventoryMovementPolicy/, 'Owner inventory must block uncontrolled receiving.');
+assert.doesNotMatch(accountBundle, /OwnerDriverTrackingMap|OwnerDeliveryGovernance|InventoryControlCenter/, 'Accounts must not download owner tracking, governance or warehouse inventory controls.');
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
-assert.match(main, /DriverLocationTracker/, 'Driver location sampling must be mounted.');
-assert.match(main, /OwnerDriverTrackingMap/, 'Owner delivery tracking map must be mounted.');
-assert.match(main, /DriverDepartureControl/, 'Driver pre-departure gate must be mounted.');
-assert.match(main, /OwnerDeliveryGovernance/, 'Owner departure and notification governance must be mounted.');
+
 assert.match(ownerEdit, /OWNER|ADMIN/, 'Warehouse layout editing must be owner/admin gated.');
 assert.match(ownerEdit, /saveWarehouseLayout/, 'Owner layout changes must persist to cloud configuration.');
 assert.match(ownerEdit, /layoutVersion/, 'Cloud layout saves must use optimistic versioning.');
@@ -79,6 +106,26 @@ assert.match(stage, /syncByKey/, 'Stage preparation sync state must be tracked p
 assert.match(loadRecovery, /Undo last load/, 'The most recent load confirmation must be reversible.');
 assert.match(guardrails, /querySelectorAll<HTMLButtonElement>\('\.load-row'\)/, 'Route start must be gated from load row state.');
 assert.doesNotMatch(guardrails, /stops loaded\//i, 'Route start must not parse loaded progress copy.');
+
+assert.match(pickOwnership, /Take task/, 'Warehouse staff must explicitly claim a shared pick task.');
+assert.match(pickOwnership, /loadActivePickTaskClaims/, 'The floor must display database-authoritative task ownership.');
+assert.match(pickOwnership, /window\.setInterval\(\(\) => void reload\(\), 4000\)/, 'Task ownership must refresh across devices.');
+assert.match(pickOwnership, /8 \* 60 \* 1000/, 'Owned tasks must renew before their claim expires.');
+assert.match(pickClaimRepository, /ecoflow_claim_pick_task/, 'Task claims must use the controlled database RPC.');
+assert.match(pickClaimRepository, /ecoflow_release_pick_task/, 'Task release must use the controlled database RPC.');
+assert.match(pickClaimMigration, /ecoflow_pick_task_claims/, 'Database must store active pick task claims.');
+assert.match(pickClaimMigration, /pg_advisory_xact_lock/, 'Concurrent claim attempts must be serialised.');
+assert.match(pickClaimMigration, /TASK_ALREADY_CLAIMED_BY/, 'The database must reject a second active claimant.');
+assert.match(pickClaimMigration, /PICK_TASK_CLAIM_REQUIRED/, 'Stock deduction must require task ownership.');
+assert.match(pickClaimMigration, /ecoflow_record_pick_movement_unchecked_20260711/, 'The proven pick implementation must remain behind the claim-checking wrapper.');
+assert.match(pickClaimMigration, /ecoflow_pick_task_claim_audit/, 'Claims, takeover and release must be audited.');
+
+assert.match(podQuality, /saveDropPointProof/, 'POD 1 must be uploaded as the store or placement-point proof.');
+assert.match(podQuality, /saveGoodsPlacedProof/, 'POD 2 must be uploaded as the all-goods proof.');
+assert.match(podQuality, /no receiver name required/, 'Receiver name must not be required for delivery completion.');
+assert.match(podQuality, /pod1Path[\s\S]+pod2Path/, 'Both uploaded POD paths must reach the notification queue.');
+assert.match(podRepository, /POD1_DROP_POINT/, 'POD 1 must persist as a typed proof record.');
+assert.match(podRepository, /POD2_GOODS_PLACED/, 'POD 2 must persist as a typed proof record.');
 
 assert.match(migrationBaseline, /intentionally a no-op/i, 'The legacy production migration version must remain represented locally.');
 assert.match(migrationBaseline, /20260624/, 'The local baseline must match the remote migration version.');
@@ -149,4 +196,4 @@ assert.match(integrationPanel, /Sync stores/, 'Owner must have an isolated store
 assert.match(integrationPanel, /Sync SKU/, 'Owner must have an isolated SKU sync action.');
 assert.match(syncTriggerFunction, /orders_invoices[\s\S]+stores_only[\s\S]+sku_only/, 'Secure workflow trigger must accept isolated sync modes.');
 
-console.log('Warehouse, receiving, driver governance, customer notification and sync isolation audit passed.');
+console.log('Warehouse, receiving, role isolation, pick ownership, POD, driver governance, customer notification and sync audit passed.');
