@@ -55,6 +55,21 @@ jobs:
             typecheck.log
             vite-build.log
           if-no-files-found: warn
+      - name: Upload temporary source snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-source-snapshot
+          path: |
+            src
+            scripts
+            supabase
+            .github/workflows
+            package.json
+            package-lock.json
+            tsconfig*.json
+            vite.config.*
+          if-no-files-found: error
 
   migrations:
     runs-on: ubuntu-latest
