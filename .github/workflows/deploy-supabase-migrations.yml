@@ -52,6 +52,34 @@ jobs:
             echo "Project ref mismatch: repository=$REPOSITORY_PROJECT_REF workflow=$SUPABASE_PROJECT_REF"
             exit 1
           }
+      - name: Isolate legacy SQL archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ecoflow-legacy-migrations
+          shopt -s nullglob
+
+          for file in supabase/migrations/*.sql; do
+            base="$(basename "$file")"
+            if [[ "$base" == '20260624_remote_production_baseline.sql' ]] || [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              continue
+            fi
+            mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
+          done
+
+          echo 'Deployable migration files:'
+          for file in supabase/migrations/*.sql; do
+            base="$(basename "$file")"
+            if [[ "$base" != '20260624_remote_production_baseline.sql' ]] && [[ ! "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              echo "Unexpected active migration filename: $base"
+              exit 1
+            fi
+            echo "  $base"
+          done
+
+          test -f supabase/migrations/20260624_remote_production_baseline.sql
+          archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
+          echo "Legacy SQL archives excluded from deployment: $archived_count"
       - name: Install Supabase CLI
         run: npm install --global supabase@latest
       - name: Link production project
