@@ -22,12 +22,21 @@ const guardrails = read('src/FieldOpsGuardRails.tsx');
 const driverTracker = read('src/DriverLocationTracker.tsx');
 const ownerTracking = read('src/OwnerDriverTrackingMap.tsx');
 const driverLocationRepository = read('src/data/repositories/driverLocation.ts');
+const departureControl = read('src/DriverDepartureControl.tsx');
+const departureRepository = read('src/data/repositories/driverDeparture.ts');
+const ownerGovernance = read('src/OwnerDeliveryGovernance.tsx');
+const notificationFunction = read('supabase/functions/notify-route-start/index.ts');
+const syncTriggerFunction = read('supabase/functions/trigger-ordermentum-sync/index.ts');
+const cloudSyncWorkflow = read('.github/workflows/ordermentum-cloud-sync.yml');
+const cloudSyncScript = read('scripts/ordermentum-cloud-sync.mjs');
+const integrationPanel = read('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx');
 const migrationBaseline = read('supabase/migrations/20260624_remote_production_baseline.sql');
 const backendMigration = read('supabase/migrations/20260710130000_warehouse_backend_hardening.sql');
 const backendFollowup = read('supabase/migrations/20260710130100_warehouse_backend_hardening_followup.sql');
 const qualifiedFunctions = read('supabase/migrations/20260710130200_warehouse_backend_function_qualification.sql');
 const conflictQualification = read('supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql');
 const driverTrackingMigration = read('supabase/migrations/20260710140000_owner_driver_location_tracking.sql');
+const departureMigration = read('supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql');
 
 assert.match(receiving, /Open receiving work/, 'Receiving must expose open batch recovery.');
 assert.match(receiving, /Multiple deliveries are open/, 'Receiving must warn when multiple batches are active.');
@@ -52,6 +61,8 @@ assert.match(main, /LoadRecoveryControl/, 'Controlled loading recovery must be m
 assert.match(main, /TextEncodingRepair/, 'Legacy text encoding repair must be mounted.');
 assert.match(main, /DriverLocationTracker/, 'Driver location sampling must be mounted.');
 assert.match(main, /OwnerDriverTrackingMap/, 'Owner delivery tracking map must be mounted.');
+assert.match(main, /DriverDepartureControl/, 'Driver pre-departure gate must be mounted.');
+assert.match(main, /OwnerDeliveryGovernance/, 'Owner departure and notification governance must be mounted.');
 assert.match(ownerEdit, /OWNER|ADMIN/, 'Warehouse layout editing must be owner/admin gated.');
 assert.match(ownerEdit, /saveWarehouseLayout/, 'Owner layout changes must persist to cloud configuration.');
 assert.match(ownerEdit, /layoutVersion/, 'Cloud layout saves must use optimistic versioning.');
@@ -85,7 +96,7 @@ assert.match(backendFollowup, /where is_active/, 'Operational barcode views must
 assert.match(backendFollowup, /ecoflow_barcode_units_positive_integer/, 'Package conversion must be a positive whole number.');
 assert.match(qualifiedFunctions, /select r\.\* into v_registry/, 'Receiving barcode lookup must qualify registry columns.');
 assert.match(qualifiedFunctions, /where l\.batch_id=p_batch_id/g, 'Receiving batch line references must be explicitly qualified.');
-assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retirement must qualify barcode columns.');
+assert.match(qualifiedFunctions, /where r\.barcode = v_code/, 'Barcode retirement must qualify registry columns.');
 assert.match(qualifiedFunctions, /where vel\.sku = v_sku/, 'Barcode product lookup must qualify SKU columns.');
 assert.match(conflictQualification, /on conflict on constraint ecoflow_inventory_sku_controls_pkey/, 'Barcode control upsert must use the named primary-key constraint.');
 
@@ -110,4 +121,31 @@ assert.match(driverTrackingMigration, /app_role in \('DRIVER','OWNER','ADMIN'\)/
 assert.match(driverTrackingMigration, /security_invoker = true/g, 'Owner tracking views must preserve RLS.');
 assert.match(driverTrackingMigration, /revoke insert, update, delete/, 'Direct location table writes must be blocked.');
 
-console.log('Warehouse, receiving and owner delivery tracking audit passed.');
+assert.match(departureControl, /preventDefault\(\)[\s\S]+stopImmediatePropagation\(\)/, 'Start route must be intercepted until the departure declaration is recorded.');
+assert.match(departureControl, /Accept declaration and start route/, 'Driver must receive one explicit departure acceptance action.');
+assert.match(departureControl, /locationConsent/, 'Route-location consent must be explicit.');
+assert.match(departureControl, /notifyRouteStarted/, 'Route start must trigger customer-notification processing.');
+assert.match(departureRepository, /ecoflow_record_driver_departure_acknowledgement/, 'Departure acceptance must use the controlled database RPC.');
+assert.match(ownerGovernance, /Store delivery-notification emails/, 'Owner must be able to maintain store notification emails.');
+assert.match(ownerGovernance, /Driver declaration &amp; customer notices/, 'Owner must see departure and delivery-notification audit status.');
+assert.match(departureMigration, /uq_driver_departure_policy/, 'Departure declarations must be idempotent per policy and route.');
+assert.match(departureMigration, /uq_delivery_notification_route_store/, 'Customer notices must be idempotent per route and store.');
+assert.match(departureMigration, /does not displace statutory/i, 'Departure records must not claim to waive statutory duties.');
+assert.match(notificationFunction, /ecoflow_driver_departure_acknowledgements/, 'Notification sending must require the driver declaration.');
+assert.match(notificationFunction, /ecoflow_store_sites/, 'Email recipients must be loaded server-side from the store master.');
+assert.match(notificationFunction, /ALREADY_SENT/, 'Duplicate Start route events must not duplicate customer emails.');
+assert.match(notificationFunction, /RESEND_API_KEY/, 'Customer emails must use a server-side provider secret.');
+assert.doesNotMatch(notificationFunction, /body\.(email|recipient|to)/, 'The browser must not supply arbitrary customer recipients.');
+
+assert.match(cloudSyncWorkflow, /SYNC_MODE=orders_invoices/, 'Scheduled cloud sync must run only order and invoice deltas.');
+assert.doesNotMatch(cloudSyncWorkflow, /SYNC_MODE=(master_only|stores_only|sku_only).*schedule/s, 'Store or SKU masters must not be scheduled.');
+assert.match(cloudSyncScript, /--overlap-minutes', '20'/, 'Normal incremental sync must use a narrow overlap window.');
+assert.match(cloudSyncScript, /--max-pages', '10'/, 'Normal incremental sync must have a bounded page limit.');
+assert.match(cloudSyncScript, /purchasers,price_groups/, 'Store sync must be isolated from SKU resources.');
+assert.match(cloudSyncScript, /products,variants/, 'SKU sync must be isolated from store resources.');
+assert.match(integrationPanel, /Sync orders \+ invoices now/, 'Owner must have a clear order-and-invoice delta action.');
+assert.match(integrationPanel, /Sync stores/, 'Owner must have an isolated store sync action.');
+assert.match(integrationPanel, /Sync SKU/, 'Owner must have an isolated SKU sync action.');
+assert.match(syncTriggerFunction, /orders_invoices[\s\S]+stores_only[\s\S]+sku_only/, 'Secure workflow trigger must accept isolated sync modes.');
+
+console.log('Warehouse, receiving, driver governance, customer notification and sync isolation audit passed.');
