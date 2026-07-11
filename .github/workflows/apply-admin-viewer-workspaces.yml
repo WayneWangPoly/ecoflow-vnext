@@ -30,7 +30,7 @@ jobs:
       - name: Apply role and workspace patch
         run: python scripts/apply-admin-viewer-workspaces.py
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Validate semantic contracts
         run: npm run audit:warehouse
       - name: TypeScript check
@@ -43,6 +43,7 @@ jobs:
           set -o pipefail
           {
             set -eux
+            git restore package-lock.json
             if git diff --quiet; then
               echo 'Product changes already applied.'
               exit 0
