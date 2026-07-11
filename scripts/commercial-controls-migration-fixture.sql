@@ -15,9 +15,9 @@ select source_type,gen_random_uuid()::text external_product_id,null::text extern
   null::timestamptz last_seen_at,last_synced_at,'{}'::jsonb raw_payload
 from public.fixture_commercial_skus;
 
-create table if not exists public.fixture_commercial_price_groups(price_group_id text primary key,price_group_name text,description text);
+create table if not exists public.fixture_commercial_price_groups(external_price_group_id text primary key,price_group_name text,description text);
 create or replace view public.v_ecoflow_ordermentum_price_groups_v1 as
-select price_group_id,price_group_name,description,now() last_synced_at from public.fixture_commercial_price_groups;
+select external_price_group_id,price_group_name,description,now() last_synced_at from public.fixture_commercial_price_groups;
 
 create table if not exists public.fixture_accounts_lines(
   store_id text,store_name text,internal_order_id text primary key,order_number text,invoice_number text,order_ts timestamptz,due_at timestamptz,

@@ -62,9 +62,24 @@ with sku_ranked as (
   select sku, max(product_name) as product_name, max(base_price) as base_price, max(last_synced_at) as sku_last_synced_at
   from sku_ranked where rn=1 group by sku
 ), groups as (
-  select distinct price_group_id, coalesce(nullif(price_group_name,''),price_group_id) as price_group_name
-  from public.v_ecoflow_ordermentum_price_groups_v1
-  where nullif(trim(price_group_id),'') is not null
+  select distinct
+    coalesce(
+      nullif(trim(to_jsonb(pg)->>'price_group_id'),''),
+      nullif(trim(to_jsonb(pg)->>'external_price_group_id'),'')
+    ) as price_group_id,
+    coalesce(
+      nullif(trim(to_jsonb(pg)->>'price_group_name'),''),
+      nullif(trim(to_jsonb(pg)->>'name'),''),
+      coalesce(
+        nullif(trim(to_jsonb(pg)->>'price_group_id'),''),
+        nullif(trim(to_jsonb(pg)->>'external_price_group_id'),'')
+      )
+    ) as price_group_name
+  from public.v_ecoflow_ordermentum_price_groups_v1 pg
+  where coalesce(
+    nullif(trim(to_jsonb(pg)->>'price_group_id'),''),
+    nullif(trim(to_jsonb(pg)->>'external_price_group_id'),'')
+  ) is not null
 ), current_matrix as (
   select * from public.ecoflow_price_matrix_versions where is_current
 )
