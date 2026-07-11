@@ -1,5 +1,6 @@
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
+import { InventoryMovementPolicy } from '../InventoryMovementPolicy';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerCommandCenter } from '../OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
@@ -17,6 +18,7 @@ import '../roleAwareNavigation.css';
 import '../ownerCommandCenter.css';
 import '../inventoryControlCenter.css';
 import '../inventoryMovementLedger.css';
+import '../inventoryMovementPolicy.css';
 import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 
@@ -32,6 +34,7 @@ export default function OwnerEnhancers() {
       <OwnerOrderIntelligence />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
+      <InventoryMovementPolicy />
       <AccountsStatementWorkbench />
       <OrderPlatformExperience />
     </>
