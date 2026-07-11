@@ -121,7 +121,7 @@ assert.match(pickClaimMigration, /PICK_TASK_CLAIM_REQUIRED/, 'Stock deduction mu
 assert.match(pickClaimMigration, /ecoflow_record_pick_movement_unchecked_20260711/, 'The proven pick implementation must remain behind the claim-checking wrapper.');
 assert.match(pickClaimMigration, /ecoflow_pick_task_claim_audit/, 'Claims, takeover and release must be audited.');
 
-assert.match(driverApp, /Take POD 1 · store / placement point/, 'DriverApp must natively request POD 1.');
+assert.match(driverApp, /Take POD 1 · store \/ placement point/, 'DriverApp must natively request POD 1.');
 assert.match(driverApp, /Take POD 2 · all goods/, 'DriverApp must natively request POD 2.');
 assert.match(driverApp, /saveDropPointProof[\s\S]+saveGoodsPlacedProof/, 'Both proof uploads must complete before delivery status changes.');
 assert.doesNotMatch(driverApp, /function SignaturePad|Received by/, 'Driver POD must not request signature or receiver name.');
