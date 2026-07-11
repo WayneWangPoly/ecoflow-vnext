@@ -131,6 +131,20 @@ function hideLegacyOptionalFields(sheet: HTMLElement) {
   if (requirement) requirement.textContent = 'POD 1 and POD 2 are both required. Signature and receiver name are not required.';
 }
 
+function renderGate(gate: HTMLElement, input: { ready: boolean; pod1Ready: boolean; pod2Ready: boolean; busy: boolean; error: string }) {
+  const heading = document.createElement('strong');
+  heading.textContent = input.busy ? 'SAVING DELIVERY RECORD' : input.ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED';
+  const detail = document.createElement('span');
+  detail.textContent = `POD 1 ${input.pod1Ready ? '✓' : '—'} · POD 2 ${input.pod2Ready ? '✓' : '—'} · no receiver name required`;
+  const nodes: Node[] = [heading, detail];
+  if (input.error) {
+    const error = document.createElement('small');
+    error.textContent = input.error;
+    nodes.push(error);
+  }
+  gate.replaceChildren(...nodes);
+}
+
 export function DriverPodQualityEnhancer() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState<HTMLElement | null>(null);
@@ -144,6 +158,7 @@ export function DriverPodQualityEnhancer() {
   const [queueBusy, setQueueBusy] = useState(false);
   const [queueError, setQueueError] = useState('');
   const bypassRef = useRef(false);
+  const queueInFlightRef = useRef(false);
 
   useEffect(() => {
     function locate() {
@@ -158,6 +173,7 @@ export function DriverPodQualityEnhancer() {
         setPod1Error('');
         setPod2Path('');
         setQueueError('');
+        queueInFlightRef.current = false;
         return;
       }
 
@@ -257,8 +273,8 @@ export function DriverPodQualityEnhancer() {
     if (!sheet || !resolvedContext) return;
     const confirm = Array.from(sheet.querySelectorAll<HTMLButtonElement>('button')).find((button) => /Confirm delivered/i.test(button.textContent || ''));
     if (!confirm) return;
-    const ready = Boolean(pod1Path && pod2Path) && !pod1Busy && !queueBusy;
-    confirm.disabled = !ready;
+    const ready = Boolean(pod1Path && pod2Path) && !pod1Busy;
+    confirm.disabled = !ready || queueBusy;
     confirm.dataset.podQualityReady = ready ? 'true' : 'false';
 
     let gate = sheet.querySelector<HTMLElement>('.pod-quality-gate');
@@ -267,7 +283,7 @@ export function DriverPodQualityEnhancer() {
       gate.className = 'pod-quality-gate';
       confirm.insertAdjacentElement('beforebegin', gate);
     }
-    gate.innerHTML = `<strong>${ready ? 'POD COMPLETE' : 'TWO PHOTOS REQUIRED'}</strong><span>POD 1 ${pod1Path ? '✓' : '—'} · POD 2 ${pod2Path ? '✓' : '—'} · no receiver name required</span>${queueError ? `<small>${queueError}</small>` : ''}`;
+    renderGate(gate, { ready, pod1Ready: Boolean(pod1Path), pod2Ready: Boolean(pod2Path), busy: queueBusy, error: queueError });
 
     const handle = (event: Event) => {
       if (bypassRef.current) {
@@ -277,8 +293,9 @@ export function DriverPodQualityEnhancer() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      if (!ready || queueBusy) return;
+      if (!ready || queueInFlightRef.current) return;
 
+      queueInFlightRef.current = true;
       setQueueBusy(true);
       setQueueError('');
       void (async () => {
@@ -305,12 +322,16 @@ export function DriverPodQualityEnhancer() {
           });
           void dispatchDeliveryNotifications({ businessDay: resolvedContext.businessDay, orderId: resolvedContext.orderId }).catch(() => undefined);
           if (stored?.exceptionId) window.localStorage.removeItem(storedKey);
-          bypassRef.current = true;
-          confirm.click();
-        } catch (reason) {
-          setQueueError(reason instanceof Error ? reason.message : String(reason));
-        } finally {
+
+          queueInFlightRef.current = false;
           setQueueBusy(false);
+          bypassRef.current = true;
+          confirm.disabled = false;
+          window.setTimeout(() => confirm.click(), 0);
+        } catch (reason) {
+          queueInFlightRef.current = false;
+          setQueueBusy(false);
+          setQueueError(reason instanceof Error ? reason.message : String(reason));
         }
       })();
     };
