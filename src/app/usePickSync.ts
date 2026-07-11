@@ -65,11 +65,13 @@ export function usePickSync(
     const current = scopesFromDay(day);
     const changes = diffScopes(lastKnown.current, current);
     if (!changes.length) return;
-    changes.forEach((change) => {
-      lastKnown.current[change.scope] = JSON.stringify(change.payload);
-    });
     pushPickRows(businessDay, changes, deviceLabel)
-      .then(() => setStatus('live'))
+      .then(() => {
+        changes.forEach((change) => {
+          lastKnown.current[change.scope] = JSON.stringify(change.payload);
+        });
+        setStatus('live');
+      })
       .catch(() => setStatus('error'));
   }, [day, businessDay, deviceLabel, status]);
 

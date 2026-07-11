@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { observeBody } from '@/lib/domObserver';
 
-const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Stores', 'Reconciliation', 'Settings']);
+const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Delivery', 'Stores', 'Reconciliation', 'Settings']);
 const businessLabels: Record<string, string> = {
   Ordermentum: 'Inbox',
   Reconciliation: 'Accounts',
@@ -62,7 +62,7 @@ export function RoleAwareDesktopNavigation() {
         nav.appendChild(helper);
       }
       helper.textContent = role === 'ACCOUNT'
-        ? 'Accounts workspace: statements, stores, order controls.'
+        ? 'Accounts workspace: route planning, statements, stores and order controls.'
         : 'Owner workspace: full operating command centre.';
 
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {

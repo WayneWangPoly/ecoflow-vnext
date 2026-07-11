@@ -8,9 +8,20 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
+import '../orderPlatformTable.css';
+import '../ownerOrderIntelligence.css';
+import '../ownerStoreIntelligence.css';
+import '../storeStatementPressure.css';
+import '../accountsStatementWorkbench.css';
+import '../roleAwareNavigation.css';
+import '../ownerCommandCenter.css';
+import '../inventoryControlCenter.css';
+import '../inventoryMovementLedger.css';
+import '../ownerDriverTracking.css';
+import '../deliveryOperations.css';
 
-/** Owner/Account desktop enhancer bundle - loaded only when the desktop shell mounts. */
-export default function DesktopEnhancers() {
+/** Owner/Admin desktop capabilities only. */
+export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />

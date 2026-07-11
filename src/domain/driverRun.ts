@@ -44,17 +44,21 @@ export const WAREHOUSE = {
 };
 
 export type PodRecord = {
-  /** Local data URL cache — device-only, stripped before sync. */
-  photo?: string;
-  /** Local data URL cache — device-only, stripped before sync. */
-  signature?: string;
-  /** Supabase Storage path once uploaded — the shared source of truth. */
-  photoPath?: string;
-  signaturePath?: string;
-  receiverName?: string;
+  /** Device-only caches; stripped before shared day-state sync. */
+  pod1Photo?: string;
+  pod2Photo?: string;
+  /** Supabase Storage paths and the shared POD source of truth. */
+  pod1Path?: string;
+  pod2Path?: string;
   note?: string;
   location?: GeoPoint;
   capturedAt: string;
+  /** Legacy aliases retained only so historic synced records remain readable. */
+  photo?: string;
+  signature?: string;
+  photoPath?: string;
+  signaturePath?: string;
+  receiverName?: string;
 };
 
 export type StopException = {
@@ -118,6 +122,8 @@ export type ShiftEvent = { type: ShiftEventType; at: string; location?: GeoPoint
 export type DriverDayState = {
   version: 1;
   businessDay: string;
+  /** Active sequential delivery run for this business day: A, B, C... */
+  runCode: string;
   /** orderId -> release timestamp; the shared fact of which orders are in today's run. */
   releasedOrders: Record<string, string>;
   stopProgress: Record<string, StopProgress>;
@@ -149,7 +155,6 @@ export function stopsInLockedOrder(stops: RunStop[], pick: PickState): RunStop[]
 
 const RUN_STATUSES: OrderStatus[] = ['RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const READY_STATUSES: OrderStatus[] = ['STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
-const BOX_CODES = ['A', 'B', 'C', 'D', 'E', 'F'];
 /** Soft guidance only — the run is never silently truncated. */
 export const RUN_SIZE_WARNING = 16;
 
@@ -164,7 +169,13 @@ export function hasVerifiedAddress(address: string | undefined): boolean {
 }
 
 export function boxCodeForStop(index: number): string {
-  return BOX_CODES[index % BOX_CODES.length];
+  let value = Math.max(0, Math.floor(index));
+  let code = '';
+  do {
+    code = String.fromCharCode(65 + (value % 26)) + code;
+    value = Math.floor(value / 26) - 1;
+  } while (value >= 0);
+  return code;
 }
 
 function hashString(value: string): number {
@@ -286,8 +297,8 @@ function projectRunGeometry(stops: RunStop[]): { stops: RunStop[]; warehousePoin
   };
 }
 
-export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>): DriverRun {
-  const releasedIds = releasedOrders && Object.keys(releasedOrders).length ? releasedOrders : null;
+export function buildDriverRun(orders: ImportedOrder[], businessDay: string, releasedOrders?: Record<string, string>, runCode = 'A'): DriverRun {
+  const releasedIds = releasedOrders === undefined ? null : releasedOrders;
   const rawStops = [...orders]
     .filter((order) => releasedIds
       ? Boolean(releasedIds[order.id]) && order.status !== 'CANCELLED'
@@ -319,14 +330,32 @@ export function buildDriverRun(orders: ImportedOrder[], businessDay: string, rel
   const { stops, warehousePoint, geoProjected } = projectRunGeometry(rawStops);
 
   return {
-    id: `RUN-${businessDay.replace(/-/g, '')}-A`,
-    label: 'Run A · Adelaide Metro',
+    id: `RUN-${businessDay.replace(/-/g, '')}-${runCode}`,
+    label: `Run ${runCode} · Adelaide Metro`,
     businessDay,
     stops,
     totalCartons: stops.reduce((sum, stop) => sum + stop.cartons, 0),
     readyStops: stops.filter((stop) => stop.warehouseReady).length,
     warehousePoint,
     geoProjected
+  };
+}
+
+export function nextRunCode(current = 'A'): string {
+  const clean = current.trim().toUpperCase() || 'A';
+  let value = 0;
+  for (const char of clean) value = value * 26 + (char.charCodeAt(0) - 64);
+  return boxCodeForStop(Math.max(0, value));
+}
+
+export function startFreshRun(current: DriverDayState, runCode = nextRunCode(current.runCode)): DriverDayState {
+  return {
+    version: 1,
+    businessDay: current.businessDay,
+    runCode,
+    releasedOrders: {},
+    stopProgress: {},
+    shiftEvents: current.shiftEvents,
   };
 }
 
@@ -378,7 +407,7 @@ export function pruneEcoflowStorage(retentionDays = STORAGE_RETENTION_DAYS) {
 }
 
 export function emptyDriverDayState(businessDay: string): DriverDayState {
-  return { version: 1, businessDay, releasedOrders: {}, stopProgress: {}, shiftEvents: [] };
+  return { version: 1, businessDay, runCode: 'A', releasedOrders: {}, stopProgress: {}, shiftEvents: [] };
 }
 
 export function loadDriverDayState(businessDay: string): DriverDayState {
@@ -387,7 +416,7 @@ export function loadDriverDayState(businessDay: string): DriverDayState {
     if (!raw) return emptyDriverDayState(businessDay);
     const parsed = JSON.parse(raw) as DriverDayState;
     if (parsed && parsed.version === 1 && parsed.businessDay === businessDay) {
-      return { ...parsed, releasedOrders: parsed.releasedOrders ?? {} };
+      return { ...parsed, runCode: parsed.runCode || 'A', releasedOrders: parsed.releasedOrders ?? {} };
     }
   } catch {
     // corrupted or unavailable storage falls through to a clean day

@@ -68,7 +68,7 @@ function snapshotFromDay(day: DriverDayState): RouteSnapshot | null {
   const latest = events[events.length - 1] ?? null;
   return {
     day,
-    routeId: `RUN-${day.businessDay.replace(/-/g, '')}-A`,
+    routeId: `RUN-${day.businessDay.replace(/-/g, '')}-${day.runCode || 'A'}`,
     active: Boolean(day.routeStartedAt && !day.routeEndedAt),
     currentOrderId,
     eventKey: latest?.key ?? null,

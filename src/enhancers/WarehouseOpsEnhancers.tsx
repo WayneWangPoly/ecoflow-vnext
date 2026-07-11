@@ -1,24 +1,30 @@
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
+import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
 import { WarehouseCameraScanner } from '../WarehouseCameraScanner';
-import { WarehouseMapOwnerEdit } from '../WarehouseMapOwnerEdit';
-import { WarehouseMapPutawayControl } from '../WarehouseMapPutawayControl';
 import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
 import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
+import '../warehouseReceivingFlow.css';
+import '../warehouseBarcodeSprint.css';
+import '../warehousePickHandoff.css';
+import '../fieldOpsGuardRails.css';
+import '../pickTaskOwnership.css';
+import '../stageAndLoadExecution.css';
+import '../warehouseProductisation.css';
+import '../warehouseProductisationFixes.css';
 
-/** Warehouse mobile + warehouse-map enhancer bundle - loaded only for warehouse surfaces. */
-export default function WarehouseEnhancers() {
+/** Warehouse phone modules: receive, pick, stage and scanner controls. */
+export default function WarehouseOpsEnhancers() {
   return (
     <>
       <FieldOpsGuardRails />
+      <PickTaskOwnership />
       <StageAndLoadExecution />
       <WarehouseBarcodeSprintMount />
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <WarehouseCameraScanner />
-      <WarehouseMapOwnerEdit />
-      <WarehouseMapPutawayControl />
     </>
   );
 }

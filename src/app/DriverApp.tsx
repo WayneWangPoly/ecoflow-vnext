@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   Camera,
   CheckCircle2,
   ChevronLeft,
@@ -12,15 +10,12 @@ import {
   Clock,
   Coffee,
   Flag,
-  GripVertical,
   History,
   Home,
   List,
-  Lock,
   Map as MapIcon,
   MapPin,
   Navigation,
-  PenLine,
   Phone,
   Play,
   Printer,
@@ -28,13 +23,11 @@ import {
   Route,
   SkipForward,
   Truck,
-  Unlock,
   Warehouse as WarehouseIcon,
   X
 } from 'lucide-react';
 import {
   appleMapsUrl,
-  boxCodeForStop,
   buildDriverRun,
   capturePosition,
   formatClockTime,
@@ -45,7 +38,6 @@ import {
   initialStopProgress,
   lastEventOfType,
   loadDriverDayState,
-  optimiseStopOrder,
   reconcileStopOrder,
   RUN_SIZE_WARNING,
   saveDriverDayState,
@@ -56,13 +48,15 @@ import {
   WAREHOUSE,
   wazeUrl
 } from '@/domain/driverRun';
-import { podAssetUrl, uploadPodAsset } from '@/data/repositories/pickSync';
+import { saveDropPointProof, saveGoodsPlacedProof } from '@/data/repositories/deliveryPodQuality';
+import { dispatchDeliveryNotifications, queueDeliveryNotifications } from '@/data/repositories/deliveryOperations';
 import { readImageDownscaled } from '@/lib/downscaleImage';
 import { allStopsStaged, buildRunCartons } from '@/domain/pickPlan';
 import { stopsInLockedOrder } from '@/domain/driverRun';
 import { BoxChip, BrandMark } from './Brand';
 import { LabelSheet } from './LabelSheet';
 import { PickBoard } from './PickBoard';
+import { PodAssetImage } from './PodAsset';
 import { usePickSync } from './usePickSync';
 import type {
   DriverDayState,
@@ -135,142 +129,58 @@ function PhotoField({ label, value, onChange }: { label: string; value?: string;
   );
 }
 
-function SignaturePad({ onChange }: { onChange: (dataUrl?: string) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawing = useRef(false);
-  const hasInk = useRef(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    ctx.lineWidth = 2.4;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#123528';
-  }, []);
-
-  function point(event: React.PointerEvent<HTMLCanvasElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
-
-  function handleDown(event: React.PointerEvent<HTMLCanvasElement>) {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drawing.current = true;
-    const { x, y } = point(event);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }
-
-  function handleMove(event: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawing.current) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = point(event);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    hasInk.current = true;
-  }
-
-  function handleUp() {
-    if (!drawing.current) return;
-    drawing.current = false;
-    const canvas = canvasRef.current;
-    if (canvas && hasInk.current) onChange(canvas.toDataURL('image/png'));
-  }
-
-  function clear() {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    hasInk.current = false;
-    onChange(undefined);
-  }
-
-  return (
-    <div className="signature-block">
-      <canvas
-        ref={canvasRef}
-        className="signature-canvas"
-        onPointerDown={handleDown}
-        onPointerMove={handleMove}
-        onPointerUp={handleUp}
-        onPointerCancel={handleUp}
-      />
-      <div className="signature-hint-row">
-        <span><PenLine size={14} /> Customer signs above</span>
-        <button type="button" className="driver-ghost-button" onClick={clear}>Clear</button>
-      </div>
-    </div>
-  );
-}
-
-function PodSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; stopNumber: number; onCancel: () => void; onSubmit: (pod: PodRecord) => void }) {
-  const [photo, setPhoto] = useState<string | undefined>();
-  const [signature, setSignature] = useState<string | undefined>();
-  const [receiverName, setReceiverName] = useState('');
+function PodSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; stopNumber: number; onCancel: () => void; onSubmit: (pod: PodRecord) => Promise<void> }) {
+  const [pod1Photo, setPod1Photo] = useState<string | undefined>();
+  const [pod2Photo, setPod2Photo] = useState<string | undefined>();
   const [note, setNote] = useState('');
   const [location, setLocation] = useState<GeoPoint | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
-    capturePosition().then((point) => {
-      if (active) setLocation(point);
-    });
-    return () => {
-      active = false;
-    };
+    capturePosition().then((point) => { if (active) setLocation(point); });
+    return () => { active = false; };
   }, []);
 
-  const canSubmit = Boolean(photo || signature);
+  const canSubmit = Boolean(pod1Photo && pod2Photo) && !busy;
+
+  async function submit() {
+    if (!pod1Photo || !pod2Photo || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSubmit({
+        pod1Photo,
+        pod2Photo,
+        note: note.trim() || undefined,
+        location,
+        capturedAt: nowIso(),
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="driver-overlay" role="dialog" aria-label={`Proof of delivery for ${stop.store}`}>
       <div className="driver-bottom-sheet">
         <div className="sheet-grab" />
         <div className="sheet-head">
-          <div>
-            <strong>Proof of delivery</strong>
-            <span>Stop {stopNumber} · {stop.store}</span>
-          </div>
-          <button type="button" className="driver-icon-button" onClick={onCancel} aria-label="Close"><X size={20} /></button>
+          <div><strong>Proof of delivery</strong><span>Stop {stopNumber} · {stop.store}</span></div>
+          <button type="button" className="driver-icon-button" disabled={busy} onClick={onCancel} aria-label="Close"><X size={20} /></button>
         </div>
-        <PhotoField label="Take delivery photo" value={photo} onChange={setPhoto} />
-        <SignaturePad onChange={setSignature} />
-        <label className="pod-input">
-          <span>Received by</span>
-          <input value={receiverName} placeholder="Name of person on site" onChange={(event) => setReceiverName(event.target.value)} />
-        </label>
-        <label className="pod-input">
-          <span>Delivery note</span>
-          <input value={note} placeholder="Left at counter, cool room, etc." onChange={(event) => setNote(event.target.value)} />
-        </label>
+        <div className="pod-quality-pod1-note"><b>1</b><span><strong>Store / placement point</strong><small>Show signage, entrance, counter or another recognisable delivery point.</small></span></div>
+        <PhotoField label="Take POD 1 · store / placement point" value={pod1Photo} onChange={setPod1Photo} />
+        <div className="pod-quality-pod1-note"><b>2</b><span><strong>All goods</strong><small>Show every delivered carton together at the agreed placement point.</small></span></div>
+        <PhotoField label="Take POD 2 · all goods" value={pod2Photo} onChange={setPod2Photo} />
+        <label className="pod-input"><span>Delivery note (optional)</span><input value={note} placeholder="Left at counter, rear door, etc." onChange={(event) => setNote(event.target.value)} /></label>
         <div className="pod-meta-line"><MapPin size={14} /> {formatGeoPoint(location)} · {formatClockTime(nowIso())}</div>
-        {!canSubmit ? <div className="pod-requirement">A photo or a signature is required to complete this delivery.</div> : null}
-        <button
-          type="button"
-          className="driver-primary-button"
-          disabled={!canSubmit}
-          onClick={() => onSubmit({
-            photo,
-            signature,
-            receiverName: receiverName.trim() || undefined,
-            note: note.trim() || undefined,
-            location,
-            capturedAt: nowIso()
-          })}
-        >
-          <CheckCircle2 size={20} /> Confirm delivered
+        {!pod1Photo || !pod2Photo ? <div className="pod-requirement">POD 1 and POD 2 are required. Receiver name and signature are not required.</div> : null}
+        {error ? <div className="pod-requirement">Not completed: {error}</div> : null}
+        <button type="button" className="driver-primary-button" disabled={!canSubmit} onClick={() => void submit()}>
+          <CheckCircle2 size={20} /> {busy ? 'Uploading proof…' : 'Confirm delivered'}
         </button>
       </div>
     </div>
@@ -335,17 +245,18 @@ function FailSheet({ stop, stopNumber, onCancel, onSubmit }: { stop: RunStop; st
 }
 
 function PodSummary({ pod }: { pod: PodRecord }) {
+  const pod1 = pod.pod1Photo || pod.pod1Path || pod.photo || pod.photoPath;
+  const pod2 = pod.pod2Photo || pod.pod2Path || pod.signature || pod.signaturePath;
   return (
     <div className="pod-summary">
       <div className="pod-summary-head"><CheckCircle2 size={18} /> Delivered {formatClockTime(pod.capturedAt)}</div>
       <div className="pod-summary-meta">
-        {pod.receiverName ? <span>Received by {pod.receiverName}</span> : <span>No receiver name recorded</span>}
         <span><MapPin size={13} /> {formatGeoPoint(pod.location)}</span>
         {pod.note ? <span>“{pod.note}”</span> : null}
       </div>
       <div className="pod-summary-thumbs">
-        {pod.photo || pod.photoPath ? <img src={pod.photo || podAssetUrl(pod.photoPath!) || undefined} alt="Delivery photo" loading="lazy" /> : null}
-        {pod.signature || pod.signaturePath ? <img className="pod-signature-thumb" src={pod.signature || podAssetUrl(pod.signaturePath!) || undefined} alt="Customer signature" loading="lazy" /> : null}
+        {pod1 ? <PodAssetImage path={pod1} alt="POD 1 store or placement point" /> : null}
+        {pod2 ? <PodAssetImage path={pod2} alt="POD 2 all delivered goods" /> : null}
       </div>
     </div>
   );
@@ -462,7 +373,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   actorLabel?: string;
 }) {
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(businessDay.date));
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders), [orders, businessDay.date, day.releasedOrders]);
+  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode), [orders, businessDay.date, day.releasedOrders, day.runCode]);
   const [tab, setTab] = useState<DriverTab>('today');
   const [stopsView, setStopsView] = useState<'map' | 'list'>('map');
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
@@ -470,10 +381,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   const [failOpen, setFailOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [drag, setDrag] = useState<{ id: string; offset: number } | null>(null);
-  const dragRef = useRef<{ id: string; offset: number } | null>(null);
-  const dragStartY = useRef(0);
-  const dragRowHeight = useRef(68);
 
   useEffect(() => saveDriverDayState(day), [day]);
   useEffect(() => {
@@ -483,15 +390,9 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
 
   const pickSyncStatus = usePickSync(businessDay.date, day, setDay, actorLabel || 'Driver');
 
-  // First look at the day: seed the driving order with the optimised route from the warehouse.
-  useEffect(() => {
-    if (!run.stops.length) return;
-    setDay((current) => current.stopOrder ? current : { ...current, stopOrder: optimiseStopOrder(run.stops, run.warehousePoint) });
-  }, [run.stops]);
-
   const orderIds = useMemo(
-    () => day.stopOrder ? reconcileStopOrder(day.stopOrder, run.stops) : optimiseStopOrder(run.stops, run.warehousePoint),
-    [day.stopOrder, run.stops]
+    () => reconcileStopOrder(day.pick?.stopOrder || day.stopOrder, run.stops),
+    [day.pick?.stopOrder, day.stopOrder, run.stops]
   );
 
   const rows: StopWithProgress[] = useMemo(() => {
@@ -580,45 +481,43 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   }
 
   async function completeDelivery(row: StopWithProgress, pod: PodRecord) {
-    // Record locally first (offline-safe), then upload assets and sync the storage paths.
-    patchStop(row.stop.orderId, { status: 'DELIVERED', completedAt: pod.capturedAt, pod });
+    if (!pod.pod1Photo || !pod.pod2Photo) throw new Error('POD 1 and POD 2 are both required.');
+    const context = {
+      businessDay: businessDay.date,
+      orderId: row.stop.orderId,
+      orderNumber: row.stop.orderNo,
+      stopNumber: row.displayNumber,
+      boxCode: row.stop.boxCode,
+      storeName: row.stop.store,
+      actorLabel: actorLabel || 'Driver',
+    };
+    const [pod1Path, pod2Path] = await Promise.all([
+      saveDropPointProof({ context, dataUrl: pod.pod1Photo }),
+      saveGoodsPlacedProof({ context, dataUrl: pod.pod2Photo }),
+    ]);
+    await queueDeliveryNotifications({
+      ...context,
+      outcome: 'DELIVERED',
+      eventKey: `${businessDay.date}:${row.stop.orderId}:DELIVERED`,
+      storePhone: row.stop.phone || null,
+      pod1Path,
+      pod2Path,
+      internalDetail: 'Full delivery completed with required two-photo POD.',
+    });
+    void dispatchDeliveryNotifications({ businessDay: businessDay.date, orderId: row.stop.orderId }).catch(() => undefined);
+
+    const savedPod: PodRecord = {
+      note: pod.note,
+      location: pod.location,
+      capturedAt: pod.capturedAt,
+      pod1Path,
+      pod2Path,
+    };
+    patchStop(row.stop.orderId, { status: 'DELIVERED', completedAt: pod.capturedAt, pod: savedPod });
     setOrderStatus(row.stop.orderId, 'DELIVERED', true);
     setPodOpen(false);
     setActiveStopId(null);
     setTab('stops');
-    const stamp = pod.capturedAt.replace(/[:.]/g, '-');
-    const prefix = `${businessDay.date}/${row.stop.orderId}`;
-    const [photoPath, signaturePath] = await Promise.all([
-      pod.photo ? uploadPodAsset(`${prefix}/photo-${stamp}.jpg`, pod.photo) : Promise.resolve(null),
-      pod.signature ? uploadPodAsset(`${prefix}/signature-${stamp}.png`, pod.signature) : Promise.resolve(null)
-    ]);
-    if (photoPath || signaturePath) {
-      setDay((current) => {
-        const progress = current.stopProgress[row.stop.orderId];
-        if (!progress?.pod || progress.pod.capturedAt !== pod.capturedAt) return current;
-        // Once an asset is safely in storage, drop its base64 copy from day state.
-        // Keeping megabytes of photo data in localStorage exhausts the ~5MB quota
-        // within days and silently stops all progress persistence.
-        const nextPhotoPath = photoPath ?? progress.pod.photoPath;
-        const nextSignaturePath = signaturePath ?? progress.pod.signaturePath;
-        return {
-          ...current,
-          stopProgress: {
-            ...current.stopProgress,
-            [row.stop.orderId]: {
-              ...progress,
-              pod: {
-                ...progress.pod,
-                photoPath: nextPhotoPath,
-                signaturePath: nextSignaturePath,
-                photo: nextPhotoPath ? undefined : progress.pod.photo,
-                signature: nextSignaturePath ? undefined : progress.pod.signature
-              }
-            }
-          }
-        };
-      });
-    }
   }
 
   function failDelivery(row: StopWithProgress, exception: StopException) {
@@ -641,91 +540,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
 
   function toggleLoaded(row: StopWithProgress) {
     patchStop(row.stop.orderId, { loaded: !row.progress.loaded });
-  }
-
-  function moveStop(orderId: string, delta: number) {
-    setDay((current) => {
-      const order = reconcileStopOrder(current.stopOrder, run.stops);
-      const from = order.indexOf(orderId);
-      if (from < 0) return current;
-      const to = Math.max(0, Math.min(order.length - 1, from + delta));
-      if (to === from) return current;
-      const next = [...order];
-      next.splice(from, 1);
-      next.splice(to, 0, orderId);
-      return { ...current, stopOrder: next };
-    });
-  }
-
-  function lockRoute() {
-    const boxCodes: Record<string, string> = {};
-    rows.forEach((row, index) => { boxCodes[row.stop.orderId] = boxCodeForStop(index); });
-    setDay((current) => ({
-      ...current,
-      stopOrder: [...orderIds],
-      pick: {
-        lockedAt: nowIso(),
-        stopOrder: [...orderIds],
-        boxCodes,
-        taskState: {},
-        allocDone: {},
-        stagedStops: {}
-      }
-    }));
-    setTab('pick');
-  }
-
-  function unlockRoute() {
-    const confirmed = window.confirm('Unlock the route? Printed labels become invalid and the pick plan is cleared.');
-    if (!confirmed) return;
-    setDay((current) => ({ ...current, pick: undefined }));
-  }
-
-  function applyOptimise() {
-    const closedRowsInOrder = rows.filter((row) => isClosed(row.progress.status));
-    const openStops = rows.filter((row) => !isClosed(row.progress.status)).map((row) => row.stop);
-    const startPoint = closedRowsInOrder.length
-      ? closedRowsInOrder[closedRowsInOrder.length - 1].stop.mapPoint
-      : run.warehousePoint;
-    const nextOrder = [
-      ...closedRowsInOrder.map((row) => row.stop.orderId),
-      ...optimiseStopOrder(openStops, startPoint)
-    ];
-    setDay((current) => ({ ...current, stopOrder: nextOrder }));
-  }
-
-  function handleDragStart(event: React.PointerEvent<HTMLButtonElement>, orderId: string) {
-    const rowEl = event.currentTarget.closest('.reorder-row');
-    dragRowHeight.current = rowEl instanceof HTMLElement ? rowEl.offsetHeight + 9 : 68;
-    dragStartY.current = event.clientY;
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // capture can fail for exotic pointer sources; drag still tracks via move events
-    }
-    dragRef.current = { id: orderId, offset: 0 };
-    setDrag(dragRef.current);
-  }
-
-  function handleDragMove(event: React.PointerEvent<HTMLButtonElement>, orderId: string) {
-    if (dragRef.current?.id !== orderId) return;
-    dragRef.current = { id: orderId, offset: event.clientY - dragStartY.current };
-    setDrag(dragRef.current);
-  }
-
-  function handleDragEnd(orderId: string) {
-    const active = dragRef.current;
-    dragRef.current = null;
-    setDrag(null);
-    if (active && active.id === orderId) {
-      const delta = Math.round(active.offset / dragRowHeight.current);
-      if (delta) moveStop(orderId, delta);
-    }
-  }
-
-  function handleDragCancel() {
-    dragRef.current = null;
-    setDrag(null);
   }
 
   const shiftDuration = clockInEvent && shiftStatus !== 'OFF_SHIFT'
@@ -800,10 +614,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
           <p className="driver-card-meta">No orders released into today’s run yet — the office releases orders from the Ordermentum tab first.</p>
         ) : routeStatus === 'NOT_STARTED' && !routeLocked ? (
           <>
-            <p className="driver-card-meta">Step 1 · Review the stop order, then lock the route — locking fixes the A–F box letters and generates the pick plan and labels.</p>
-            <button type="button" className="driver-primary-button" onClick={() => setTab('stops')}>
-              <Route size={18} /> Review &amp; lock route
-            </button>
+            <p className="driver-card-meta">Waiting for Owner or office to approve and lock today’s route. Stop order and box codes cannot be changed on the driver device.</p>
           </>
         ) : routeStatus === 'NOT_STARTED' && !stagedOk ? (
           <>
@@ -912,20 +723,9 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
           <button type="button" className={cls(stopsView === 'map' && 'active')} onClick={() => setStopsView('map')}><MapIcon size={15} /> Map</button>
           <button type="button" className={cls(stopsView === 'list' && 'active')} onClick={() => setStopsView('list')}><List size={15} /> List</button>
         </div>
-        {stopsView === 'map' && rows.length > 1 && !routeLocked ? (
-          <button type="button" className="optimise-button" onClick={applyOptimise}><Route size={15} /> Optimise</button>
-        ) : null}
-        {routeLocked ? (
-          <button type="button" className="optimise-button" onClick={unlockRoute}><Unlock size={15} /> Unlock</button>
-        ) : null}
+        <span className="driver-inline-hint">Route order is approved by office and read-only on this device.</span>
       </div>
 
-      {!routeLocked && rows.length ? (
-        <section className="driver-card lock-cta-card">
-          <p className="driver-card-meta">Happy with this order? Locking fixes the A–F box letters, prints from here on stay valid, and the pick plan is generated.</p>
-          <button type="button" className="driver-primary-button" onClick={lockRoute}><Lock size={18} /> Confirm route &amp; lock</button>
-        </section>
-      ) : null}
 
       {stopsView === 'map' ? (
         <>
@@ -937,25 +737,11 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
             {rows.map((row, index) => {
               const closed = isClosed(row.progress.status);
               const isCurrent = routeStatus === 'IN_PROGRESS' && currentRow?.stop.orderId === row.stop.orderId;
-              const dragging = drag?.id === row.stop.orderId;
               return (
                 <div
                   key={row.stop.orderId}
-                  className={cls('reorder-row', isCurrent && 'current', closed && 'closed', dragging && 'dragging')}
-                  style={dragging ? { transform: `translateY(${drag.offset}px)` } : undefined}
+                  className={cls('reorder-row', isCurrent && 'current', closed && 'closed')}
                 >
-                  <button
-                    type="button"
-                    className="drag-handle"
-                    disabled={closed}
-                    aria-label={`Drag to reorder stop ${row.displayNumber}`}
-                    onPointerDown={(event) => handleDragStart(event, row.stop.orderId)}
-                    onPointerMove={(event) => handleDragMove(event, row.stop.orderId)}
-                    onPointerUp={() => handleDragEnd(row.stop.orderId)}
-                    onPointerCancel={handleDragCancel}
-                  >
-                    <GripVertical size={18} />
-                  </button>
                   <span className={cls('reorder-num', isCurrent && 'current')}>{row.displayNumber}</span>
                   <BoxChip code={row.stop.boxCode} />
                   <button type="button" className="reorder-body" onClick={() => setActiveStopId(row.stop.orderId)}>
@@ -964,10 +750,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
                     {isCurrent ? <em>UP NEXT</em> : null}
                   </button>
                   <StopStatusChip status={row.progress.status} />
-                  <span className="reorder-arrows">
-                    <button type="button" disabled={closed || index === 0} aria-label="Move stop earlier" onClick={() => moveStop(row.stop.orderId, -1)}><ArrowUp size={16} /></button>
-                    <button type="button" disabled={closed || index === rows.length - 1} aria-label="Move stop later" onClick={() => moveStop(row.stop.orderId, 1)}><ArrowDown size={16} /></button>
-                  </span>
                 </div>
               );
             })}
@@ -1139,8 +921,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   ) : (
     <section className="driver-card">
       <div className="driver-card-head"><h2><ClipboardList size={18} /> Picking</h2></div>
-      <p className="driver-card-meta">Lock the route first — the pick plan and box letters come from the locked stop order.</p>
-      <button type="button" className="driver-primary-button" onClick={() => setTab('stops')}><Route size={18} /> Review &amp; lock route</button>
+      <p className="driver-card-meta">Waiting for Owner or office to approve and lock today’s route. Picking and labels become available automatically.</p>
     </section>
   );
 

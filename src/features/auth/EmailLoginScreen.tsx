@@ -22,10 +22,12 @@ export function EmailLoginScreen({
   supabase,
   authError,
   onSignedIn,
+  redirectTo = '/',
 }: {
   supabase: SupabaseClient;
   authError?: string;
   onSignedIn: () => void | Promise<void>;
+  redirectTo?: string;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,7 +58,7 @@ export function EmailLoginScreen({
       if (!data.session) throw new Error('Sign-in did not return a session. Try again.');
       setMessage('Signed in. Opening portal…');
       await onSignedIn();
-      window.setTimeout(() => window.location.assign('/'), 250);
+      window.setTimeout(() => window.location.assign(redirectTo), 250);
     } catch (err) {
       setMessage(null);
       setError(err instanceof Error ? err.message : String(err));
