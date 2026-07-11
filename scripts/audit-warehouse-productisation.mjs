@@ -97,6 +97,13 @@ has(driverRun, 'startFreshRun', 'Completed Run A must be able to start a separat
 has(pickSync, "'run-control'", 'Shared state must publish the active run control record.');
 has(pickSync, 'run:${day.runCode', 'Operational scopes must be namespaced by run.');
 has(app, 'Start next delivery run', 'Owner or Accounts must be able to open the next run after completion.');
+has(app, "if (appRole === 'ADMIN') return 'admin'", 'Admin must remain a distinct full-access desktop role.');
+has(app, "if (appRole === 'VIEWER') return 'viewer'", 'Viewer must never be mapped to Owner.');
+has(app, 'Viewer workspace is read-only', 'Viewer must receive an explicit read-only surface.');
+has(app, 'Open workspace…', 'Owner/Admin must have an explicit workspace switcher.');
+has(app, '/?workspace=warehouse', 'Workspace switcher must open warehouse operations without changing identity.');
+lacks(driverApp, 'RUN_SIZE_WARNING', 'Driver route size must not infer van capacity from stop count.');
+lacks(driverRun, 'RUN_SIZE_WARNING', 'Domain rules must not contain an unsupported van-capacity threshold.');
 has(multiRunMigration, 'v_ecoflow_active_run', 'Database projections must follow the active run namespace.');
 
 // Shared pick ownership.

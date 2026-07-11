@@ -155,8 +155,6 @@ export function stopsInLockedOrder(stops: RunStop[], pick: PickState): RunStop[]
 
 const RUN_STATUSES: OrderStatus[] = ['RELEASED', 'PICKING', 'PACKED', 'STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
 const READY_STATUSES: OrderStatus[] = ['STAGED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED'];
-/** Soft guidance only — the run is never silently truncated. */
-export const RUN_SIZE_WARNING = 16;
 
 const ADDRESS_PLACEHOLDER = 'Address pending';
 
