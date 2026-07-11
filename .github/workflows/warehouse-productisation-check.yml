@@ -10,6 +10,7 @@ on:
       - 'agent/owner-driver-tracking-map'
       - 'agent/fix-supabase-production-ref'
       - 'agent/web-location-and-migration-baseline'
+      - 'agent/driver-departure-notifications-sync-optimisation'
 
 permissions:
   contents: read
@@ -83,7 +84,8 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql 2>&1 | tee operational-db-contract.log
-      - name: Apply hardening and driver tracking migrations in release order
+          psql -v ON_ERROR_STOP=1 -f scripts/driver-departure-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply operational migrations in release order
         shell: bash
         run: |
           set -euo pipefail
@@ -96,7 +98,9 @@ jobs:
             supabase/migrations/20260710130400_receiving_confirmation_qualification.sql \
             supabase/migrations/20260710130500_layout_conflict_qualification.sql \
             supabase/migrations/20260710140000_owner_driver_location_tracking.sql \
-            supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql
+            supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql \
+            supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql \
+            supabase/migrations/20260711100100_notification_contact_conflict_qualification.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
@@ -111,6 +115,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/driver-location-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute departure declaration and notification tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/driver-departure-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Upload operational database contract log
         if: always()
         uses: actions/upload-artifact@v4

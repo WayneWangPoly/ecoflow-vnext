@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/functions/**'
       - '.github/workflows/deploy-supabase-migrations.yml'
       - 'supabase/.temp/project-ref'
 
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: production
     env:
       GH_TOKEN: ${{ github.token }}
@@ -35,7 +36,7 @@ jobs:
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state='pending' \
             -f context='Supabase migrations' \
-            -f description='Production database migration is running' \
+            -f description='Production database and functions deployment is running' \
             -f target_url="$DEPLOYMENT_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
@@ -102,6 +103,16 @@ jobs:
         run: |
           set -o pipefail
           supabase db push --linked --include-all --yes --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Deploy Ordermentum sync trigger
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase functions deploy trigger-ordermentum-sync --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Deploy route-start customer notification
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase functions deploy notify-route-start --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
@@ -118,10 +129,10 @@ jobs:
         run: |
           if [ "$JOB_RESULT" = 'success' ]; then
             STATE='success'
-            DESCRIPTION='Production database migrations applied successfully'
+            DESCRIPTION='Production database and Edge Functions deployed successfully'
           else
             STATE='failure'
-            DESCRIPTION='Production database migration failed; inspect workflow log artifact'
+            DESCRIPTION='Production Supabase deployment failed; inspect workflow log artifact'
           fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$STATE" \
