@@ -11,7 +11,6 @@ import { DriverReturnZoneCheckin } from './DriverReturnZoneCheckin';
 import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { FieldOpsGuardRails } from './FieldOpsGuardRails';
 import { InventoryControlCenter } from './InventoryControlCenter';
-import { LoadRecoveryControl } from './LoadRecoveryControl';
 import { OrderPlatformExperience } from './OrderPlatformExperience';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from './OwnerDeliveryAlerts';
@@ -59,7 +58,13 @@ import './warehouseProductisationFixes.css';
 import './ownerDriverTracking.css';
 import './driverDeparture.css';
 
+import { pruneEcoflowStorage } from '@/domain/driverRun';
+
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
+
+// Drop day-scoped storage older than the retention window before anything mounts,
+// so the localStorage quota never fills up from weeks of accumulated day states.
+pruneEcoflowStorage();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -69,7 +74,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <FieldModeEnhancer />
       <FieldOpsGuardRails />
       <StageAndLoadExecution />
-      <LoadRecoveryControl />
       <DriverPodQualityEnhancer />
       <DriverDeliveryExceptionEnhancer />
       <DriverReturnZoneCheckin />

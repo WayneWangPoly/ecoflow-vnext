@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 
 type Detector = {
   detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
@@ -50,18 +51,17 @@ export function WarehouseCameraScanner() {
   const detectorRef = useRef<Detector | null>(null);
   const scanningRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+  const lastDetectRef = useRef(0);
 
   useEffect(() => {
     function refresh() {
       setAvailable(window.innerWidth <= 960 && warehouseSurfaceVisible() && Boolean(barcodeInput()));
     }
-    refresh();
-    const observer = new MutationObserver(refresh);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    const stopObserving = observeBody(refresh);
     window.addEventListener('resize', refresh);
     window.addEventListener('focusin', refresh);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.removeEventListener('resize', refresh);
       window.removeEventListener('focusin', refresh);
     };
@@ -100,7 +100,10 @@ export function WarehouseCameraScanner() {
   async function scanFrame() {
     if (!scanningRef.current || !videoRef.current || !detectorRef.current) return;
     const video = videoRef.current;
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    // Detect at most every ~180ms - full-frame-rate detection cooks cheap phones.
+    const now = performance.now();
+    if (now - lastDetectRef.current >= 180 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      lastDetectRef.current = now;
       try {
         const results = await detectorRef.current.detect(video);
         const code = results.find((result) => result.rawValue)?.rawValue?.trim();

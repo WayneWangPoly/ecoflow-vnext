@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, MapPin, PackageCheck, RotateCcw, X } from 'lucide-react';
 import { driverDropReturn, loadOpenReturnZoneItems } from '@/data/repositories/returnZoneOperations';
@@ -174,15 +175,8 @@ export function DriverReturnZoneCheckin() {
       }
       setHost(mount);
     }
-    locate();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 120);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   useEffect(() => {

@@ -1,28 +1,19 @@
 import { useEffect } from 'react';
+import { observeBody } from '@/lib/domObserver';
 
 /**
  * Floor-discipline gates for the pick board and the driver load screen.
  * Stage checklists and sequential loading live in StageAndLoadExecution.
- * The load gate reads the load-row state itself rather than parsing operator copy.
+ * Both gates read structured state (data attributes / row classes), never
+ * operator-facing copy, so wording changes cannot silently break them.
  */
-
-function parseFraction(text: string, pattern: RegExp) {
-  const match = pattern.exec(text);
-  if (!match) return null;
-  const current = Number(match[1]);
-  const total = Number(match[2]);
-  if (!Number.isFinite(current) || !Number.isFinite(total)) return null;
-  return { current, total };
-}
 
 function applyPickPhaseGate() {
   const pickBoard = document.querySelector<HTMLElement>('.pick-board');
   if (!pickBoard) return;
 
-  const progressText = pickBoard.querySelector<HTMLElement>('.run-progress-head strong')?.textContent || '';
-  const progress = parseFraction(progressText, /(\d+)\/(\d+)\s+SKUs picked/i);
-  const picked = progress?.current ?? 0;
-  const total = progress?.total ?? 0;
+  const picked = Number(pickBoard.dataset.picked ?? 0) || 0;
+  const total = Number(pickBoard.dataset.total ?? 0) || 0;
   const buttons = Array.from(pickBoard.querySelectorAll<HTMLButtonElement>('.pick-view-toggle button'));
   const sortButton = buttons[1];
   const stageButton = buttons[2];
@@ -102,17 +93,10 @@ export function FieldOpsGuardRails() {
       applyPickPhaseGate();
       applyLoadGate();
     }
-    run();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; run(); }, 120);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'disabled'] });
-    const timer = window.setInterval(run, 1000);
+    const stopObserving = observeBody(run);
+    const timer = window.setInterval(run, 2500);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.clearInterval(timer);
     };
   }, []);

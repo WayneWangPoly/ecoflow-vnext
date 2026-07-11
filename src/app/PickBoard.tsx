@@ -592,7 +592,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
   );
 
   return (
-    <div className="pick-board">
+    <div className="pick-board" data-picked={pickedCount} data-total={tasks.length}>
       <section className="pick-header-card">
         <div className="run-progress-head">
           <strong>{pickedCount}/{tasks.length} SKUs picked</strong>

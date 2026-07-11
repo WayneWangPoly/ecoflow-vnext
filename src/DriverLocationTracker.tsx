@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { LocateFixed, LocateOff } from 'lucide-react';
 import type { DriverDayState, StopProgress } from '@/domain/driverRun';
@@ -149,12 +150,10 @@ export function DriverLocationTracker() {
       setHost(document.querySelector<HTMLElement>('.driver-topbar'));
       setSnapshot(latestSnapshot());
     }
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const stopObserving = observeBody(locate);
     const timer = window.setInterval(() => setSnapshot(latestSnapshot()), STATE_POLL_MS);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.clearInterval(timer);
     };
   }, []);

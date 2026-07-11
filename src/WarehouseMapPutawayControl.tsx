@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 
 function selectedLocationCode() {
@@ -28,10 +29,8 @@ export function WarehouseMapPutawayControl() {
       setHost(mount);
       setLocationCode(selectedLocationCode());
     }
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   async function copyLocation() {

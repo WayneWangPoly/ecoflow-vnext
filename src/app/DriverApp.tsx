@@ -56,7 +56,8 @@ import {
   WAREHOUSE,
   wazeUrl
 } from '@/domain/driverRun';
-import { uploadPodAsset } from '@/data/repositories/pickSync';
+import { podAssetUrl, uploadPodAsset } from '@/data/repositories/pickSync';
+import { readImageDownscaled } from '@/lib/downscaleImage';
 import { allStopsStaged, buildRunCartons } from '@/domain/pickPlan';
 import { stopsInLockedOrder } from '@/domain/driverRun';
 import { BoxChip, BrandMark } from './Brand';
@@ -103,33 +104,6 @@ function StopStatusChip({ status }: { status: StopStatus }) {
   return <span className={cls('stop-status-chip', `stop-status-${status.toLowerCase()}`)}>{stopStatusLabel(status)}</span>;
 }
 
-function readImageAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 900;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(String(reader.result));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.62));
-      };
-      img.onerror = () => reject(new Error('Image could not be read'));
-      img.src = String(reader.result);
-    };
-    reader.onerror = () => reject(new Error('File could not be read'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function PhotoField({ label, value, onChange }: { label: string; value?: string; onChange: (next?: string) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -138,7 +112,7 @@ function PhotoField({ label, value, onChange }: { label: string; value?: string;
     event.target.value = '';
     if (!file) return;
     try {
-      onChange(await readImageAsDataUrl(file));
+      onChange(await readImageDownscaled(file, 900, 0.62));
     } catch {
       onChange(undefined);
     }
@@ -370,8 +344,8 @@ function PodSummary({ pod }: { pod: PodRecord }) {
         {pod.note ? <span>“{pod.note}”</span> : null}
       </div>
       <div className="pod-summary-thumbs">
-        {pod.photo ? <img src={pod.photo} alt="Delivery photo" /> : null}
-        {pod.signature ? <img className="pod-signature-thumb" src={pod.signature} alt="Customer signature" /> : null}
+        {pod.photo || pod.photoPath ? <img src={pod.photo || podAssetUrl(pod.photoPath!) || undefined} alt="Delivery photo" loading="lazy" /> : null}
+        {pod.signature || pod.signaturePath ? <img className="pod-signature-thumb" src={pod.signature || podAssetUrl(pod.signaturePath!) || undefined} alt="Customer signature" loading="lazy" /> : null}
       </div>
     </div>
   );
@@ -536,6 +510,8 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   const deliveredCount = rows.filter((row) => row.progress.status === 'DELIVERED').length;
   const failedCount = rows.filter((row) => row.progress.status === 'FAILED').length;
   const loadedCount = rows.filter((row) => row.progress.loaded || isClosed(row.progress.status)).length;
+  // Loading runs in reverse stop order, so the most recent tick is the last loaded row in that direction.
+  const lastLoadedRow = [...rows].reverse().filter((row) => row.progress.loaded && !isClosed(row.progress.status)).pop();
   const currentRow = rows.find((row) => !isClosed(row.progress.status));
   const allClosed = rows.length > 0 && closedRows.length === rows.length;
 
@@ -620,13 +596,24 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
       setDay((current) => {
         const progress = current.stopProgress[row.stop.orderId];
         if (!progress?.pod || progress.pod.capturedAt !== pod.capturedAt) return current;
+        // Once an asset is safely in storage, drop its base64 copy from day state.
+        // Keeping megabytes of photo data in localStorage exhausts the ~5MB quota
+        // within days and silently stops all progress persistence.
+        const nextPhotoPath = photoPath ?? progress.pod.photoPath;
+        const nextSignaturePath = signaturePath ?? progress.pod.signaturePath;
         return {
           ...current,
           stopProgress: {
             ...current.stopProgress,
             [row.stop.orderId]: {
               ...progress,
-              pod: { ...progress.pod, photoPath: photoPath ?? progress.pod.photoPath, signaturePath: signaturePath ?? progress.pod.signaturePath }
+              pod: {
+                ...progress.pod,
+                photoPath: nextPhotoPath,
+                signaturePath: nextSignaturePath,
+                photo: nextPhotoPath ? undefined : progress.pod.photo,
+                signature: nextSignaturePath ? undefined : progress.pod.signature
+              }
             }
           }
         };
@@ -898,6 +885,11 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
               </button>
             ))}
           </div>
+          {lastLoadedRow ? (
+            <button type="button" className="driver-ghost-button" onClick={() => toggleLoaded(lastLoadedRow)}>
+              <RotateCcw size={15} /> Undo last load · {loadedCount}/{rows.length}
+            </button>
+          ) : null}
         </section>
       ) : null}
     </>

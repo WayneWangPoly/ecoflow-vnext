@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, Mail, RefreshCw, Save, ShieldCheck, Store, TriangleAlert } from 'lucide-react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
@@ -268,10 +269,8 @@ export function OwnerDeliveryGovernance() {
       setTab(activeDesktopTab());
       setHost(workspaceHost());
     };
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   if (!owner || !host) return null;

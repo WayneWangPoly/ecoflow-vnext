@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 
 const STORAGE_KEY = 'ecoflow-putaway-target';
@@ -24,10 +25,8 @@ export function WarehousePutawayTargetBridge() {
       setTarget(stored);
       if (stored && !location.value.trim()) setReactInputValue(location, stored);
     }
-    apply();
-    const observer = new MutationObserver(apply);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(apply);
+    return stopObserving;
   }, []);
 
   function clear() {

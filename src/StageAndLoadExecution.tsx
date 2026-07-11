@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { loadStagePreparations, saveStagePreparation } from '@/data/repositories/stageExecution';
 
 type PrepEntry = { sealed: boolean; labelled: boolean; sealedAt?: string | null; labelAppliedAt?: string | null };
@@ -246,25 +247,16 @@ function runEnhancement() {
 
 export function StageAndLoadExecution() {
   useEffect(() => {
-    void hydrateSharedPreparation();
-    runEnhancement();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => {
-        pending = false;
-        void hydrateSharedPreparation();
-        runEnhancement();
-      }, 120);
+    const stopObserving = observeBody(() => {
+      void hydrateSharedPreparation();
+      runEnhancement();
     });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled'] });
     const timer = window.setInterval(() => {
       void hydrateSharedPreparation();
       runEnhancement();
-    }, 900);
+    }, 2500);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.clearInterval(timer);
     };
   }, []);

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Clock3, LocateFixed, MapPin, RefreshCw, Store, Truck, Warehouse } from 'lucide-react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
@@ -110,24 +111,10 @@ function representativeSamples(samples: DriverLocationSample[], maximum = 24) {
   return [...keep.values()].sort((a, b) => a.captured_at.localeCompare(b.captured_at)).slice(-maximum);
 }
 
-async function loadTrackingData(): Promise<TrackingData> {
-  const initial = buildEcoFlowData();
-  const views = await loadSupabaseOrdermentumViews();
-  const data = views ? applySupabaseOrdermentumViews(initial, views) : initial;
-  const businessDay = data.businessDay.date;
-  const rows = await fetchPickRows(businessDay, '1970-01-01T00:00:00.000Z');
-  const day = mergeRowsIntoDay(emptyDriverDayState(businessDay), rows);
-  const run = buildDriverRun(data.orders, businessDay, day.releasedOrders);
-  const samples = await loadOwnerDriverLocationTimeline(businessDay);
-  return {
-    businessDay,
-    businessLabel: data.businessDay.label,
-    stops: run.stops,
-    day,
-    samples,
-    loadedAt: new Date().toISOString(),
-  };
-}
+type ViewsCache = { data: ReturnType<typeof buildEcoFlowData>; loadedTick: number };
+/** Reload the heavy Ordermentum views only every Nth poll; pick rows use an incremental cursor. */
+const VIEWS_REFRESH_TICKS = 5;
+const EPOCH_CURSOR = '1970-01-01T00:00:00.000Z';
 
 function deliveryHost() {
   const activeDelivery = Array.from(document.querySelectorAll<HTMLButtonElement>('.sidebar-nav button'))
@@ -160,17 +147,48 @@ export function OwnerDriverTrackingMap() {
 
   useEffect(() => {
     function locate() { setHost(deliveryHost()); }
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
+
+  const viewsCacheRef = useRef<ViewsCache | null>(null);
+  const dayRef = useRef<DriverDayState | null>(null);
+  const cursorRef = useRef(EPOCH_CURSOR);
+  const tickRef = useRef(0);
 
   async function reload() {
     if (!owner || !host || loading) return;
     setLoading(true);
     try {
-      const next = await loadTrackingData();
+      const tick = tickRef.current;
+      tickRef.current += 1;
+      let base = viewsCacheRef.current;
+      if (!base || tick - base.loadedTick >= VIEWS_REFRESH_TICKS) {
+        const views = await loadSupabaseOrdermentumViews();
+        const initial = buildEcoFlowData();
+        base = { data: views ? applySupabaseOrdermentumViews(initial, views) : initial, loadedTick: tick };
+        viewsCacheRef.current = base;
+      }
+      const businessDay = base.data.businessDay.date;
+      if (!dayRef.current || dayRef.current.businessDay !== businessDay) {
+        dayRef.current = emptyDriverDayState(businessDay);
+        cursorRef.current = EPOCH_CURSOR;
+      }
+      const rows = await fetchPickRows(businessDay, cursorRef.current);
+      if (rows.length) {
+        cursorRef.current = rows[rows.length - 1].updated_at;
+        dayRef.current = mergeRowsIntoDay(dayRef.current, rows);
+      }
+      const run = buildDriverRun(base.data.orders, businessDay, dayRef.current.releasedOrders);
+      const samples = await loadOwnerDriverLocationTimeline(businessDay);
+      const next: TrackingData = {
+        businessDay,
+        businessLabel: base.data.businessDay.label,
+        stops: run.stops,
+        day: dayRef.current,
+        samples,
+        loadedAt: new Date().toISOString(),
+      };
       setData(next);
       setError('');
       const newest = [...next.samples].sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0];

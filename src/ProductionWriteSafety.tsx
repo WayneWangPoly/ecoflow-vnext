@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { hasSupabaseAuthClient } from '@/lib/supabaseClient';
 
 const writePattern = /receive|complete|post stock|save\s*\+|release|internalise|pick(ed)?|stage|loaded|delivered|confirm|start route|take on run|adjust|return to stock/i;
 const safePattern = /logout|reload|refresh|back|inventory|map|previous|next|search|find|close|cancel/i;
+/** Pure navigation containers - a "Pick" tab is not a write action even though the label matches. */
+const NAVIGATION_SCOPE = '.driver-nav, .mobile-tabs, .sidebar-nav, .pick-view-toggle, .view-toggle, .inbox-tabs, .order-platform-mode-tabs, .owner-window-toggle, .stops-toolbar';
 
 function writeButtons() {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter((button) => {
+    if (button.closest(NAVIGATION_SCOPE)) return false;
     const label = button.textContent?.trim() || button.getAttribute('aria-label') || '';
     return writePattern.test(label) && !safePattern.test(label);
   });
@@ -44,20 +48,10 @@ export function ProductionWriteSafety() {
       });
     }
 
-    apply();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => {
-        pending = false;
-        apply();
-      }, 120);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'disabled'] });
-    const timer = window.setInterval(apply, 1200);
+    const stopObserving = observeBody(apply);
+    const timer = window.setInterval(apply, 3000);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.clearInterval(timer);
     };
   }, [hardLock]);

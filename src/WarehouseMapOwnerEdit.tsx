@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
 import { supabase } from '@/lib/supabaseClient';
@@ -123,10 +124,8 @@ export function WarehouseMapOwnerEdit() {
       startCloudLoad();
     }
 
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   useEffect(() => {

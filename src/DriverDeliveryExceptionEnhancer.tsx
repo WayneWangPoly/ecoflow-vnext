@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, PackageX, RotateCcw, X } from 'lucide-react';
 import { resolveOrderIdForBox } from '@/data/repositories/deliveryPodQuality';
@@ -204,15 +205,8 @@ export function DriverDeliveryExceptionEnhancer() {
       setHost(mount);
       setContext(readStopContext(nextSheet));
     }
-    locate();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 120);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   return (

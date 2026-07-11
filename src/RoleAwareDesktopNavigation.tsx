@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { observeBody } from '@/lib/domObserver';
 
 const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Stores', 'Reconciliation', 'Settings']);
 const businessLabels: Record<string, string> = {
@@ -74,15 +75,8 @@ export function RoleAwareDesktopNavigation() {
       }
     }
 
-    apply();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; apply(); }, 120);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(apply);
+    return stopObserving;
   }, []);
 
   return null;

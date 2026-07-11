@@ -1,34 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, RotateCcw } from 'lucide-react';
 import { resolveOrderIdForBox, saveGoodsPlacedProof, type PodQualityContext } from '@/data/repositories/deliveryPodQuality';
 import { dispatchDeliveryNotifications, queueDeliveryNotifications, type DeliveryOutcome } from '@/data/repositories/deliveryOperations';
+import { readImageDownscaled } from '@/lib/downscaleImage';
 
 function readImageAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const image = new Image();
-      image.onload = () => {
-        const max = 1100;
-        const scale = Math.min(1, max / Math.max(image.width, image.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
-        const context = canvas.getContext('2d');
-        if (!context) {
-          resolve(String(reader.result));
-          return;
-        }
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.68));
-      };
-      image.onerror = () => reject(new Error('Photo could not be read.'));
-      image.src = String(reader.result);
-    };
-    reader.onerror = () => reject(new Error('Photo could not be read.'));
-    reader.readAsDataURL(file);
-  });
+  return readImageDownscaled(file, 1100, 0.68);
 }
 
 function activeBusinessDay() {
@@ -175,15 +154,8 @@ export function DriverPodQualityEnhancer() {
       setPod1Ready(Boolean(firstField?.querySelector('.pod-photo-preview img')));
     }
 
-    locate();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 100);
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled'] });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   useEffect(() => {

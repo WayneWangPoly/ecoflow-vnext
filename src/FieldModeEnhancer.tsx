@@ -1,4 +1,5 @@
 ﻿import { useEffect } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { loadOrderLifecycleBoard, type OrderLifecycleRow, type OrderLifecycleStatus } from '@/data/repositories/orderLifecycle';
 import {
   loadCustomerOpsQueue,
@@ -417,10 +418,8 @@ export function FieldModeEnhancer() {
       patchCompletedLabels();
     }
 
-    patchAll();
-    const observer = new MutationObserver(patchAll);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(patchAll);
+    return stopObserving;
   }, []);
 
   return null;

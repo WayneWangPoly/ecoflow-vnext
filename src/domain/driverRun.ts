@@ -337,9 +337,44 @@ export function initialStopProgress(stop: RunStop): StopProgress {
 }
 
 const STORAGE_PREFIX = 'ecoflow-driver-day';
+const STORAGE_RETENTION_DAYS = 7;
+/** Day-scoped keys that accumulate one entry per business day and share the ~5MB quota. */
+const DATED_KEY_PREFIXES = [
+  `${STORAGE_PREFIX}:`,
+  'ecoflow-driver-location-last:',
+  'ecoflow-route-notification:',
+  'ecoflow-delivery-outcome:',
+];
 
 function storageKey(businessDay: string) {
   return `${STORAGE_PREFIX}:${businessDay}`;
+}
+
+function keyBusinessDay(key: string) {
+  const match = /(\d{4}-\d{2}-\d{2})/.exec(key);
+  return match ? match[1] : null;
+}
+
+/**
+ * Removes day-scoped EcoFlow keys older than the retention window. Without this,
+ * one day-state blob per day accumulates until localStorage hits its quota, after
+ * which every save silently fails and a reload loses the whole shift.
+ */
+export function pruneEcoflowStorage(retentionDays = STORAGE_RETENTION_DAYS) {
+  try {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const doomed: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key || !DATED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
+      const day = keyBusinessDay(key);
+      if (day && day < cutoff) doomed.push(key);
+    }
+    doomed.forEach((key) => window.localStorage.removeItem(key));
+    return doomed.length;
+  } catch {
+    return 0;
+  }
 }
 
 export function emptyDriverDayState(businessDay: string): DriverDayState {
@@ -383,11 +418,35 @@ export function applyDayStateToOrders(orders: ImportedOrder[], day: DriverDaySta
   });
 }
 
-export function saveDriverDayState(state: DriverDayState) {
+let storageWarningShown = false;
+
+function showStorageWarning() {
+  if (storageWarningShown) return;
+  storageWarningShown = true;
   try {
-    window.localStorage.setItem(storageKey(state.businessDay), JSON.stringify(state));
+    const banner = document.createElement('div');
+    banner.className = 'sync-error-banner ecoflow-storage-full-banner';
+    banner.setAttribute('role', 'alert');
+    banner.textContent = 'Device storage is full - progress is no longer saved on this phone. Completed work still syncs to the server while online, but do not close this page. Tell the office.';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;';
+    document.body.appendChild(banner);
   } catch {
-    // storage full (large POD photos) or unavailable; in-memory state still works
+    // headless / test environments have no document
+  }
+}
+
+export function saveDriverDayState(state: DriverDayState) {
+  const payload = JSON.stringify(state);
+  try {
+    window.localStorage.setItem(storageKey(state.businessDay), payload);
+  } catch {
+    // Quota hit (POD photos) - free old day-scoped keys and retry once before warning.
+    pruneEcoflowStorage(2);
+    try {
+      window.localStorage.setItem(storageKey(state.businessDay), payload);
+    } catch {
+      showStorageWarning();
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Mail, MapPin, ShieldCheck, X } from 'lucide-react';
 import {
@@ -14,7 +15,51 @@ import { supabase } from '@/lib/supabaseClient';
 import type { DriverDayState } from '@/domain/driverRun';
 
 const STORAGE_PREFIX = 'ecoflow-driver-day:';
-const BUTTON_SELECTOR = 'button';
+const PENDING_ACK_PREFIX = 'ecoflow-departure-ack-pending:';
+
+type PendingAck = {
+  businessDay: string;
+  routeId: string;
+  typedName: string;
+  checks: DriverDepartureChecks;
+  locationConsent: boolean;
+  driverLabel?: string;
+};
+
+function pendingAckKey(businessDay: string, route: string) {
+  return `${PENDING_ACK_PREFIX}${businessDay}:${route}`;
+}
+
+let flushingAcks = false;
+
+/** Push offline-queued departure declarations to the database once connectivity returns. */
+async function flushPendingAcknowledgements() {
+  if (flushingAcks || !navigator.onLine) return;
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith(PENDING_ACK_PREFIX)) keys.push(key);
+  }
+  if (!keys.length) return;
+  flushingAcks = true;
+  try {
+    for (const key of keys) {
+      try {
+        const pending = JSON.parse(window.localStorage.getItem(key) || 'null') as PendingAck | null;
+        if (!pending) {
+          window.localStorage.removeItem(key);
+          continue;
+        }
+        await recordDepartureAcknowledgement(pending);
+        window.localStorage.removeItem(key);
+      } catch {
+        // Keep the record queued; the next poll retries.
+      }
+    }
+  } finally {
+    flushingAcks = false;
+  }
+}
 
 const CHECKS: Array<{ key: keyof DriverDepartureChecks; label: string }> = [
   { key: 'vehicle_walkaround', label: 'I completed a walk-around and checked for visible damage or hazards.' },
@@ -111,10 +156,8 @@ export function DriverDepartureControl() {
 
   useEffect(() => {
     const locate = () => setStatusHost(document.querySelector<HTMLElement>('.driver-topbar'));
-    locate();
-    const observer = new MutationObserver(locate);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   useEffect(() => {
@@ -135,6 +178,14 @@ export function DriverDepartureControl() {
       if (!day) {
         setError('Today’s secure route state is unavailable. Reload EcoFlow before departure.');
         setModalOpen(true);
+        return;
+      }
+
+      // A declaration queued offline counts as acknowledged; it uploads in the background.
+      if (window.localStorage.getItem(pendingAckKey(day.businessDay, routeId(day)))) {
+        bypassRef.current = true;
+        pendingButtonRef.current?.click();
+        pendingButtonRef.current = null;
         return;
       }
 
@@ -195,9 +246,21 @@ export function DriverDepartureControl() {
   }, [notification]);
 
   useEffect(() => {
-    const poll = window.setInterval(() => void sendRouteNotifications(false), 1500);
-    window.addEventListener('storage', () => void sendRouteNotifications(false));
-    return () => window.clearInterval(poll);
+    // Only the driver shell needs this loop; the owner desktop must not burn CPU
+    // parsing day state or fire notifications on the driver's behalf.
+    const tick = () => {
+      if (!document.querySelector('.driver-shell')) return;
+      void flushPendingAcknowledgements();
+      void sendRouteNotifications(false);
+    };
+    const poll = window.setInterval(tick, 4000);
+    window.addEventListener('storage', tick);
+    window.addEventListener('online', tick);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('storage', tick);
+      window.removeEventListener('online', tick);
+    };
   }, [sendRouteNotifications]);
 
   async function acceptAndStart() {
@@ -213,21 +276,34 @@ export function DriverDepartureControl() {
 
     setSaving(true);
     setError('');
+    const record: PendingAck = {
+      businessDay: day.businessDay,
+      routeId: routeId(day),
+      typedName,
+      checks,
+      locationConsent,
+      driverLabel,
+    };
     try {
-      await recordDepartureAcknowledgement({
-        businessDay: day.businessDay,
-        routeId: routeId(day),
-        typedName,
-        checks,
-        locationConsent,
-        driverLabel,
-      });
+      await recordDepartureAcknowledgement(record);
       setModalOpen(false);
       bypassRef.current = true;
       pendingButtonRef.current?.click();
       pendingButtonRef.current = null;
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      const message = saveError instanceof Error ? saveError.message : String(saveError);
+      const networkIssue = !navigator.onLine || /failed to fetch|network|load failed|timed? ?out/i.test(message);
+      if (networkIssue) {
+        // Poor signal at the dock must not stop the vehicle: queue the signed
+        // declaration locally and let the 4s poll upload it when connectivity returns.
+        window.localStorage.setItem(pendingAckKey(record.businessDay, record.routeId), JSON.stringify(record));
+        setModalOpen(false);
+        bypassRef.current = true;
+        pendingButtonRef.current?.click();
+        pendingButtonRef.current = null;
+      } else {
+        setError(message);
+      }
     } finally {
       setSaving(false);
     }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { loadLatestPickHandoffProgress, type PickHandoffProgressRow } from '@/data/repositories/pickHandoff';
 
@@ -83,15 +84,8 @@ export function WarehousePickHandoffStatus() {
   }
 
   useEffect(() => {
-    locate();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 140);
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   useEffect(() => {

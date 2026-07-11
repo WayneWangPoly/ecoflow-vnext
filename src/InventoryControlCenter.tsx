@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { observeBody } from '@/lib/domObserver';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -83,15 +84,8 @@ function useInventoryHost() {
       setHost(mount);
     }
 
-    locate();
-    let pending = false;
-    const observer = new MutationObserver(() => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => { pending = false; locate(); }, 140);
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const stopObserving = observeBody(locate);
+    return stopObserving;
   }, []);
 
   return host;

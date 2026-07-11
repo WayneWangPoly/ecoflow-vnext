@@ -19,3 +19,7 @@ logs/
 exports/
 *.log
 *.csv
+
+# Build caches
+tsconfig.tsbuildinfo
+*.tsbuildinfo
