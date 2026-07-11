@@ -19,8 +19,9 @@ jobs:
       - name: Create snapshot
         run: |
           tar --exclude=.git --exclude=node_modules -czf ../ecoflow-source.tar.gz .
+          mv ../ecoflow-source.tar.gz ecoflow-source.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: ecoflow-source-snapshot-v2
-          path: ../ecoflow-source.tar.gz
+          path: ecoflow-source.tar.gz
           retention-days: 1
