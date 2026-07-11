@@ -1,7 +1,7 @@
 // Supabase Edge Function: notify-route-start
 // Sends one idempotent "delivery today" email per store after the driver starts a route.
-// Recipient addresses are loaded server-side from ecoflow_store_sites; the browser cannot
-// choose arbitrary recipients. Required secrets: RESEND_API_KEY, DELIVERY_FROM_EMAIL.
+// Recipient addresses are loaded server-side from an Owner-only contact table; the browser
+// cannot choose arbitrary recipients. Required secrets: RESEND_API_KEY, DELIVERY_FROM_EMAIL.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
@@ -143,7 +143,6 @@ Deno.serve(async (req) => {
     groups.set(key, current);
   }
 
-  // Do not pretend unresolved order IDs were notified.
   if (!groups.size) return json(422, { error: 'ROUTE_ORDERS_NOT_FOUND', details: 'No released route orders could be matched to om_orders.' });
 
   const resendApiKey = Deno.env.get('RESEND_API_KEY');
@@ -175,11 +174,11 @@ Deno.serve(async (req) => {
     }
 
     let contactQuery = admin
-      .from('ecoflow_store_sites')
-      .select('retailer_id,store_name,contact_email,notification_contact_name,delivery_notification_enabled');
+      .from('ecoflow_delivery_notification_contacts')
+      .select('store_key,retailer_id,store_name,contact_email,contact_name,enabled');
     contactQuery = group.retailerId
       ? contactQuery.eq('retailer_id', group.retailerId)
-      : contactQuery.ilike('store_name', group.storeName);
+      : contactQuery.eq('store_key', group.storeKey);
     const { data: contact, error: contactError } = await contactQuery.limit(1).maybeSingle();
 
     const recipient = clean(contact?.contact_email).toLowerCase() || null;
@@ -192,7 +191,7 @@ Deno.serve(async (req) => {
       status = 'FAILED';
       providerError = contactError.message;
       failed += 1;
-    } else if (contact?.delivery_notification_enabled === false) {
+    } else if (contact?.enabled === false) {
       status = 'SKIPPED_DISABLED';
       disabled += 1;
     } else if (!recipient) {
@@ -205,9 +204,9 @@ Deno.serve(async (req) => {
       failed += 1;
     } else {
       const orderReference = [...new Set(group.orderNumbers.filter(Boolean))].join(', ');
-      const contactName = clean(contact?.notification_contact_name);
+      const contactName = clean(contact?.contact_name);
       const greeting = contactName ? `Hi ${escapeHtml(contactName)},` : `Hi ${escapeHtml(group.storeName)} team,`;
-      const subject = `Your EcoFlow Packaging delivery is on the way today`;
+      const subject = 'Your EcoFlow Packaging delivery is on the way today';
       const html = `
         <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#17362b;line-height:1.55">
           <div style="border-bottom:4px solid #1f6b4f;padding:18px 0"><strong style="font-size:22px">EcoFlow Packaging</strong></div>
@@ -226,10 +225,7 @@ Deno.serve(async (req) => {
       try {
         const response = await fetch('https://api.resend.com/emails', {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             from: `${senderName} <${fromEmail}>`,
             to: [recipient],
