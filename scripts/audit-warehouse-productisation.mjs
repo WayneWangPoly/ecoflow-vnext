@@ -126,6 +126,10 @@ assert.match(driverApp, /Take POD 2 · all goods/, 'DriverApp must natively requ
 assert.match(driverApp, /saveDropPointProof[\s\S]+saveGoodsPlacedProof/, 'Both proof uploads must complete before delivery status changes.');
 assert.doesNotMatch(driverApp, /function SignaturePad|Received by/, 'Driver POD must not request signature or receiver name.');
 assert.match(driverApp, /await queueDeliveryNotifications/, 'Delivery notification queueing must be part of the native delivery transaction.');
+assert.match(driverApp, /Waiting for Owner or office to approve/, 'Driver must wait for office route approval.');
+assert.doesNotMatch(driverApp, /Review &amp; lock route|Confirm route &amp; lock/, 'Driver must not own route locking.');
+assert.match(main, /ProductionWriteSafety/, 'Production safety remains mounted.');
+assert.match(read('src/app/App.tsx'), /Office route approval[\s\S]+Approve &amp; lock route/, 'Owner desktop must provide route approval.');
 assert.match(podRepository, /POD1_DROP_POINT/, 'POD 1 must persist as a typed proof record.');
 assert.match(podRepository, /POD2_GOODS_PLACED/, 'POD 2 must persist as a typed proof record.');
 assert.match(driverRun, /Math\.floor\(value / 26\) - 1/, 'Box codes must continue beyond Z without repeating.');

@@ -11,7 +11,7 @@ import { PickBoard } from './PickBoard';
 // The driver bundle (route map, POD capture, label sheets) is code-split so
 // office and warehouse devices never download it.
 const DriverApp = lazy(() => import('./DriverApp').then((m) => ({ default: m.DriverApp })));
-import { applyDayStateToOrders, buildDriverRun, formatClockTime, loadDriverDayState, saveDriverDayState, stopsInLockedOrder } from '@/domain/driverRun';
+import { applyDayStateToOrders, boxCodeForStop, buildDriverRun, formatClockTime, loadDriverDayState, optimiseStopOrder, reconcileStopOrder, saveDriverDayState } from '@/domain/driverRun';
 import type { DriverDayState } from '@/domain/driverRun';
 import { usePickSync } from './usePickSync';
 import { AuthCallbackScreen } from '@/features/auth/AuthCallbackScreen';
@@ -553,24 +553,99 @@ function stopStatusLabelDesk(status: string) {
   return status.charAt(0) + status.slice(1).toLowerCase();
 }
 
-function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; day: DriverDayState; businessDay: EcoFlowDataSet['businessDay'] }) {
+function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
+  orders: ImportedOrder[];
+  day: DriverDayState;
+  setDay: React.Dispatch<React.SetStateAction<DriverDayState>>;
+  businessDay: EcoFlowDataSet['businessDay'];
+  canPlan: boolean;
+}) {
   const run = buildDriverRun(orders, businessDay.date, day.releasedOrders);
-  const stops = day.pick ? stopsInLockedOrder(run.stops, day.pick) : run.stops;
+  const orderedIds = reconcileStopOrder(day.pick?.stopOrder || day.stopOrder, run.stops);
+  const byId = new Map(run.stops.map((stop) => [stop.orderId, stop]));
+  const stops = orderedIds.map((orderId, index) => {
+    const stop = byId.get(orderId);
+    return stop ? { ...stop, stopNumber: index + 1, boxCode: day.pick?.boxCodes[orderId] || boxCodeForStop(index) } : null;
+  }).filter((stop): stop is NonNullable<typeof stop> => Boolean(stop));
   const stagedCount = day.pick ? stops.filter((stop) => day.pick?.stagedStops[stop.orderId]).length : 0;
   const progressFor = (orderId: string) => day.stopProgress[orderId];
   const deliveredCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'DELIVERED').length;
   const failedCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'FAILED').length;
+  const routeInUse = Boolean(day.routeStartedAt || stagedCount || Object.keys(day.pick?.taskState || {}).length);
+
+  function setRouteOrder(orderIds: string[]) {
+    setDay((current) => current.pick || current.routeStartedAt ? current : { ...current, stopOrder: orderIds });
+  }
+
+  function moveStop(orderId: string, delta: number) {
+    const current = reconcileStopOrder(day.stopOrder, run.stops);
+    const from = current.indexOf(orderId);
+    const to = Math.max(0, Math.min(current.length - 1, from + delta));
+    if (from < 0 || from === to) return;
+    const next = [...current];
+    next.splice(from, 1);
+    next.splice(to, 0, orderId);
+    setRouteOrder(next);
+  }
+
+  function optimiseRoute() {
+    if (day.pick || day.routeStartedAt) return;
+    setRouteOrder(optimiseStopOrder(run.stops, run.warehousePoint));
+  }
+
+  function lockRoute() {
+    if (!canPlan || day.pick || !stops.length) return;
+    const stopOrder = reconcileStopOrder(day.stopOrder, run.stops);
+    const boxCodes = Object.fromEntries(stopOrder.map((orderId, index) => [orderId, boxCodeForStop(index)]));
+    setDay((current) => ({
+      ...current,
+      stopOrder,
+      pick: {
+        lockedAt: new Date().toISOString(),
+        stopOrder,
+        boxCodes,
+        taskState: {},
+        allocDone: {},
+        stagedStops: {},
+      },
+    }));
+  }
+
+  function unlockRoute() {
+    if (!canPlan || !day.pick || routeInUse) return;
+    if (!window.confirm('Unlock this route? Printed labels become invalid and must be reprinted.')) return;
+    setDay((current) => ({ ...current, pick: undefined }));
+  }
 
   return (
     <section className="workspace-stack">
       <section className="quick-stats">
         <MetricCard label="RELEASED TO RUN" value={stops.length} tone="green" helper={businessDay.label} />
-        <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Not locked'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'driver locks remotely'} />
+        <MetricCard label="ROUTE" value={day.pick ? `Locked ${formatClockTime(day.pick.lockedAt)}` : 'Office planning'} tone="gold" helper={day.routeStartedAt ? `started ${formatClockTime(day.routeStartedAt)}` : 'Owner/office approves order'} />
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
         <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
+      {canPlan && !day.routeStartedAt ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Office route approval</h2><span>Labels and picking use this locked order</span></div>
+          <div className="row-actions">
+            <button className="soft-button" type="button" disabled={Boolean(day.pick) || !stops.length} onClick={optimiseRoute}>Optimise draft</button>
+            {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length} onClick={lockRoute}>Approve &amp; lock route</button> : null}
+            {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={unlockRoute}>Unlock before picking</button> : null}
+          </div>
+          <div className="list-stack">
+            {stops.map((stop, index) => (
+              <article className="stop-row" key={stop.orderId}>
+                <b>{index + 1}</b>
+                <div><strong>{stop.boxCode} · {stop.store}</strong><span>{stop.suburb} · {stop.cartons} ctn · {stop.orderNo}</span></div>
+                {!day.pick ? <span className="row-actions"><button type="button" disabled={index === 0} onClick={() => moveStop(stop.orderId, -1)}>↑</button><button type="button" disabled={index === stops.length - 1} onClick={() => moveStop(stop.orderId, 1)}>↓</button></span> : <Pill tone="good">LOCKED</Pill>}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="panel">
-        <div className="panel-head"><h2>Run board</h2><span>shared facts —same data the driver and warehouse see</span></div>
+        <div className="panel-head"><h2>Run board</h2><span>shared facts — same data the driver and warehouse see</span></div>
         <div className="list-stack">
           {stops.map((stop) => {
             const progress = progressFor(stop.orderId);
@@ -588,23 +663,19 @@ function DeliveryBoard({ orders, day, businessDay }: { orders: ImportedOrder[]; 
                 <b>{stop.stopNumber}</b>
                 <div>
                   <strong>{stop.boxCode} · {stop.store}</strong>
-                  <span>
-                    {stop.cartons} ctn · {stopStatusLabelDesk(status)}
-                    {progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}
-                    {pod?.receiverName ? ` · received by ${pod.receiverName}` : ''}
-                  </span>
-                  {pod?.photoPath || pod?.signaturePath ? (
+                  <span>{stop.cartons} ctn · {stopStatusLabelDesk(status)}{progress?.completedAt ? ` ${formatClockTime(progress.completedAt)}` : ''}</span>
+                  {pod?.pod1Path || pod?.pod2Path || pod?.photoPath || pod?.signaturePath ? (
                     <span className="pod-links">
-                      {pod.photoPath ? <a href={podAssetUrl(pod.photoPath)} target="_blank" rel="noreferrer">POD photo</a> : null}
-                      {pod.signaturePath ? <a href={podAssetUrl(pod.signaturePath)} target="_blank" rel="noreferrer">signature</a> : null}
+                      {pod.pod1Path || pod.photoPath ? <a href={podAssetUrl(pod.pod1Path || pod.photoPath!)} target="_blank" rel="noreferrer">POD 1 · location</a> : null}
+                      {pod.pod2Path || pod.signaturePath ? <a href={podAssetUrl(pod.pod2Path || pod.signaturePath!)} target="_blank" rel="noreferrer">POD 2 · all goods</a> : null}
                     </span>
-                  ) : pod ? <span className="pod-links">POD captured on driver device</span> : null}
+                  ) : pod ? <span className="pod-links">POD upload pending</span> : null}
                 </div>
                 <Pill tone={status === 'DELIVERED' ? 'good' : status === 'FAILED' ? 'danger' : status === 'STAGED' || status === 'ON THE WAY' || status === 'ARRIVED' ? 'blue' : 'neutral'}>{status}</Pill>
               </article>
             );
           })}
-          {!stops.length ? <div className="empty-state">No orders released into today’s run yet —release them from the Ordermentum tab.</div> : null}
+          {!stops.length ? <div className="empty-state">No orders released into today’s run yet — release them from the Ordermentum tab.</div> : null}
         </div>
       </section>
     </section>
@@ -690,6 +761,7 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
       <section className="panel settings-panel">
         <div><h2>Operating rules</h2><p>These rules are enforced by the workflow itself - listed here so every role knows the contract.</p></div>
         <label><span>Order release</span><strong>Internal orders are created only by the database RPC after the release gate passes - never a front-end status flip.</strong></label>
+        <label><span>Route ownership</span><strong>Owner or office approves and locks the stop order before picking; driver devices cannot reorder or unlock it.</strong></label>
         <label><span>Picking</span><strong>Every SKU must scan a matching product barcode before it can be picked; stock is deducted from the live ledger.</strong></label>
         <label><span>Driver POD</span><strong>Two photos required: store/drop point and all goods placed. Confirmation notifies the office automatically.</strong></label>
         <label><span>Returns</span><strong>Returned goods re-enter sellable stock only after warehouse inspection; drop-off needs the fixed zone QR within 500 m GPS.</strong></label>
@@ -767,7 +839,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
-      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} businessDay={data.businessDay} /> : null}
+      {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner'} /> : null}
       {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} /> : null}
       {tab === 'stores' ? <StoresPanel stores={stores} /> : null}
       {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} /> : null}

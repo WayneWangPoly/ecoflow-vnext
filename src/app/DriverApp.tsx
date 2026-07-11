@@ -717,10 +717,7 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
           <p className="driver-card-meta">No orders released into today’s run yet — the office releases orders from the Ordermentum tab first.</p>
         ) : routeStatus === 'NOT_STARTED' && !routeLocked ? (
           <>
-            <p className="driver-card-meta">Step 1 · Review the stop order, then lock the route — locking fixes the A–F box letters and generates the pick plan and labels.</p>
-            <button type="button" className="driver-primary-button" onClick={() => setTab('stops')}>
-              <Route size={18} /> Review &amp; lock route
-            </button>
+            <p className="driver-card-meta">Waiting for Owner or office to approve and lock today’s route. Stop order and box codes cannot be changed on the driver device.</p>
           </>
         ) : routeStatus === 'NOT_STARTED' && !stagedOk ? (
           <>
@@ -829,20 +826,9 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
           <button type="button" className={cls(stopsView === 'map' && 'active')} onClick={() => setStopsView('map')}><MapIcon size={15} /> Map</button>
           <button type="button" className={cls(stopsView === 'list' && 'active')} onClick={() => setStopsView('list')}><List size={15} /> List</button>
         </div>
-        {stopsView === 'map' && rows.length > 1 && !routeLocked ? (
-          <button type="button" className="optimise-button" onClick={applyOptimise}><Route size={15} /> Optimise</button>
-        ) : null}
-        {routeLocked ? (
-          <button type="button" className="optimise-button" onClick={unlockRoute}><Unlock size={15} /> Unlock</button>
-        ) : null}
+        <span className="driver-inline-hint">Route order is approved by office and read-only on this device.</span>
       </div>
 
-      {!routeLocked && rows.length ? (
-        <section className="driver-card lock-cta-card">
-          <p className="driver-card-meta">Happy with this order? Locking fixes the A–F box letters, prints from here on stay valid, and the pick plan is generated.</p>
-          <button type="button" className="driver-primary-button" onClick={lockRoute}><Lock size={18} /> Confirm route &amp; lock</button>
-        </section>
-      ) : null}
 
       {stopsView === 'map' ? (
         <>
@@ -861,18 +847,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
                   className={cls('reorder-row', isCurrent && 'current', closed && 'closed', dragging && 'dragging')}
                   style={dragging ? { transform: `translateY(${drag.offset}px)` } : undefined}
                 >
-                  <button
-                    type="button"
-                    className="drag-handle"
-                    disabled={closed}
-                    aria-label={`Drag to reorder stop ${row.displayNumber}`}
-                    onPointerDown={(event) => handleDragStart(event, row.stop.orderId)}
-                    onPointerMove={(event) => handleDragMove(event, row.stop.orderId)}
-                    onPointerUp={() => handleDragEnd(row.stop.orderId)}
-                    onPointerCancel={handleDragCancel}
-                  >
-                    <GripVertical size={18} />
-                  </button>
                   <span className={cls('reorder-num', isCurrent && 'current')}>{row.displayNumber}</span>
                   <BoxChip code={row.stop.boxCode} />
                   <button type="button" className="reorder-body" onClick={() => setActiveStopId(row.stop.orderId)}>
@@ -881,10 +855,6 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
                     {isCurrent ? <em>UP NEXT</em> : null}
                   </button>
                   <StopStatusChip status={row.progress.status} />
-                  <span className="reorder-arrows">
-                    <button type="button" disabled={closed || index === 0} aria-label="Move stop earlier" onClick={() => moveStop(row.stop.orderId, -1)}><ArrowUp size={16} /></button>
-                    <button type="button" disabled={closed || index === rows.length - 1} aria-label="Move stop later" onClick={() => moveStop(row.stop.orderId, 1)}><ArrowDown size={16} /></button>
-                  </span>
                 </div>
               );
             })}
