@@ -1,0 +1,195 @@
+ned,
+-    source: 'sku-master'
+-  };
+-}
+-
+ export function WarehouseMapPage() {
+   const [liveRows, setLiveRows] = useState<WarehouseLocationItemRow[]>([]);
+-  const [barcodeLookupRows, setBarcodeLookupRows] = useState<ReceivingBarcodeLookupRow[]>([]);
+-  const [barcodeLookupError, setBarcodeLookupError] = useState('');
+   const [loadState, setLoadState] = useState<LoadState>('loading');
+   const [loadError, setLoadError] = useState('');
+   const locations = useMemo(() => buildLocations(liveRows), [liveRows]);
+@@ -306,19 +246,12 @@
+   const [activeSide, setActiveSide] = useState<RackSide>('left');
+   const [selectedKey, setSelectedKey] = useState(initialLocationKey());
+   const [query, setQuery] = useState('');
+-  const [receiveDraft, setReceiveDraft] = useState<ReceiveDraft>({ locationKey: initialLocationKey(), barcode: '', qty: '', note: '' });
+-  const [localMovements, setLocalMovements] = useState<string[]>([]);
+   const [tapFeedback, setTapFeedback] = useState('');
+-  const [savingReceive, setSavingReceive] = useState(false);
+-  const [qtyConfirmToken, setQtyConfirmToken] = useState('');
+   const [initialTargetApplied, setInitialTargetApplied] = useState(false);
+ 
+   const activeRack = RACKS.find((rack) => rack.id === activeRackId) ?? RACKS[0];
+   const detailSide: RackSide = activeRack.mode === 'double' ? activeSide : 'front';
+   const selectedLocation = locations.find((slot) => slot.key === selectedKey) ?? locations[0];
+-  const tempLocation = locations.find((slot) => slot.rackId === 'TEMP') ?? locations[0];
+-  const chosenReceiveLocation = locations.find((slot) => slot.key === receiveDraft.locationKey) ?? selectedLocation;
+-
+   const skuTotals = useMemo(() => {
+     const totals: Record<string, number> = {};
+     locations.forEach((slot) => {
+@@ -335,51 +268,12 @@
+     return locations.filter((slot) => locationText(slot).includes(needle));
+   }, [locations, query]);
+ 
+-  const receiveBarcode = receiveDraft.barcode.trim();
+-  const receiveBarcodeKey = normaliseBarcode(receiveBarcode);
+-
+-  const knownReceiveProduct = useMemo<ReceiveKnownProduct | null>(() => {
+-    if (!receiveBarcodeKey) return null;
+-    const master = barcodeLookupRows.find((row) => normaliseBarcode(row.barcode) === receiveBarcodeKey);
+-    if (master) return productFromMaster(master);
+-    const existing = locations.flatMap((slot) => slot.items.map((item) => ({ item, slot }))).find(({ item }) => item.barcode && normaliseBarcode(item.barcode) === receiveBarcodeKey);
+-    if (!existing) return null;
+-    return {
+-      sku: existing.item.sku,
+-      name: existing.item.name,
+-      barcode: existing.item.barcode,
+-      unitLevel: normaliseUnitLevel(existing.item.unitLevel),
+-      fixedLocation: existing.slot.code,
+-      source: 'warehouse-stock'
+-    };
+-  }, [barcodeLookupRows, locations, receiveBarcodeKey]);
+-
+-  const suggestedLocation = useMemo(() => {
+-    if (!receiveBarcodeKey) return selectedLocation;
+-    if (!knownReceiveProduct) return tempLocation;
+-    return findLocationByCode(locations, knownReceiveProduct.fixedLocation)
+-      ?? locations.find((slot) => slot.items.some((item) => item.sku === knownReceiveProduct.sku || normaliseBarcode(item.barcode) === receiveBarcodeKey))
+-      ?? selectedLocation;
+-  }, [knownReceiveProduct, locations, receiveBarcodeKey, selectedLocation, tempLocation]);
+-
+-  const receiveMode: ReceiveMode = !receiveBarcodeKey ? 'idle' : knownReceiveProduct ? 'known' : 'unknown';
+-  const receiveTarget = receiveMode === 'unknown' ? tempLocation : chosenReceiveLocation;
+-  const currentQty = Number(receiveDraft.qty);
+-  const confirmToken = `${receiveBarcodeKey}|${Number.isFinite(currentQty) ? currentQty : ''}|${receiveTarget?.code ?? ''}`;
+-  const qtyConfirmationRequired = Number.isFinite(currentQty) && currentQty > 1 && qtyConfirmToken !== confirmToken;
+-
+   async function reloadWarehouseData() {
+     setLoadState('loading');
+     setLoadError('');
+-    setBarcodeLookupError('');
+     try {
+-      const [rows, lookupResult] = await Promise.all([
+-        loadWarehouseLocationItems(),
+-        loadReceivingBarcodeLookup().then((rows) => ({ rows, error: '' })).catch((error) => ({ rows: [] as ReceivingBarcodeLookupRow[], error: error instanceof Error ? error.message : String(error) }))
+-      ]);
++      const rows = await loadWarehouseLocationItems();
+       setLiveRows(rows);
+-      setBarcodeLookupRows(lookupResult.rows);
+-      setBarcodeLookupError(lookupResult.error);
+       const liveItemCount = rows.filter((row) => row.item_id).length;
+       setLoadState(liveItemCount ? 'live' : 'empty');
+     } catch (error) {
+@@ -414,12 +308,6 @@
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [locations, initialTargetApplied]);
+ 
+-  useEffect(() => {
+-    setQtyConfirmToken('');
+-    if (!receiveBarcodeKey || !suggestedLocation) return;
+-    setReceiveDraft((current) => current.locationKey === suggestedLocation.key ? current : { ...current, locationKey: suggestedLocation.key });
+-  }, [receiveBarcodeKey, suggestedLocation?.key]);
+-
+   function flash(message: string) {
+     setTapFeedback(message);
+     window.setTimeout(() => setTapFeedback(''), 900);
+@@ -433,7 +321,6 @@
+     const firstSlot = locations.find((slot) => slot.rackId === rack.id && slot.side === nextSide);
+     if (firstSlot) {
+       setSelectedKey(firstSlot.key);
+-      setReceiveDraft((current) => ({ ...current, locationKey: firstSlot.key }));
+     }
+   }
+ 
+@@ -443,63 +330,7 @@
+     setActiveRackId(slot.rackId);
+     setActiveSide(rack.mode === 'double' ? slot.side : 'front');
+     setSelectedKey(slot.key);
+-    setReceiveDraft((current) => ({ ...current, locationKey: slot.key }));
+     flash(`Selected ${slot.code}`);
+-  }
+-
+-  function useSelectedLocation() {
+-    setReceiveDraft((current) => ({ ...current, locationKey: selectedLocation.key }));
+-    flash(`Location ${selectedLocation.code}`);
+-  }
+-
+-  function useSuggestedLocation() {
+-    if (!suggestedLocation) return;
+-    setReceiveDraft((current) => ({ ...current, locationKey: suggestedLocation.key }));
+-    openLocation(suggestedLocation);
+-    flash(`Suggested ${suggestedLocation.code}`);
+-  }
+-
+-  async function submitReceive() {
+-    const qty = Number(receiveDraft.qty);
+-    if (!receiveTarget || !receiveBarcode || !Number.isFinite(qty) || qty <= 0) {
+-      setLocalMovements((current) => ['Rejected · barcode, qty and location required.', ...current].slice(0, 8));
+-      flash('Not saved');
+-      return;
+-    }
+-
+-    if (qty > 1 && qtyConfirmToken !== confirmToken) {
+-      setQtyConfirmToken(confirmToken);
+-      setLocalMovements((current) => [`Check visible stock · ${qty} units for ${receiveBarcode}. Click Confirm qty to save.`, ...current].slice(0, 8));
+-      flash('Confirm quantity');
+-      return;
+-    }
+-
+-    const targetCode = receiveMode === 'unknown' ? 'TEMP' : receiveTarget.code;
+-    const product = knownReceiveProduct;
+-
+-    setSavingReceive(true);
+-    try {
+-      await receiveWarehouseStock({
+-        locationCode: targetCode,
+-        barcode: receiveBarcode,
+-        quantity: qty,
+-        note: receiveDraft.note || (product ? `Received to ${targetCode}${product.fixedLocation ? ` · fixed shelf ${product.fixedLocation}` : ''}` : `Unknown barcode scanned at ${chosenReceiveLocation?.code || 'receiving'}; routed to TEMP`),
+-        sku: product?.sku,
+-        productName: product?.name,
+-        unitLevel: product?.unitLevel ?? 'unknown'
+-      });
+-      setLocalMovements((current) => [`RECEIVE ${qty} · ${receiveBarcode} → ${targetCode}${product ? ` · ${product.sku}` : ' · unknown barcode'}`, ...current].slice(0, 8));
+-      setReceiveDraft((current) => ({ ...current, barcode: '', qty: '', note: '' }));
+-      setQtyConfirmToken('');
+-      await reloadWarehouseData();
+-      flash('Receive saved');
+-    } catch (error) {
+-      const message = error instanceof Error ? error.message : String(error);
+-      setLocalMovements((current) => [`Rejected · ${message}`, ...current].slice(0, 8));
+-      flash('Not saved');
+-    } finally {
+-      setSavingReceive(false);
+-    }
+   }
+ 
+   const liveItemCount = liveRows.filter((row) => row.item_id).length;
+@@ -598,32 +429,10 @@
+                 <div><span>Barcode</span><b>{item.barcode || '—'}</b></div>
+                 <small>{item.recent}</small>
+               </article>
+-            )) : <p className="empty-location-note">Empty slot · ready for receiving or putaway.</p>}
++            )) : <p className="empty-location-note">Empty slot · available for controlled receiving or putaway.</p>}
+           </div>
+         </section>
+ 
+-        <section className="warehouse-map-card">
+-          <div className="warehouse-map-card-head compact-head"><h2>Receive + putaway</h2><span>{receiveTarget?.code ?? selectedLocation.code}</span></div>
+-          <div className={`receive-scan-card receive-${receiveMode}`}>
+-            <div>
+-              <b>{receiveMode === 'idle' ? 'Scan barcode' : receiveMode === 'known' ? `${knownReceiveProduct?.sku} identified` : 'Unknown barcode'}</b>
+-              <span>{receiveMode === 'idle' ? 'Known barcodes suggest fixed shelf. Unknown barcodes route to TEMP.' : receiveMode === 'known' ? `${knownReceiveProduct?.name} · ${knownReceiveProduct?.unitLevel} · target ${receiveTarget?.code}` : `Will be saved to TEMP for identification. ${barcodeLookupError ? `Lookup warning: ${barcodeLookupError}` : ''}`}</span>
+-            </div>
+-            {knownReceiveProduct && suggestedLocation ? <button className="tactile secondary-action" type="button" onClick={useSuggestedLocation}>Use suggested shelf {suggestedLocation.code}</button> : null}
+-            {qtyConfirmationRequired ? <strong className="qty-confirm-warning">Qty {receiveDraft.qty} needs second confirmation</strong> : null}
+-          </div>
+-          <div className="receive-form-grid">
+-            <label><span>Location</span><select value={receiveDraft.locationKey} onChange={(event) => { setQtyConfirmToken(''); setReceiveDraft((current) => ({ ...current, locationKey: event.target.value })); }}>{locations.map((slot) => <option key={slot.key} value={slot.key}>{slot.code} · {slot.rackTitle} · {SIDE_LABEL[slot.side]}</option>)}</select></label>
+-            <label><span>Barcode</span><input value={receiveDraft.barcode} onChange={(event) => { setQtyConfirmToken(''); setReceiveDraft((current) => ({ ...current, barcode: event.target.value })); }} placeholder="scan or type barcode" /></label>
+-            <label><span>Qty</span><input value={receiveDraft.qty} onChange={(event) => { setQtyConfirmToken(''); setReceiveDraft((current) => ({ ...current, qty: event.target.value })); }} inputMode="numeric" placeholder="qty" /></label>
+-            <label><span>Note</span><input value={receiveDraft.note} onChange={(event) => setReceiveDraft((current) => ({ ...current, note: event.target.value }))} placeholder="note" /></label>
+-            <button className="tactile secondary-action" type="button" onClick={useS
