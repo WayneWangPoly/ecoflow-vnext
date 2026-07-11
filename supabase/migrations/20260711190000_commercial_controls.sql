@@ -323,7 +323,6 @@ grant select on public.ecoflow_accounts_billing_contacts,public.ecoflow_customer
   to authenticated;
 
 create or replace view public.v_ecoflow_accounts_live_statement_lines
-with (security_invoker=true)
 as
 with allocated as (
   select a.internal_order_id,sum(a.allocated_amount)::numeric as allocated_amount
@@ -345,7 +344,8 @@ select b.store_id,b.store_name,b.internal_order_id,b.order_number,b.invoice_numb
        when b.due_at<now() then 'OVERDUE'
        when b.due_at<=now()+interval '7 days' then 'DUE_THIS_WEEK'
        else 'OPEN' end as accounts_signal
-from base b;
+from base b
+where public.ecoflow_active_app_role() in ('OWNER','ADMIN','ACCOUNT');
 
 grant select on public.v_ecoflow_accounts_live_statement_lines to authenticated;
 
