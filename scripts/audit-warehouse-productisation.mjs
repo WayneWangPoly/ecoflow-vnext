@@ -18,13 +18,13 @@ const driverBundle = read('src/enhancers/DriverEnhancers.tsx');
 const warehouseOpsBundle = read('src/enhancers/WarehouseOpsEnhancers.tsx');
 const warehouseMapModules = read('src/enhancers/WarehouseMapRouteModules.tsx');
 const warehouseMapRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
+const driverApp = read('src/app/DriverApp.tsx');
 const ownerEdit = read('src/WarehouseMapOwnerEdit.tsx');
 const putaway = read('src/WarehouseMapPutawayControl.tsx');
 const safety = read('src/ProductionWriteSafety.tsx');
 const textRepair = read('src/TextEncodingRepair.tsx');
 const scanner = read('src/WarehouseCameraScanner.tsx');
 const stage = read('src/StageAndLoadExecution.tsx');
-const loadRecovery = read('src/LoadRecoveryControl.tsx');
 const guardrails = read('src/FieldOpsGuardRails.tsx');
 const pickOwnership = read('src/PickTaskOwnership.tsx');
 const pickClaimRepository = read('src/data/repositories/pickTaskClaims.ts');
@@ -80,10 +80,8 @@ assert.match(warehouseMapModules, /WarehouseMapPutawayControl/, 'Controlled puta
 assert.doesNotMatch(warehouseMapModules, /WarehouseCameraScanner|StageAndLoadExecution|FieldOpsGuardRails/, 'Warehouse Map must not download warehouse pick/load/scanner observers.');
 assert.match(warehouseOpsBundle, /WarehouseCameraScanner/, 'Warehouse phone operations must mount the camera scanner.');
 assert.match(warehouseOpsBundle, /WarehousePutawayTargetBridge/, 'Warehouse phone operations must receive map putaway targets.');
-assert.match(warehouseOpsBundle, /LoadRecoveryControl/, 'Warehouse loading must retain controlled undo.');
 assert.match(driverBundle, /DriverLocationTracker/, 'Driver surface must mount route location sampling.');
 assert.match(driverBundle, /DriverDepartureControl/, 'Driver surface must mount the departure gate.');
-assert.match(driverBundle, /LoadRecoveryControl/, 'Driver loading must retain controlled undo.');
 assert.match(ownerBundle, /OwnerDriverTrackingMap/, 'Owner surface must mount protected driver tracking.');
 assert.match(ownerBundle, /OwnerDeliveryGovernance/, 'Owner surface must mount delivery governance.');
 assert.match(ownerBundle, /InventoryMovementPolicy/, 'Owner inventory must block uncontrolled receiving.');
@@ -103,7 +101,7 @@ assert.match(textRepair, /脳.*×|路.*·/s, 'Known legacy mojibake must be repa
 assert.doesNotMatch(stage, /@ts-nocheck/, 'Stage and load execution must remain type checked.');
 assert.match(stage, /Offline · saved on this device/, 'Stage preparation must expose offline sync state.');
 assert.match(stage, /syncByKey/, 'Stage preparation sync state must be tracked per stop.');
-assert.match(loadRecovery, /Undo last load/, 'The most recent load confirmation must be reversible.');
+assert.match(driverApp, /Undo last load/, 'The most recent load confirmation must be reversible in native driver state.');
 assert.match(guardrails, /querySelectorAll<HTMLButtonElement>\('\.load-row'\)/, 'Route start must be gated from load row state.');
 assert.doesNotMatch(guardrails, /stops loaded\//i, 'Route start must not parse loaded progress copy.');
 
