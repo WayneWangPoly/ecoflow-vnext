@@ -1,0 +1,46 @@
+name: Apply production SKU schema correction
+
+on:
+  push:
+    branches: [agent/fix-commercial-production-sku-schema]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-production-sku-schema-correction
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-commercial-production-sku-schema
+          fetch-depth: 0
+      - name: Match production SKU master columns
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/migrations/20260711190000_commercial_controls.sql')
+          source = path.read_text()
+          old = "order by case when s.resource_type in ('variants','variant_detail') then 0 else 1 end,"
+          new = "order by case when s.source_type = 'variant' then 0 else 1 end,"
+          if old in source:
+              path.write_text(source.replace(old, new, 1))
+          elif new not in source:
+              raise SystemExit('Expected SKU source ordering was not found')
+          PY
+      - name: Commit correction
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/migrations/20260711190000_commercial_controls.sql
+          git commit -m 'Match production SKU master source column'
+          git fetch origin agent/fix-commercial-production-sku-schema
+          git rebase origin/agent/fix-commercial-production-sku-schema
+          git push origin HEAD:agent/fix-commercial-production-sku-schema
