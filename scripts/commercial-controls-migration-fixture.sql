@@ -4,11 +4,15 @@ alter table public.app_user_profiles add column if not exists email text;
 alter table public.app_user_profiles add column if not exists display_name text;
 
 create table if not exists public.fixture_commercial_skus(
-  resource_type text, external_sku_code text, external_product_name text, base_price numeric, last_synced_at timestamptz
+  source_type text, external_sku_code text, external_product_name text, base_price numeric, last_synced_at timestamptz
 );
 create or replace view public.v_ecoflow_ordermentum_sku_master_v1 as
-select resource_type,gen_random_uuid()::text external_id,external_sku_code,external_product_name,null::text product_id,null::text variant_id,
-  null::text unit_of_measure,base_price,null::text barcode_candidate,null::text category_name,'{}'::jsonb price_payload,last_synced_at
+select source_type,gen_random_uuid()::text external_product_id,null::text external_variant_id,
+  external_sku_code,external_product_name,null::text external_variant_name,null::text unit_of_measure,
+  'SLEEVE'::text inferred_default_unit_level,null::text ordermentum_barcode_candidate,
+  'missing'::text ordermentum_barcode_candidate_type,base_price,'active'::text source_status,
+  null::timestamptz remote_created_at,null::timestamptz remote_updated_at,null::timestamptz first_seen_at,
+  null::timestamptz last_seen_at,last_synced_at,'{}'::jsonb raw_payload
 from public.fixture_commercial_skus;
 
 create table if not exists public.fixture_commercial_price_groups(price_group_id text primary key,price_group_name text,description text);
