@@ -32,7 +32,6 @@ select * from public.ecoflow_record_driver_departure_acknowledgement(
   '{}'::jsonb
 );
 
--- Idempotent repeat must not create a second acknowledgement.
 select * from public.ecoflow_record_driver_departure_acknowledgement(
   '2026-07-11'::date,
   'RUN-20260711-A',
@@ -53,7 +52,6 @@ begin
   end if;
 end $$;
 
--- Missing a required check must be rejected.
 do $$
 begin
   begin
@@ -92,6 +90,9 @@ begin
   if (select count(*) from public.ecoflow_delivery_notification_log) <> 0 then
     raise exception 'driver can read customer notification log';
   end if;
+  if (select count(*) from public.ecoflow_delivery_notification_contacts) <> 0 then
+    raise exception 'driver can read customer notification contacts';
+  end if;
 end $$;
 
 select set_config('request.jwt.claim.sub','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',true);
@@ -100,7 +101,7 @@ begin
   if (select count(*) from public.ecoflow_delivery_notification_log) <> 1 then
     raise exception 'owner cannot read customer notification log';
   end if;
-  if (select contact_email from public.ecoflow_store_sites where retailer_id='STORE-1') <> 'delivery@example.com' then
+  if (select contact_email from public.ecoflow_delivery_notification_contacts where retailer_id='STORE-1') <> 'delivery@example.com' then
     raise exception 'owner contact update did not persist';
   end if;
 end $$;
