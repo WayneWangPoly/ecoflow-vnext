@@ -1,0 +1,82 @@
+name: Refresh customer stores on release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ordermentum-master-data-sync.mjs'
+      - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'supabase/migrations/*customer_store_center*.sql'
+      - '.github/workflows/refresh-customer-stores-on-release.yml'
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ecoflow-customer-store-release-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+      ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+      ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+      ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+      ORDERMENTUM_FETCH_TIMEOUT_MS: '60000'
+      SUPABASE_FETCH_TIMEOUT_MS: '60000'
+      ORDERMENTUM_FETCH_RETRIES: '3'
+    steps:
+      - name: Publish pending store refresh status
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='pending' -f context='Customer store refresh' -f description='Refreshing Ordermentum purchaser and price-tier masters' -f target_url="$STATUS_URL"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Require customer master credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID ORDERMENTUM_BASE_URL ORDERMENTUM_API_BASE_URL; do
+            if [ -z "${!name}" ]; then echo "Missing required secret: $name"; missing=1; fi
+          done
+          test "$missing" -eq 0
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Refresh and project customer stores
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/ordermentum-cloud-sync.mjs --mode stores_only 2>&1 | tee /tmp/customer-store-refresh.log
+      - name: Verify store projection completed
+        shell: bash
+        run: |
+          grep -q '"resourcesFailed": \[\]' /tmp/customer-store-refresh.log
+          grep -q '"storesProjected":' /tmp/customer-store-refresh.log
+          echo 'Customer store master refresh and projection completed.'
+      - name: Publish successful store refresh status
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='success' -f context='Customer store refresh' -f description='Ordermentum customer stores and price tiers refreshed' -f target_url="$STATUS_URL"
+      - name: Upload customer store refresh log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-store-refresh-log
+          path: /tmp/customer-store-refresh.log
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish failed store refresh status
+        if: failure()
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='failure' -f context='Customer store refresh' -f description='Ordermentum customer store refresh failed' -f target_url="$STATUS_URL"
