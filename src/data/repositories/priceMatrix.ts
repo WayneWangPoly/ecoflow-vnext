@@ -38,6 +38,8 @@ export type PriceMatrixHistoryRow = {
 
 export type PriceMatrixRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER' | string;
 
+type GenericRow = Record<string, unknown>;
+
 function active(client?: SupabaseClient | null) {
   const value = client ?? supabase;
   if (!value) throw new Error('Supabase is not configured.');
@@ -53,14 +55,96 @@ function message(error: unknown) {
   return String(error);
 }
 
+function text(row: GenericRow, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function numeric(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function firstRows(client: SupabaseClient, views: string[], limit: number) {
+  for (const view of views) {
+    const { data, error } = await client.from(view).select('*').limit(limit);
+    if (!error && data?.length) return data as GenericRow[];
+  }
+  return [];
+}
+
+async function fallbackPriceMatrix(client: SupabaseClient) {
+  const [rawGroups, rawSkus] = await Promise.all([
+    firstRows(client, ['v_ecoflow_synced_price_groups', 'v_ecoflow_ordermentum_price_groups_v1'], 100),
+    firstRows(client, ['v_ecoflow_synced_sku_catalog', 'v_ecoflow_ordermentum_sku_master_v1'], 4000),
+  ]);
+
+  const groups = rawGroups.map((row) => {
+    const id = text(row, ['price_group_id', 'external_price_group_id', 'id']);
+    return { id, name: text(row, ['price_group_name', 'name']) || id };
+  }).filter((row) => row.id);
+
+  const skus = rawSkus.map((row) => {
+    const sku = text(row, ['sku', 'external_sku_code', 'SKU']);
+    return {
+      sku,
+      productName: text(row, ['product_name', 'external_product_name', 'name']) || null,
+      basePrice: numeric(row.base_price ?? row.basePrice),
+      lastSyncedAt: text(row, ['last_synced_at', 'lastSyncedAt']) || null,
+    };
+  }).filter((row) => row.sku);
+
+  if (!groups.length || !skus.length) return [] as PriceMatrixRow[];
+
+  const { data: versionData } = await client
+    .from('ecoflow_price_matrix_versions')
+    .select('*')
+    .eq('is_current', true)
+    .limit(5000);
+  const versions = (versionData ?? []) as GenericRow[];
+  const byCell = new Map(versions.map((row) => [`${text(row, ['sku'])}::${text(row, ['price_group_id'])}`, row]));
+
+  return skus.flatMap((sku) => groups.map((group): PriceMatrixRow => {
+    const version = byCell.get(`${sku.sku}::${group.id}`);
+    const override = numeric(version?.unit_price);
+    return {
+      sku: sku.sku,
+      product_name: sku.productName,
+      price_group_id: group.id,
+      price_group_name: group.name,
+      effective_price: override ?? sku.basePrice ?? 0,
+      source_base_price: sku.basePrice,
+      has_override: Boolean(version),
+      matrix_version_id: version ? text(version, ['id']) || null : null,
+      version_no: version?.version_no as number | string | null ?? null,
+      effective_from: version ? text(version, ['effective_from']) || null : null,
+      change_reason: version ? text(version, ['change_reason']) || null : null,
+      created_by: version ? text(version, ['created_by']) || null : null,
+      created_at: version ? text(version, ['created_at']) || null : null,
+      sku_last_synced_at: sku.lastSyncedAt,
+    };
+  }));
+}
+
 export async function loadPriceMatrix(client?: SupabaseClient | null) {
-  const { data, error } = await active(client)
+  const current = active(client);
+  const { data, error } = await current
     .from('v_ecoflow_price_matrix_workbench')
     .select('*')
     .order('sku', { ascending: true })
     .limit(4000);
-  if (error) throw new Error(message(error));
-  return (data ?? []) as PriceMatrixRow[];
+  if (!error && data?.length) return data as PriceMatrixRow[];
+
+  const fallback = await fallbackPriceMatrix(current);
+  if (fallback.length) return fallback;
+  if (error) {
+    const raw = message(error).toLowerCase();
+    if (!raw.includes('25p02') && !raw.includes('transaction is aborted')) throw new Error(message(error));
+  }
+  return [];
 }
 
 export async function loadPriceMatrixHistory(limit = 160, client?: SupabaseClient | null) {
@@ -69,7 +153,11 @@ export async function loadPriceMatrixHistory(limit = 160, client?: SupabaseClien
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
-  if (error) throw new Error(message(error));
+  if (error) {
+    const raw = message(error).toLowerCase();
+    if (raw.includes('25p02') || raw.includes('transaction is aborted') || raw.includes('does not exist')) return [];
+    throw new Error(message(error));
+  }
   return (data ?? []) as PriceMatrixHistoryRow[];
 }
 
