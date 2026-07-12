@@ -1,4 +1,5 @@
 import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
+import { supabase } from '@/lib/supabaseClient';
 
 export const WAREHOUSE_LAYOUT_STORAGE_KEY = 'ecoflow-warehouse-layout-v1';
 export const WAREHOUSE_SITE_CODE = 'SITE-01';
@@ -60,34 +61,49 @@ export function mergeRackPresentation(layout: WarehouseLayoutState, rackCode: st
   };
 }
 
+function nextSkuSlotLayout(layout: WarehouseLayoutState, code: string, currentMinimum: number) {
+  const key = skuSlotLayoutKey(code);
+  const existing = Math.max(currentMinimum, Number(layout[key]?.skuSlots || 1));
+  const slotCount = Math.floor(existing) + 1;
+  return {
+    slotCount,
+    layout: {
+      ...layout,
+      [key]: { ...(layout[key] || emptyBox()), skuSlots: slotCount },
+    } as WarehouseLayoutState,
+  };
+}
+
+function publishSkuSlot(layout: WarehouseLayoutState, code: string, slotCount: number) {
+  writeLocalWarehouseLayout(layout);
+  window.dispatchEvent(new CustomEvent(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, {
+    detail: { locationCode: code, slotCount, layout },
+  }));
+}
+
 export async function incrementWarehouseSkuSlot(locationCode: string, currentMinimum = 1) {
   const code = locationCode.trim().toUpperCase();
   if (!code) throw new Error('Select a warehouse location first.');
 
+  if (!supabase) {
+    const next = nextSkuSlotLayout(readLocalWarehouseLayout(), code, currentMinimum);
+    publishSkuSlot(next.layout, code, next.slotCount);
+    return next.slotCount;
+  }
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const row = await loadWarehouseLayout(WAREHOUSE_SITE_CODE);
-    const layout = row?.layout_json || readLocalWarehouseLayout();
-    const key = skuSlotLayoutKey(code);
-    const existing = Math.max(currentMinimum, Number(layout[key]?.skuSlots || 1));
-    const nextCount = Math.floor(existing) + 1;
-    const nextLayout = {
-      ...layout,
-      [key]: { ...(layout[key] || emptyBox()), skuSlots: nextCount },
-    };
-
-    writeLocalWarehouseLayout(nextLayout);
+    const next = nextSkuSlotLayout(row?.layout_json || readLocalWarehouseLayout(), code, currentMinimum);
+    writeLocalWarehouseLayout(next.layout);
     try {
       const saved = await saveWarehouseLayout({
         siteCode: WAREHOUSE_SITE_CODE,
-        layout: nextLayout,
+        layout: next.layout,
         expectedVersion: row?.layout_version ?? null,
       });
-      const finalLayout = saved?.layout_json || nextLayout;
-      writeLocalWarehouseLayout(finalLayout);
-      window.dispatchEvent(new CustomEvent(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, {
-        detail: { locationCode: code, slotCount: nextCount, layout: finalLayout },
-      }));
-      return nextCount;
+      const finalLayout = saved?.layout_json || next.layout;
+      publishSkuSlot(finalLayout, code, next.slotCount);
+      return next.slotCount;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (attempt === 2 || !/LAYOUT_VERSION_CONFLICT/i.test(message)) throw error;
