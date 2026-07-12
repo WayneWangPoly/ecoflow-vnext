@@ -61,23 +61,25 @@ export function mergeRackPresentation(layout: WarehouseLayoutState, rackCode: st
   };
 }
 
+function layoutWithSkuSlotCount(layout: WarehouseLayoutState, code: string, slotCount: number) {
+  const key = skuSlotLayoutKey(code);
+  return {
+    ...layout,
+    [key]: { ...(layout[key] || emptyBox()), skuSlots: Math.max(1, Math.floor(slotCount)) },
+  } as WarehouseLayoutState;
+}
+
 function nextSkuSlotLayout(layout: WarehouseLayoutState, code: string, currentMinimum: number) {
   const key = skuSlotLayoutKey(code);
   const existing = Math.max(currentMinimum, Number(layout[key]?.skuSlots || 1));
   const slotCount = Math.floor(existing) + 1;
-  return {
-    slotCount,
-    layout: {
-      ...layout,
-      [key]: { ...(layout[key] || emptyBox()), skuSlots: slotCount },
-    } as WarehouseLayoutState,
-  };
+  return { slotCount, layout: layoutWithSkuSlotCount(layout, code, slotCount) };
 }
 
-function publishSkuSlot(layout: WarehouseLayoutState, code: string, slotCount: number) {
+function publishSkuSlot(layout: WarehouseLayoutState, code: string, slotCount: number, persisted: boolean, errorMessage?: string) {
   writeLocalWarehouseLayout(layout);
   window.dispatchEvent(new CustomEvent(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, {
-    detail: { locationCode: code, slotCount, layout },
+    detail: { locationCode: code, slotCount, layout, persisted, errorMessage },
   }));
 }
 
@@ -85,30 +87,39 @@ export async function incrementWarehouseSkuSlot(locationCode: string, currentMin
   const code = locationCode.trim().toUpperCase();
   if (!code) throw new Error('Select a warehouse location first.');
 
-  if (!supabase) {
-    const next = nextSkuSlotLayout(readLocalWarehouseLayout(), code, currentMinimum);
-    publishSkuSlot(next.layout, code, next.slotCount);
-    return next.slotCount;
-  }
+  // The floor worker must see the new slot immediately. Cloud persistence follows,
+  // but a transient network/RLS problem must not make the button appear dead.
+  const optimistic = nextSkuSlotLayout(readLocalWarehouseLayout(), code, currentMinimum);
+  publishSkuSlot(optimistic.layout, code, optimistic.slotCount, false);
+
+  if (!supabase) return optimistic.slotCount;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const row = await loadWarehouseLayout(WAREHOUSE_SITE_CODE);
-    const next = nextSkuSlotLayout(row?.layout_json || readLocalWarehouseLayout(), code, currentMinimum);
-    writeLocalWarehouseLayout(next.layout);
     try {
+      const row = await loadWarehouseLayout(WAREHOUSE_SITE_CODE);
+      const cloudCount = Number(row?.layout_json?.[skuSlotLayoutKey(code)]?.skuSlots || 1);
+      const finalCount = Math.max(optimistic.slotCount, Math.floor(cloudCount));
+      const merged = {
+        ...(row?.layout_json || {}),
+        ...readLocalWarehouseLayout(),
+      } as WarehouseLayoutState;
+      const nextLayout = layoutWithSkuSlotCount(merged, code, finalCount);
       const saved = await saveWarehouseLayout({
         siteCode: WAREHOUSE_SITE_CODE,
-        layout: next.layout,
+        layout: nextLayout,
         expectedVersion: row?.layout_version ?? null,
       });
-      const finalLayout = saved?.layout_json || next.layout;
-      publishSkuSlot(finalLayout, code, next.slotCount);
-      return next.slotCount;
+      const finalLayout = saved?.layout_json || nextLayout;
+      publishSkuSlot(finalLayout, code, finalCount, true);
+      return finalCount;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (attempt === 2 || !/LAYOUT_VERSION_CONFLICT/i.test(message)) throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (attempt < 2 && /LAYOUT_VERSION_CONFLICT/i.test(errorMessage)) continue;
+      publishSkuSlot(readLocalWarehouseLayout(), code, optimistic.slotCount, false, errorMessage);
+      // Keep the visible local slot. The next Save layout or retry can persist it.
+      return optimistic.slotCount;
     }
   }
 
-  throw new Error('Could not add another SKU slot. Reload the warehouse map and try again.');
+  return optimistic.slotCount;
 }
