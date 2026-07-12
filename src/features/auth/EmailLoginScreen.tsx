@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BrandMark } from '@/app/Brand';
@@ -6,6 +6,17 @@ import { BrandMark } from '@/app/Brand';
 function friendlyResetError(message: string) {
   if (message.toLowerCase().includes('rate limit')) {
     return 'Too many password reset emails. Try again later or ask an owner/admin to set the password directly.';
+  }
+  return friendlyAuthError(message);
+}
+
+function friendlyAuthError(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('current transaction is aborted') || normalized.includes('transaction block') || normalized.includes('25p02')) {
+    return 'Your secure session was created, but EcoFlow could not finish loading your access profile. Wait a moment and sign in again. If this continues, ask an owner or administrator to check the first database error in Supabase.';
+  }
+  if (normalized.includes('postgres') || normalized.includes('database error') || normalized.includes('failed to fetch user profile')) {
+    return 'EcoFlow could not load your access profile from the live database. Please try again shortly or contact an owner or administrator.';
   }
   return message;
 }
@@ -32,8 +43,12 @@ export function EmailLoginScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(authError || null);
+  const [error, setError] = useState<string | null>(authError ? friendlyAuthError(authError) : null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setError(authError ? friendlyAuthError(authError) : null);
+  }, [authError]);
 
   async function signIn(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -56,12 +71,13 @@ export function EmailLoginScreen({
       });
       if (signInError) throw signInError;
       if (!data.session) throw new Error('Sign-in did not return a session. Try again.');
-      setMessage('Signed in. Opening portal…');
+      setMessage('Secure session created. Loading your EcoFlow profile…');
       await onSignedIn();
-      window.setTimeout(() => window.location.assign(redirectTo), 250);
+      window.setTimeout(() => window.location.assign(redirectTo), 350);
     } catch (err) {
       setMessage(null);
-      setError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      setError(friendlyAuthError(raw));
       setLoading(false);
     }
   }
@@ -119,7 +135,7 @@ export function EmailLoginScreen({
           autoComplete="current-password"
           onChange={(event) => setPassword(event.target.value)}
         />
-        {message ? <div className="sync-error-banner">{message}</div> : null}
+        {message ? <div className="success-message">{message}</div> : null}
         {error ? <div className="error-message">{error}</div> : null}
         <button className="primary-button" type="submit" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign in'}
