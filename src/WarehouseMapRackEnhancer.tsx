@@ -70,17 +70,23 @@ function mergeOrders(layout: WarehouseLayoutState, orders: BinOrders) {
 function applyVisibleOrder(orders: BinOrders) {
   const context = rackContext();
   if (!context) return;
-  const order = orders[orderKey(context.rackId, context.side)];
-  if (!order?.length) return;
-  const byBin = new Map(binColumns(context.grid).map((column) => [binCode(column), column]));
-  order.forEach((bin) => {
-    const column = byBin.get(bin.toUpperCase());
-    if (column) {
-      context.grid.appendChild(column);
-      byBin.delete(bin.toUpperCase());
-    }
+  const requested = orders[orderKey(context.rackId, context.side)];
+  if (!requested?.length) return;
+
+  const currentColumns = binColumns(context.grid);
+  const currentOrder = currentColumns.map(binCode);
+  const available = new Set(currentOrder);
+  const desiredOrder = [
+    ...requested.map((bin) => bin.toUpperCase()).filter((bin) => available.has(bin)),
+    ...currentOrder.filter((bin) => !requested.map((item) => item.toUpperCase()).includes(bin)),
+  ];
+  if (currentOrder.join('|') === desiredOrder.join('|')) return;
+
+  const byBin = new Map(currentColumns.map((column) => [binCode(column), column]));
+  desiredOrder.forEach((bin) => {
+    const column = byBin.get(bin);
+    if (column) context.grid.appendChild(column);
   });
-  byBin.forEach((column) => context.grid.appendChild(column));
 }
 
 function captureVisibleOrder(orders: BinOrders) {
@@ -94,8 +100,15 @@ function captureVisibleOrder(orders: BinOrders) {
 function naturalVisibleOrder() {
   const context = rackContext();
   if (!context) return;
-  const sorted = binColumns(context.grid).sort((left, right) => binCode(left).localeCompare(binCode(right), undefined, { numeric: true }));
-  sorted.forEach((column) => context.grid.appendChild(column));
+  const columns = binColumns(context.grid);
+  const currentOrder = columns.map(binCode);
+  const desiredOrder = [...currentOrder].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  if (currentOrder.join('|') === desiredOrder.join('|')) return;
+  const byBin = new Map(columns.map((column) => [binCode(column), column]));
+  desiredOrder.forEach((bin) => {
+    const column = byBin.get(bin);
+    if (column) context.grid.appendChild(column);
+  });
 }
 
 function shortLocationCode(code: string) {
@@ -190,8 +203,9 @@ function ensureAddButton(halfRow: HTMLElement, cell: HTMLElement) {
     cell.insertAdjacentElement('afterend', addButton);
   }
   const code = cell.querySelector<HTMLElement>('.location-code')?.textContent?.trim() || 'location';
-  addButton.title = `Select ${code} to add another SKU`;
-  addButton.setAttribute('aria-label', `Select ${code} to add another SKU`);
+  const title = `Select ${code} to add another SKU`;
+  if (addButton.title !== title) addButton.title = title;
+  if (addButton.getAttribute('aria-label') !== title) addButton.setAttribute('aria-label', title);
   addButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
