@@ -72,7 +72,7 @@ export async function loadOrderPlatformLatestOrders(client?: SupabaseClient | nu
     .from('v_ecoflow_order_lifecycle_active')
     .select('*')
     .order('lifecycle_updated_at', { ascending: false })
-    .limit(120);
+    .limit(500);
   if (error) throw new Error(errorMessage(error));
   return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'ACTIVE' }));
 }
@@ -83,7 +83,7 @@ export async function loadLegacyInternalReviewOrders(client?: SupabaseClient | n
     .from('v_ecoflow_order_lifecycle_legacy_internal_review')
     .select('*')
     .order('lifecycle_updated_at', { ascending: false })
-    .limit(30);
+    .limit(500);
   if (error) throw new Error(errorMessage(error));
   return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'LEGACY_REVIEW' }));
 }
@@ -95,7 +95,7 @@ export async function loadCompletedArchivePreview(client?: SupabaseClient | null
     .select('*')
     .eq('lifecycle_status', 'COMPLETED')
     .order('lifecycle_updated_at', { ascending: false })
-    .limit(30);
+    .limit(100);
   if (error) throw new Error(errorMessage(error));
   return ((data ?? []) as OrderPlatformLatestOrderRow[]).map((row) => ({ ...row, platform_bucket: 'ARCHIVE' }));
 }
