@@ -39,6 +39,7 @@ const counters = {
   detailAttempted: 0,
   detailSucceeded: 0,
   detailFailed: 0,
+  storesProjected: 0,
 };
 const resourcesSucceeded = [];
 const resourcesFailed = [];
@@ -161,6 +162,15 @@ async function syncResource(resource) {
   return totalItems;
 }
 
+async function projectOperationalStores() {
+  if (dryRun || !supabase || !resources.includes('purchasers') || !resourcesSucceeded.includes('purchasers')) return;
+  const { data, error } = await supabase.rpc('ecoflow_project_ordermentum_stores');
+  if (error) throw error;
+  const result = (data ?? [])[0] ?? {};
+  counters.storesProjected = Number(result.projected_count || 0);
+  console.log(`[purchasers] operational store master projected: ${counters.storesProjected}`);
+}
+
 try {
   for (const resource of resources) {
     try {
@@ -173,6 +183,15 @@ try {
       console.error(`[${resource}] failed:`, error.message);
     }
   }
+
+  try {
+    await projectOperationalStores();
+  } catch (error) {
+    resourcesFailed.push('store_projection');
+    errors.push({ resource: 'store_projection', message: error.message });
+    console.error('[store_projection] failed:', error.message);
+  }
+
   const status = dryRun ? 'DRY_RUN' : (resourcesFailed.length ? 'PARTIAL' : 'SUCCEEDED');
   if (supabase && runId) {
     await supabase
@@ -191,7 +210,7 @@ try {
         detail_failed: counters.detailFailed,
         finished_at: new Date().toISOString(),
         last_error: errors.length ? JSON.stringify(errors).slice(0, 2000) : null,
-        notes: { errors },
+        notes: { errors, storesProjected: counters.storesProjected },
       })
       .eq('id', runId);
   }
