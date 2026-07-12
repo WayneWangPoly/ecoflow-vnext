@@ -1,6 +1,7 @@
 import { PriceMatrixWorkbench } from '../PriceMatrixWorkbench';
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
+import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
@@ -17,6 +18,7 @@ export default function AccountEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
+      <OperationsClarityEnhancer />
       <OwnerOrderIntelligence />
       <PriceMatrixWorkbench />
       <OwnerStoreIntelligence />
