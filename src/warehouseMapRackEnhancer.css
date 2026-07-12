@@ -1,0 +1,207 @@
+/* Rack-face presentation and edit affordances. Loaded only on the Warehouse Map route. */
+
+.rack-half-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr) 26px;
+  gap: 4px;
+  align-items: end;
+  margin-top: -1px;
+}
+
+.rack-half-code-row span {
+  color: #40534a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.rack-half-code-row span:first-child {
+  grid-column: 1;
+  text-align: left;
+}
+
+.rack-half-code-row span:nth-child(2) {
+  grid-column: 3;
+  text-align: right;
+}
+
+.rack-half-row.warehouse-slot-row {
+  grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr) 26px !important;
+  gap: 4px !important;
+  align-items: stretch;
+}
+
+.rack-bin-grid .location-code {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.rack-bin-grid .location-cell {
+  min-height: 122px !important;
+  padding: 7px !important;
+  align-content: start;
+  overflow: hidden;
+}
+
+.slot-category-label {
+  position: relative;
+  z-index: 2;
+  display: -webkit-box;
+  min-width: 0;
+  max-height: 30px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #173c2e;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: .01em;
+  text-transform: none;
+}
+
+.slot-category-label.is-placeholder {
+  color: #829087;
+  font-weight: 650;
+}
+
+.rack-bin-grid .slot-item-wrap,
+.rack-bin-grid .slot-item-wrap.split {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 4px !important;
+  min-width: 0;
+}
+
+.rack-bin-grid .slot-mini {
+  min-width: 0;
+  padding-top: 3px;
+  border-top: 1px solid rgba(16, 47, 40, .1);
+}
+
+.rack-bin-grid .slot-mini b {
+  display: block;
+  color: #102f28;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rack-bin-grid .slot-mini small {
+  display: block;
+  margin-top: 1px;
+  color: #66766d;
+  font-size: 8.5px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.slot-more-items {
+  color: #0d6545;
+  font-size: 8.5px;
+  font-weight: 800;
+}
+
+.rack-bin-grid .slot-empty,
+.rack-bin-grid .slot-empty-label {
+  position: relative;
+  z-index: 2;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  color: #89958e;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.warehouse-slot-add {
+  align-self: center;
+  width: 24px;
+  height: 34px;
+  min-width: 24px;
+  padding: 0;
+  border: 1px solid #bdcac3;
+  border-radius: 999px;
+  background: #fff;
+  color: #0d6545;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 5px rgba(7, 31, 23, .08);
+}
+
+.warehouse-slot-add:hover,
+.warehouse-slot-add:focus-visible {
+  border-color: #0d6545;
+  background: #eef8f2;
+}
+
+.warehouse-layout-editing .rack-bin-column {
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.warehouse-layout-editing .rack-bin-column::before {
+  content: 'DRAG COLUMN';
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 8;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(8, 39, 29, .88);
+  color: #fff;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  pointer-events: none;
+}
+
+.warehouse-layout-editing .rack-bin-column.layout-bin-selected {
+  outline: 3px solid #2fbf7f;
+  outline-offset: 3px;
+  z-index: 9;
+}
+
+.warehouse-layout-editing .rack-bin-column.bin-dragging {
+  cursor: grabbing;
+  opacity: .86;
+  transform: translateY(-4px);
+  box-shadow: 0 18px 30px rgba(7, 31, 23, .2) !important;
+}
+
+@media (max-width: 1180px) {
+  .rack-bin-grid {
+    grid-template-columns: repeat(var(--bin-count), minmax(184px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .rack-bin-grid {
+    grid-template-columns: repeat(var(--bin-count), minmax(176px, 1fr)) !important;
+  }
+
+  .rack-half-code-row,
+  .rack-half-row.warehouse-slot-row {
+    grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) 24px !important;
+  }
+
+  .rack-bin-grid .location-cell {
+    min-height: 116px !important;
+  }
+}
