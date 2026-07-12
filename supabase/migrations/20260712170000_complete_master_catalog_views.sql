@@ -3,8 +3,10 @@
 
 begin;
 
+-- These narrow master views intentionally run with the view owner's privileges.
+-- Authenticated app users can read the projected catalog columns without being
+-- granted access to the raw Ordermentum payload archive itself.
 create or replace view public.v_ecoflow_synced_price_groups
-with (security_invoker=true)
 as
 with canonical as (
   select distinct
@@ -73,7 +75,6 @@ grant select on public.v_ecoflow_synced_price_groups to authenticated;
 revoke all on public.v_ecoflow_synced_price_groups from anon;
 
 create or replace view public.v_ecoflow_synced_sku_catalog
-with (security_invoker=true)
 as
 with canonical as (
   select
@@ -162,7 +163,12 @@ left join current_matrix m on m.sku=s.sku and m.price_group_id=g.price_group_id;
 
 grant select on public.v_ecoflow_price_matrix_workbench to authenticated;
 
-create or replace view public.v_ecoflow_inventory_sku_control
+-- Recreate rather than replace the Inventory projections because production has
+-- older compatible views whose historical column order must not block release.
+drop view if exists public.v_ecoflow_inventory_kpis;
+drop view if exists public.v_ecoflow_inventory_sku_control;
+
+create view public.v_ecoflow_inventory_sku_control
 as
 with master as (
   select sku,product_name from public.v_ecoflow_synced_sku_catalog
@@ -192,8 +198,6 @@ select
   b.on_hand_live,
   case when b.movement_count is not null then 'LIVE_LEDGER' else 'TEMP_ESTIMATE' end as stock_source,
   coalesce(b.on_hand_live,c.on_hand_estimate) as effective_on_hand,
-  b.movement_count,
-  b.latest_movement_at,
   coalesce(c.status,'ACTIVE') as control_status,
   c.owner_note,
   coalesce(v.revenue_7d,0)::numeric as revenue_7d,
@@ -208,6 +212,8 @@ select
   coalesce(r.high_reorder_stores,0)::numeric as high_reorder_stores,
   coalesce(r.watch_reorder_stores,0)::numeric as watch_reorder_stores,
   r.latest_store_reorder_at,
+  b.movement_count,
+  b.latest_movement_at,
   a.latest_action,
   a.latest_execution_status,
   a.latest_action_at,
@@ -253,7 +259,7 @@ order by inventory_rank asc,m.sku asc;
 
 grant select on public.v_ecoflow_inventory_sku_control to authenticated;
 
-create or replace view public.v_ecoflow_inventory_kpis
+create view public.v_ecoflow_inventory_kpis
 as
 select
   count(*)::numeric as sku_count,
