@@ -3,6 +3,7 @@ import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
+import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
 import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
@@ -28,6 +29,7 @@ export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
+      <OperationsClarityEnhancer />
       <OwnerDeliveryAlerts />
       <OwnerDriverTrackingMap />
       <OwnerDeliveryGovernance />

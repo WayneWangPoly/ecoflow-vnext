@@ -10,6 +10,10 @@ export type WarehouseLayoutBox = {
   categories?: string[];
   binOrder?: string[];
   skuSlots?: number;
+  floorFontScale?: number;
+  rackFontScale?: number;
+  locationFontScale?: number;
+  skuFontScale?: number;
 };
 export type WarehouseLayoutState = Record<string, WarehouseLayoutBox>;
 export type WarehouseLayoutRow = {

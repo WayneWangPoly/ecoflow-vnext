@@ -1,0 +1,1 @@
+Owner Edit layout exposes separate visual scales for floorplan rack names, rack headings/levels, location codes and SKU text. These settings persist with the cloud layout and do not alter rack codes, location codes, SKU identities or stock history.

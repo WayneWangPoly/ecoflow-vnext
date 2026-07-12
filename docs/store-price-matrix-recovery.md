@@ -1,0 +1,1 @@
+Store price matrix loading first uses the aggregate workbench view. If that view is unavailable or the database returns a secondary 25P02 transaction-aborted error, the browser rebuilds the read-only matrix from independent synced price-group and SKU master views. Owner price changes still use the audited RPCs.
