@@ -100,9 +100,11 @@ begin
     'v_ecoflow_ordermentum_sync_health',
     'v_ecoflow_ordermentum_release_summary_v2',
     'v_ecoflow_ordermentum_sku_mapping_candidates',
+    'v_ecoflow_ordermentum_sku_master_v1',
     'v_ecoflow_app_sku_master',
     'v_ecoflow_inventory_sku_control',
-    'v_ecoflow_inventory_sku_location_balance'
+    'v_ecoflow_inventory_sku_location_balance',
+    'v_ecoflow_barcode_registry_review'
   ]
   loop
     if to_regclass('public.' || relation_name) is not null then
