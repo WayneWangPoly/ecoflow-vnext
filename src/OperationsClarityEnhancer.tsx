@@ -98,16 +98,30 @@ function ensurePriceGroupRecovery() {
       }, 30000);
     } catch (error) {
       button.disabled = false;
-      button.textContent = error instanceof Error ? 'Sync failed · retry' : 'Sync failed · retry';
+      button.textContent = 'Sync failed · retry';
       button.title = error instanceof Error ? error.message : String(error);
     }
   };
   warning.appendChild(button);
 }
 
+function ensureOrderTime(row: HTMLElement, orderNo: string, sideSelector: string) {
+  const time = orderNo ? orderTimes.get(orderNo) : undefined;
+  const side = row.querySelector<HTMLElement>(sideSelector);
+  if (!side || !time) return;
+  let node = side.querySelector<HTMLElement>('.owner-command-order-time');
+  if (!node) {
+    node = document.createElement('small');
+    node.className = 'owner-command-order-time';
+    side.appendChild(node);
+  }
+  node.textContent = `${time.source === 'ordered' ? 'Ordered' : 'First captured'} ${formatTime(time.at)}`;
+}
+
+const orderTimes = new Map<string, OrderTime>();
+
 export function OperationsClarityEnhancer() {
   const roleRef = useRef<Role>(detectRoleFromDom());
-  const timesRef = useRef<Map<string, OrderTime>>(new Map());
 
   useEffect(() => {
     if (supabase) {
@@ -117,16 +131,15 @@ export function OperationsClarityEnhancer() {
     }
 
     void loadSupabaseOrdermentumViews().then((views) => {
-      const map = new Map<string, OrderTime>();
+      orderTimes.clear();
       views?.inbox.forEach((row) => {
         const at = row.order_created_at || row.first_seen_at || row.raw_created_at;
         if (!at) return;
         const source: OrderTime['source'] = row.order_created_at ? 'ordered' : 'captured';
         [row.order_number, row.external_order_number, row.invoice_number, row.external_invoice_number]
           .filter((key): key is string => Boolean(key))
-          .forEach((key) => map.set(key, { at, source }));
+          .forEach((key) => orderTimes.set(key, { at, source }));
       });
-      timesRef.current = map;
     }).catch(() => undefined);
 
     function apply() {
@@ -136,6 +149,13 @@ export function OperationsClarityEnhancer() {
       if (topbar && topbar.textContent !== operationLabel) topbar.textContent = operationLabel;
       const sidebar = document.querySelector<HTMLElement>('.sidebar-brand > div:last-child > span');
       if (sidebar && sidebar.textContent !== role) sidebar.textContent = role;
+
+      document.querySelectorAll<HTMLButtonElement>('.desktop-mobile-nav button').forEach((button) => {
+        if (button.textContent?.trim() === 'Inbox') {
+          button.textContent = 'Ordermentum Inbox';
+          button.dataset.operationsLabel = 'true';
+        }
+      });
 
       document.querySelectorAll<HTMLElement>('.owner-command-order-pills .owner-command-pill').forEach(relabelPill);
       ensureQueueGuide();
@@ -154,16 +174,11 @@ export function OperationsClarityEnhancer() {
 
       document.querySelectorAll<HTMLElement>('.owner-command-order-row').forEach((row) => {
         const orderNo = row.querySelector<HTMLElement>('.owner-command-order-title > strong')?.textContent?.trim() || '';
-        const time = timesRef.current.get(orderNo);
-        const side = row.querySelector<HTMLElement>('.owner-command-order-side');
-        if (!side || !time) return;
-        let node = side.querySelector<HTMLElement>('.owner-command-order-time');
-        if (!node) {
-          node = document.createElement('small');
-          node.className = 'owner-command-order-time';
-          side.appendChild(node);
-        }
-        node.textContent = `${time.source === 'ordered' ? 'Ordered' : 'First captured'} ${formatTime(time.at)}`;
+        ensureOrderTime(row, orderNo, '.owner-command-order-side');
+      });
+      document.querySelectorAll<HTMLElement>('.order-list-item').forEach((row) => {
+        const orderNo = row.querySelector<HTMLElement>('.order-title-line > strong')?.textContent?.trim() || '';
+        ensureOrderTime(row, orderNo, '.order-side-copy');
       });
     }
 
