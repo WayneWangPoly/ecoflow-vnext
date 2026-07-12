@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { OwnerCommandCenter } from './OwnerCommandCenter';
+import { OperationalDensityEnhancer } from './OperationalDensityEnhancer';
+import { RoleIdentityEnhancer } from './RoleIdentityEnhancer';
 import { observeBody } from './lib/domObserver';
 import { pruneEcoflowStorage } from './domain/driverRun';
 import { hasSupabaseAuthClient } from './lib/supabaseClient';
@@ -133,6 +135,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <>
           <ProductionWriteSafety />
           <OwnerCommandCenter />
+          <OperationalDensityEnhancer />
+          <RoleIdentityEnhancer />
           <Suspense fallback={null}>
             <FieldModeEnhancer />
           </Suspense>
