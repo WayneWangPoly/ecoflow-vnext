@@ -3,7 +3,6 @@ import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
-import { OwnerCommandCenter } from '../OwnerCommandCenter';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
 import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
 import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
@@ -18,7 +17,6 @@ import '../accountsStatementWorkbench.css';
 import '../priceMatrixWorkbench.css';
 import '../deliveryRunHistory.css';
 import '../roleAwareNavigation.css';
-import '../ownerCommandCenter.css';
 import '../inventoryControlCenter.css';
 import '../inventoryMovementLedger.css';
 import '../ownerDriverTracking.css';
@@ -29,7 +27,6 @@ export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <OwnerCommandCenter />
       <OwnerDeliveryAlerts />
       <OwnerDriverTrackingMap />
       <OwnerDeliveryGovernance />
