@@ -3,7 +3,7 @@ import { observeBody } from '@/lib/domObserver';
 
 const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Delivery', 'Stores', 'Reconciliation', 'Settings']);
 const businessLabels: Record<string, string> = {
-  Ordermentum: 'Inbox',
+  Ordermentum: 'Ordermentum Inbox',
   Reconciliation: 'Accounts',
 };
 
