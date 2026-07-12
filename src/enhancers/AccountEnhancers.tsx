@@ -1,12 +1,10 @@
 import { PriceMatrixWorkbench } from '../PriceMatrixWorkbench';
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
-import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerCommandCenter } from '../OwnerCommandCenter';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
-import '../orderPlatformTable.css';
 import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
 import '../storeStatementPressure.css';
@@ -27,7 +25,6 @@ export default function AccountEnhancers() {
       <OwnerStoreIntelligence />
       <AccountsStatementWorkbench />
       <DeliveryRunHistory />
-      <OrderPlatformExperience />
     </>
   );
 }
