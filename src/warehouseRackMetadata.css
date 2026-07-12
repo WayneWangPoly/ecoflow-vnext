@@ -48,6 +48,21 @@
   background: #eaf7ef !important;
 }
 
+.warehouse-putaway-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.warehouse-putaway-actions a.secondary {
+  background: #fff !important;
+  color: #0e6b47 !important;
+  border-color: #87b8a1 !important;
+}
+
+.warehouse-putaway-target small {
+  color: #0d6545;
+  font-weight: 750;
+}
+
 .warehouse-rack-name-editor {
   grid-column: 1 / -1;
   display: grid;
@@ -114,5 +129,11 @@
 @media (max-width: 980px) {
   .warehouse-rack-name-editor {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .warehouse-putaway-actions {
+    grid-template-columns: 1fr !important;
   }
 }
