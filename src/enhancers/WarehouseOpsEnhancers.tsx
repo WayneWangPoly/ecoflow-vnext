@@ -8,6 +8,7 @@ import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
 import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
 import '../warehouseReceivingFlow.css';
 import '../warehouseBarcodeSprint.css';
+import '../warehouseFirstStocktake.css';
 import '../warehousePickHandoff.css';
 import '../fieldOpsGuardRails.css';
 import '../pickTaskOwnership.css';
