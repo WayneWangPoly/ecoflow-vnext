@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { observeBody } from '@/lib/domObserver';
-import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
+import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -9,6 +9,7 @@ const SITE_CODE = 'SITE-01';
 const BIN_PREFIX = 'bin-order:';
 
 type BinOrders = Record<string, string[]>;
+type LayoutOrderBox = WarehouseLayoutBox & { binOrder?: string[] };
 
 type RackContext = {
   card: HTMLElement;
@@ -47,17 +48,21 @@ function orderKey(rackId: string, side: string) {
   return `${BIN_PREFIX}${rackId.toLowerCase()}:${side.toLowerCase()}`;
 }
 
+function orderFromBox(box: WarehouseLayoutBox) {
+  return (box as LayoutOrderBox).binOrder;
+}
+
 function ordersFromLayout(layout: WarehouseLayoutState): BinOrders {
   return Object.fromEntries(Object.entries(layout)
-    .filter(([key, box]) => key.startsWith(BIN_PREFIX) && Array.isArray(box.binOrder))
-    .map(([key, box]) => [key, [...(box.binOrder || [])]]));
+    .filter(([key, box]) => key.startsWith(BIN_PREFIX) && Array.isArray(orderFromBox(box)))
+    .map(([key, box]) => [key, [...(orderFromBox(box) || [])]]));
 }
 
 function mergeOrders(layout: WarehouseLayoutState, orders: BinOrders) {
   const merged = { ...layout };
   Object.keys(merged).filter((key) => key.startsWith(BIN_PREFIX)).forEach((key) => delete merged[key]);
   Object.entries(orders).forEach(([key, binOrder]) => {
-    merged[key] = { left: '', top: '', width: '', height: '', binOrder: [...binOrder] };
+    merged[key] = { left: '', top: '', width: '', height: '', binOrder: [...binOrder] } as LayoutOrderBox;
   });
   return merged;
 }
@@ -111,7 +116,8 @@ function locationRowsFor(rows: WarehouseLocationItemRow[], code: string) {
 
 function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
   const codeElement = cell.querySelector<HTMLElement>('.location-code');
-  const code = codeElement?.textContent?.trim() || '';
+  if (!codeElement) return;
+  const code = codeElement.textContent?.trim() || '';
   if (!code) return;
   if (cell.dataset.locationCode !== code) cell.dataset.locationCode = code;
 
@@ -132,7 +138,7 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
   let wrap = cell.querySelector<HTMLElement>('.slot-item-wrap');
   const empty = cell.querySelector<HTMLElement>('.slot-empty');
   if (!itemRows.length) {
-    if (wrap) wrap.remove();
+    wrap?.remove();
     if (empty) {
       empty.classList.add('slot-empty-label');
       setText(empty, 'Empty');
