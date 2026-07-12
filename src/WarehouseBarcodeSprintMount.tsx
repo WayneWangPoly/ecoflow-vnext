@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
@@ -21,6 +21,7 @@ function requestedMode(): WarehouseOpsMode {
 export function WarehouseBarcodeSprintMount() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [mode, setMode] = useState<WarehouseOpsMode>(requestedMode);
+  const initialTabApplied = useRef(false);
 
   useEffect(() => {
     function locate() {
@@ -29,7 +30,14 @@ export function WarehouseBarcodeSprintMount() {
       const tabs = content?.querySelector<HTMLElement>('.mobile-tabs');
       if (!content || !tabs) { setHost(null); return; }
 
-      const activeTab = Array.from(tabs.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.classList.contains('active'))?.textContent?.trim();
+      const buttons = Array.from(tabs.querySelectorAll<HTMLButtonElement>('button'));
+      const activeTab = buttons.find((button) => button.classList.contains('active'))?.textContent?.trim();
+      if (!initialTabApplied.current && requestedMode() !== 'receive' && activeTab !== 'receive') {
+        initialTabApplied.current = true;
+        buttons.find((button) => button.textContent?.trim() === 'receive')?.click();
+        return;
+      }
+      initialTabApplied.current = true;
       const isReceive = activeTab === 'receive';
 
       let mount = content.querySelector<HTMLElement>('.warehouse-barcode-sprint-mount');
