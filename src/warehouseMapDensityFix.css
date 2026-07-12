@@ -32,17 +32,6 @@
   align-self: center !important;
 }
 
-/* Give the rack face priority over the overview on large screens. */
-.warehouse-map-grid {
-  grid-template-columns: minmax(300px, .55fr) minmax(720px, 1.45fr) !important;
-  align-items: start !important;
-}
-
-.warehouse-floorplan {
-  height: min(34vw, 430px) !important;
-  min-height: 340px !important;
-}
-
 .warehouse-rack-card {
   min-width: 0;
 }
@@ -82,27 +71,115 @@
   line-height: 1.25 !important;
 }
 
-/* Laptop: compact overview on top, full-width rack face below. */
-@media (max-width: 1500px) {
-  .warehouse-map-grid {
-    grid-template-columns: 1fr !important;
+/*
+ * Desktop/laptop workspace:
+ * rack face is the large operational surface on the left;
+ * search + compact overview + selected location form the right rail.
+ */
+@media (min-width: 981px) {
+  .warehouse-map-page {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 370px) !important;
+    align-items: start !important;
+    column-gap: 14px !important;
+  }
+
+  .warehouse-map-page > .warehouse-map-header,
+  .warehouse-map-page > .warehouse-error-strip {
+    grid-column: 1 / -1;
+  }
+
+  .warehouse-map-page > .warehouse-map-grid:not(.warehouse-bottom-grid),
+  .warehouse-map-page > .warehouse-bottom-grid {
+    display: contents !important;
+  }
+
+  .warehouse-rack-card {
+    grid-column: 1;
+    grid-row: span 2;
+    align-self: stretch;
+    min-height: calc(100vh - 116px);
   }
 
   .warehouse-map-overview-card {
-    padding-bottom: 12px !important;
+    grid-column: 2;
+    padding: 13px !important;
+  }
+
+  .warehouse-bottom-grid > .warehouse-map-card {
+    grid-column: 2;
+    padding: 13px !important;
+  }
+
+  .warehouse-search-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 7px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .warehouse-search-row input,
+  .warehouse-search-row button {
+    min-height: 38px !important;
   }
 
   .warehouse-floorplan {
-    height: 300px !important;
-    min-height: 300px !important;
+    height: 225px !important;
+    min-height: 225px !important;
   }
 
-  .rack-bin-grid {
-    grid-template-columns: repeat(var(--bin-count), minmax(220px, 1fr)) !important;
+  .warehouse-search-results {
+    max-height: 150px !important;
+  }
+
+  .warehouse-bottom-grid .location-detail-block > strong {
+    font-size: 24px !important;
+  }
+
+  .warehouse-bottom-grid .location-item-card {
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+    gap: 8px !important;
+    padding: 10px !important;
+  }
+
+  .warehouse-bottom-grid .location-item-card > div:first-child,
+  .warehouse-bottom-grid .location-item-card > small {
+    grid-column: 1 / -1;
+  }
+
+  .warehouse-bottom-grid .location-item-card > div:nth-of-type(4) {
+    grid-column: 1 / -1;
+  }
+
+  .warehouse-bottom-grid .location-item-card b {
+    font-size: 15px !important;
   }
 }
 
-@media (max-width: 760px) {
+@media (min-width: 1500px) {
+  .warehouse-map-page {
+    grid-template-columns: minmax(0, 1fr) 390px !important;
+  }
+
+  .warehouse-floorplan {
+    height: 245px !important;
+    min-height: 245px !important;
+  }
+
+  .rack-bin-grid {
+    grid-template-columns: repeat(var(--bin-count), minmax(230px, 1fr)) !important;
+  }
+
+  .rack-bin-column {
+    min-width: 230px !important;
+  }
+}
+
+/* Tablet/mobile: preserve the natural single-column reading order. */
+@media (max-width: 980px) {
+  .warehouse-map-grid,
+  .warehouse-bottom-grid {
+    grid-template-columns: 1fr !important;
+  }
+
   .warehouse-floorplan {
     height: 250px !important;
     min-height: 250px !important;
@@ -110,6 +187,13 @@
 
   .rack-bin-grid {
     grid-template-columns: repeat(var(--bin-count), minmax(205px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .warehouse-floorplan {
+    height: 220px !important;
+    min-height: 220px !important;
   }
 
   .rack-bin-grid .location-cell {
