@@ -7,6 +7,8 @@ on:
     paths:
       - 'scripts/ordermentum-master-data-sync.mjs'
       - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'src/data/repositories/priceMatrix.ts'
+      - 'src/data/repositories/customerStoreCenter.ts'
       - 'supabase/migrations/*customer_store_center*.sql'
       - '.github/workflows/refresh-customer-stores-on-release.yml'
 
