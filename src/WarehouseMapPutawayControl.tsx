@@ -74,7 +74,7 @@ export function WarehouseMapPutawayControl() {
       <div className="warehouse-putaway-target">
         <span>SELECTED LOCATION</span>
         <strong>{locationCode || 'Choose a rack position'}</strong>
-        <p>The + button adds another SKU position inside this physical cell. It does not add stock quantity. Use Barcode setup for the first warehouse scan, then Receive for real incoming stock so barcode checks and the stock ledger remain controlled.</p>
+        <p>The + button adds another SKU position inside this physical cell; it does not add stock quantity. All stock increases still go through the controlled Receive batch. Use Barcode setup for the first warehouse scan, then Receive for real incoming stock so barcode checks and the stock ledger remain controlled.</p>
         {slotCount ? <small>{slotCount} SKU positions are now configured for this cell.</small> : null}
       </div>
       {notice ? <div className="warehouse-putaway-notice" role="status">{notice}</div> : null}
