@@ -1,0 +1,1 @@
+When invoice totals are absent, the live Ordermentum loader now derives order value from line total, subtotal, or unit price multiplied by quantity, then falls back to total due. A remaining zero means the source payload still contains no monetary detail and must be reviewed rather than assumed to be a test order.
