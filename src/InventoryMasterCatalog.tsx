@@ -11,13 +11,13 @@ function useCatalogHost() {
   useEffect(() => observeBody(() => {
     const active = Array.from(document.querySelectorAll<HTMLButtonElement>('.sidebar-nav button')).some((button) => button.classList.contains('active') && button.textContent?.trim() === 'Inventory');
     if (!active) { setHost(null); return; }
-    const parent = document.querySelector<HTMLElement>('.inventory-control-center-mount');
-    if (!parent) { setHost(null); return; }
-    let mount = parent.querySelector<HTMLElement>('.inventory-master-catalog-mount');
+    const controlMount = document.querySelector<HTMLElement>('.inventory-control-center-mount');
+    if (!controlMount) { setHost(null); return; }
+    let mount = document.querySelector<HTMLElement>('.inventory-master-catalog-mount');
     if (!mount) {
       mount = document.createElement('section');
       mount.className = 'inventory-master-catalog-mount';
-      parent.appendChild(mount);
+      controlMount.insertAdjacentElement('afterend', mount);
     }
     setHost(mount);
   }), []);
@@ -56,8 +56,14 @@ function Catalog() {
 
   async function reload() {
     setError('');
-    try { setRows(await loadAllSkuRows()); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    try {
+      const next = await loadAllSkuRows();
+      setRows(next);
+      return next;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return [];
+    }
   }
 
   useEffect(() => { void reload(); }, []);
@@ -80,8 +86,8 @@ function Catalog() {
         const relevant = snapshot.masterHealth.filter((row) => ['products','variants'].some((type) => String(row.resource_type || '').toLowerCase().includes(type)));
         const latest = Math.max(0, ...relevant.map((row) => row.latest_synced_at ? new Date(row.latest_synced_at).getTime() : 0));
         if (latest >= requestedAt - 2000) {
-          await reload();
-          setNotice(`Ordermentum SKU sync complete. ${rows.length || 'All'} database SKUs are available to Inventory.`);
+          const next = await reload();
+          setNotice(`Ordermentum SKU sync complete. ${next.length.toLocaleString('en-AU')} database SKUs are available to Inventory.`);
           return;
         }
       }
@@ -99,7 +105,7 @@ function Catalog() {
     {error ? <div className="inventory-master-error">{error}</div> : null}{notice ? <div className="inventory-master-notice">{notice}</div> : null}
     <section className="inventory-master-metrics"><div><strong>{rows.length}</strong><span>database SKUs</span></div><div><strong>{active}</strong><span>active</span></div><div><strong>{withBarcode}</strong><span>with barcode</span></div><div><strong>{withShelf}</strong><span>with shelf</span></div></section>
     <div className="inventory-master-search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search all SKU, product, shelf or barcode…" /><strong>{visible.length} shown</strong></div>
-    <div className="inventory-master-list">{visible.map((row) => <article key={row.sku || Math.random()}><div><strong>{row.sku || 'UNKNOWN'}</strong><span>{row.product_name || 'Product name pending'}</span></div><span>{row.fixed_shelf || 'No shelf'}</span><span>{row.primary_barcode || 'No barcode'}</span><span>{n(row.effective_on_hand).toLocaleString('en-AU')} stock</span><b>{String(row.inventory_signal || 'PENDING').replaceAll('_',' ')}</b></article>)}</div>
+    <div className="inventory-master-list">{visible.map((row) => <article key={row.sku || `unknown-${row.inventory_rank}`}><div><strong>{row.sku || 'UNKNOWN'}</strong><span>{row.product_name || 'Product name pending'}</span></div><span>{row.fixed_shelf || 'No shelf'}</span><span>{row.primary_barcode || 'No barcode'}</span><span>{n(row.effective_on_hand).toLocaleString('en-AU')} stock</span><b>{String(row.inventory_signal || 'PENDING').replaceAll('_',' ')}</b></article>)}</div>
   </section>;
 }
 
