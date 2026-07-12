@@ -1,6 +1,7 @@
 import { WarehouseMapOwnerEdit } from '../WarehouseMapOwnerEdit';
 import { WarehouseMapPutawayControl } from '../WarehouseMapPutawayControl';
 import { WarehouseMapRackEnhancer } from '../WarehouseMapRackEnhancer';
+import { WarehouseMapInteractionFix } from '../WarehouseMapInteractionFix';
 import '../warehouseProductisation.css';
 import '../warehouseProductisationFixes.css';
 import '../warehouseMapRackEnhancer.css';
@@ -12,6 +13,7 @@ export default function WarehouseMapRouteModules() {
     <>
       <WarehouseMapOwnerEdit />
       <WarehouseMapRackEnhancer />
+      <WarehouseMapInteractionFix />
       <WarehouseMapPutawayControl />
     </>
   );
