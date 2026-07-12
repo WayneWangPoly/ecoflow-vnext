@@ -1,0 +1,84 @@
+name: Refresh Ordermentum master catalog
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Deploy Supabase migrations']
+    types: [completed]
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ecoflow-ordermentum-master-catalog-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+      ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+      ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+      ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+      ORDERMENTUM_FETCH_TIMEOUT_MS: '60000'
+      SUPABASE_FETCH_TIMEOUT_MS: '60000'
+      ORDERMENTUM_FETCH_RETRIES: '3'
+    steps:
+      - name: Publish pending master catalog status
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='pending' -f context='Ordermentum master catalog' -f description='Refreshing price groups, products and variants' -f target_url="$STATUS_URL"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Require master sync credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID ORDERMENTUM_BASE_URL ORDERMENTUM_API_BASE_URL; do
+            if [ -z "${!name}" ]; then echo "Missing required secret: $name"; missing=1; fi
+          done
+          test "$missing" -eq 0
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Refresh stores and price groups
+        run: node scripts/ordermentum-cloud-sync.mjs --mode stores_only 2>&1 | tee /tmp/price-group-refresh.log
+      - name: Refresh products and variants
+        run: node scripts/ordermentum-cloud-sync.mjs --mode sku_only 2>&1 | tee /tmp/sku-master-refresh.log
+      - name: Verify both master syncs completed
+        shell: bash
+        run: |
+          grep -q '"resourcesFailed": \[\]' /tmp/price-group-refresh.log
+          grep -q '\[price_groups\] completed:' /tmp/price-group-refresh.log
+          grep -q '"resourcesFailed": \[\]' /tmp/sku-master-refresh.log
+          grep -q '\[products\] completed:' /tmp/sku-master-refresh.log
+          grep -q '\[variants\] completed:' /tmp/sku-master-refresh.log
+      - name: Publish successful master catalog status
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='success' -f context='Ordermentum master catalog' -f description='Price groups and complete SKU master refreshed' -f target_url="$STATUS_URL"
+      - name: Upload master sync logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordermentum-master-catalog-logs
+          path: |
+            /tmp/price-group-refresh.log
+            /tmp/sku-master-refresh.log
+          retention-days: 30
+      - name: Publish failed master catalog status
+        if: failure()
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='failure' -f context='Ordermentum master catalog' -f description='Price group or SKU master refresh failed' -f target_url="$STATUS_URL"
