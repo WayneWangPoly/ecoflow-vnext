@@ -13,22 +13,31 @@ function normaliseLevelRow(row: HTMLElement) {
   );
   if (!cells.length) return;
 
-  // The original enhancer inserted one add button after every half. Remove all of
-  // those transient controls and rebuild exactly one button after the B half.
-  row.querySelectorAll(':scope > .warehouse-slot-add').forEach((button) => button.remove());
-  row.classList.add('warehouse-slot-row', 'warehouse-slot-row-native-action');
+  // Legacy buttons remain in the body row so the rack enhancer stays idempotent,
+  // but CSS hides them. The real action belongs beside A and B in the header row.
+  row.querySelectorAll(':scope > .warehouse-slot-add-primary').forEach((button) => button.remove());
+  row.classList.add('warehouse-slot-row', 'warehouse-slot-row-header-action');
+
+  const levelRow = row.closest<HTMLElement>('.rack-level-row');
+  const codeRow = levelRow?.querySelector<HTMLElement>(':scope > .rack-half-code-row');
+  if (!codeRow) return;
 
   const target = cells.find((cell) => /B$/i.test(locationCode(cell))) ?? cells[cells.length - 1];
   const code = locationCode(target);
   if (!code) return;
 
-  const addButton = document.createElement('button');
-  addButton.type = 'button';
-  addButton.className = 'warehouse-slot-add warehouse-slot-add-primary';
-  addButton.textContent = '+';
+  let addButton = codeRow.querySelector<HTMLButtonElement>(':scope > .warehouse-slot-add-primary');
+  if (!addButton) {
+    addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'warehouse-slot-add warehouse-slot-add-primary';
+    addButton.textContent = '+';
+    codeRow.appendChild(addButton);
+  }
+
   addButton.title = `Add or put away another SKU at ${code}`;
   addButton.setAttribute('aria-label', `Add or put away another SKU at ${code}`);
-  addButton.addEventListener('click', (event) => {
+  addButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
     target.click();
@@ -37,8 +46,7 @@ function normaliseLevelRow(row: HTMLElement) {
     window.setTimeout(() => {
       document.querySelector<HTMLElement>('.warehouse-putaway-control-mount')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 0);
-  });
-  row.appendChild(addButton);
+  };
 }
 
 function normaliseRackActions() {
