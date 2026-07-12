@@ -4,6 +4,8 @@ import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
+import { ActiveExceptionClarityEnhancer } from '../ActiveExceptionClarityEnhancer';
+import { LegacyReviewArchiveControl } from '../LegacyReviewArchiveControl';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
 import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
@@ -30,6 +32,7 @@ export default function OwnerEnhancers() {
     <>
       <RoleAwareDesktopNavigation />
       <OperationsClarityEnhancer />
+      <ActiveExceptionClarityEnhancer />
       <OwnerDeliveryAlerts />
       <OwnerDriverTrackingMap />
       <OwnerDeliveryGovernance />
@@ -41,6 +44,7 @@ export default function OwnerEnhancers() {
       <AccountsStatementWorkbench />
       <DeliveryRunHistory />
       <OrderPlatformExperience />
+      <LegacyReviewArchiveControl />
     </>
   );
 }
