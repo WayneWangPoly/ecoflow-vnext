@@ -68,7 +68,7 @@ export function WarehouseMapPutawayControl() {
       <div className="warehouse-putaway-target">
         <span>SELECTED LOCATION</span>
         <strong>{locationCode || 'Choose a rack position'}</strong>
-        <p>The + button selects this location for another SKU. Stock is still increased only through Receive, so the ledger and barcode checks remain intact.</p>
+        <p>All stock increases still go through the controlled Receive batch. The + button only selects this location, so ledger posting, barcode checks and receiving approval remain intact.</p>
       </div>
       {notice ? <div className="warehouse-putaway-notice" role="status">{notice}</div> : null}
       <div className="warehouse-putaway-actions">
