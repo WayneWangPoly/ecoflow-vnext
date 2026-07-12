@@ -45,12 +45,17 @@ import type {
 
 const initialData = buildEcoFlowData();
 
-const roleOptions: { role: Role; label: string; passcode: string; shell: 'desktop' | 'mobile' }[] = [
-  { role: 'owner', label: 'Owner', passcode: '0000', shell: 'desktop' },
-  { role: 'account', label: 'Account', passcode: '0000', shell: 'desktop' },
-  { role: 'warehouse', label: 'Warehouse', passcode: '4444', shell: 'mobile' },
-  { role: 'driver', label: 'Driver', passcode: '6666', shell: 'mobile' }
-];
+// Legacy passcode login exists for LOCAL DEVELOPMENT ONLY. The DEV ternary lets
+// the production bundler eliminate this branch entirely, so no passcode string
+// ships in a production build (main.tsx additionally hard-locks prod without env).
+const roleOptions: { role: Role; label: string; passcode: string; shell: 'desktop' | 'mobile' }[] = import.meta.env.DEV
+  ? [
+      { role: 'owner', label: 'Owner', passcode: '0000', shell: 'desktop' },
+      { role: 'account', label: 'Account', passcode: '0000', shell: 'desktop' },
+      { role: 'warehouse', label: 'Warehouse', passcode: '4444', shell: 'mobile' },
+      { role: 'driver', label: 'Driver', passcode: '6666', shell: 'mobile' }
+    ]
+  : [];
 
 const desktopTabs: { id: DesktopTab; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -307,6 +312,13 @@ function DesktopShell({ role, tab, setTab, onLogout, children }: {
             <button type="button" onClick={onLogout}>Logout</button>
           </div>
         </header>
+        <nav className="desktop-mobile-nav" aria-label="Sections">
+          {availableDesktopTabs(role).map((item) => (
+            <button key={item.id} type="button" className={cls(tab === item.id && 'active')} onClick={() => setTab(item.id)}>
+              {item.id === 'ordermentum' ? 'Inbox' : item.id === 'reconciliation' ? 'Accounts' : item.label}
+            </button>
+          ))}
+        </nav>
         <main className="desktop-content">{children}</main>
       </section>
     </div>
@@ -1082,6 +1094,9 @@ export function App() {
   if (authEnabled && supabase && path === '/auth/set-password') return <SetPasswordScreen supabase={supabase} />;
 
   if (!authEnabled) {
+    // Belt-and-braces: main.tsx already hard-locks production without Supabase
+    // config; this keeps the legacy flow out of any non-DEV render path too.
+    if (!import.meta.env.DEV) return <LoadingScreen message="Secure configuration required" />;
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
     if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
     if (legacyRole === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} /></Suspense>;

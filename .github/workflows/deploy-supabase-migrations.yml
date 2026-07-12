@@ -18,8 +18,202 @@ concurrency:
   group: ecoflow-supabase-production-migrations
   cancel-in-progress: false
 
+env:
+  SUPABASE_CLI_VERSION: 2.107.0
+
 jobs:
+  # ------------------------------------------------------------------
+  # Gate: prove pending migrations apply cleanly against a copy of the
+  # REAL production schema before anything touches production. This is
+  # the failure class that previously took four production pushes to
+  # shake out ("migration does not match production schema").
+  # ------------------------------------------------------------------
+  shadow-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      SHADOW_DB_URL: postgresql://postgres:shadow@localhost:54329/postgres
+      DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    services:
+      shadow:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: shadow
+          POSTGRES_DB: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Publish pending migration status
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context='Supabase migrations' \
+            -f description='Shadow verification and production deployment are running' \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Require production migration credentials
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+      - name: Isolate legacy SQL archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ecoflow-legacy-migrations
+          shopt -s nullglob
+          for file in supabase/migrations/*.sql; do
+            base="$(basename "$file")"
+            if [[ "$base" == '20260624_remote_production_baseline.sql' ]] || [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              continue
+            fi
+            mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
+          done
+      - name: Install Supabase CLI
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+      - name: Resolve pooler database URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
+          ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
+          SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+      - name: Compute pending migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if supabase migration list --db-url "$SUPABASE_DB_URL" > /tmp/migration-list.txt 2>&1; then
+              break
+            fi
+            echo "migration list attempt $attempt failed; retrying in 20s"
+            cat /tmp/migration-list.txt
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          python3 - <<'PY'
+          import re
+          pending = []
+          for line in open('/tmp/migration-list.txt', encoding='utf-8', errors='replace'):
+              cells = [cell.strip() for cell in line.split('|')]
+              if len(cells) >= 2 and re.fullmatch(r'\d{14}', cells[0]) and not cells[1]:
+                  pending.append(cells[0])
+          open('/tmp/pending-versions.txt', 'w').write('\n'.join(pending))
+          print('pending migrations:', pending or 'none')
+          PY
+      - name: Prepare shadow database shims
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r text;
+          begin
+            foreach r in array array['anon','authenticated','service_role','authenticator','supabase_admin','supabase_auth_admin','supabase_storage_admin','supabase_read_only_user','dashboard_user','pgbouncer'] loop
+              if not exists (select 1 from pg_roles where rolname = r) then
+                execute format('create role %I nologin', r);
+              end if;
+            end loop;
+          end $$;
+          create extension if not exists pgcrypto;
+          create extension if not exists "uuid-ossp";
+          create schema if not exists extensions;
+          create schema if not exists auth;
+          create schema if not exists storage;
+          create schema if not exists vault;
+          create schema if not exists graphql_public;
+          create table if not exists auth.users (
+            id uuid primary key default gen_random_uuid(),
+            email text,
+            raw_user_meta_data jsonb,
+            created_at timestamptz default now()
+          );
+          create or replace function auth.uid() returns uuid language sql stable
+            as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          create or replace function auth.role() returns text language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon') $$;
+          create or replace function auth.jwt() returns jsonb language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
+          create table if not exists storage.buckets (
+            id text primary key,
+            name text,
+            public boolean default false,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now()
+          );
+          create table if not exists storage.objects (
+            id uuid primary key default gen_random_uuid(),
+            bucket_id text,
+            name text,
+            owner uuid,
+            owner_id text,
+            version text,
+            metadata jsonb,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now(),
+            last_accessed_at timestamptz,
+            path_tokens text[] generated always as (string_to_array(name, '/')) stored
+          );
+          create or replace function storage.foldername(name text) returns text[] language sql immutable
+            as $$ select (string_to_array(name, '/'))[1:coalesce(array_length(string_to_array(name, '/'), 1), 1) - 1] $$;
+          grant usage on schema auth, storage, extensions to anon, authenticated, service_role;
+          alter table storage.objects enable row level security;
+          SQL
+      - name: Dump production schema
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if supabase db dump --db-url "$SUPABASE_DB_URL" -f /tmp/prod-schema.sql; then
+              break
+            fi
+            echo "schema dump attempt $attempt failed; retrying in 20s"
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          wc -c /tmp/prod-schema.sql
+      - name: Load production schema into shadow
+        shell: bash
+        run: |
+          # Grant/ownership noise for platform-managed roles is tolerated here;
+          # the hard gate is the pending-migration application step below.
+          set +e
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=0 -f /tmp/prod-schema.sql > /tmp/schema-load.log 2>&1
+          errors=$(grep -c '^psql:.*ERROR' /tmp/schema-load.log || true)
+          echo "schema load completed with $errors tolerated error line(s)"
+          grep '^psql:.*ERROR' /tmp/schema-load.log | sort | uniq -c | sort -rn | head -15 || true
+          exit 0
+      - name: Apply pending migrations to shadow (gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s /tmp/pending-versions.txt ]; then
+            echo 'No pending migrations - shadow gate passes trivially.'
+            exit 0
+          fi
+          while IFS= read -r version; do
+            file=$(ls supabase/migrations/"$version"_*.sql)
+            echo "=== applying $file to shadow ==="
+            psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$file"
+          done < /tmp/pending-versions.txt
+          echo 'All pending migrations applied cleanly against the production schema copy.'
+
   deploy:
+    needs: shadow-verify
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
@@ -30,21 +224,8 @@ jobs:
       SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
       DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Publish pending migration status
-        shell: bash
-        run: |
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -f state='pending' \
-            -f context='Supabase migrations' \
-            -f description='Production database and functions deployment is running' \
-            -f target_url="$DEPLOYMENT_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Require production migration credentials
-        shell: bash
-        run: |
-          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
-          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
       - name: Verify linked production project
         shell: bash
         run: |
@@ -82,7 +263,9 @@ jobs:
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
       - name: Install Supabase CLI
-        run: npm install --global supabase@2.107.0
+        # Pinned: 2.109.x ships a rewritten PgClient that times out against the
+        # session pooler even when raw TCP is open. 2.107.0 is proven to connect.
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
       - name: Link production project
         shell: bash
         run: |
@@ -91,6 +274,8 @@ jobs:
       - name: Resolve pooler database URL
         shell: bash
         run: |
+          # GitHub runners have no IPv6, and the direct db.<ref>.supabase.co host is
+          # IPv6-only - connections time out. The session pooler host is IPv4.
           set -euo pipefail
           POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
@@ -101,6 +286,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
           for attempt in 1 2 3; do
             if supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
@@ -148,11 +334,16 @@ jobs:
         run: |
           set -o pipefail
           supabase functions deploy delivery-notification-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
-      - name: Deploy account statement dispatch
+      - name: Deploy statement dispatch
         shell: bash
         run: |
           set -o pipefail
           supabase functions deploy statement-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
+      - name: Deploy storage retention
+        shell: bash
+        run: |
+          set -o pipefail
+          supabase functions deploy storage-retention --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
@@ -161,21 +352,90 @@ jobs:
           path: supabase-migration-deploy.log
           if-no-files-found: warn
           retention-days: 30
+
+  # ------------------------------------------------------------------
+  # Post the final commit status for the DB deployment, then verify the
+  # frontend is not left behind: when this commit changed frontend files
+  # and Vercel did not deploy it (e.g. rate limit), flag the skew loudly.
+  # ------------------------------------------------------------------
+  finalize:
+    needs: [shadow-verify, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHADOW_RESULT: ${{ needs.shadow-verify.result }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+    steps:
       - name: Publish final migration status
-        if: always()
         shell: bash
         env:
-          JOB_RESULT: ${{ job.status }}
+          GH_TOKEN_WRITE: ${{ github.token }}
         run: |
-          if [ "$JOB_RESULT" = 'success' ]; then
+          if [ "$SHADOW_RESULT" = 'success' ] && [ "$DEPLOY_RESULT" = 'success' ]; then
             STATE='success'
-            DESCRIPTION='Production database and Edge Functions deployed successfully'
+            DESCRIPTION='Shadow verification passed; production database and Edge Functions deployed'
+          elif [ "$SHADOW_RESULT" != 'success' ]; then
+            STATE='failure'
+            DESCRIPTION='Shadow verification failed - pending migrations do not apply to the production schema'
           else
             STATE='failure'
             DESCRIPTION='Production Supabase deployment failed; inspect workflow log artifact'
           fi
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+          GH_TOKEN="$GH_TOKEN_WRITE" gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$STATE" \
             -f context='Supabase migrations' \
+            -f description="$DESCRIPTION" \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify frontend release is not behind the database
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          else
+            CHANGED=$(git ls-tree -r --name-only HEAD)
+          fi
+          if echo "$CHANGED" | grep -Eq '^(src/|public/|index\.html|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|vercel\.json)'; then
+            FRONTEND_CHANGED=yes
+          else
+            FRONTEND_CHANGED=no
+          fi
+          echo "frontend files changed in this commit: $FRONTEND_CHANGED"
+
+          VERCEL_STATE=none
+          for i in $(seq 1 20); do
+            VERCEL_STATE=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '[.statuses[] | select(.context == "Vercel")][0].state // "none"')
+            echo "poll $i: Vercel status = $VERCEL_STATE"
+            case "$VERCEL_STATE" in
+              success|failure|error) break ;;
+            esac
+            sleep 30
+          done
+
+          if [ "$VERCEL_STATE" = 'success' ]; then
+            STATE='success'
+            DESCRIPTION='Frontend and database deployed from the same commit'
+          elif [ "$FRONTEND_CHANGED" = 'no' ]; then
+            STATE='success'
+            DESCRIPTION="No frontend changes in this commit; Vercel state '$VERCEL_STATE' does not create skew"
+          else
+            STATE='failure'
+            DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' while this commit changes frontend files. Redeploy the frontend before operating."
+          fi
+          echo "$DESCRIPTION"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" \
+            -f context='Release sync' \
             -f description="$DESCRIPTION" \
             -f target_url="$DEPLOYMENT_STATUS_URL"

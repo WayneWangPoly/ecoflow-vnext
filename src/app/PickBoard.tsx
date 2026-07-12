@@ -26,6 +26,7 @@ import {
 import type { BulkPickTask, PickState, PickTaskState } from '@/domain/pickPlan';
 import type { BusinessDay, ImportedOrder } from '@/domain/types';
 import { loadWarehouseLocationItems, pickWarehouseStock, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
+import { getPickSyncErrorDetail } from './usePickSync';
 import { BoxChip } from './Brand';
 import { LabelSheet } from './LabelSheet';
 import './PickBoardWarehouse.css';
@@ -267,11 +268,15 @@ function ShortSheet({ task, onSave, onClose }: {
 
 type PickView = 'bulk' | 'sort' | 'stops';
 
-export type PickBoardSyncStatus = 'off' | 'connecting' | 'live' | 'error';
+export type PickBoardSyncStatus = 'off' | 'connecting' | 'live' | 'error' | 'denied';
 
 function SyncChip({ status }: { status: PickBoardSyncStatus }) {
-  const label = status === 'live' ? 'Live sync' : status === 'connecting' ? 'Connecting…' : status === 'error' ? 'Sync error' : 'Local only';
-  return <span className={cls('sync-chip', `sync-chip-${status}`)}>{label}</span>;
+  const label = status === 'live' ? 'Live sync'
+    : status === 'connecting' ? 'Connecting…'
+    : status === 'error' ? 'Sync error'
+    : status === 'denied' ? 'No write access'
+    : 'Local only';
+  return <span className={cls('sync-chip', `sync-chip-${status}`)} title={status === 'error' || status === 'denied' ? getPickSyncErrorDetail() : undefined}>{label}</span>;
 }
 
 export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off' }: {

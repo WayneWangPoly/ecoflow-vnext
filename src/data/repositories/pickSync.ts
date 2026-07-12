@@ -45,7 +45,11 @@ async function rest<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers
     }
   });
-  if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
+  if (!response.ok) {
+    const failure = new Error(`Supabase ${response.status}: ${await response.text()}`) as Error & { status?: number };
+    failure.status = response.status;
+    throw failure;
+  }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;

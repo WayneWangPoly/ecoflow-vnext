@@ -10,7 +10,10 @@ type DocumentRow={id:string;statement_number:string;store_id:string;store_name:s
 type LineRow={invoice_number:string|null;order_number:string|null;invoice_date:string|null;due_date:string|null;original_amount:number;allocated_amount:number;outstanding_amount:number;line_status:string};
 function json(status:number,body:unknown){return new Response(JSON.stringify(body),{status,headers:{...corsHeaders,'Content-Type':'application/json'}});}
 function clean(value:unknown){return String(value??'').trim();}
-function ascii(value:unknown){return String(value??'').normalize('NFKD').replace(/[^\x20-\x7E]/g,'?');}
+/** PDF text uses the built-in Helvetica font (Latin only). Strip diacritics first
+ * so "Café Athéna" renders as "Cafe Athena" instead of "Caf? Ath?na"; only
+ * genuinely non-Latin characters fall back to '?'. */
+function ascii(value:unknown){return String(value??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7E]/g,'?');}
 function pdfEscape(value:string){return ascii(value).replaceAll('\\','\\\\').replaceAll('(','\\(').replaceAll(')','\\)');}
 function money(value:unknown){const amount=Number(value)||0;return `$${amount.toFixed(2)}`;}
 function displayDate(value:string|null|undefined){if(!value)return'-';const date=new Date(`${value}T12:00:00+09:30`);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Adelaide',day:'2-digit',month:'short',year:'numeric'}).format(date);}
@@ -38,6 +41,7 @@ function buildPdf(document:DocumentRow,lines:LineRow[]){
       return `${invoice} ${displayDate(line.invoice_date).padEnd(14)} ${displayDate(line.due_date).padEnd(13)} ${money(line.original_amount).padStart(11)} ${money(line.allocated_amount).padStart(15)} ${money(line.outstanding_amount).padStart(13)}`;
     }),
     '',
+    'All amounts are in AUD and GST inclusive where applicable.',
     'Please quote the statement number and invoice number with your payment.',
     'For account queries, reply to the EcoFlow Packaging accounts team.',
   ];
@@ -86,7 +90,7 @@ Deno.serve(async(req)=>{
   if(!pdf){const{data:file,error:downloadError}=await admin.storage.from('account-statements').download(storagePath!);if(downloadError||!file)return json(500,{error:'STATEMENT_PDF_DOWNLOAD_FAILED',details:downloadError?.message});pdf=new Uint8Array(await file.arrayBuffer());}
   const{data:signed,error:signedError}=await admin.storage.from('account-statements').createSignedUrl(storagePath!,60*60*24*30);if(signedError)return json(500,{error:'STATEMENT_SIGNED_URL_FAILED',details:signedError.message});
   const greeting=clean(contact?.contact_name)?`Hi ${clean(contact.contact_name)},`:`Hi ${document.store_name} team,`;
-  const html=`<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#17362b;line-height:1.55"><h1>EcoFlow Packaging statement</h1><p>${greeting}</p><p>Please find attached statement <strong>${document.statement_number}</strong> for ${displayDate(document.period_start)} to ${displayDate(document.period_end)}.</p><p style="font-size:20px"><strong>Amount due: ${money(document.closing_balance)}</strong></p><p><a href="${signed.signedUrl}">Open statement PDF</a> (link valid for 30 days).</p><p>Thank you for your business.<br>EcoFlow Packaging</p></div>`;
+  const html=`<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#17362b;line-height:1.55"><h1>EcoFlow Packaging statement</h1><p>${greeting}</p><p>Please find attached statement <strong>${document.statement_number}</strong> for ${displayDate(document.period_start)} to ${displayDate(document.period_end)}.</p><p style="font-size:20px"><strong>Amount due: ${money(document.closing_balance)}</strong></p><p><a href="${signed.signedUrl}">Open statement PDF</a> (link valid for 30 days).</p><p style="font-size:12px;color:#5b6b62">All amounts are in AUD and GST inclusive where applicable.</p><p>Thank you for your business.<br>EcoFlow Packaging</p></div>`;
   const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from:`${sender} <${fromEmail}>`,to:[recipient],subject:`EcoFlow Packaging statement ${document.statement_number}`,html,reply_to:replyTo,attachments:[{filename:`${document.statement_number}.pdf`,content:toBase64(pdf)}]})});
   const responseText=await response.text();let provider:Record<string,unknown>={};try{provider=responseText?JSON.parse(responseText):{};}catch{provider={raw:responseText};}
   if(!response.ok){const detail=`Email provider ${response.status}: ${responseText.slice(0,500)}`;await admin.from('ecoflow_statement_documents').update({document_status:'FAILED',recipient_email:recipient,error_message:detail}).eq('id',statementId);return json(502,{error:'STATEMENT_EMAIL_FAILED',details:detail});}

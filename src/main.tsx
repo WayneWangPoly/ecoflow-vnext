@@ -2,9 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
-import { FieldModeEnhancer } from './FieldModeEnhancer';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
-import { TextEncodingRepair } from './TextEncodingRepair';
 import { observeBody } from './lib/domObserver';
 import { pruneEcoflowStorage } from './domain/driverRun';
 import { hasSupabaseAuthClient } from './lib/supabaseClient';
@@ -22,6 +20,9 @@ pruneEcoflowStorage();
 
 // Surface modules are isolated so each device downloads only its operational UI.
 // Warehouse Map is a protected route feature, not an authentication role.
+// FieldModeEnhancer serves every surface but only after a shell exists, so it can
+// load async - this keeps its repositories out of the critical first paint chunk.
+const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((m) => ({ default: m.FieldModeEnhancer })));
 const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
 const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
@@ -110,8 +111,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       ) : (
         <>
           <ProductionWriteSafety />
-          <TextEncodingRepair />
-          <FieldModeEnhancer />
+          <Suspense fallback={null}>
+            <FieldModeEnhancer />
+          </Suspense>
           <SurfaceModuleGate />
           {isWarehouseMapRoute ? (
             <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}>

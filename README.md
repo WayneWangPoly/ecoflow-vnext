@@ -1,12 +1,26 @@
-# EcoFlow SKU Intelligence + Barcode Master Patch
+# EcoFlow — Packaging Delivery OS
 
-Files:
+Operations platform for a fast-paced small packaging warehouse: Ordermentum
+order intake, release gating, barcode-verified picking, multi-run delivery
+with proof-of-delivery, returns inspection, customer notifications, pricing
+and statements — across Owner/Admin, Account, Warehouse and Driver surfaces.
 
-- `supabase/migrations/20260704_sku_intelligence_barcode_master.sql`
-- `scripts/audit-sku-intelligence.mjs`
-- `scripts/confirm-sku-barcode.mjs`
-- `scripts/mark-sku-service-item.mjs`
-- `scripts/export-sku-activity-csv.mjs`
-- `docs/README_SKU_INTELLIGENCE_BARCODE_MASTER.md`
+## Documentation
 
-Apply the migration in Supabase SQL Editor, then run the audit script.
+| Doc | What it covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Surfaces, enhancer layer, shared day state, RLS write matrix, edge functions |
+| [docs/OPERATIONS-RUNBOOK.md](docs/OPERATIONS-RUNBOOK.md) | Incident playbooks (deploy pipeline, DB connections, Vercel skew), storage retention, field-device issues |
+| [docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md) | Push discipline, shadow verification gate, release-sync status, local UI smoke testing |
+| docs/archive/ | Historical per-feature write-ups |
+
+## Quick start (development)
+
+```bash
+npm install
+npm run dev            # requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local
+```
+
+Production deploys: Vercel builds the frontend on push; GitHub Actions
+(`deploy-supabase-migrations.yml`) shadow-verifies and applies database
+migrations, then deploys all edge functions. See RELEASE-PROCESS.md.
