@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
+import {
+  WAREHOUSE_LAYOUT_STORAGE_KEY,
+  WAREHOUSE_SITE_CODE,
+  readLocalWarehouseLayout,
+  writeLocalWarehouseLayout,
+} from '@/lib/warehouseLayoutMetadata';
 import { supabase } from '@/lib/supabaseClient';
 
-const STORAGE_KEY = 'ecoflow-warehouse-layout-v1';
-const SITE_CODE = 'SITE-01';
+const STORAGE_KEY = WAREHOUSE_LAYOUT_STORAGE_KEY;
+const SITE_CODE = WAREHOUSE_SITE_CODE;
 
 type LayoutSyncState = 'loading' | 'cloud' | 'saving' | 'local' | 'conflict' | 'error';
 
@@ -14,25 +20,30 @@ function layoutElements() {
 }
 
 function elementKey(element: HTMLElement, index: number) {
-  const label = element.querySelector('span')?.textContent?.trim() || element.textContent?.trim() || `element-${index}`;
+  const rackCode = element.dataset.rackCode || element.querySelector<HTMLElement>('span')?.dataset.rackCode;
+  const label = rackCode || element.querySelector('span')?.textContent?.trim() || element.textContent?.trim() || `element-${index}`;
   const kind = element.classList.contains('floor-rack') ? 'rack' : 'static';
   return `${kind}:${label.replace(/\s+/g, '-').toLowerCase()}`;
 }
 
 function currentLayout() {
-  return Object.fromEntries(layoutElements().map((element, index) => {
+  const base = readLocalWarehouseLayout();
+  const geometry = Object.fromEntries(layoutElements().map((element, index) => {
     const key = element.dataset.layoutKey || elementKey(element, index);
     element.dataset.layoutKey = key;
-    return [key, { left: element.style.left, top: element.style.top, width: element.style.width, height: element.style.height }];
+    return [key, {
+      ...(base[key] || {}),
+      left: element.style.left,
+      top: element.style.top,
+      width: element.style.width,
+      height: element.style.height,
+    }];
   })) as WarehouseLayoutState;
+  return { ...base, ...geometry } as WarehouseLayoutState;
 }
 
 function storedLayout(): WarehouseLayoutState {
-  try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') as WarehouseLayoutState;
-  } catch {
-    return {};
-  }
+  return readLocalWarehouseLayout();
 }
 
 function applyLayout(layout: WarehouseLayoutState) {
@@ -41,10 +52,10 @@ function applyLayout(layout: WarehouseLayoutState) {
     element.dataset.layoutKey = key;
     const box = layout[key];
     if (!box) return;
-    element.style.left = box.left;
-    element.style.top = box.top;
-    element.style.width = box.width;
-    element.style.height = box.height;
+    if (box.left) element.style.left = box.left;
+    if (box.top) element.style.top = box.top;
+    if (box.width) element.style.width = box.width;
+    if (box.height) element.style.height = box.height;
   });
 }
 
@@ -100,7 +111,7 @@ export function WarehouseMapOwnerEdit() {
           if (row?.layout_json && Object.keys(row.layout_json).length) {
             cloudLayoutRef.current = row.layout_json;
             setLayoutVersion(Number(row.layout_version));
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(row.layout_json));
+            writeLocalWarehouseLayout(row.layout_json);
             if (!editingRef.current) applyLayout(row.layout_json);
           }
           setSyncState(row ? 'cloud' : 'local');
@@ -188,17 +199,18 @@ export function WarehouseMapOwnerEdit() {
   }
 
   function nudge(property: keyof WarehouseLayoutBox, amount: number) {
+    if (!['left', 'top', 'width', 'height'].includes(property)) return;
     const element = selectedElement();
     if (!element) return;
-    const current = percent(element.style[property]);
+    const current = percent(String(element.style[property as 'left' | 'top' | 'width' | 'height']));
     const minimum = property === 'width' || property === 'height' ? 2 : 0;
     const maximum = property === 'width' || property === 'height' ? 96 : 98;
-    element.style[property] = `${Math.max(minimum, Math.min(maximum, current + amount)).toFixed(2)}%`;
+    element.style[property as 'left' | 'top' | 'width' | 'height'] = `${Math.max(minimum, Math.min(maximum, current + amount)).toFixed(2)}%`;
   }
 
   async function save() {
     const layout = currentLayout();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    writeLocalWarehouseLayout(layout);
     if (!supabase) {
       cloudLayoutRef.current = layout;
       setSyncState('local');
@@ -211,6 +223,7 @@ export function WarehouseMapOwnerEdit() {
     try {
       const saved = await saveWarehouseLayout({ siteCode: SITE_CODE, layout, expectedVersion: layoutVersion });
       cloudLayoutRef.current = saved?.layout_json || layout;
+      writeLocalWarehouseLayout(cloudLayoutRef.current);
       setLayoutVersion(saved?.layout_version ?? layoutVersion);
       setSyncState('cloud');
       setEditing(false);
@@ -222,6 +235,7 @@ export function WarehouseMapOwnerEdit() {
   }
 
   function cancel() {
+    writeLocalWarehouseLayout(snapshotRef.current);
     applyLayout(snapshotRef.current);
     setEditing(false);
     setSelectedKey('');
@@ -241,7 +255,7 @@ export function WarehouseMapOwnerEdit() {
       const layout = row?.layout_json || systemLayoutRef.current;
       cloudLayoutRef.current = layout;
       setLayoutVersion(row?.layout_version ?? null);
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+      writeLocalWarehouseLayout(layout);
       applyLayout(layout);
       setSyncState(row ? 'cloud' : 'local');
       setEditing(false);
@@ -265,7 +279,7 @@ export function WarehouseMapOwnerEdit() {
           <div>
             <span>OWNER LAYOUT CONTROL</span>
             <strong>{selectedKey ? selectedKey.replace(':', ' · ') : 'Select a rack or area'}</strong>
-            <small>{syncLabel(syncState, layoutVersion)} · stock and location codes are not changed.</small>
+            <small>{syncLabel(syncState, layoutVersion)} · rack labels may change, but stock location codes remain fixed.</small>
           </div>
           <div className="warehouse-layout-nudge">
             <button type="button" onClick={() => nudge('top', -0.5)}>↑</button>

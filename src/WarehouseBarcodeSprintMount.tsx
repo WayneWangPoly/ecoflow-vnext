@@ -13,9 +13,14 @@ const modeCopy: Record<WarehouseOpsMode, { label: string; helper: string }> = {
   barcode: { label: 'Barcode setup', helper: 'Master data, not daily receiving' },
 };
 
+function requestedMode(): WarehouseOpsMode {
+  const value = new URLSearchParams(window.location.search).get('mode')?.toLowerCase();
+  return value === 'barcode' || value === 'returns' ? value : 'receive';
+}
+
 export function WarehouseBarcodeSprintMount() {
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [mode, setMode] = useState<WarehouseOpsMode>('receive');
+  const [mode, setMode] = useState<WarehouseOpsMode>(requestedMode);
 
   useEffect(() => {
     function locate() {

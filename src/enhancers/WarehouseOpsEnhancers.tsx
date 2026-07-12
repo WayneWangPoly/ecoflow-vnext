@@ -2,6 +2,7 @@ import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
+import { WarehouseBarcodeTargetBridge } from '../WarehouseBarcodeTargetBridge';
 import { WarehouseCameraScanner } from '../WarehouseCameraScanner';
 import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
 import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
@@ -22,6 +23,7 @@ export default function WarehouseOpsEnhancers() {
       <PickTaskOwnership />
       <StageAndLoadExecution />
       <WarehouseBarcodeSprintMount />
+      <WarehouseBarcodeTargetBridge />
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <WarehouseCameraScanner />

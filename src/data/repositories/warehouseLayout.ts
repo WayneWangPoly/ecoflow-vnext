@@ -1,7 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 
-export type WarehouseLayoutBox = { left: string; top: string; width: string; height: string };
+export type WarehouseLayoutBox = {
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+  displayName?: string;
+  categories?: string[];
+  binOrder?: string[];
+  skuSlots?: number;
+};
 export type WarehouseLayoutState = Record<string, WarehouseLayoutBox>;
 export type WarehouseLayoutRow = {
   site_code: string;

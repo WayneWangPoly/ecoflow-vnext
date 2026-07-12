@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 
 const PUTAWAY_REQUEST_EVENT = 'ecoflow:warehouse-putaway-request';
 
-type PutawayRequestEvent = CustomEvent<{ locationCode?: string }>;
+type PutawayRequestEvent = CustomEvent<{ locationCode?: string; slotCount?: number; action?: string }>;
 
 function selectedLocationCode() {
   return document.querySelector<HTMLElement>('.location-detail-block > strong')?.textContent?.trim() || '';
@@ -13,6 +13,7 @@ function selectedLocationCode() {
 export function WarehouseMapPutawayControl() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [locationCode, setLocationCode] = useState('');
+  const [slotCount, setSlotCount] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -37,11 +38,15 @@ export function WarehouseMapPutawayControl() {
 
   useEffect(() => {
     function handlePutawayRequest(event: Event) {
-      const code = (event as PutawayRequestEvent).detail?.locationCode?.trim() || selectedLocationCode();
+      const detail = (event as PutawayRequestEvent).detail;
+      const code = detail?.locationCode?.trim() || selectedLocationCode();
       if (!code) return;
       setLocationCode(code);
+      setSlotCount(detail?.slotCount ?? null);
       window.localStorage.setItem('ecoflow-putaway-target', code);
-      setNotice(`${code} selected. Open Receive to scan or add the next SKU into this location.`);
+      setNotice(detail?.action === 'ADD_SKU_SLOT'
+        ? `${code}: another SKU position has been added${detail.slotCount ? ` (slot ${detail.slotCount})` : ''}. Scan the next SKU into this same location.`
+        : `${code} selected as the next controlled putaway location.`);
     }
     window.addEventListener(PUTAWAY_REQUEST_EVENT, handlePutawayRequest);
     return () => window.removeEventListener(PUTAWAY_REQUEST_EVENT, handlePutawayRequest);
@@ -62,19 +67,22 @@ export function WarehouseMapPutawayControl() {
 
   if (!host) return null;
   const receiveHref = `/?role=warehouse&tab=receive&location=${encodeURIComponent(locationCode)}`;
+  const barcodeHref = `/?role=warehouse&tab=receive&mode=barcode&location=${encodeURIComponent(locationCode)}`;
   return createPortal(
     <section className="warehouse-putaway-control">
-      <div className="warehouse-map-card-head compact-head"><h2>Putaway control</h2><span>Controlled stock entry</span></div>
+      <div className="warehouse-map-card-head compact-head"><h2>Location SKU control</h2><span>First stocktake and putaway</span></div>
       <div className="warehouse-putaway-target">
         <span>SELECTED LOCATION</span>
         <strong>{locationCode || 'Choose a rack position'}</strong>
-        <p>All stock increases still go through the controlled Receive batch. The + button only selects this location, so ledger posting, barcode checks and receiving approval remain intact.</p>
+        <p>The + button adds another SKU position inside this physical cell; it does not add stock quantity. All stock increases still go through the controlled Receive batch. Use Barcode setup for the first warehouse scan, then Receive for real incoming stock so barcode checks and the stock ledger remain controlled.</p>
+        {slotCount ? <small>{slotCount} SKU positions are now configured for this cell.</small> : null}
       </div>
       {notice ? <div className="warehouse-putaway-notice" role="status">{notice}</div> : null}
       <div className="warehouse-putaway-actions">
         <button type="button" disabled={!locationCode} onClick={() => void copyLocation()}>Copy location</button>
         <button type="button" disabled={!locationCode} onClick={useForPutaway}>Set putaway target</button>
-        <a className={locationCode ? 'primary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? receiveHref : undefined}>Open Receive with target</a>
+        <a className={locationCode ? 'primary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? barcodeHref : undefined}>Open Barcode setup</a>
+        <a className={locationCode ? 'primary secondary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? receiveHref : undefined}>Open Receive</a>
       </div>
     </section>,
     host,
