@@ -42,12 +42,30 @@ type SurfaceGroups = {
 };
 
 function detectDesktopRole(): DesktopRole {
+  const desktop = document.querySelector<HTMLElement>('.desktop-app');
+  if (!desktop) return null;
+
+  // Brand-lockup styling can legitimately replace the visible role subtitle with
+  // "PACKAGING". Role detection must therefore use durable capability markers,
+  // not depend on the presentation text of one branded span.
   const roleText = document.querySelector<HTMLElement>('.sidebar-brand span')?.textContent?.trim().toUpperCase() || '';
   if (roleText.includes('ACCOUNT')) return 'account';
   if (roleText.includes('OWNER') || roleText.includes('ADMIN')) return 'owner';
+
+  // Only Owner/Admin receives the workspace switcher.
+  if (desktop.querySelector('select[aria-label="Open workspace"]')) return 'owner';
+
+  const navLabels = new Set(
+    Array.from(desktop.querySelectorAll<HTMLButtonElement>('.sidebar-nav button'))
+      .map((button) => button.textContent?.trim().toUpperCase() || '')
+      .filter(Boolean),
+  );
+  if (navLabels.has('ORDERMENTUM') && navLabels.has('INVENTORY') && navLabels.has('LOGS')) return 'owner';
+  if (navLabels.has('STORES') && navLabels.has('SETTINGS')) return 'account';
+
   const stored = window.localStorage.getItem('ecoflow-role');
   if (stored === 'account') return 'account';
-  if (stored === 'owner') return 'owner';
+  if (stored === 'owner' || stored === 'admin') return 'owner';
   return null;
 }
 
