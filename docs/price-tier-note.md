@@ -1,0 +1,1 @@
+EcoFlow must not hardcode four mirrored Ordermentum groups. The live Ordermentum master is authoritative; owner configuration determines which groups are customer-facing tiers and which are default/base groups.

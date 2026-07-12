@@ -2,6 +2,7 @@ import { PriceMatrixWorkbench } from '../PriceMatrixWorkbench';
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { InventoryControlCenter } from '../InventoryControlCenter';
+import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
 import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
@@ -34,6 +35,7 @@ export default function OwnerEnhancers() {
       <PriceMatrixWorkbench />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
+      <InventoryMasterCatalog />
       <AccountsStatementWorkbench />
       <DeliveryRunHistory />
       <OrderPlatformExperience />

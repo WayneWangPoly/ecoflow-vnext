@@ -1,0 +1,85 @@
+/* Final row semantics: Top/Middle/Bottom + action, then plain A/B codes, then SKU cells. */
+.rack-bin-column .rack-level-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 34px !important;
+  grid-template-rows: auto auto auto !important;
+  gap: 5px 7px !important;
+  align-items: center !important;
+}
+
+.rack-bin-column .rack-level-row > .rack-level-label {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  align-self: center !important;
+}
+
+.warehouse-level-add-primary {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  border: 1px solid #91bba7 !important;
+  border-radius: 8px !important;
+  background: #eaf7ef !important;
+  color: #0d6545 !important;
+  font-size: 21px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+}
+
+.warehouse-level-add-primary:hover,
+.warehouse-level-add-primary:focus-visible {
+  border-color: #0d6545 !important;
+  background: #d9f0e3 !important;
+}
+
+.rack-bin-column .rack-half-code-row {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 6px !important;
+  margin: 0 !important;
+  padding: 0 2px !important;
+}
+
+.rack-bin-column .rack-half-code-row span {
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #40534a !important;
+  display: block !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+}
+
+.rack-bin-column .rack-half-code-row span:first-child {
+  grid-column: 1 !important;
+  text-align: left !important;
+}
+
+.rack-bin-column .rack-half-code-row span:nth-child(2) {
+  grid-column: 2 !important;
+  text-align: right !important;
+}
+
+.rack-bin-column .rack-half-code-row > button {
+  display: none !important;
+}
+
+.rack-bin-column .rack-half-row.warehouse-slot-row {
+  grid-column: 1 / -1 !important;
+  grid-row: 3 !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
