@@ -37,12 +37,14 @@ function setText(element: HTMLElement | null, value: string) {
   if (element && element.textContent !== value) element.textContent = value;
 }
 
+function operationalSkuSlots(layout: WarehouseLayoutState) {
+  return Object.fromEntries(Object.entries(layout).filter(([key]) => key.startsWith('sku-slots:'))) as WarehouseLayoutState;
+}
+
 function applyRackPresentation(layout: WarehouseLayoutState) {
-  const rackByCode = new Map<string, HTMLElement>();
   floorRacks().forEach((rack) => {
     const code = rackCodeFor(rack);
     if (!code) return;
-    rackByCode.set(code, rack);
     const presentation = rackPresentationFromLayout(layout, code);
     const display = presentation.displayName || code;
     rack.dataset.rackDisplayName = display;
@@ -115,6 +117,7 @@ export function WarehouseRackPresentationEditor() {
 
   useEffect(() => {
     if (window.location.pathname !== '/warehouse-map') return;
+    let preservedSlots: WarehouseLayoutState = {};
 
     function synchronise() {
       const layout = readLocalWarehouseLayout();
@@ -136,12 +139,26 @@ export function WarehouseRackPresentationEditor() {
       applyRackPresentation(layout);
     }
 
+    function captureReset(event: MouseEvent) {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.warehouse-layout-actions button');
+      if (button?.textContent?.trim() !== 'Reset to system') return;
+      preservedSlots = operationalSkuSlots(readLocalWarehouseLayout());
+      window.setTimeout(() => {
+        const layout = { ...readLocalWarehouseLayout(), ...preservedSlots };
+        writeLocalWarehouseLayout(layout);
+        applyRackPresentation(layout);
+        window.dispatchEvent(new CustomEvent(WAREHOUSE_LAYOUT_PRESENTATION_EVENT, { detail: { layout } }));
+      }, 0);
+    }
+
     const stop = observeBody(synchronise);
     window.addEventListener(WAREHOUSE_LAYOUT_PRESENTATION_EVENT, presentationChanged);
+    document.addEventListener('click', captureReset, true);
     synchronise();
     return () => {
       stop();
       window.removeEventListener(WAREHOUSE_LAYOUT_PRESENTATION_EVENT, presentationChanged);
+      document.removeEventListener('click', captureReset, true);
     };
   }, []);
 
