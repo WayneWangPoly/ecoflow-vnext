@@ -68,9 +68,25 @@ jobs:
           grep -q '"resourcesFailed": \[\]' /tmp/sku-master-refresh.log
           grep -q '\[products\] completed:' /tmp/sku-master-refresh.log
           grep -q '\[variants\] completed:' /tmp/sku-master-refresh.log
+      - name: Verify production projections
+        shell: bash
+        run: |
+          node scripts/diagnose-production-projections.mjs | tee /tmp/projection-diagnostics.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const report = JSON.parse(fs.readFileSync('/tmp/projection-diagnostics.json','utf8'));
+          const rawProducts = Number(report.raw_counts?.products?.count || 0);
+          const rawVariants = Number(report.raw_counts?.variants?.count || 0);
+          const projected = Number(report.projection_counts?.synced_sku_catalog?.count || 0);
+          const inventory = Number(report.projection_counts?.inventory_sku_control?.count || 0);
+          if (!rawProducts || !rawVariants) throw new Error(`Raw master incomplete: ${rawProducts} products / ${rawVariants} variants`);
+          if (!projected) throw new Error('Complete SKU projection still contains zero rows.');
+          if (!inventory) throw new Error('Inventory SKU control projection still contains zero rows.');
+          console.log(`Verified ${projected} unique SKUs and ${inventory} Inventory rows.`);
+          NODE
       - name: Publish successful master catalog status
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='success' -f context='Ordermentum master catalog' -f description='Price groups and complete SKU master refreshed' -f target_url="$STATUS_URL"
-      - name: Upload master sync logs
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='success' -f context='Ordermentum master catalog' -f description='Price groups and complete SKU master refreshed and verified' -f target_url="$STATUS_URL"
+      - name: Upload master sync and projection logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -78,7 +94,8 @@ jobs:
           path: |
             /tmp/price-group-refresh.log
             /tmp/sku-master-refresh.log
+            /tmp/projection-diagnostics.json
           retention-days: 30
       - name: Publish failed master catalog status
         if: failure()
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='failure' -f context='Ordermentum master catalog' -f description='Price group or SKU master refresh failed' -f target_url="$STATUS_URL"
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='failure' -f context='Ordermentum master catalog' -f description='Price group or SKU master projection failed' -f target_url="$STATUS_URL"
