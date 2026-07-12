@@ -1,7 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 
-export type WarehouseLayoutBox = { left: string; top: string; width: string; height: string };
+export type WarehouseLayoutBox = {
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+  /** Optional visual order for the large bin columns inside a rack face. */
+  binOrder?: string[];
+};
 export type WarehouseLayoutState = Record<string, WarehouseLayoutBox>;
 export type WarehouseLayoutRow = {
   site_code: string;
