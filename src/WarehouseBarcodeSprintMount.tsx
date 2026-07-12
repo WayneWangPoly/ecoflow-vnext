@@ -10,7 +10,7 @@ type WarehouseOpsMode = 'receive' | 'returns' | 'barcode';
 const modeCopy: Record<WarehouseOpsMode, { label: string; helper: string }> = {
   receive: { label: 'Receive', helper: 'Daily inbound stock batches' },
   returns: { label: 'Returns', helper: 'Inspect before stock release' },
-  barcode: { label: 'Barcode setup', helper: 'Master data, not daily receiving' },
+  barcode: { label: 'Barcode setup', helper: 'First stocktake: location, SKU and packaging barcode mapping' },
 };
 
 function requestedMode(): WarehouseOpsMode {
@@ -64,7 +64,22 @@ export function WarehouseBarcodeSprintMount() {
       </div>
       {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
       {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
-      {mode === 'barcode' ? <WarehouseBarcodeSprint /> : null}
+      {mode === 'barcode' ? (
+        <>
+          <section className="warehouse-first-stocktake-guide">
+            <span>FIRST STOCKTAKE · LOCATION FIRST</span>
+            <strong>Choose the physical cell, then scan every SKU and its packaging barcode.</strong>
+            <ol>
+              <li>Select or scan the A/B location.</li>
+              <li>Scan the SKU/item code stored there.</li>
+              <li>Scan carton, sleeve or unit barcode and record package size.</li>
+              <li>Count observed packages; post real opening stock only through the controlled stocktake/receiving action.</li>
+            </ol>
+            <small>The saved fixed shelf becomes the picker’s location hint. Warehouse Map and Pick therefore use the same SKU-to-location master.</small>
+          </section>
+          <WarehouseBarcodeSprint />
+        </>
+      ) : null}
     </>,
     host,
   );
