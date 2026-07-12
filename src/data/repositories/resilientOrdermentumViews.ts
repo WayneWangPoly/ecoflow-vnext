@@ -12,6 +12,7 @@ import {
   type SupabaseStoreSiteRow,
   type SupabaseSyncHealthRow,
 } from './supabaseOrdermentumViews';
+import { supabase } from '@/lib/supabaseClient';
 
 export { applySupabaseOrdermentumViews };
 
@@ -44,8 +45,10 @@ function hasSupabaseConfig() {
 async function supabaseFetch<T>(path: string): Promise<T> {
   const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
   const anonKey = envValue('VITE_SUPABASE_ANON_KEY');
+  const sessionResult = supabase ? await supabase.auth.getSession() : null;
+  const bearer = sessionResult?.data.session?.access_token || anonKey;
   const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, Accept: 'application/json' }
+    headers: { apikey: anonKey, Authorization: `Bearer ${bearer}`, Accept: 'application/json' }
   });
   if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
   return response.json() as Promise<T>;
@@ -57,17 +60,6 @@ async function optionalFetch<T>(path: string, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
-}
-
-async function firstAvailable<T>(paths: string[], fallback: T): Promise<T> {
-  for (const path of paths) {
-    try {
-      return await supabaseFetch<T>(path);
-    } catch {
-      // Keep trying. A new SQL view may be missing, invalid, or awaiting schema-cache reload.
-    }
-  }
-  return fallback;
 }
 
 function numberValue(value: unknown) {
@@ -175,40 +167,53 @@ function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: In
   return [...bySku.values()];
 }
 
+function activeOrderKeys(rows: SupabaseInboxRow[]) {
+  const keys = new Set<string>();
+  rows.forEach((row) => {
+    [row.raw_order_id, row.external_order_id, row.external_order_number, row.order_number, row.invoice_number, row.external_invoice_number]
+      .filter((value): value is string => Boolean(value))
+      .forEach((value) => keys.add(value));
+  });
+  return keys;
+}
+
+function scopeAndDedupeExceptions(rows: SupabaseExceptionRow[], inbox: SupabaseInboxRow[]) {
+  const keys = activeOrderKeys(inbox);
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const rowKeys = [row.raw_order_id, row.external_order_id, row.external_order_number, row.order_number, row.invoice_number]
+      .filter((value): value is string => Boolean(value));
+    if (!rowKeys.some((value) => keys.has(value))) return false;
+    const identity = `${row.order_number || row.external_order_number || row.external_order_id || row.raw_order_id}::${row.exception_type || row.message || 'exception'}`;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
 
-  const [inbox, exceptions, healthRows, lines, drafts, omOrders, skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
-    firstAvailable<SupabaseInboxRow[]>([
-      'v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=500',
-      'v_ecoflow_ordermentum_inbox?select=*&order=order_updated_at.desc&limit=500'
-    ], []),
-    firstAvailable<SupabaseExceptionRow[]>([
-      'v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=500',
-      'v_ecoflow_ordermentum_exceptions?select=*&order=detected_at.desc&limit=500'
-    ], []),
+  // Operational surfaces deliberately read only the active lifecycle views.
+  // Historical raw inbox/exception views remain in Supabase for audit and search,
+  // but must never be used as a fallback for today's warehouse/office workload.
+  const [inbox, rawExceptions, healthRows, lines, drafts, omOrders, skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
+    optionalFetch<SupabaseInboxRow[]>('v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=1000', []),
+    optionalFetch<SupabaseExceptionRow[]>('v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000', []),
     optionalFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*', []),
-    firstAvailable<SupabaseOrderLineRow[]>([
-      'v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=4000',
-      'v_ecoflow_ordermentum_order_lines?select=*&order=order_number.asc&limit=4000'
-    ], []),
-    firstAvailable<SupabaseDraftRow[]>([
-      'v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=1000',
-      'v_ecoflow_ordermentum_internal_order_drafts_v3?select=*&order=last_synced_at.desc&limit=1000'
-    ], []),
-    firstAvailable<SupabaseOmOrderRow[]>([
-      'v_ecoflow_ordermentum_ui_active_om_orders?select=*&order=updated_at.desc&limit=1000',
-      'om_orders?select=*&order=updated_at.desc&limit=1000'
-    ], []),
+    optionalFetch<SupabaseOrderLineRow[]>('v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000', []),
+    optionalFetch<SupabaseDraftRow[]>('v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000', []),
+    optionalFetch<SupabaseOmOrderRow[]>('v_ecoflow_ordermentum_ui_active_om_orders?select=*&order=updated_at.desc&limit=2000', []),
     optionalFetch<SupabaseSkuMasterRow[]>('v_ecoflow_app_sku_master?select=*&limit=3000', []),
     optionalFetch<InventoryLocationRow[]>('v_ecoflow_inventory_sku_control?select=sku,fixed_shelf,primary_barcode,control_status&limit=3000', []),
     optionalFetch<BarcodeShelfRow[]>('v_ecoflow_barcode_registry_review?select=sku,fixed_shelf&limit=3000', []),
     optionalFetch<LiveLocationBalanceRow[]>('v_ecoflow_inventory_sku_location_balance?select=sku,location,on_hand_location&limit=5000', []),
     optionalFetch<SupabaseStoreSiteRow[]>('ecoflow_store_sites?select=*&limit=1000', []),
     optionalFetch<SupabaseReleaseSummaryRow[]>('v_ecoflow_ordermentum_release_summary_v2?select=*', []),
-    optionalFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=500', [])
+    optionalFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=1000', [])
   ]);
 
+  const exceptions = scopeAndDedupeExceptions(rawExceptions, inbox);
   return {
     inbox: enrichInboxAmounts(inbox, lines),
     exceptions,
