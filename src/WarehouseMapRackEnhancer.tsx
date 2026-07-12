@@ -2,14 +2,23 @@ import { useEffect, useRef } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
+import {
+  WAREHOUSE_LAYOUT_STORAGE_KEY,
+  WAREHOUSE_SITE_CODE,
+  WAREHOUSE_SKU_SLOT_CHANGED_EVENT,
+  readLocalWarehouseLayout,
+  skuSlotCountsFromLayout,
+  writeLocalWarehouseLayout,
+} from '@/lib/warehouseLayoutMetadata';
 import { supabase } from '@/lib/supabaseClient';
 
-const STORAGE_KEY = 'ecoflow-warehouse-layout-v1';
-const SITE_CODE = 'SITE-01';
+const STORAGE_KEY = WAREHOUSE_LAYOUT_STORAGE_KEY;
+const SITE_CODE = WAREHOUSE_SITE_CODE;
 const BIN_PREFIX = 'bin-order:';
 
 type BinOrders = Record<string, string[]>;
 type LayoutOrderBox = WarehouseLayoutBox & { binOrder?: string[] };
+type SlotCounts = Record<string, number>;
 
 type RackContext = {
   card: HTMLElement;
@@ -19,19 +28,22 @@ type RackContext = {
 };
 
 function readStoredLayout(): WarehouseLayoutState {
-  try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') as WarehouseLayoutState;
-  } catch {
-    return {};
-  }
+  return readLocalWarehouseLayout();
 }
 
 function rackContext(): RackContext | null {
   const card = document.querySelector<HTMLElement>('.warehouse-rack-card');
   const grid = card?.querySelector<HTMLElement>('.rack-bin-grid');
-  const rackId = card?.querySelector<HTMLElement>('.warehouse-map-card-head h2')?.textContent?.trim().toUpperCase() || '';
+  const activeFloorRack = document.querySelector<HTMLElement>('.warehouse-floorplan .floor-rack.active');
+  const floorCode = activeFloorRack?.dataset.rackCode
+    || activeFloorRack?.querySelector<HTMLElement>('span')?.dataset.rackCode
+    || activeFloorRack?.querySelector<HTMLElement>('span')?.textContent?.trim();
+  const heading = card?.querySelector<HTMLElement>('.warehouse-map-card-head h2');
+  const rackId = (card?.dataset.rackId || heading?.dataset.rackCode || floorCode || heading?.textContent?.trim() || '').toUpperCase();
   const activeSide = card?.querySelector<HTMLButtonElement>('.rack-side-buttons button.active')?.textContent?.trim().toLowerCase();
   const side = activeSide === 'left' || activeSide === 'right' ? activeSide : 'front';
+  if (card && rackId) card.dataset.rackId = rackId;
+  if (heading && rackId) heading.dataset.rackCode = rackId;
   return card && grid && rackId ? { card, grid, rackId, side } : null;
 }
 
@@ -127,7 +139,28 @@ function locationRowsFor(rows: WarehouseLocationItemRow[], code: string) {
   return rows.filter((row) => row.location_code === code);
 }
 
-function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
+function appendOpenSlots(wrap: HTMLElement, code: string, startAt: number, openSlots: number) {
+  const visibleOpenSlots = Math.min(openSlots, 3);
+  for (let index = 0; index < visibleOpenSlots; index += 1) {
+    const number = startAt + index + 1;
+    const item = document.createElement('span');
+    item.className = 'slot-mini slot-placeholder';
+    const sku = document.createElement('b');
+    sku.textContent = `SKU slot ${number}`;
+    const helper = document.createElement('small');
+    helper.textContent = `Scan next SKU into ${code}`;
+    item.append(sku, helper);
+    wrap.appendChild(item);
+  }
+  if (openSlots > visibleOpenSlots) {
+    const more = document.createElement('span');
+    more.className = 'slot-more-items slot-more-open';
+    more.textContent = `+${openSlots - visibleOpenSlots} more open SKU slot${openSlots - visibleOpenSlots === 1 ? '' : 's'}`;
+    wrap.appendChild(more);
+  }
+}
+
+function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], slotCounts: SlotCounts) {
   const codeElement = cell.querySelector<HTMLElement>('.location-code');
   if (!codeElement) return;
   const code = codeElement.textContent?.trim() || '';
@@ -136,6 +169,8 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
 
   const locationRows = locationRowsFor(rows, code);
   const itemRows = itemRowsFor(rows, code);
+  const configuredSlots = Math.max(1, itemRows.length, Number(slotCounts[code.toUpperCase()] || 1));
+  cell.dataset.skuSlotCount = String(configuredSlots);
   const categories = Array.from(new Set(locationRows.map((row) => row.location_category || '').filter(Boolean)));
   const category = categories.join(' / ') || itemRows[0]?.product_name || '';
 
@@ -150,7 +185,8 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
 
   let wrap = cell.querySelector<HTMLElement>('.slot-item-wrap');
   const empty = cell.querySelector<HTMLElement>('.slot-empty');
-  if (!itemRows.length) {
+  const openSlots = Math.max(0, configuredSlots - itemRows.length);
+  if (!itemRows.length && configuredSlots === 1) {
     wrap?.remove();
     if (empty) {
       empty.classList.add('slot-empty-label');
@@ -167,7 +203,10 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
   wrap.classList.remove('split');
   empty?.remove();
 
-  const signature = JSON.stringify(itemRows.map((row) => [row.sku, row.quantity, row.sku_total_quantity, row.unit_level]));
+  const signature = JSON.stringify({
+    items: itemRows.map((row) => [row.sku, row.quantity, row.sku_total_quantity, row.unit_level]),
+    configuredSlots,
+  });
   if (wrap.dataset.signature === signature) return;
   wrap.dataset.signature = signature;
   wrap.replaceChildren();
@@ -191,6 +230,7 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[]) {
     more.textContent = `+${itemRows.length - 3} more SKU${itemRows.length - 3 === 1 ? '' : 's'}`;
     wrap.appendChild(more);
   }
+  if (openSlots > 0) appendOpenSlots(wrap, code, itemRows.length, openSlots);
 }
 
 function ensureAddButton(halfRow: HTMLElement, cell: HTMLElement) {
@@ -214,7 +254,7 @@ function ensureAddButton(halfRow: HTMLElement, cell: HTMLElement) {
   halfRow.classList.add('warehouse-slot-row');
 }
 
-function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders) {
+function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders, slotCounts: SlotCounts) {
   applyVisibleOrder(orders);
   const context = rackContext();
   if (!context) return;
@@ -244,7 +284,7 @@ function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders
       });
 
       cells.forEach((cell) => {
-        decorateCell(cell, rows);
+        decorateCell(cell, rows, slotCounts);
         ensureAddButton(halfRow, cell);
       });
     });
@@ -253,7 +293,7 @@ function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders
 
 async function persistOrders(orders: BinOrders) {
   const localLayout = mergeOrders(readStoredLayout(), orders);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localLayout));
+  writeLocalWarehouseLayout(localLayout);
   if (!supabase) return;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -261,7 +301,7 @@ async function persistOrders(orders: BinOrders) {
     const merged = mergeOrders(row?.layout_json || localLayout, orders);
     try {
       const saved = await saveWarehouseLayout({ siteCode: SITE_CODE, layout: merged, expectedVersion: row?.layout_version ?? null });
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved?.layout_json || merged));
+      writeLocalWarehouseLayout(saved?.layout_json || merged);
       return;
     } catch (error) {
       if (attempt === 1 || !/LAYOUT_VERSION_CONFLICT/i.test(error instanceof Error ? error.message : String(error))) throw error;
@@ -271,7 +311,9 @@ async function persistOrders(orders: BinOrders) {
 
 export function WarehouseMapRackEnhancer() {
   const rowsRef = useRef<WarehouseLocationItemRow[]>([]);
-  const ordersRef = useRef<BinOrders>(ordersFromLayout(readStoredLayout()));
+  const initialLayout = readStoredLayout();
+  const ordersRef = useRef<BinOrders>(ordersFromLayout(initialLayout));
+  const slotCountsRef = useRef<SlotCounts>(skuSlotCountsFromLayout(initialLayout));
   const snapshotRef = useRef<BinOrders>({});
   const editingRef = useRef(false);
   const activeColumnRef = useRef<HTMLElement | null>(null);
@@ -282,17 +324,18 @@ export function WarehouseMapRackEnhancer() {
     void loadWarehouseLocationItems()
       .then((rows) => {
         rowsRef.current = rows;
-        decorateVisibleRack(rowsRef.current, ordersRef.current);
+        decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
       })
-      .catch(() => decorateVisibleRack(rowsRef.current, ordersRef.current));
+      .catch(() => decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current));
 
     if (supabase) {
       void loadWarehouseLayout(SITE_CODE).then((row) => {
         if (!row?.layout_json) return;
         ordersRef.current = { ...ordersRef.current, ...ordersFromLayout(row.layout_json) };
+        slotCountsRef.current = { ...slotCountsRef.current, ...skuSlotCountsFromLayout(row.layout_json) };
         const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-        decorateVisibleRack(rowsRef.current, ordersRef.current);
+        writeLocalWarehouseLayout({ ...merged, ...row.layout_json });
+        decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
       }).catch(() => undefined);
     }
 
@@ -300,7 +343,14 @@ export function WarehouseMapRackEnhancer() {
       const editing = document.body.classList.contains('warehouse-layout-editing');
       if (editing && !editingRef.current) snapshotRef.current = structuredClone(ordersRef.current);
       editingRef.current = editing;
-      decorateVisibleRack(rowsRef.current, ordersRef.current);
+      decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
+    }
+
+    function handleSlotChanged(event: Event) {
+      const detail = (event as CustomEvent<{ locationCode?: string; slotCount?: number; layout?: WarehouseLayoutState }>).detail;
+      if (detail?.layout) slotCountsRef.current = skuSlotCountsFromLayout(detail.layout);
+      else if (detail?.locationCode && detail?.slotCount) slotCountsRef.current[detail.locationCode.toUpperCase()] = detail.slotCount;
+      decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
     }
 
     function pointerDown(event: PointerEvent) {
@@ -339,7 +389,7 @@ export function WarehouseMapRackEnhancer() {
       activeColumnRef.current = null;
       ordersRef.current = captureVisibleOrder(ordersRef.current);
       const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      writeLocalWarehouseLayout(merged);
     }
 
     function controls(event: MouseEvent) {
@@ -349,20 +399,21 @@ export function WarehouseMapRackEnhancer() {
       if (label === 'Cancel') {
         ordersRef.current = structuredClone(snapshotRef.current);
         const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-        window.setTimeout(() => decorateVisibleRack(rowsRef.current, ordersRef.current), 0);
+        writeLocalWarehouseLayout(merged);
+        window.setTimeout(() => decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current), 0);
       } else if (label === 'Reset to system') {
         ordersRef.current = {};
         naturalVisibleOrder();
         const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        writeLocalWarehouseLayout(merged);
       } else if (label === 'Save layout' || label === 'Saving…') {
         ordersRef.current = captureVisibleOrder(ordersRef.current);
         window.setTimeout(() => void persistOrders(ordersRef.current).catch(() => undefined), 450);
       } else if (label === 'Reload cloud' && supabase) {
         window.setTimeout(() => void loadWarehouseLayout(SITE_CODE).then((row) => {
           ordersRef.current = ordersFromLayout(row?.layout_json || {});
-          decorateVisibleRack(rowsRef.current, ordersRef.current);
+          slotCountsRef.current = skuSlotCountsFromLayout(row?.layout_json || {});
+          decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
         }), 250);
       }
     }
@@ -371,6 +422,7 @@ export function WarehouseMapRackEnhancer() {
     document.addEventListener('pointerdown', pointerDown, true);
     window.addEventListener('pointermove', pointerMove, { passive: false });
     window.addEventListener('pointerup', pointerUp);
+    window.addEventListener(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, handleSlotChanged);
     document.addEventListener('click', controls);
     synchronise();
 
@@ -379,6 +431,7 @@ export function WarehouseMapRackEnhancer() {
       document.removeEventListener('pointerdown', pointerDown, true);
       window.removeEventListener('pointermove', pointerMove);
       window.removeEventListener('pointerup', pointerUp);
+      window.removeEventListener(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, handleSlotChanged);
       document.removeEventListener('click', controls);
     };
   }, []);
