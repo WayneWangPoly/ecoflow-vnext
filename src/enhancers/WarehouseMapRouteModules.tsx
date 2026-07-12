@@ -6,6 +6,7 @@ import '../warehouseProductisation.css';
 import '../warehouseProductisationFixes.css';
 import '../warehouseMapRackEnhancer.css';
 import '../warehouseMapDensityFix.css';
+import '../warehouseMapRowActionFix.css';
 
 /** Route modules for the protected Warehouse Map feature. */
 export default function WarehouseMapRouteModules() {
