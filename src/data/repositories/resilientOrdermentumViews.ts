@@ -27,6 +27,12 @@ type BarcodeShelfRow = {
   fixed_shelf: string | null;
 };
 
+type LiveLocationBalanceRow = {
+  sku: string | null;
+  location: string | null;
+  on_hand_location: number | string | null;
+};
+
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
 }
@@ -101,7 +107,27 @@ function enrichInboxAmounts(rows: SupabaseInboxRow[], lines: SupabaseOrderLineRo
   });
 }
 
-function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: InventoryLocationRow[], barcodeRows: BarcodeShelfRow[]) {
+function liveLocationsBySku(rows: LiveLocationBalanceRow[]) {
+  const grouped = new Map<string, Array<{ location: string; quantity: number }>>();
+  rows.forEach((row) => {
+    if (!row.sku || !row.location || numberValue(row.on_hand_location) <= 0) return;
+    const key = row.sku.toUpperCase();
+    const current = grouped.get(key) || [];
+    current.push({ location: row.location, quantity: numberValue(row.on_hand_location) });
+    grouped.set(key, current);
+  });
+  return new Map([...grouped.entries()].map(([sku, locations]) => [
+    sku,
+    locations
+      .sort((left, right) => right.quantity - left.quantity || left.location.localeCompare(right.location, undefined, { numeric: true }))
+      .map((row) => row.location)
+      .filter((location, index, all) => all.indexOf(location) === index)
+      .slice(0, 4)
+      .join(' / '),
+  ]));
+}
+
+function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: InventoryLocationRow[], barcodeRows: BarcodeShelfRow[], liveBalanceRows: LiveLocationBalanceRow[]) {
   const bySku = new Map<string, SupabaseSkuMasterRow>();
   masterRows.forEach((row) => {
     if (row.external_sku_code) bySku.set(row.external_sku_code.toUpperCase(), row);
@@ -111,12 +137,13 @@ function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: In
   barcodeRows.forEach((row) => {
     if (row.sku && row.fixed_shelf) shelfBySku.set(row.sku.toUpperCase(), row.fixed_shelf);
   });
+  const liveBySku = liveLocationsBySku(liveBalanceRows);
 
   inventoryRows.forEach((row) => {
     if (!row.sku || row.control_status === 'DISCONTINUED') return;
     const key = row.sku.toUpperCase();
     const existing = bySku.get(key);
-    const warehouseLocation = row.fixed_shelf || shelfBySku.get(key) || existing?.warehouse_location || null;
+    const warehouseLocation = liveBySku.get(key) || row.fixed_shelf || shelfBySku.get(key) || existing?.warehouse_location || null;
     const primaryBarcode = row.primary_barcode || existing?.carton_barcode || null;
     bySku.set(key, {
       external_sku_code: row.sku,
@@ -137,7 +164,12 @@ function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: In
     if (!row.sku || !row.fixed_shelf) return;
     const key = row.sku.toUpperCase();
     const existing = bySku.get(key);
-    if (existing) bySku.set(key, { ...existing, warehouse_location: existing.warehouse_location || row.fixed_shelf });
+    if (existing) bySku.set(key, { ...existing, warehouse_location: liveBySku.get(key) || existing.warehouse_location || row.fixed_shelf });
+  });
+
+  liveBySku.forEach((location, key) => {
+    const existing = bySku.get(key);
+    if (existing) bySku.set(key, { ...existing, warehouse_location: location });
   });
 
   return [...bySku.values()];
@@ -146,7 +178,7 @@ function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: In
 export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
 
-  const [inbox, exceptions, healthRows, lines, drafts, omOrders, skuMaster, inventoryLocations, barcodeShelves, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
+  const [inbox, exceptions, healthRows, lines, drafts, omOrders, skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
     firstAvailable<SupabaseInboxRow[]>([
       'v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=500',
       'v_ecoflow_ordermentum_inbox?select=*&order=order_updated_at.desc&limit=500'
@@ -171,6 +203,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentu
     optionalFetch<SupabaseSkuMasterRow[]>('v_ecoflow_app_sku_master?select=*&limit=3000', []),
     optionalFetch<InventoryLocationRow[]>('v_ecoflow_inventory_sku_control?select=sku,fixed_shelf,primary_barcode,control_status&limit=3000', []),
     optionalFetch<BarcodeShelfRow[]>('v_ecoflow_barcode_registry_review?select=sku,fixed_shelf&limit=3000', []),
+    optionalFetch<LiveLocationBalanceRow[]>('v_ecoflow_inventory_sku_location_balance?select=sku,location,on_hand_location&limit=5000', []),
     optionalFetch<SupabaseStoreSiteRow[]>('ecoflow_store_sites?select=*&limit=1000', []),
     optionalFetch<SupabaseReleaseSummaryRow[]>('v_ecoflow_ordermentum_release_summary_v2?select=*', []),
     optionalFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=500', [])
@@ -183,7 +216,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentu
     lines,
     drafts,
     omOrders,
-    skuMaster: mergeSkuLocations(skuMaster, inventoryLocations, barcodeShelves),
+    skuMaster: mergeSkuLocations(skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances),
     storeSites,
     releaseSummary: releaseSummaryRows[0] || null,
     skuMappingCandidates
