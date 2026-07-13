@@ -4,14 +4,9 @@
 
 begin;
 
--- These reporting views have no write responsibilities. Rebuild them together
--- so they all use the same Ordermentum-created timestamp and cancellation rule.
-drop view if exists public.v_ecoflow_owner_order_status_report;
-drop view if exists public.v_ecoflow_owner_daily_order_report;
-drop view if exists public.v_ecoflow_owner_sku_velocity;
-drop view if exists public.v_ecoflow_owner_order_kpis;
-
-create view public.v_ecoflow_owner_order_kpis
+-- These views have downstream inventory and dashboard dependencies in
+-- production. Replace them in place with the exact same public column contract.
+create or replace view public.v_ecoflow_owner_order_kpis
 with (security_invoker = true)
 as
 with orders as (
@@ -77,7 +72,7 @@ from eligible_orders;
 grant select on public.v_ecoflow_owner_order_kpis to authenticated;
 revoke all on public.v_ecoflow_owner_order_kpis from anon;
 
-create view public.v_ecoflow_owner_sku_velocity
+create or replace view public.v_ecoflow_owner_sku_velocity
 with (security_invoker = true)
 as
 with orders as (
@@ -146,7 +141,7 @@ limit 120;
 grant select on public.v_ecoflow_owner_sku_velocity to authenticated;
 revoke all on public.v_ecoflow_owner_sku_velocity from anon;
 
-create view public.v_ecoflow_owner_daily_order_report
+create or replace view public.v_ecoflow_owner_daily_order_report
 with (security_invoker = true)
 as
 with orders as (
@@ -176,7 +171,7 @@ order by order_day desc;
 grant select on public.v_ecoflow_owner_daily_order_report to authenticated;
 revoke all on public.v_ecoflow_owner_daily_order_report from anon;
 
-create view public.v_ecoflow_owner_order_status_report
+create or replace view public.v_ecoflow_owner_order_status_report
 with (security_invoker = true)
 as
 select
