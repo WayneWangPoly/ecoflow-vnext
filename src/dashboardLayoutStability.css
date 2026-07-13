@@ -1,0 +1,103 @@
+/* Operational shell stability after the native Dashboard migration. */
+
+/* The sidebar has three explicit rows: brand, compact identity, navigation. */
+.desktop-app .sidebar {
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  align-content: stretch;
+}
+
+.desktop-app .sidebar-role-badge {
+  align-self: start !important;
+  justify-self: start !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  max-width: calc(100% - 28px) !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 10px 14px 4px !important;
+  padding: 5px 9px !important;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.desktop-app .sidebar-nav {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Preserve the preferred shell: sidebar + operational queue + insight rail. */
+.owner-command-workspace {
+  grid-template-columns: minmax(560px, 1fr) minmax(260px, 300px) !important;
+  gap: 16px !important;
+}
+
+.owner-command-queue-panel,
+.owner-command-order-list,
+.owner-command-order-row,
+.owner-command-order-main,
+.owner-command-order-side {
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+.owner-command-order-row {
+  grid-template-columns: 34px minmax(0, 1fr) minmax(96px, 118px) !important;
+  gap: 10px !important;
+  overflow: hidden;
+}
+
+.owner-command-order-side {
+  width: 100%;
+  overflow: hidden;
+}
+
+.owner-command-order-side strong,
+.owner-command-order-side span,
+.owner-command-order-side small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-command-buckets strong,
+.owner-command-pulse-list strong,
+.owner-command-metric strong,
+.owner-command-sync-metrics strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A normal laptop still retains queue + rail. Only genuinely narrow screens stack. */
+@media (max-width: 1120px) {
+  .owner-command-workspace {
+    grid-template-columns: 1fr !important;
+  }
+
+  .owner-command-rail {
+    position: static !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .owner-command-rail {
+    grid-template-columns: 1fr !important;
+  }
+
+  .owner-command-order-row {
+    grid-template-columns: 32px minmax(0, 1fr) !important;
+    align-items: start;
+  }
+
+  .owner-command-order-side {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+    grid-template-columns: auto auto auto;
+    gap: 8px;
+  }
+}
