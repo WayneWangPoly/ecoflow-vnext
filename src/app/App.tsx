@@ -22,6 +22,7 @@ import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
+import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import type {
@@ -327,7 +328,7 @@ function DesktopShell({ role, tab, setTab, onLogout, children }: {
             <BrandMark />
             <div>
               <strong>EcoFlow</strong>
-              <span>PACKAGING OPERATIONS</span>
+              <span>{role === 'account' ? 'ACCOUNTS OPERATIONS' : `${roleLabel(role).toUpperCase()} OPERATIONS`}</span>
             </div>
           </div>
           <div className="topbar-actions">
@@ -353,7 +354,7 @@ function DesktopShell({ role, tab, setTab, onLogout, children }: {
         <nav className="desktop-mobile-nav" aria-label="Sections">
           {availableDesktopTabs(role).map((item) => (
             <button key={item.id} type="button" className={cls(tab === item.id && 'active')} onClick={() => setTab(item.id)}>
-              {item.id === 'ordermentum' ? 'Inbox' : item.id === 'reconciliation' ? 'Accounts' : item.label}
+              {item.id === 'ordermentum' ? 'Ordermentum Inbox' : item.id === 'reconciliation' ? 'Accounts' : item.label}
             </button>
           ))}
         </nav>
@@ -926,7 +927,7 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
   );
 }
 
-function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload }: {
+function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload, snapshotReady, snapshotLoading, healthNotice }: {
   role: Role;
   data: EcoFlowDataSet;
   orders: ImportedOrder[];
@@ -938,6 +939,9 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   loadError?: string;
   authProfile?: EcoFlowAuthProfile | null;
   onReload: () => Promise<void>;
+  snapshotReady: boolean;
+  snapshotLoading: boolean;
+  healthNotice?: string;
 }) {
   const [tab, setTab] = useState<DesktopTab>('dashboard');
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(data.businessDay.date));
@@ -951,7 +955,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
       {loadError ? <div className="sync-error-banner desktop-error-banner">Live operational refresh failed. The last trusted snapshot remains on screen; EcoFlow is not showing demo data. {loadError}</div> : null}
       {role === 'viewer' ? <div className="sync-error-banner desktop-readonly-banner">Viewer workspace is read-only. Operational changes, route approval, integrations and team administration are hidden.</div> : null}
-      {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
+      {tab === 'dashboard' ? <DashboardPage role={role} data={data} orders={effectiveOrders} snapshotReady={snapshotReady} loading={snapshotLoading} loadError={loadError} healthNotice={healthNotice} onReload={onReload} onOpenOrders={() => setTab('orders')} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
       {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner' || role === 'admin' || role === 'account'} /> : null}
@@ -1041,6 +1045,9 @@ export function App() {
   const [data, setData] = useState<EcoFlowDataSet>(initialData);
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
   const [loadError, setLoadError] = useState('');
+  const [loadWarning, setLoadWarning] = useState('');
+  const [snapshotReady, setSnapshotReady] = useState(import.meta.env.DEV);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
 
   async function refreshAuthProfile() {
     if (!supabase) return null;
@@ -1122,21 +1129,32 @@ export function App() {
   }, [authEnabled]);
 
   const reloadViews = useCallback(async () => {
+    setSnapshotLoading(true);
     try {
       const views = await loadSupabaseOrdermentumViews();
       if (!views) throw new Error('Supabase live views are not configured.');
       const nextData = applySupabaseOrdermentumViews(initialData, views);
       setData(nextData);
       setOrders(nextData.orders);
+      setSnapshotReady(true);
+      setLoadWarning(
+        views.diagnostics
+          .filter((row) => row.status === 'DEGRADED')
+          .map((row) => row.source)
+          .join(', ')
+      );
       setLoadError('');
     } catch (error: unknown) {
       setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
+    } finally {
+      setSnapshotLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    if (authEnabled && !authProfile?.user_id) return;
     void reloadViews();
-  }, [reloadViews, authProfile?.user_id]);
+  }, [reloadViews, authEnabled, authProfile?.user_id]);
 
   async function logout() {
     window.localStorage.removeItem('ecoflow-role');
@@ -1158,7 +1176,7 @@ export function App() {
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
     if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
     if (legacyRole === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} /></Suspense>;
-    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
+    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} snapshotReady={snapshotReady} snapshotLoading={snapshotLoading} healthNotice={loadWarning || undefined} />;
   }
 
   if (!authChecked) return <LoadingScreen />;
@@ -1173,5 +1191,5 @@ export function App() {
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 
-  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;
+  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} snapshotReady={snapshotReady} snapshotLoading={snapshotLoading} healthNotice={loadWarning || undefined} />;
 }
