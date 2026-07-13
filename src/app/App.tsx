@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { buildEcoFlowData } from '@/domain/ecoflowData';
+import { buildProductionEmptyData } from '@/domain/productionData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { callInternaliseOrders, setActiveRunCode } from '@/data/repositories/pickSync';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
@@ -43,7 +44,24 @@ import type {
   WarehouseTab
 } from '@/domain/types';
 
-const initialData = buildEcoFlowData();
+const initialData = import.meta.env.DEV ? buildEcoFlowData() : buildProductionEmptyData();
+const AUTH_PROFILE_CACHE_KEY = 'ecoflow:last-verified-profile';
+
+function readCachedAuthProfile(): EcoFlowAuthProfile | null {
+  try {
+    const raw = window.sessionStorage.getItem(AUTH_PROFILE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as EcoFlowAuthProfile;
+    return parsed?.user_id && parsed?.app_role ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAuthProfile(profile: EcoFlowAuthProfile | null) {
+  if (!profile) window.sessionStorage.removeItem(AUTH_PROFILE_CACHE_KEY);
+  else window.sessionStorage.setItem(AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
+}
 
 // Legacy passcode login exists for LOCAL DEVELOPMENT ONLY. The DEV ternary lets
 // the production bundler eliminate this branch entirely, so no passcode string
@@ -224,6 +242,26 @@ function AccessPendingScreen({ profile, onLogout }: { profile?: EcoFlowAuthProfi
         <h1>Access is not active yet</h1>
         <p>{profile?.email ?? 'This account'} is signed in, but the team profile is missing, suspended, or waiting for approval.</p>
         <button className="primary-button" type="button" onClick={onLogout}>Logout</button>
+      </section>
+    </main>
+  );
+}
+
+function ProfileRecoveryScreen({ error, onRetry, onLogout }: { error: string; onRetry: () => void; onLogout: () => void }) {
+  return (
+    <main className="login-page">
+      <section className="login-card" role="alert">
+        <div className="login-brand-row">
+          <BrandMark large />
+          <div><div className="login-brand-name">EcoFlow</div><div className="login-brand-subtitle">SECURE SESSION ACTIVE</div></div>
+        </div>
+        <h1>Reloading your access profile</h1>
+        <p>Your secure session is still active. EcoFlow will not sign you out because a profile read was interrupted.</p>
+        {error ? <div className="error-message">{error}</div> : null}
+        <div className="row-actions">
+          <button className="primary-button" type="button" onClick={onRetry}>Retry access profile</button>
+          <button className="soft-button" type="button" onClick={onLogout}>Logout</button>
+        </div>
       </section>
     </main>
   );
@@ -911,7 +949,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
 
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
-      {loadError ? <div className="sync-error-banner desktop-error-banner">Supabase orders failed to load —the data below is fallback/demo, not live. {loadError}</div> : null}
+      {loadError ? <div className="sync-error-banner desktop-error-banner">Live operational refresh failed. The last trusted snapshot remains on screen; EcoFlow is not showing demo data. {loadError}</div> : null}
       {role === 'viewer' ? <div className="sync-error-banner desktop-readonly-banner">Viewer workspace is read-only. Operational changes, route approval, integrations and team administration are hidden.</div> : null}
       {tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
@@ -977,7 +1015,7 @@ function WarehouseWorkspace({ orders, businessDay, loadError, onLogout, actorLab
   return (
     <MobileShell role="warehouse" onLogout={onLogout ?? (() => { window.localStorage.removeItem('ecoflow-role'); window.location.reload(); })}>
       <section className="mobile-content">
-        {loadError ? <div className="sync-error-banner">Supabase orders failed to load —showing fallback data. {loadError}</div> : null}
+        {loadError ? <div className="sync-error-banner">Live operational refresh failed. The last trusted snapshot remains on screen; EcoFlow is not showing demo data. {loadError}</div> : null}
         <div className="mobile-title"><h1>Warehouse</h1><p>Receive, pick and stock control.</p></div>
         <nav className="mobile-tabs">
           {(['receive', 'pick', 'stock'] as WarehouseTab[]).map((item) => <button key={item} className={cls(tab === item && 'active')} type="button" onClick={() => setTab(item)}>{item}</button>)}
@@ -997,7 +1035,8 @@ export function App() {
     return stored && roleOptions.some((item) => item.role === stored) ? stored : null;
   });
   const [authChecked, setAuthChecked] = useState(!authEnabled);
-  const [authProfile, setAuthProfile] = useState<EcoFlowAuthProfile | null>(null);
+  const [hasSecureSession, setHasSecureSession] = useState(false);
+  const [authProfile, setAuthProfile] = useState<EcoFlowAuthProfile | null>(() => readCachedAuthProfile());
   const [authError, setAuthError] = useState('');
   const [data, setData] = useState<EcoFlowDataSet>(initialData);
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
@@ -1012,12 +1051,18 @@ export function App() {
 
     if (error) {
       setAuthError(error.message);
-      setAuthProfile(null);
+      const sessionResult = await supabase.auth.getSession();
+      const cached = readCachedAuthProfile();
+      if (cached && sessionResult.data.session?.user.id === cached.user_id) {
+        setAuthProfile(cached);
+        return cached;
+      }
       return null;
     }
 
     const profile = (currentUser ?? null) as EcoFlowAuthProfile | null;
     setAuthProfile(profile);
+    writeCachedAuthProfile(profile);
     setAuthError('');
     return profile;
   }
@@ -1039,9 +1084,17 @@ export function App() {
       }
 
       if (sessionResult.session) {
+        setHasSecureSession(true);
+        const cached = readCachedAuthProfile();
+        if (cached && cached.user_id !== sessionResult.session.user.id) {
+          writeCachedAuthProfile(null);
+          setAuthProfile(null);
+        }
         await refreshAuthProfile();
       } else {
+        setHasSecureSession(false);
         setAuthProfile(null);
+        writeCachedAuthProfile(null);
       }
 
       if (active) setAuthChecked(true);
@@ -1050,9 +1103,12 @@ export function App() {
     const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       if (session) {
+        setHasSecureSession(true);
         void refreshAuthProfile().finally(() => setAuthChecked(true));
       } else {
+        setHasSecureSession(false);
         setAuthProfile(null);
+        writeCachedAuthProfile(null);
         setAuthChecked(true);
       }
     });
@@ -1068,7 +1124,7 @@ export function App() {
   const reloadViews = useCallback(async () => {
     try {
       const views = await loadSupabaseOrdermentumViews();
-      if (!views) return;
+      if (!views) throw new Error('Supabase live views are not configured.');
       const nextData = applySupabaseOrdermentumViews(initialData, views);
       setData(nextData);
       setOrders(nextData.orders);
@@ -1084,7 +1140,9 @@ export function App() {
 
   async function logout() {
     window.localStorage.removeItem('ecoflow-role');
+    writeCachedAuthProfile(null);
     if (supabase) await supabase.auth.signOut();
+    setHasSecureSession(false);
     setLegacyRole(null);
     setAuthProfile(null);
   }
@@ -1100,10 +1158,11 @@ export function App() {
     if (!legacyRole) return <LoginScreen onLogin={setLegacyRole} />;
     if (legacyRole === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} />;
     if (legacyRole === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} /></Suspense>;
-    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
+    return <DesktopWorkspace role={legacyRole} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={null} onReload={reloadViews} />;
   }
 
   if (!authChecked) return <LoadingScreen />;
+  if (hasSecureSession && !authProfile) return <ProfileRecoveryScreen error={authError} onRetry={() => void refreshAuthProfile()} onLogout={() => void logout()} />;
   if (!authProfile) return <EmailLoginScreen supabase={supabase!} authError={authError} onSignedIn={() => void refreshAuthProfile()} />;
   if (!authProfile.is_active || authProfile.team_status === 'SUSPENDED' || authProfile.team_status === 'DISABLED') return <AccessPendingScreen profile={authProfile} onLogout={() => void logout()} />;
 
@@ -1114,5 +1173,5 @@ export function App() {
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 
-  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Read fallback active', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;
+  return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} />;
 }
