@@ -19,8 +19,9 @@ on:
         required: false
         type: string
   schedule:
-    # Time-sensitive operational delta only. Store and SKU masters are Owner-triggered.
-    - cron: "17 * * * *"
+    # Orders are the live operational feed. Two runs per hour reduce the time a
+    # delayed GitHub schedule can leave newly placed customer orders unseen.
+    - cron: "7,37 * * * *"
 
 concurrency:
   group: ordermentum-cloud-sync
@@ -64,7 +65,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
-            echo "Scheduled hourly run: orders_invoices only"
+            echo "Scheduled twice-hourly run: orders_invoices only"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=${{ inputs.job_id }}" >> "$GITHUB_ENV"
@@ -89,7 +90,7 @@ jobs:
           job_id="$(node scripts/operational-sync-job.mjs ensure \
             --job-id "$REQUESTED_JOB_ID" \
             --mode "$SYNC_MODE" \
-            --reason "${{ github.event_name == 'schedule' && 'Scheduled hourly order and invoice delta' || 'Owner/Admin requested Ordermentum sync' }}" \
+            --reason "${{ github.event_name == 'schedule' && 'Scheduled twice-hourly order and invoice delta' || 'Owner/Admin requested Ordermentum sync' }}" \
             --requested-by "${{ github.actor }}")"
           test -n "$job_id"
           echo "SYNC_JOB_ID=$job_id" >> "$GITHUB_ENV"
