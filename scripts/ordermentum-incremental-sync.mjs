@@ -15,12 +15,23 @@ const windowMinutes = Number(args['window-minutes'] || 180);
 const pageSize = Number(args['page-size'] || 50);
 const maxPages = Number(args['max-pages'] || 10);
 const dryRun = Boolean(args['dry-run']);
+const ignoreHighWatermark = Boolean(args['ignore-high-watermark']);
 
 const now = new Date();
-const fromDate = state.high_watermark_updated_at
+const fromDate = !ignoreHighWatermark && state.high_watermark_updated_at
   ? new Date(new Date(state.high_watermark_updated_at).getTime() - overlapMinutes * 60_000)
   : new Date(now.getTime() - windowMinutes * 60_000);
 const toDate = now;
+
+console.log(JSON.stringify({
+  action: 'resolve_incremental_window',
+  ignoreHighWatermark,
+  storedHighWatermark: state.high_watermark_updated_at || null,
+  overlapMinutes,
+  windowMinutes,
+  from: fromDate.toISOString(),
+  to: toDate.toISOString(),
+}, null, 2));
 
 const childArgs = [
   'scripts/ordermentum-backfill-window.mjs',
