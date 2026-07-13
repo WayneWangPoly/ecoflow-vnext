@@ -8,6 +8,7 @@ on:
 permissions:
   actions: read
   contents: read
+  issues: write
   statuses: write
 
 jobs:
@@ -18,8 +19,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      FAILED_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
       FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
       FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      DIAGNOSTIC_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Download failed-step logs
         shell: bash
@@ -52,10 +55,29 @@ jobs:
             /tmp/supabase-migration-failure.log
             /tmp/supabase-migration-error-summary.log
           retention-days: 30
+      - name: Publish exact error in an issue
+        shell: bash
+        run: |
+          {
+            echo "Production migration run: $FAILED_RUN_URL"
+            echo
+            echo "Commit: \`$FAILED_SHA\`"
+            echo
+            echo "Diagnostic run and downloadable logs: $DIAGNOSTIC_RUN_URL"
+            echo
+            echo '```text'
+            head -c 55000 /tmp/supabase-migration-error-summary.log
+            echo
+            echo '```'
+          } > /tmp/supabase-migration-issue.md
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Supabase migration failure · run $FAILED_RUN_NUMBER" \
+            --body-file /tmp/supabase-migration-issue.md
       - name: Publish diagnostic status
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$FAILED_SHA" \
             -f state='failure' \
             -f context='Supabase migration diagnostic' \
-            -f description='Exact failed migration logs captured as an Actions artifact' \
-            -f target_url="$FAILED_RUN_URL"
+            -f description='Exact failed migration error published and archived' \
+            -f target_url="$DIAGNOSTIC_RUN_URL"
