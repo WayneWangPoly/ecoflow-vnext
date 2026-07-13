@@ -1036,7 +1036,7 @@ export function App() {
   });
   const [authChecked, setAuthChecked] = useState(!authEnabled);
   const [hasSecureSession, setHasSecureSession] = useState(false);
-  const [authProfile, setAuthProfile] = useState<EcoFlowAuthProfile | null>(() => readCachedAuthProfile());
+  const [authProfile, setAuthProfile] = useState<EcoFlowAuthProfile | null>(null);
   const [authError, setAuthError] = useState('');
   const [data, setData] = useState<EcoFlowDataSet>(initialData);
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
