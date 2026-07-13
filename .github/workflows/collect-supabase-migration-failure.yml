@@ -1,0 +1,61 @@
+name: Collect Supabase migration failure
+
+on:
+  workflow_run:
+    workflows: ['Deploy Supabase migrations']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  statuses: write
+
+jobs:
+  collect:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+      FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Download failed-step logs
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo "EcoFlow Supabase migration failure"
+            echo "Run: $FAILED_RUN_URL"
+            echo "Commit: $FAILED_SHA"
+            echo
+            gh run view "$FAILED_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed
+          } 2>&1 | tee /tmp/supabase-migration-failure.log
+      - name: Extract migration error tail
+        shell: bash
+        run: |
+          {
+            echo
+            echo '=== ERROR SUMMARY ==='
+            grep -nE 'ERROR|FATAL|failed|psql:' /tmp/supabase-migration-failure.log | tail -120 || true
+            echo
+            echo '=== FINAL 180 LINES ==='
+            tail -180 /tmp/supabase-migration-failure.log
+          } > /tmp/supabase-migration-error-summary.log
+          cat /tmp/supabase-migration-error-summary.log
+      - name: Upload exact failure evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-migration-failure-${{ github.event.workflow_run.run_number }}
+          path: |
+            /tmp/supabase-migration-failure.log
+            /tmp/supabase-migration-error-summary.log
+          retention-days: 30
+      - name: Publish diagnostic status
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$FAILED_SHA" \
+            -f state='failure' \
+            -f context='Supabase migration diagnostic' \
+            -f description='Exact failed migration logs captured as an Actions artifact' \
+            -f target_url="$FAILED_RUN_URL"
