@@ -253,7 +253,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
     requiredFetch<SupabaseExceptionRow[]>('active exceptions', 'v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000'),
     requiredFetch<SupabaseOrderLineRow[]>('active order lines', 'v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000'),
     requiredFetch<SupabaseDraftRow[]>('active internal drafts', 'v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000'),
-    requiredFetch<SupabaseOmOrderRow[]>('active Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=*&order=updated_at.desc&limit=2000'),
+    requiredFetch<SupabaseOmOrderRow[]>('active Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=id,order_number,retailer_id,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc&limit=2000'),
   ]);
 
   // Supporting masters improve names, locations and summary KPIs. A failure is
