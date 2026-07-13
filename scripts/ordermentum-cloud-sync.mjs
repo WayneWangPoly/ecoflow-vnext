@@ -67,6 +67,12 @@ async function runOrders(mode) {
 
   await timed(`order + invoice-detail incremental sync (${mode})`, () =>
     runNode('scripts/ordermentum-sync-now-legacy.mjs', [...windowArgs, ...common]));
+
+  // Raw upserts alone never reach the UI: the operational views read
+  // om_orders / om_order_items / om_invoices, so project every stale raw
+  // order into those tables before the run finishes.
+  await timed('raw order projection into operational tables', () =>
+    runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '500']));
 }
 
 async function runMasterResources(resources, label) {
