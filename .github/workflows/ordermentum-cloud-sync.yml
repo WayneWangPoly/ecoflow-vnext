@@ -18,9 +18,14 @@ on:
         description: "EcoFlow operational sync job ID"
         required: false
         type: string
+  push:
+    branches: [main]
+    paths:
+      - 'ops/order-feed-repair-20260713.md'
   schedule:
-    # Time-sensitive operational delta only. Store and SKU masters are Owner-triggered.
-    - cron: "17 * * * *"
+    # Orders are the live operational feed. Two runs per hour reduce the time a
+    # delayed GitHub schedule can leave newly placed customer orders unseen.
+    - cron: "7,37 * * * *"
 
 concurrency:
   group: ordermentum-cloud-sync
@@ -29,7 +34,7 @@ concurrency:
 jobs:
   ordermentum-cloud-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -63,10 +68,17 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
+            echo "SYNC_REASON=Scheduled twice-hourly order and invoice delta" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
-            echo "Scheduled hourly run: orders_invoices only"
+            echo "Scheduled twice-hourly run: orders_invoices only"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "SYNC_MODE=catchup" >> "$GITHUB_ENV"
+            echo "SYNC_REASON=Release recovery scan for the stale customer order feed" >> "$GITHUB_ENV"
+            echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
+            echo "Release recovery run: catchup"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
+            echo "SYNC_REASON=Owner or Admin requested Ordermentum sync" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=${{ inputs.job_id }}" >> "$GITHUB_ENV"
             echo "Manual run: ${{ inputs.mode }}"
           fi
@@ -89,7 +101,7 @@ jobs:
           job_id="$(node scripts/operational-sync-job.mjs ensure \
             --job-id "$REQUESTED_JOB_ID" \
             --mode "$SYNC_MODE" \
-            --reason "${{ github.event_name == 'schedule' && 'Scheduled hourly order and invoice delta' || 'Owner/Admin requested Ordermentum sync' }}" \
+            --reason "$SYNC_REASON" \
             --requested-by "${{ github.actor }}")"
           test -n "$job_id"
           echo "SYNC_JOB_ID=$job_id" >> "$GITHUB_ENV"
@@ -106,6 +118,10 @@ jobs:
           node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Fetching and projecting $SYNC_MODE" --stage-number 2 --stage-total 4
           node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE" 2>&1 | tee /tmp/ordermentum-sync.log
           sync_exit=${PIPESTATUS[0]}
+          if [ "$sync_exit" -eq 0 ] && [ "${{ github.event_name }}" = "push" ]; then
+            node scripts/verify-ordermentum-order-feed.mjs 2>&1 | tee -a /tmp/ordermentum-sync.log
+            sync_exit=${PIPESTATUS[0]}
+          fi
           echo "SYNC_EXIT_CODE=$sync_exit" >> "$GITHUB_ENV"
           exit 0
 

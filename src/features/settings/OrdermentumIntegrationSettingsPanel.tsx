@@ -16,6 +16,13 @@ function formatTime(value?: string | null) {
   return date.toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function ageMinutes(value?: string | null) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+}
+
 function statusText(row: MasterSyncHealthRow) {
   const status = row.latest_run_status ?? row.status ?? row.sync_status ?? 'UNKNOWN';
   const error = row.latest_error ?? row.last_error;
@@ -47,7 +54,8 @@ function jobTone(status: OperationalSyncJobRow['status']) {
 }
 
 const syncButtons: Array<{ mode: OrdermentumSyncMode; label: string; detail: string }> = [
-  { mode: 'orders_invoices', label: 'Sync orders + invoices now', detail: 'Fast high-watermark delta. Fetches changed orders and their invoice detail only.' },
+  { mode: 'orders_invoices', label: 'Sync orders + invoices now', detail: 'Fast delta from the saved high-watermark. Fetches changed orders and invoice detail.' },
+  { mode: 'catchup', label: 'Recover recent order feed', detail: 'Recovery scan that ignores the saved high-watermark and rechecks the last seven days.' },
   { mode: 'stores_only', label: 'Sync stores', detail: 'Purchaser/store and price-group master refresh.' },
   { mode: 'sku_only', label: 'Sync SKU', detail: 'Product and variant master refresh.' },
 ];
@@ -91,6 +99,9 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
   const latestOrder = useMemo(() => latestOrderRun(orderRuns), [orderRuns]);
   const activeByMode = useMemo(() => new Map(jobs.filter(isActiveJob).map((job) => [job.mode, job])), [jobs]);
   const latestJob = jobs[0] ?? null;
+  const latestOrderAt = latestOrder?.finished_at ?? latestOrder?.started_at ?? null;
+  const orderAge = ageMinutes(latestOrderAt);
+  const orderFeedStale = orderAge === null || orderAge > 90;
 
   async function trigger(mode: OrdermentumSyncMode) {
     setTriggeringMode(mode);
@@ -122,10 +133,16 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh status'}</button>
       </div>
 
+      {orderFeedStale ? (
+        <div className="sync-error-banner desktop-error-banner">
+          ORDER FEED STALE · Last recorded order + invoice delta: {formatTime(latestOrderAt)}. New customer orders may be missing from EcoFlow. Run “Recover recent order feed”.
+        </div>
+      ) : null}
+
       <div className="readiness-grid">
-        <div><strong>{latestJob?.status ?? latestOrder?.status ?? '—'}</strong><span>latest operational job</span></div>
-        <div><strong>{latestJob ? `${latestJob.stage_number}/${latestJob.stage_total}` : '—'}</strong><span>{latestJob?.stage ?? 'job progress'}</span></div>
-        <div><strong>{formatTime(latestOrder?.finished_at ?? latestOrder?.started_at)}</strong><span>latest order + invoice delta</span></div>
+        <div><strong>{latestJob?.status ?? 'NO DURABLE JOB'}</strong><span>latest durable operational job</span></div>
+        <div><strong>{latestJob ? `${latestJob.stage_number}/${latestJob.stage_total}` : '—'}</strong><span>{latestJob?.stage ?? 'no durable progress record'}</span></div>
+        <div><strong>{formatTime(latestOrderAt)}</strong><span>{orderFeedStale ? 'stale order + invoice delta' : 'latest order + invoice delta'}</span></div>
         <div><strong>{formatTime(latestMaster)}</strong><span>latest master sync</span></div>
       </div>
 
@@ -154,6 +171,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
       {message ? <div className="sync-error-banner">{message}</div> : null}
       {error ? <div className="sync-error-banner desktop-error-banner">Failed to trigger sync: {error}</div> : null}
       {snapshotWarning ? <p className="panel-note">Status source degraded: {snapshotWarning}</p> : null}
+      {!latestJob && latestOrder ? <p className="panel-note">A legacy sync run is visible, but no durable job record was returned. The legacy status is not presented as an operational job.</p> : null}
 
       <div className="table-like">
         <div className="table-head"><span>Job / mode</span><span>Progress</span><span>Requested</span><span>Status</span></div>
