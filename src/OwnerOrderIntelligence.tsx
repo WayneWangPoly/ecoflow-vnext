@@ -184,6 +184,7 @@ function IntelligenceContent() {
   const revenue = window === '7d' ? kpis?.revenue_7d : kpis?.revenue_30d;
   const orderCount = window === '7d' ? kpis?.orders_7d : kpis?.orders_30d;
   const totalUnits = visibleSkus.reduce((sum, row) => sum + windowUnits(row, window), 0);
+  const legacyReviewCount = num(kpis?.legacy_review_orders);
 
   return (
     <section className="owner-insight-shell">
@@ -191,7 +192,7 @@ function IntelligenceContent() {
         <div>
           <span>OWNER ORDER INTELLIGENCE</span>
           <h2>Sales, SKU velocity and order pressure.</h2>
-          <p>Owner view built from internal orders and SKU lines.</p>
+          <p>Sales are measured from synced Ordermentum customer orders. Internal workflow and legacy quarantine are shown separately.</p>
         </div>
         <div className="owner-insight-actions"><button type="button" onClick={() => void reload()}>Refresh reports</button><small>{latest}</small></div>
       </section>
@@ -211,28 +212,29 @@ function IntelligenceContent() {
       </section>
 
       {error ? <div className="owner-insight-error">{error}</div> : null}
+      {legacyReviewCount ? <div className="owner-insight-empty">{units(legacyReviewCount)} confirmed API experiments remain quarantined in Legacy Review. They are not active workflow orders and are excluded from sales.</div> : null}
 
       <section className="owner-insight-metrics">
-        <Metric label={`${window} revenue`} value={money(revenue)} helper={`${units(orderCount)} orders · avg ${money(kpis?.avg_order_value_30d)}`} tone="good" />
-        <Metric label={`${window} units`} value={units(totalUnits)} helper={topSku ? `top: ${topSku.sku}` : 'waiting for SKU data'} tone="blue" />
-        <Metric label="Active workflow" value={units(kpis?.lifecycle_active_orders)} helper={`${units(kpis?.active_internal_orders)} internal orders active`} tone="neutral" />
-        <Metric label="Barcode attention" value={units(barcodeAttention)} helper="SKU lines needing barcode cleanup" tone={barcodeAttention ? 'warn' : 'good'} />
+        <Metric label={`${window} revenue`} value={money(revenue)} helper={`${units(orderCount)} Ordermentum orders · avg ${money(kpis?.avg_order_value_30d)}`} tone="good" />
+        <Metric label={`${window} units`} value={units(totalUnits)} helper={topSku ? `top: ${topSku.sku}` : 'waiting for synced order lines'} tone="blue" />
+        <Metric label="Active workflow" value={units(kpis?.lifecycle_active_orders)} helper={legacyReviewCount ? `${units(legacyReviewCount)} legacy experiments quarantined separately` : 'No legacy experiments in the active path'} tone="neutral" />
+        <Metric label="Barcode attention" value={units(barcodeAttention)} helper="Synced SKU lines needing barcode cleanup" tone={barcodeAttention ? 'warn' : 'good'} />
       </section>
 
       <section className="owner-insight-grid">
         <section className="owner-insight-panel owner-insight-panel-large">
-          <header><div><h3>Hot sellers</h3><p>Top moving SKUs in the selected window.</p></div><InsightPill tone="blue">{visibleSkus.length}</InsightPill></header>
+          <header><div><h3>Hot sellers</h3><p>Top moving SKUs in the selected Ordermentum window.</p></div><InsightPill tone="blue">{visibleSkus.length}</InsightPill></header>
           <div className="owner-hot-sku-list">
             {visibleSkus.slice(0, 10).map((row, index) => <HotSkuRow key={`${row.sku}-${index}`} row={row} index={index} window={window} />)}
-            {!visibleSkus.length ? <div className="owner-insight-empty">No matching SKU sales data.</div> : null}
+            {!visibleSkus.length ? <div className="owner-insight-empty">No matching synced SKU sales data.</div> : null}
           </div>
         </section>
 
         <section className="owner-insight-panel">
-          <header><div><h3>Daily report</h3><p>Recent order value and unit movement.</p></div></header>
+          <header><div><h3>Daily report</h3><p>Ordermentum order value and unit movement by customer order date.</p></div></header>
           <div className="owner-daily-list">
             {daily.slice(0, 10).map((row) => <DailyRow key={row.order_day || Math.random()} row={row} />)}
-            {!daily.length ? <div className="owner-insight-empty">No daily report data yet.</div> : null}
+            {!daily.length ? <div className="owner-insight-empty">No synced daily report data yet.</div> : null}
           </div>
         </section>
       </section>
@@ -251,10 +253,10 @@ function IntelligenceContent() {
           <article className="owner-top-product-card"><strong>{topSku?.sku || '—'}</strong><span>{topSku?.product_name || 'No top seller yet'}</span><small>Latest sold: {dateText(topSku?.last_sold_at)}</small></article>
         </section>
         <section className="owner-insight-panel">
-          <header><div><h3>Status mix</h3><p>Blocked, legacy and warehouse gate pressure.</p></div></header>
+          <header><div><h3>Active status mix</h3><p>Only current operational workflow pressure; quarantined legacy experiments are excluded.</p></div></header>
           <div className="owner-status-list">
             {statusRows.slice(0, 8).map((row) => <StatusRow key={`${row.status}-${row.account_release_status}-${row.warehouse_gate_status}`} row={row} />)}
-            {!statusRows.length ? <div className="owner-insight-empty">No status data yet.</div> : null}
+            {!statusRows.length ? <div className="owner-insight-empty">No active workflow status data yet.</div> : null}
           </div>
         </section>
       </section>
