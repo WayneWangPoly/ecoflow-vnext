@@ -1,12 +1,27 @@
 -- Durable operational job tracking for Ordermentum syncs.
 -- Browser actions enqueue one auditable job; GitHub Actions updates the same row.
--- This migration is intentionally repair-safe because production may contain an
--- earlier manually created object with the same name.
+-- This migration is repair-safe against a partial manually created relation.
 
 begin;
 
--- Remove the projection first so an older column layout cannot block repair.
+-- Remove projections first. If an earlier manual attempt accidentally used the
+-- table name for a view, remove that non-table relation without touching tables.
 drop view if exists public.v_ecoflow_operational_sync_jobs;
+do $$
+declare
+  relation_kind "char";
+begin
+  select c.relkind into relation_kind
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relname = 'ecoflow_operational_sync_jobs';
+
+  if relation_kind = 'v' then
+    execute 'drop view public.ecoflow_operational_sync_jobs cascade';
+  elsif relation_kind = 'm' then
+    execute 'drop materialized view public.ecoflow_operational_sync_jobs cascade';
+  end if;
+end $$;
 
 create table if not exists public.ecoflow_operational_sync_jobs (
   id uuid primary key default gen_random_uuid(),
@@ -40,6 +55,7 @@ create table if not exists public.ecoflow_operational_sync_jobs (
 
 -- Repair an older/partial table definition without deleting any job history.
 alter table public.ecoflow_operational_sync_jobs
+  add column if not exists id uuid,
   add column if not exists job_type text not null default 'ORDERMENTUM_SYNC',
   add column if not exists mode text,
   add column if not exists reason text,
@@ -67,11 +83,76 @@ alter table public.ecoflow_operational_sync_jobs
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists updated_at timestamptz not null default now();
 
--- A partial table may have nullable legacy rows. Keep them visible for audit but
--- only enforce the active-job index on rows with a recognised mode/status.
+update public.ecoflow_operational_sync_jobs
+set
+  id = coalesce(id, gen_random_uuid()),
+  job_type = coalesce(nullif(job_type, ''), 'ORDERMENTUM_SYNC'),
+  mode = coalesce(nullif(mode, ''), 'standard'),
+  status = coalesce(nullif(status, ''), 'CANCELLED'),
+  stage = coalesce(nullif(stage, ''), 'Recovered legacy job'),
+  stage_number = greatest(coalesce(stage_number, 0), 0),
+  stage_total = greatest(coalesce(stage_total, 4), 1),
+  requested_at = coalesce(requested_at, created_at, now()),
+  metadata = coalesce(metadata, '{}'::jsonb),
+  created_at = coalesce(created_at, requested_at, now()),
+  updated_at = coalesce(updated_at, requested_at, now());
+
+-- Ensure legacy duplicate/null IDs cannot prevent a primary key repair.
+with duplicate_ids as (
+  select ctid, row_number() over (partition by id order by requested_at desc nulls last, ctid desc) as duplicate_rank
+  from public.ecoflow_operational_sync_jobs
+)
+update public.ecoflow_operational_sync_jobs target
+set id = gen_random_uuid()
+from duplicate_ids duplicate
+where target.ctid = duplicate.ctid and duplicate.duplicate_rank > 1;
+
+alter table public.ecoflow_operational_sync_jobs
+  alter column id set default gen_random_uuid(),
+  alter column id set not null,
+  alter column mode set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.ecoflow_operational_sync_jobs'::regclass
+      and contype = 'p'
+  ) then
+    alter table public.ecoflow_operational_sync_jobs
+      add constraint ecoflow_operational_sync_jobs_pkey primary key (id);
+  end if;
+end $$;
+
+-- A manually created table may already contain multiple active rows for one
+-- mode. Preserve the newest and close older duplicates before enforcing the
+-- single-active-job invariant.
+with ranked_active as (
+  select
+    ctid,
+    row_number() over (
+      partition by job_type, mode
+      order by requested_at desc nulls last, created_at desc nulls last, ctid desc
+    ) as active_rank
+  from public.ecoflow_operational_sync_jobs
+  where mode in ('orders_invoices','stores_only','sku_only','standard','catchup')
+    and status in ('QUEUED','RUNNING')
+)
+update public.ecoflow_operational_sync_jobs target
+set
+  status = 'CANCELLED',
+  stage = 'Superseded during migration repair',
+  completed_at = coalesce(target.completed_at, now()),
+  error_code = coalesce(target.error_code, 'DUPLICATE_ACTIVE_JOB_REPAIRED'),
+  error_message = coalesce(target.error_message, 'An older duplicate active job was closed while the durable sync queue was installed.'),
+  updated_at = now()
+from ranked_active ranked
+where target.ctid = ranked.ctid and ranked.active_rank > 1;
+
 drop index if exists public.ecoflow_operational_sync_jobs_one_active_mode;
 create unique index ecoflow_operational_sync_jobs_one_active_mode
-  on public.ecoflow_operational_sync_jobs(job_type,mode)
+  on public.ecoflow_operational_sync_jobs(job_type, mode)
   where mode in ('orders_invoices','stores_only','sku_only','standard','catchup')
     and status in ('QUEUED','RUNNING');
 
@@ -99,7 +180,7 @@ for each row execute function public.ecoflow_touch_operational_sync_job();
 alter table public.ecoflow_operational_sync_jobs enable row level security;
 
 revoke all on public.ecoflow_operational_sync_jobs from anon;
-revoke insert,update,delete on public.ecoflow_operational_sync_jobs from authenticated;
+revoke insert, update, delete on public.ecoflow_operational_sync_jobs from authenticated;
 grant select on public.ecoflow_operational_sync_jobs to authenticated;
 
 drop policy if exists ecoflow_operational_sync_jobs_office_read on public.ecoflow_operational_sync_jobs;
@@ -109,7 +190,7 @@ for select to authenticated
 using (public.ecoflow_active_app_role() in ('OWNER','ADMIN','ACCOUNT','VIEWER'));
 
 create view public.v_ecoflow_operational_sync_jobs
-with (security_invoker=true)
+with (security_invoker = true)
 as
 select
   id,
