@@ -29,18 +29,38 @@ app = replace_once(
     "{item.id === 'ordermentum' ? 'Ordermentum Inbox' : item.id === 'reconciliation' ? 'Accounts' : item.label}",
     'mobile inbox name',
 )
-app = replace_once(
-    app,
-    'function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload }: {',
-    'function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload, snapshotReady, snapshotLoading, healthNotice }: {',
-    'DesktopWorkspace props',
-)
-app = replace_once(
-    app,
-    '  onReload: () => Promise<void>;\n}) {',
-    '  onReload: () => Promise<void>;\n  snapshotReady: boolean;\n  snapshotLoading: boolean;\n  healthNotice?: string;\n}) {',
-    'DesktopWorkspace prop types',
-)
+
+desktop_signature_before = """function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload }: {
+  role: Role;
+  data: EcoFlowDataSet;
+  orders: ImportedOrder[];
+  setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>;
+  stock: StockRow[];
+  stores: StoreProfile[];
+  logs: Activity[];
+  onLogout: () => void;
+  loadError?: string;
+  authProfile?: EcoFlowAuthProfile | null;
+  onReload: () => Promise<void>;
+}) {"""
+desktop_signature_after = """function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, onLogout, loadError, authProfile, onReload, snapshotReady, snapshotLoading, healthNotice }: {
+  role: Role;
+  data: EcoFlowDataSet;
+  orders: ImportedOrder[];
+  setOrders: React.Dispatch<React.SetStateAction<ImportedOrder[]>>;
+  stock: StockRow[];
+  stores: StoreProfile[];
+  logs: Activity[];
+  onLogout: () => void;
+  loadError?: string;
+  authProfile?: EcoFlowAuthProfile | null;
+  onReload: () => Promise<void>;
+  snapshotReady: boolean;
+  snapshotLoading: boolean;
+  healthNotice?: string;
+}) {"""
+app = replace_once(app, desktop_signature_before, desktop_signature_after, 'DesktopWorkspace signature')
+
 app = replace_once(
     app,
     "{tab === 'dashboard' ? <HeroDashboard role={role} orders={effectiveOrders} stock={stock} dataQuality={data.dataQuality} syncBatch={data.syncBatch} bucketCounts={getOrderBucketCounts(effectiveOrders, data.businessDay.date)} /> : null}",
