@@ -21,60 +21,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Recover prepared payload
-        shell: bash
+      - name: Apply native Dashboard patch
+        run: python3 scripts/apply-native-dashboard-migration.py
+      - name: Remove one-time migration helpers
         run: |
-          git show 6d4d9230d2671e168df42c209811665cc1028e4b:.github/workflows/apply-native-dashboard-migration.yml > /tmp/prepared-native-dashboard.yml
-          python3 - <<'PY'
-          import base64
-          import re
-          from pathlib import Path
-
-          prepared = Path('/tmp/prepared-native-dashboard.yml').read_text()
-          def payload(name: str) -> bytes:
-              match = re.search(rf'^\s*{name}:\s*(.+)$', prepared, re.MULTILINE)
-              if not match:
-                  raise SystemExit(f'Missing prepared payload: {name}')
-              compact = ''.join(match.group(1).split())
-              return base64.b64decode(compact, validate=True)
-
-          dashboard = payload('DASHBOARD_PAGE_B64')
-          patch_bytes = payload('PATCH_SCRIPT_B64')
-          if not dashboard.startswith(b'import {'):
-              raise SystemExit(f'Dashboard payload starts with {dashboard[:40]!r}')
-          if not patch_bytes.startswith(b'from pathlib import Path'):
-              raise SystemExit(f'Patch payload starts with {patch_bytes[:40]!r}')
-          target = Path('src/features/dashboard/DashboardPage.tsx')
-          target.parent.mkdir(parents=True, exist_ok=True)
-          target.write_bytes(dashboard)
-          Path('/tmp/native-dashboard-patch.py').write_bytes(patch_bytes)
-          PY
-      - name: Apply App and shell patch
-        id: patch
-        continue-on-error: true
-        shell: bash
-        run: python3 /tmp/native-dashboard-patch.py > /tmp/native-dashboard-patch.log 2>&1
-      - name: Commit migration result or diagnostic
-        shell: bash
+          rm -f scripts/apply-native-dashboard-migration.py
+          rm -f .github/workflows/apply-native-dashboard-migration.yml
+      - name: Commit native Dashboard migration
         run: |
           git config user.name 'EcoFlow Stability Bot'
           git config user.email 'actions@users.noreply.github.com'
-          if [ "${{ steps.patch.outcome }}" != "success" ]; then
-            mkdir -p docs
-            {
-              echo '# Native Dashboard Migration Diagnostic'
-              echo
-              echo 'The deterministic patch did not apply. No production files were merged.'
-              echo
-              echo '```text'
-              cat /tmp/native-dashboard-patch.log
-              echo '```'
-            } > docs/native-dashboard-migration-diagnostic.md
-            git add docs/native-dashboard-migration-diagnostic.md
-            git commit -m 'Record native dashboard migration diagnostic'
-            git push origin HEAD:refactor/native-dashboard-phase2-20260713
-            exit 1
-          fi
           git add -A
           git commit -m 'Migrate dashboard from DOM enhancer to native workspace'
           git push origin HEAD:refactor/native-dashboard-phase2-20260713
