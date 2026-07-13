@@ -21,6 +21,9 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
+      "@/data/repositories/resilientOrdermentumViews": [
+        "src/data/repositories/resilientOrdermentumViewsTimeoutSafe.ts"
+      ],
       "@/*": [
         "src/*"
       ]
