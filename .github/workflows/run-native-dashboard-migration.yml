@@ -8,9 +8,15 @@ on:
 
 permissions:
   contents: write
+  issues: write
+
+concurrency:
+  group: ecoflow-native-dashboard-migration
+  cancel-in-progress: false
 
 env:
   TARGET_BRANCH: refactor/native-dashboard-phase2-20260713
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
   migrate:
@@ -25,8 +31,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify prepared migration inputs
+        shell: bash
+        run: |
+          test -f scripts/apply-native-dashboard-migration.py
+          test -f src/features/dashboard/DashboardPage.tsx
+          test -f src/features/dashboard/dashboardModel.ts
+          test -f src/features/dashboard/DashboardPrimitives.tsx
       - name: Apply prepared native Dashboard migration
-        run: python3 scripts/apply-native-dashboard-migration.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/apply-native-dashboard-migration.py 2>&1 | tee /tmp/native-dashboard-migration.log
       - name: Remove one-time branch helpers
         run: |
           rm -f scripts/apply-native-dashboard-migration.py
@@ -43,3 +59,22 @@ jobs:
           fi
           git commit -m 'Migrate dashboard from DOM enhancer to native workspace'
           git push origin "HEAD:$TARGET_BRANCH"
+      - name: Publish migration failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Native Dashboard migration failed before anything was merged to production."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo '```text'
+            if [ -f /tmp/native-dashboard-migration.log ]; then tail -220 /tmp/native-dashboard-migration.log; else echo 'Migration input verification or checkout failed before a patch log was created.'; fi
+            echo '```'
+          } > /tmp/native-dashboard-migration-issue.md
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Native Dashboard migration failed · run $GITHUB_RUN_NUMBER" \
+            --body-file /tmp/native-dashboard-migration-issue.md
