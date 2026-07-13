@@ -30,6 +30,11 @@ for (let batch = 1; batch <= maxBatches; batch += 1) {
 
 console.log(JSON.stringify({ action: 'project_raw_orders_complete', ...totals }, null, 2));
 
+// The homepage reads its active order slice through the persisted key set,
+// so refresh it whenever the projection may have changed lifecycle membership.
+const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+console.log(JSON.stringify({ action: 'refresh_ui_active_order_keys', keys: refreshedKeys }));
+
 if (totals.failed_orders > 0) {
   console.error(`[project] ${totals.failed_orders} raw order(s) could not be projected into om_orders:`);
   console.error(JSON.stringify(lastFailures, null, 2));
