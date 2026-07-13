@@ -13,6 +13,7 @@ import './fieldMode.css';
 import './brandLockup.css';
 import './industrialTheme.css';
 import './ownerCommandCenter.css';
+import './dashboardLayoutStability.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthClient();
