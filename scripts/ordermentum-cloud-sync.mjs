@@ -60,7 +60,7 @@ async function runOrders(mode) {
       ? ['--page-size', '30', '--max-pages', '24']
       : ['--page-size', '50', '--max-pages', '10'];
   const windowArgs = catchup
-    ? ['--window-minutes', '10080', '--overlap-minutes', '180']
+    ? ['--window-minutes', '10080', '--overlap-minutes', '180', '--ignore-high-watermark']
     : standard
       ? ['--window-minutes', '1440', '--overlap-minutes', '60']
       : ['--window-minutes', '360', '--overlap-minutes', '20'];
