@@ -1,4 +1,4 @@
-name: Deploy store campaign function
+name: Deploy operational edge functions
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/store-campaign-dispatch/**'
+      - 'supabase/functions/trigger-ordermentum-sync/**'
       - '.github/workflows/deploy-store-campaign-function.yml'
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
       STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Publish pending function status
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='pending' -f context='Store campaign function' -f description='Deploying and verifying customer campaign dispatch' -f target_url="$STATUS_URL"
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='pending' -f context='Operational edge functions' -f description='Deploying customer email and durable sync functions' -f target_url="$STATUS_URL"
       - uses: actions/checkout@v4
       - name: Require deployment credentials
         run: test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
@@ -35,12 +36,17 @@ jobs:
         run: test "$(tr -d '[:space:]' < supabase/.temp/project-ref)" = "$SUPABASE_PROJECT_REF"
       - name: Install Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
-      - name: Deploy store campaign dispatch
-        run: supabase functions deploy store-campaign-dispatch --project-ref "$SUPABASE_PROJECT_REF"
-      - name: Verify deployed function exists
-        run: supabase functions list --project-ref "$SUPABASE_PROJECT_REF" | tee /tmp/functions.txt && grep -q 'store-campaign-dispatch' /tmp/functions.txt
+      - name: Deploy operational functions
+        run: |
+          supabase functions deploy store-campaign-dispatch --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy trigger-ordermentum-sync --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Verify deployed functions exist
+        run: |
+          supabase functions list --project-ref "$SUPABASE_PROJECT_REF" | tee /tmp/functions.txt
+          grep -q 'store-campaign-dispatch' /tmp/functions.txt
+          grep -q 'trigger-ordermentum-sync' /tmp/functions.txt
       - name: Publish successful function status
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='success' -f context='Store campaign function' -f description='Customer campaign dispatch is deployed' -f target_url="$STATUS_URL"
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='success' -f context='Operational edge functions' -f description='Customer email and durable sync functions deployed' -f target_url="$STATUS_URL"
       - name: Publish failed function status
         if: failure()
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='failure' -f context='Store campaign function' -f description='Customer campaign dispatch deployment failed' -f target_url="$STATUS_URL"
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='failure' -f context='Operational edge functions' -f description='Operational edge function deployment failed' -f target_url="$STATUS_URL"
