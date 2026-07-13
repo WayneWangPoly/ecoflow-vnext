@@ -23,8 +23,6 @@ on:
     paths:
       - 'ops/order-feed-repair-20260713.md'
   schedule:
-    # Orders are the live operational feed. Two runs per hour reduce the time a
-    # delayed GitHub schedule can leave newly placed customer orders unseen.
     - cron: "7,37 * * * *"
 
 concurrency:
@@ -70,44 +68,49 @@ jobs:
             echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
             echo "SYNC_REASON=Scheduled twice-hourly order and invoice delta" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
-            echo "Scheduled twice-hourly run: orders_invoices only"
           elif [ "${{ github.event_name }}" = "push" ]; then
             echo "SYNC_MODE=catchup" >> "$GITHUB_ENV"
             echo "SYNC_REASON=Release recovery scan for the stale customer order feed" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
-            echo "Release recovery run: catchup"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
             echo "SYNC_REASON=Owner or Admin requested Ordermentum sync" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=${{ inputs.job_id }}" >> "$GITHUB_ENV"
-            echo "Manual run: ${{ inputs.mode }}"
           fi
+          echo "SYNC_ARTIFACT_ID=${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
 
       - name: Validate required secrets
         shell: bash
         run: |
           missing=0
           for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID ORDERMENTUM_BASE_URL ORDERMENTUM_API_BASE_URL; do
-            if [ -z "${!name}" ]; then
-              echo "Missing required secret/env: $name"
-              missing=1
-            fi
+            if [ -z "${!name}" ]; then echo "Missing required secret/env: $name"; missing=1; fi
           done
           if [ "$missing" -ne 0 ]; then exit 1; fi
 
       - name: Resolve durable operational job
         shell: bash
         run: |
+          set +e
           job_id="$(node scripts/operational-sync-job.mjs ensure \
             --job-id "$REQUESTED_JOB_ID" \
             --mode "$SYNC_MODE" \
             --reason "$SYNC_REASON" \
-            --requested-by "${{ github.actor }}")"
-          test -n "$job_id"
-          echo "SYNC_JOB_ID=$job_id" >> "$GITHUB_ENV"
-          echo "Operational job: $job_id"
+            --requested-by "${{ github.actor }}" 2>/tmp/operational-job-error.log)"
+          job_status=$?
+          if [ "$job_status" -eq 0 ] && [ -n "$job_id" ]; then
+            echo "SYNC_JOB_ID=$job_id" >> "$GITHUB_ENV"
+            echo "SYNC_ARTIFACT_ID=$job_id" >> "$GITHUB_ENV"
+            echo "Operational job: $job_id"
+          else
+            echo "SYNC_JOB_ID=" >> "$GITHUB_ENV"
+            echo "Durable job audit is unavailable; continuing the customer order sync and retaining workflow logs."
+            cat /tmp/operational-job-error.log || true
+          fi
+          exit 0
 
       - name: Mark job running
+        if: env.SYNC_JOB_ID != ''
         run: node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Connecting to Ordermentum" --stage-number 1 --stage-total 4
 
       - name: Run isolated Ordermentum sync
@@ -115,7 +118,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Fetching and projecting $SYNC_MODE" --stage-number 2 --stage-total 4
+          if [ -n "$SYNC_JOB_ID" ]; then
+            node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Fetching and projecting $SYNC_MODE" --stage-number 2 --stage-total 4
+          fi
           node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE" 2>&1 | tee /tmp/ordermentum-sync.log
           sync_exit=${PIPESTATUS[0]}
           if [ "$sync_exit" -eq 0 ] && [ "${{ github.event_name }}" = "push" ]; then
@@ -126,11 +131,11 @@ jobs:
           exit 0
 
       - name: Finalise successful job
-        if: env.SYNC_EXIT_CODE == '0'
+        if: env.SYNC_EXIT_CODE == '0' && env.SYNC_JOB_ID != ''
         run: node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status SUCCEEDED --stage "Sync complete" --stage-number 4 --stage-total 4
 
       - name: Finalise failed job
-        if: env.SYNC_EXIT_CODE != '0'
+        if: env.SYNC_EXIT_CODE != '0' && env.SYNC_JOB_ID != ''
         shell: bash
         run: |
           error_message="$(tail -n 35 /tmp/ordermentum-sync.log 2>/dev/null | tr '\n' ' ' | cut -c1-3500)"
@@ -144,11 +149,20 @@ jobs:
             --error-message "$error_message"
           exit "$SYNC_EXIT_CODE"
 
+      - name: Fail untracked sync
+        if: env.SYNC_EXIT_CODE != '0' && env.SYNC_JOB_ID == ''
+        shell: bash
+        run: |
+          tail -n 60 /tmp/ordermentum-sync.log || true
+          exit "$SYNC_EXIT_CODE"
+
       - name: Upload sync log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ordermentum-sync-${{ env.SYNC_JOB_ID }}
-          path: /tmp/ordermentum-sync.log
+          name: ordermentum-sync-${{ env.SYNC_ARTIFACT_ID }}
+          path: |
+            /tmp/ordermentum-sync.log
+            /tmp/operational-job-error.log
           if-no-files-found: warn
           retention-days: 30
