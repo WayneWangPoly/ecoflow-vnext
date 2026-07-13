@@ -1,3 +1,5 @@
+-- Redeploy note: run #42 lost its runner during "Set up job" before applying
+-- anything, so this migration is still pending in production.
 -- The ui_active views still recomputed the lifecycle board pipeline inside
 -- every homepage query, and the planner's row estimates across that deep view
 -- chain are too poor to hash the semi-join reliably (34-57s observed, against
