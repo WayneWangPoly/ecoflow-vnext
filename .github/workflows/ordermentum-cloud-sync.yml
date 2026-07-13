@@ -14,6 +14,10 @@ on:
           - sku_only
           - catchup
           - standard
+      job_id:
+        description: "EcoFlow operational sync job ID"
+        required: false
+        type: string
   schedule:
     # Time-sensitive operational delta only. Store and SKU masters are Owner-triggered.
     - cron: "17 * * * *"
@@ -59,9 +63,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
+            echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
             echo "Scheduled hourly run: orders_invoices only"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
+            echo "REQUESTED_JOB_ID=${{ inputs.job_id }}" >> "$GITHUB_ENV"
             echo "Manual run: ${{ inputs.mode }}"
           fi
 
@@ -75,9 +81,58 @@ jobs:
               missing=1
             fi
           done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
+      - name: Resolve durable operational job
+        shell: bash
+        run: |
+          job_id="$(node scripts/operational-sync-job.mjs ensure \
+            --job-id "$REQUESTED_JOB_ID" \
+            --mode "$SYNC_MODE" \
+            --reason "${{ github.event_name == 'schedule' && 'Scheduled hourly order and invoice delta' || 'Owner/Admin requested Ordermentum sync' }}" \
+            --requested-by "${{ github.actor }}")"
+          test -n "$job_id"
+          echo "SYNC_JOB_ID=$job_id" >> "$GITHUB_ENV"
+          echo "Operational job: $job_id"
+
+      - name: Mark job running
+        run: node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Connecting to Ordermentum" --stage-number 1 --stage-total 4
 
       - name: Run isolated Ordermentum sync
-        run: node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE"
+        id: run_sync
+        shell: bash
+        run: |
+          set +e
+          node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status RUNNING --stage "Fetching and projecting $SYNC_MODE" --stage-number 2 --stage-total 4
+          node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE" 2>&1 | tee /tmp/ordermentum-sync.log
+          sync_exit=${PIPESTATUS[0]}
+          echo "SYNC_EXIT_CODE=$sync_exit" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Finalise successful job
+        if: env.SYNC_EXIT_CODE == '0'
+        run: node scripts/operational-sync-job.mjs update --job-id "$SYNC_JOB_ID" --status SUCCEEDED --stage "Sync complete" --stage-number 4 --stage-total 4
+
+      - name: Finalise failed job
+        if: env.SYNC_EXIT_CODE != '0'
+        shell: bash
+        run: |
+          error_message="$(tail -n 35 /tmp/ordermentum-sync.log 2>/dev/null | tr '\n' ' ' | cut -c1-3500)"
+          node scripts/operational-sync-job.mjs update \
+            --job-id "$SYNC_JOB_ID" \
+            --status FAILED \
+            --stage "Sync failed" \
+            --stage-number 4 \
+            --stage-total 4 \
+            --error-code ORDERMENTUM_SYNC_FAILED \
+            --error-message "$error_message"
+          exit "$SYNC_EXIT_CODE"
+
+      - name: Upload sync log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordermentum-sync-${{ env.SYNC_JOB_ID }}
+          path: /tmp/ordermentum-sync.log
+          if-no-files-found: warn
+          retention-days: 30
