@@ -34,6 +34,30 @@ type LiveLocationBalanceRow = {
   on_hand_location: number | string | null;
 };
 
+export type OperationalSourceDiagnostic = {
+  source: string;
+  required: boolean;
+  status: 'OK' | 'DEGRADED';
+  rowCount: number;
+  error?: string;
+};
+
+export type ResilientOrdermentumViews = SupabaseOrdermentumViews & {
+  diagnostics: OperationalSourceDiagnostic[];
+};
+
+export class OperationalSnapshotError extends Error {
+  source: string;
+  status?: number;
+
+  constructor(source: string, message: string, status?: number) {
+    super(`${source}: ${message}`);
+    this.name = 'OperationalSnapshotError';
+    this.source = source;
+    this.status = status;
+  }
+}
+
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
 }
@@ -42,23 +66,51 @@ function hasSupabaseConfig() {
   return Boolean(envValue('VITE_SUPABASE_URL') && envValue('VITE_SUPABASE_ANON_KEY'));
 }
 
-async function supabaseFetch<T>(path: string): Promise<T> {
+async function supabaseFetch<T>(source: string, path: string): Promise<T> {
   const baseUrl = envValue('VITE_SUPABASE_URL').replace(/\/$/, '');
   const anonKey = envValue('VITE_SUPABASE_ANON_KEY');
   const sessionResult = supabase ? await supabase.auth.getSession() : null;
   const bearer = sessionResult?.data.session?.access_token || anonKey;
   const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${bearer}`, Accept: 'application/json' }
+    headers: { apikey: anonKey, Authorization: `Bearer ${bearer}`, Accept: 'application/json' },
   });
-  if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new OperationalSnapshotError(source, body || `Supabase returned ${response.status}`, response.status);
+  }
   return response.json() as Promise<T>;
 }
 
-async function optionalFetch<T>(path: string, fallback: T): Promise<T> {
+function rowCount(value: unknown) {
+  return Array.isArray(value) ? value.length : value == null ? 0 : 1;
+}
+
+async function requiredFetch<T>(source: string, path: string): Promise<{ data: T; diagnostic: OperationalSourceDiagnostic }> {
+  const data = await supabaseFetch<T>(source, path);
+  return {
+    data,
+    diagnostic: { source, required: true, status: 'OK', rowCount: rowCount(data) },
+  };
+}
+
+async function optionalFetch<T>(source: string, path: string, fallback: T): Promise<{ data: T; diagnostic: OperationalSourceDiagnostic }> {
   try {
-    return await supabaseFetch<T>(path);
-  } catch {
-    return fallback;
+    const data = await supabaseFetch<T>(source, path);
+    return {
+      data,
+      diagnostic: { source, required: false, status: 'OK', rowCount: rowCount(data) },
+    };
+  } catch (error) {
+    return {
+      data: fallback,
+      diagnostic: {
+        source,
+        required: false,
+        status: 'DEGRADED',
+        rowCount: rowCount(fallback),
+        error: error instanceof Error ? error.message : String(error),
+      },
+    };
   }
 }
 
@@ -191,39 +243,62 @@ function scopeAndDedupeExceptions(rows: SupabaseExceptionRow[], inbox: SupabaseI
   });
 }
 
-export async function loadSupabaseOrdermentumViews(): Promise<SupabaseOrdermentumViews | null> {
+export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
 
-  // Operational surfaces deliberately read only the active lifecycle views.
-  // Historical raw inbox/exception views remain in Supabase for audit and search,
-  // but must never be used as a fallback for today's warehouse/office workload.
-  const [inbox, rawExceptions, healthRows, lines, drafts, omOrders, skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances, storeSites, releaseSummaryRows, skuMappingCandidates] = await Promise.all([
-    optionalFetch<SupabaseInboxRow[]>('v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=1000', []),
-    optionalFetch<SupabaseExceptionRow[]>('v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000', []),
-    optionalFetch<SupabaseSyncHealthRow[]>('v_ecoflow_ordermentum_sync_health?select=*', []),
-    optionalFetch<SupabaseOrderLineRow[]>('v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000', []),
-    optionalFetch<SupabaseDraftRow[]>('v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000', []),
-    optionalFetch<SupabaseOmOrderRow[]>('v_ecoflow_ordermentum_ui_active_om_orders?select=*&order=updated_at.desc&limit=2000', []),
-    optionalFetch<SupabaseSkuMasterRow[]>('v_ecoflow_app_sku_master?select=*&limit=3000', []),
-    optionalFetch<InventoryLocationRow[]>('v_ecoflow_inventory_sku_control?select=sku,fixed_shelf,primary_barcode,control_status&limit=3000', []),
-    optionalFetch<BarcodeShelfRow[]>('v_ecoflow_barcode_registry_review?select=sku,fixed_shelf&limit=3000', []),
-    optionalFetch<LiveLocationBalanceRow[]>('v_ecoflow_inventory_sku_location_balance?select=sku,location,on_hand_location&limit=5000', []),
-    optionalFetch<SupabaseStoreSiteRow[]>('ecoflow_store_sites?select=*&limit=1000', []),
-    optionalFetch<SupabaseReleaseSummaryRow[]>('v_ecoflow_ordermentum_release_summary_v2?select=*', []),
-    optionalFetch<SupabaseSkuMappingCandidateRow[]>('v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=1000', [])
+  // These five sources define the current operational order lifecycle. A failed
+  // read must fail the snapshot rather than silently converting real work to 0.
+  const [inboxResult, exceptionResult, lineResult, draftResult, orderResult] = await Promise.all([
+    requiredFetch<SupabaseInboxRow[]>('active order inbox', 'v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=1000'),
+    requiredFetch<SupabaseExceptionRow[]>('active exceptions', 'v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000'),
+    requiredFetch<SupabaseOrderLineRow[]>('active order lines', 'v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000'),
+    requiredFetch<SupabaseDraftRow[]>('active internal drafts', 'v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000'),
+    requiredFetch<SupabaseOmOrderRow[]>('active Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=*&order=updated_at.desc&limit=2000'),
   ]);
 
-  const exceptions = scopeAndDedupeExceptions(rawExceptions, inbox);
+  // Supporting masters improve names, locations and summary KPIs. A failure is
+  // visible as degraded health but does not erase the trusted active order list.
+  const [healthResult, skuResult, inventoryResult, barcodeResult, liveBalanceResult, storeResult, releaseResult, mappingResult] = await Promise.all([
+    optionalFetch<SupabaseSyncHealthRow[]>('sync health', 'v_ecoflow_ordermentum_sync_health?select=*', []),
+    optionalFetch<SupabaseSkuMasterRow[]>('SKU master', 'v_ecoflow_app_sku_master?select=*&limit=3000', []),
+    optionalFetch<InventoryLocationRow[]>('inventory SKU control', 'v_ecoflow_inventory_sku_control?select=sku,fixed_shelf,primary_barcode,control_status&limit=3000', []),
+    optionalFetch<BarcodeShelfRow[]>('barcode registry', 'v_ecoflow_barcode_registry_review?select=sku,fixed_shelf&limit=3000', []),
+    optionalFetch<LiveLocationBalanceRow[]>('live location balances', 'v_ecoflow_inventory_sku_location_balance?select=sku,location,on_hand_location&limit=5000', []),
+    optionalFetch<SupabaseStoreSiteRow[]>('store site master', 'ecoflow_store_sites?select=*&limit=1000', []),
+    optionalFetch<SupabaseReleaseSummaryRow[]>('release summary', 'v_ecoflow_ordermentum_release_summary_v2?select=*', []),
+    optionalFetch<SupabaseSkuMappingCandidateRow[]>('SKU mapping candidates', 'v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=1000', []),
+  ]);
+
+  const inbox = inboxResult.data;
+  const lines = lineResult.data;
+  const exceptions = scopeAndDedupeExceptions(exceptionResult.data, inbox);
+  const diagnostics = [
+    inboxResult.diagnostic,
+    exceptionResult.diagnostic,
+    lineResult.diagnostic,
+    draftResult.diagnostic,
+    orderResult.diagnostic,
+    healthResult.diagnostic,
+    skuResult.diagnostic,
+    inventoryResult.diagnostic,
+    barcodeResult.diagnostic,
+    liveBalanceResult.diagnostic,
+    storeResult.diagnostic,
+    releaseResult.diagnostic,
+    mappingResult.diagnostic,
+  ];
+
   return {
     inbox: enrichInboxAmounts(inbox, lines),
     exceptions,
-    health: healthRows[0] || null,
+    health: healthResult.data[0] || null,
     lines,
-    drafts,
-    omOrders,
-    skuMaster: mergeSkuLocations(skuMaster, inventoryLocations, barcodeShelves, liveLocationBalances),
-    storeSites,
-    releaseSummary: releaseSummaryRows[0] || null,
-    skuMappingCandidates
+    drafts: draftResult.data,
+    omOrders: orderResult.data,
+    skuMaster: mergeSkuLocations(skuResult.data, inventoryResult.data, barcodeResult.data, liveBalanceResult.data),
+    storeSites: storeResult.data,
+    releaseSummary: releaseResult.data[0] || null,
+    skuMappingCandidates: mappingResult.data,
+    diagnostics,
   };
 }

@@ -4,7 +4,11 @@ export type OrdermentumSyncMode = 'orders_invoices' | 'stores_only' | 'sku_only'
 
 export type TriggerOrdermentumSyncResult = {
   ok: boolean;
+  existing?: boolean;
   mode: OrdermentumSyncMode;
+  jobId?: string;
+  status?: string;
+  stage?: string;
   workflowDispatchStatus?: number;
   workflow?: string;
   repository?: string;
@@ -13,6 +17,33 @@ export type TriggerOrdermentumSyncResult = {
   requestedAt?: string;
   error?: string;
   details?: string;
+};
+
+export type OperationalSyncJobRow = {
+  id: string;
+  job_type: string;
+  mode: OrdermentumSyncMode;
+  reason: string | null;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
+  stage: string;
+  stage_number: number;
+  stage_total: number;
+  requested_by_email: string | null;
+  requested_at: string;
+  started_at: string | null;
+  last_heartbeat_at: string | null;
+  completed_at: string | null;
+  records_seen: number;
+  records_upserted: number;
+  records_changed: number;
+  records_failed: number;
+  error_code: string | null;
+  error_message: string | null;
+  workflow_repository: string | null;
+  workflow_name: string | null;
+  workflow_ref: string | null;
+  workflow_run_id: string | null;
+  updated_at: string;
 };
 
 export type MasterSyncHealthRow = {
@@ -54,7 +85,7 @@ export async function triggerOrdermentumSync(
 }
 
 export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
-  const [masterHealth, recentRuns] = await Promise.allSettled([
+  const [masterHealth, recentRuns, operationalJobs] = await Promise.allSettled([
     supabase
       .from('v_ecoflow_ordermentum_master_data_sync_health')
       .select('*')
@@ -64,6 +95,11 @@ export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
       .select('run_type,status,orders_seen,orders_upserted,orders_changed,last_error,started_at,finished_at')
       .order('started_at', { ascending: false })
       .limit(5),
+    supabase
+      .from('v_ecoflow_operational_sync_jobs')
+      .select('*')
+      .order('requested_at', { ascending: false })
+      .limit(20),
   ]);
 
   const masterData = masterHealth.status === 'fulfilled' && !masterHealth.value.error
@@ -80,10 +116,19 @@ export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
     ? recentRuns.value.error?.message ?? null
     : recentRuns.reason instanceof Error ? recentRuns.reason.message : String(recentRuns.reason);
 
+  const jobs = operationalJobs.status === 'fulfilled' && !operationalJobs.value.error
+    ? ((operationalJobs.value.data ?? []) as OperationalSyncJobRow[])
+    : [];
+  const jobError = operationalJobs.status === 'fulfilled'
+    ? operationalJobs.value.error?.message ?? null
+    : operationalJobs.reason instanceof Error ? operationalJobs.reason.message : String(operationalJobs.reason);
+
   return {
     masterHealth: masterData,
     orderRuns,
+    operationalJobs: jobs,
     masterError,
     orderError,
+    jobError,
   };
 }
