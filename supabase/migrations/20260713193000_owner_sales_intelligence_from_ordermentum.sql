@@ -11,11 +11,11 @@ with (security_invoker = true)
 as
 with orders as (
   select
-    i.raw_order_id,
-    i.external_order_id,
-    i.external_order_number,
-    i.order_number,
-    i.invoice_number,
+    i.raw_order_id::text as raw_order_id,
+    i.external_order_id::text as external_order_id,
+    i.external_order_number::text as external_order_number,
+    i.order_number::text as order_number,
+    i.invoice_number::text as invoice_number,
     coalesce(i.order_created_at, i.first_seen_at, i.raw_created_at, i.order_updated_at, i.last_seen_at) as order_ts,
     coalesce(i.invoice_total, i.order_items_total, i.total_due, 0)::numeric as order_value,
     lower(coalesce(i.order_status, '')) as status_lc
@@ -36,9 +36,9 @@ with orders as (
     select o.order_ts
     from eligible_orders o
     where
-      (l.source_order_id is not null and l.source_order_id in (o.raw_order_id, o.external_order_id))
-      or (l.order_number is not null and l.order_number in (o.order_number, o.external_order_number))
-      or (l.invoice_number is not null and l.invoice_number = o.invoice_number)
+      (l.source_order_id is not null and l.source_order_id::text in (o.raw_order_id, o.external_order_id))
+      or (l.order_number is not null and l.order_number::text in (o.order_number, o.external_order_number))
+      or (l.invoice_number is not null and l.invoice_number::text = o.invoice_number)
     order by o.order_ts desc nulls last
     limit 1
   ) matched on true
@@ -77,11 +77,11 @@ with (security_invoker = true)
 as
 with orders as (
   select
-    i.raw_order_id,
-    i.external_order_id,
-    i.external_order_number,
-    i.order_number,
-    i.invoice_number,
+    i.raw_order_id::text as raw_order_id,
+    i.external_order_id::text as external_order_id,
+    i.external_order_number::text as external_order_number,
+    i.order_number::text as order_number,
+    i.invoice_number::text as invoice_number,
     coalesce(i.order_created_at, i.first_seen_at, i.raw_created_at, i.order_updated_at, i.last_seen_at) as order_ts,
     lower(coalesce(i.order_status, '')) as status_lc
   from public.v_ecoflow_ordermentum_inbox i
@@ -104,14 +104,14 @@ with orders as (
       coalesce(o.raw_order_id, o.external_order_id, o.order_number, o.external_order_number, o.invoice_number) as order_key
     from orders o
     where
-      (l.source_order_id is not null and l.source_order_id in (o.raw_order_id, o.external_order_id))
-      or (l.order_number is not null and l.order_number in (o.order_number, o.external_order_number))
-      or (l.invoice_number is not null and l.invoice_number = o.invoice_number)
+      (l.source_order_id is not null and l.source_order_id::text in (o.raw_order_id, o.external_order_id))
+      or (l.order_number is not null and l.order_number::text in (o.order_number, o.external_order_number))
+      or (l.invoice_number is not null and l.invoice_number::text = o.invoice_number)
     order by o.order_ts desc nulls last
     limit 1
   ) matched on true
   left join public.v_ecoflow_app_sku_master sm
-    on upper(sm.external_sku_code) = upper(l.external_sku_code)
+    on upper(sm.external_sku_code::text) = upper(l.external_sku_code::text)
 )
 select
   sku,
@@ -147,7 +147,7 @@ as
 with orders as (
   select
     date_trunc('day', coalesce(i.order_created_at, i.first_seen_at, i.raw_created_at, i.order_updated_at, i.last_seen_at))::date as order_day,
-    coalesce(i.raw_order_id, i.external_order_id, i.order_number, i.external_order_number) as order_key,
+    coalesce(i.raw_order_id::text, i.external_order_id::text, i.order_number::text, i.external_order_number::text) as order_key,
     coalesce(i.invoice_total, i.order_items_total, i.total_due, 0)::numeric as order_value,
     coalesce(i.total_units, 0)::numeric as total_units,
     lower(coalesce(i.order_status, '')) as status_lc
