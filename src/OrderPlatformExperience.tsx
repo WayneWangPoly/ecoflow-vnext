@@ -40,7 +40,7 @@ function title(value: string | null | undefined) {
 
 function statusTone(value: string | null | undefined) {
   const status = String(value || '').toUpperCase();
-  if (status.includes('BLOCKED') || status.includes('CANCELLED')) return 'danger';
+  if (status.includes('BLOCKED') || status.includes('CANCELLED') || status.includes('HOLD')) return 'danger';
   if (status.includes('REVIEW') || status.includes('MISSING') || status === 'UNRELEASED') return 'warn';
   if (['PICKING', 'STAGED', 'OUT_FOR_DELIVERY', 'RELEASED'].includes(status)) return 'blue';
   if (status === 'READY' || status === 'COMPLETED' || status.includes('MATCHED')) return 'good';
@@ -97,16 +97,18 @@ function modeTitle(mode: OrderOperationsMode) {
 }
 
 function modeHelper(mode: OrderOperationsMode) {
-  if (mode === 'ready') return 'Ordermentum detail complete, source state recognised, and no internal order has been created yet.';
-  if (mode === 'blocked') return 'Current orders requiring source-status, invoice-detail, SKU, barcode, or reconciliation attention.';
+  if (mode === 'ready') return 'Ordermentum detail complete, source state recognised, no account hold, and no internal order has been created yet.';
+  if (mode === 'blocked') return 'Current orders requiring source-status, invoice-detail, SKU, barcode, reconciliation, or EcoFlow account-hold attention.';
   if (mode === 'progress') return 'Internal orders already moving through warehouse and delivery.';
-  if (mode === 'history') return 'Completed, cancelled, and older Ordermentum records remain searchable outside the live queue.';
-  return 'The live operating set only. Historical Ordermentum records do not enter this queue.';
+  if (mode === 'history') return 'Completed, cancelled, source-missing, and older Ordermentum records remain searchable outside the live queue.';
+  return 'The live operating set only. Historical or source-missing Ordermentum records do not enter this queue.';
 }
 
 function rowAction(row: OrderOperationRow) {
+  if (row.account_hold_active) return <MiniPill tone="danger">ACCOUNT HOLD</MiniPill>;
   if (row.release_eligible) return <MiniPill tone="good">READY TO RELEASE</MiniPill>;
   if (row.internal_order_id) return <MiniPill tone="blue">INTERNAL ORDER</MiniPill>;
+  if (row.source_presence_status === 'SOURCE_MISSING') return <MiniPill tone="warn">SOURCE MISSING</MiniPill>;
   if (row.operational_scope === 'HISTORY') return <MiniPill tone="neutral">HISTORY</MiniPill>;
   if (row.fulfilment_status === 'SOURCE_REVIEW') return <MiniPill tone="warn">SOURCE REVIEW</MiniPill>;
   return <MiniPill tone={statusTone(row.data_quality_status)}>{title(row.data_quality_status)}</MiniPill>;
@@ -148,8 +150,8 @@ function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage
             <small>{row.internal_order_id ? `internal ${row.internal_order_id.slice(0, 8)}` : 'not internalised'}</small>
           </span>
           <span>
-            <MiniPill tone={statusTone(row.data_quality_status)}>{title(row.data_quality_status)}</MiniPill>
-            <small>{row.classification_reason}</small>
+            <MiniPill tone={row.account_hold_active ? 'danger' : statusTone(row.data_quality_status)}>{row.account_hold_active ? 'ACCOUNT HOLD' : title(row.data_quality_status)}</MiniPill>
+            <small>{row.account_hold_active ? row.account_hold_reason || row.classification_reason : row.classification_reason}</small>
           </span>
           <span>
             <strong>{timeText(row.requested_delivery_at || row.source_business_at)}</strong>
@@ -221,6 +223,7 @@ function OrderPlatformContent() {
       completed: numberValue(summary?.completed_orders),
       surcharge: numberValue(summary?.surcharge_invoices),
       financeReview: numberValue(summary?.finance_review_orders),
+      accountHolds: numberValue(summary?.account_hold_orders),
     };
   }, [summary]);
 
@@ -253,8 +256,8 @@ function OrderPlatformContent() {
 
       <section className="order-platform-metrics order-operations-metrics">
         <Metric label="Current orders" value={counts.current} helper="Live work and source review only" intent="good" />
-        <Metric label="Ready for release" value={counts.ready} helper="Complete and explicitly eligible" intent="good" />
-        <Metric label="Blocked" value={counts.blocked} helper="Current operational action" intent="warn" />
+        <Metric label="Ready for release" value={counts.ready} helper="Complete, present and not on account hold" intent="good" />
+        <Metric label="Blocked" value={counts.blocked} helper={`${counts.accountHolds} EcoFlow account holds`} intent="warn" />
         <Metric label="In fulfilment" value={counts.progress} helper="Warehouse or delivery in progress" intent="blue" />
         <Metric label="Finance review" value={counts.financeReview} helper={`${counts.surcharge} invoices carry a verified surcharge`} intent={counts.financeReview ? 'warn' : 'neutral'} />
         <Metric label="Completed" value={counts.completed} helper="Retained in searchable history" intent="neutral" />
@@ -263,7 +266,7 @@ function OrderPlatformContent() {
       <section className="order-ops-flow-strip" aria-label="Order operating flow">
         <article><span>01</span><div><strong>Mirror</strong><small>Orders, invoices, stores, products and exact source payloads</small></div></article>
         <i>→</i>
-        <article><span>02</span><div><strong>Verify</strong><small>Lines, totals, GST, surcharge, status and references</small></div></article>
+        <article><span>02</span><div><strong>Verify</strong><small>Lines, totals, GST, surcharge, status, holds and references</small></div></article>
         <i>→</i>
         <article><span>03</span><div><strong>Warehouse</strong><small>Release, pick, pack and stage the internal order</small></div></article>
         <i>→</i>

@@ -54,13 +54,14 @@ requireEnv([
   'ORDERMENTUM_SUPPLIER_ID',
 ]);
 
+const mirrorStart = new Date().toISOString();
 const from = scope === 'full_history'
   ? (process.env.ORDERMENTUM_FULL_SYNC_FROM || '2000-01-01T00:00:00.000Z')
   : isoDaysAgo(Number(process.env.ORDERMENTUM_COMPLETE_RECENT_DAYS || 90));
 const to = new Date().toISOString();
 const maxPages = scope === 'full_history' ? '250' : '100';
 
-console.log(JSON.stringify({ action: 'complete_mirror_start', scope, from, to }, null, 2));
+console.log(JSON.stringify({ action: 'complete_mirror_start', scope, mirrorStart, from, to }, null, 2));
 
 await timed(`complete order detail mirror (${scope})`, () => runNode('scripts/ordermentum-sync-now-legacy.mjs', [
   '--script', 'scripts/ordermentum-backfill-window.mjs',
@@ -94,6 +95,11 @@ await timed('project raw invoices', () => runNode('scripts/project-ordermentum-r
   '--max-batches', '40',
 ]));
 
+await timed('finalise Ordermentum source presence', () => runNode('scripts/finalise-ordermentum-source-presence.mjs', [
+  `--scope=${scope}`,
+  `--mirror-start=${mirrorStart}`,
+]));
+
 await timed('verify complete mirror', () => runNode('scripts/verify-ordermentum-complete-mirror.mjs'));
 
-console.log(JSON.stringify({ action: 'complete_mirror_succeeded', scope, completedAt: new Date().toISOString() }, null, 2));
+console.log(JSON.stringify({ action: 'complete_mirror_succeeded', scope, mirrorStart, completedAt: new Date().toISOString() }, null, 2));

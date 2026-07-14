@@ -6,16 +6,26 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error('Supabase service credentials are required.');
 
 const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-const { data, error } = await db
-  .from('v_ecoflow_ordermentum_mirror_health_v1')
-  .select('*')
-  .maybeSingle();
 
-if (error) throw new Error(`Complete mirror verification failed: ${error.message}`);
-if (!data) throw new Error('Complete mirror verification returned no health row.');
+async function loadHealth(view) {
+  const { data, error } = await db.from(view).select('*').maybeSingle();
+  return { data, error };
+}
+
+let source = 'v_ecoflow_ordermentum_mirror_health_v2';
+let result = await loadHealth(source);
+if (result.error && /does not exist|schema cache|pgrst205|42p01/i.test(result.error.message || '')) {
+  source = 'v_ecoflow_ordermentum_mirror_health_v1';
+  result = await loadHealth(source);
+}
+
+if (result.error) throw new Error(`Complete mirror verification failed: ${result.error.message}`);
+if (!result.data) throw new Error('Complete mirror verification returned no health row.');
+const data = result.data;
 
 console.log(JSON.stringify({
   generated_at: new Date().toISOString(),
+  health_view: source,
   ordermentum_complete_mirror: data,
 }, null, 2));
 
@@ -26,11 +36,12 @@ const blockers = [
   ['recent orders missing invoice detail', Number(data.recent_orders_missing_invoice_detail ?? 0)],
   ['unknown recent source statuses', Number(data.unknown_recent_statuses ?? 0)],
   ['recent finance reconciliation reviews', Number(data.recent_finance_reviews ?? 0)],
+  ['source-missing orders still in active fulfilment', Number(data.active_source_missing_orders ?? 0)],
 ].filter(([, count]) => count > 0);
 
 if (data.overall_status !== 'COMPLETE') {
   const detail = blockers.length
     ? blockers.map(([label, count]) => `${label}: ${count}`).join('; ')
-    : 'one or more master domains have no mirrored rows';
+    : 'one or more source domains have no mirrored rows';
   throw new Error(`Ordermentum mirror is ${data.overall_status}: ${detail}`);
 }

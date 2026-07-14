@@ -49,59 +49,59 @@ export type PaymentReceiptRow = {
 };
 
 function requireSupabase(client?: SupabaseClient | null) { const value = client ?? supabase; if (!value) throw new Error('Supabase is not configured.'); return value; }
-function errorMessage(error: unknown) { if (error instanceof Error) return error.message; if (error && typeof error === 'object') { const r=error as Record<string,unknown>; return [r.message,r.details,r.hint,r.code].filter(Boolean).join(' · ') || JSON.stringify(r); } return String(error); }
+function errorMessage(error: unknown) { if (error instanceof Error) return error.message; if (error && typeof error === 'object') { const record = error as Record<string, unknown>; return [record.message, record.details, record.hint, record.code].filter(Boolean).join(' · ') || JSON.stringify(record); } return String(error); }
 
 export async function loadAccountsArKpis(client?: SupabaseClient | null) {
-  const { data,error }=await requireSupabase(client).from('v_ecoflow_accounts_live_ar_kpis').select('*').maybeSingle();
-  if(error) throw new Error(errorMessage(error)); return (data??null) as AccountsArKpis|null;
+  const { data, error } = await requireSupabase(client).from('v_ecoflow_accounts_live_ar_kpis').select('*').maybeSingle();
+  if (error) throw new Error(errorMessage(error)); return (data ?? null) as AccountsArKpis | null;
 }
 export async function loadAccountsStatementCustomers(client?: SupabaseClient | null) {
-  const {data,error}=await requireSupabase(client).from('v_ecoflow_accounts_live_statement_customers').select('*').limit(160);
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as AccountsStatementCustomerRow[];
+  const { data, error } = await requireSupabase(client).from('v_ecoflow_accounts_live_statement_customers').select('*').limit(300);
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as AccountsStatementCustomerRow[];
 }
 export async function loadAccountsStatementLines(client?: SupabaseClient | null) {
-  const {data,error}=await requireSupabase(client).from('v_ecoflow_accounts_live_statement_lines').select('*').order('due_at',{ascending:true}).limit(600);
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as AccountsStatementLineRow[];
+  const { data, error } = await requireSupabase(client).from('v_ecoflow_accounts_live_statement_lines').select('*').order('due_at', { ascending: true }).limit(2000);
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as AccountsStatementLineRow[];
 }
 export async function loadAccountsFollowupQueue(client?: SupabaseClient | null) {
-  const {data,error}=await requireSupabase(client).from('v_ecoflow_accounts_live_followup_queue').select('*').limit(120);
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as AccountsFollowupRow[];
+  const { data, error } = await requireSupabase(client).from('v_ecoflow_accounts_live_followup_queue').select('*').limit(300);
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as AccountsFollowupRow[];
 }
 export async function loadAccountsStatementExportRows(client?: SupabaseClient | null) {
-  const {data,error}=await requireSupabase(client).from('v_ecoflow_accounts_live_statement_lines').select('*').limit(1000);
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as Record<string,unknown>[];
+  const { data, error } = await requireSupabase(client).from('v_ecoflow_accounts_live_statement_lines').select('*').limit(10000);
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as Record<string, unknown>[];
 }
-export async function loadStatementDocuments(storeId?: string,client?: SupabaseClient|null) {
-  let query=requireSupabase(client).from('v_ecoflow_statement_document_history').select('*').order('created_at',{ascending:false}).limit(100);
-  if(storeId) query=query.eq('store_id',storeId);
-  const {data,error}=await query; if(error) throw new Error(errorMessage(error)); return (data??[]) as StatementDocumentRow[];
+export async function loadStatementDocuments(storeId?: string, client?: SupabaseClient | null) {
+  let query = requireSupabase(client).from('v_ecoflow_statement_document_history').select('*').order('created_at', { ascending: false }).limit(300);
+  if (storeId) query = query.eq('store_id', storeId);
+  const { data, error } = await query; if (error) throw new Error(errorMessage(error)); return (data ?? []) as StatementDocumentRow[];
 }
-export async function loadPaymentHistory(storeId?: string,client?: SupabaseClient|null) {
-  let query=requireSupabase(client).from('v_ecoflow_customer_payment_history').select('*').order('paid_at',{ascending:false}).limit(100);
-  if(storeId) query=query.eq('store_id',storeId);
-  const {data,error}=await query; if(error) throw new Error(errorMessage(error)); return (data??[]) as PaymentReceiptRow[];
+/** Legacy payment receipts remain readable for historical audit only. They do not change mirrored AR. */
+export async function loadPaymentHistory(storeId?: string, client?: SupabaseClient | null) {
+  let query = requireSupabase(client).from('v_ecoflow_customer_payment_history').select('*').order('paid_at', { ascending: false }).limit(100);
+  if (storeId) query = query.eq('store_id', storeId);
+  const { data, error } = await query; if (error) throw new Error(errorMessage(error)); return (data ?? []) as PaymentReceiptRow[];
 }
-export async function recordAccountsStatementAction(input:{storeId:string;action:AccountsStatementAction;note?:string|null;value?:string|null},client?:SupabaseClient|null){
-  const {data,error}=await requireSupabase(client).rpc('ecoflow_record_accounts_statement_action',{p_store_id:input.storeId,p_action:input.action,p_note:input.note??null,p_value:input.value??null});
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as AccountsStatementActionResult[];
+export async function recordAccountsStatementAction(input: { storeId: string; action: AccountsStatementAction; note?: string | null; value?: string | null }, client?: SupabaseClient | null) {
+  const { data, error } = await requireSupabase(client).rpc('ecoflow_record_accounts_statement_action', { p_store_id: input.storeId, p_action: input.action, p_note: input.note ?? null, p_value: input.value ?? null });
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as AccountsStatementActionResult[];
 }
-export async function saveBillingContact(input:{storeId:string;storeName:string;email:string;contactName?:string;enabled:boolean},client?:SupabaseClient|null){
-  const {data,error}=await requireSupabase(client).rpc('ecoflow_upsert_billing_contact',{p_store_id:input.storeId,p_store_name:input.storeName,p_billing_email:input.email||null,p_contact_name:input.contactName||null,p_enabled:input.enabled});
-  if(error) throw new Error(errorMessage(error)); return data??[];
+export async function saveBillingContact(input: { storeId: string; storeName: string; email: string; contactName?: string; enabled: boolean }, client?: SupabaseClient | null) {
+  const { data, error } = await requireSupabase(client).rpc('ecoflow_upsert_billing_contact', { p_store_id: input.storeId, p_store_name: input.storeName, p_billing_email: input.email || null, p_contact_name: input.contactName || null, p_enabled: input.enabled });
+  if (error) throw new Error(errorMessage(error)); return data ?? [];
 }
-export async function createStatementDocument(input:{storeId:string;periodStart:string;periodEnd:string},client?:SupabaseClient|null){
-  const {data,error}=await requireSupabase(client).rpc('ecoflow_create_statement_document',{p_store_id:input.storeId,p_period_start:input.periodStart,p_period_end:input.periodEnd});
-  if(error) throw new Error(errorMessage(error)); return (data??[]) as StatementDocumentRow[];
+export async function createStatementDocument(input: { storeId: string; periodStart: string; periodEnd: string }, client?: SupabaseClient | null) {
+  const { data, error } = await requireSupabase(client).rpc('ecoflow_create_statement_document', { p_store_id: input.storeId, p_period_start: input.periodStart, p_period_end: input.periodEnd });
+  if (error) throw new Error(errorMessage(error)); return (data ?? []) as StatementDocumentRow[];
 }
-export async function dispatchStatement(input:{statementId:string;send:boolean},client?:SupabaseClient|null){
-  const active=requireSupabase(client); const {data,error}=await active.functions.invoke('statement-dispatch',{body:{statementId:input.statementId,send:input.send}});
-  if(error) throw new Error(errorMessage(error)); if(data?.error) throw new Error(String(data.error)); return data as Record<string,unknown>;
+export async function dispatchStatement(input: { statementId: string; send: boolean }, client?: SupabaseClient | null) {
+  const current = requireSupabase(client); const { data, error } = await current.functions.invoke('statement-dispatch', { body: { statementId: input.statementId, send: input.send } });
+  if (error) throw new Error(errorMessage(error)); if (data?.error) throw new Error(String(data.error)); return data as Record<string, unknown>;
 }
-export async function recordCustomerPayment(input:{storeId:string;storeName:string;amount:number;paidAt:string;method:string;reference:string;note?:string},client?:SupabaseClient|null){
-  const {data,error}=await requireSupabase(client).rpc('ecoflow_record_customer_payment',{p_store_id:input.storeId,p_store_name:input.storeName,p_amount:input.amount,p_paid_at:input.paidAt,p_method:input.method,p_reference:input.reference,p_note:input.note??null});
-  if(error) throw new Error(errorMessage(error)); return data??[];
+export async function recordCustomerPayment() {
+  throw new Error('ORDERMENTUM_SOURCE_OWNED · Record or correct payments in Ordermentum, then refresh the finance mirror.');
 }
-export async function statementSignedUrl(path:string,client?:SupabaseClient|null){
-  const {data,error}=await requireSupabase(client).storage.from('account-statements').createSignedUrl(path,60*30);
-  if(error) throw new Error(errorMessage(error)); return data.signedUrl;
+export async function statementSignedUrl(path: string, client?: SupabaseClient | null) {
+  const { data, error } = await requireSupabase(client).storage.from('account-statements').createSignedUrl(path, 60 * 30);
+  if (error) throw new Error(errorMessage(error)); return data.signedUrl;
 }

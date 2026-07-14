@@ -85,10 +85,32 @@ export type OrdermentumMirrorHealthRow = {
   variant_count: number | string | null;
   price_group_count: number | string | null;
   stock_location_count: number | string | null;
+  source_missing_records?: number | string | null;
+  source_missing_orders?: number | string | null;
+  active_source_missing_orders?: number | string | null;
   latest_raw_order_sync: string | null;
   latest_master_sync: string | null;
   checked_at: string | null;
 };
+
+function isMissingRelation(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as Record<string, unknown>;
+  const text = [record.message, record.details, record.hint, record.code].filter(Boolean).join(' ').toLowerCase();
+  return text.includes('does not exist') || text.includes('schema cache') || text.includes('pgrst205') || text.includes('42p01');
+}
+
+async function loadMirrorHealth(supabase: SupabaseClient) {
+  const current = await supabase
+    .from('v_ecoflow_ordermentum_mirror_health_v2')
+    .select('*')
+    .maybeSingle();
+  if (!current.error || !isMissingRelation(current.error)) return current;
+  return supabase
+    .from('v_ecoflow_ordermentum_mirror_health_v1')
+    .select('*')
+    .maybeSingle();
+}
 
 export async function triggerOrdermentumSync(
   supabase: SupabaseClient,
@@ -122,10 +144,7 @@ export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
       .select('*')
       .order('requested_at', { ascending: false })
       .limit(20),
-    supabase
-      .from('v_ecoflow_ordermentum_mirror_health_v1')
-      .select('*')
-      .maybeSingle(),
+    loadMirrorHealth(supabase),
   ]);
 
   const masterData = masterHealth.status === 'fulfilled' && !masterHealth.value.error
