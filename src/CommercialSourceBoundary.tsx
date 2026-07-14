@@ -40,6 +40,18 @@ function hideCommercialMutationControls() {
     if (heading === 'payment history') section.hidden = true;
   });
 
+  document.querySelectorAll<HTMLElement>('.inventory-action-row').forEach((row) => {
+    const button = row.querySelector('button');
+    if (button?.textContent?.trim().toLowerCase().includes('set status')) row.hidden = true;
+  });
+
+  const inventoryActions = document.querySelector<HTMLElement>('.inventory-action-panel');
+  if (inventoryActions) ensureNotice(
+    inventoryActions,
+    'inventory-source-status-readonly',
+    'SOURCE SKU STATUS IS READ ONLY · Activate, discontinue or rename a commercial SKU in Ordermentum. EcoFlow may still control shelf, local scan barcode, reorder target, stock estimate and warehouse notes.',
+  );
+
   const accountsGrid = document.querySelector<HTMLElement>('.accounts-commercial-grid');
   if (accountsGrid) ensureNotice(
     accountsGrid,
