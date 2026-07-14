@@ -119,6 +119,8 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
   const mirrorStatus = mirrorHealth?.overall_status ?? 'NOT AVAILABLE';
   const orderCoverage = `${numberValue(mirrorHealth?.projected_order_count)} / ${numberValue(mirrorHealth?.raw_order_count)}`;
   const invoiceCoverage = `${numberValue(mirrorHealth?.projected_invoice_count)} / ${numberValue(mirrorHealth?.raw_invoice_count)}`;
+  const sourceMissing = numberValue(mirrorHealth?.source_missing_records);
+  const activeSourceMissing = numberValue(mirrorHealth?.active_source_missing_orders);
 
   async function trigger(mode: OrdermentumSyncMode) {
     setTriggeringMode(mode);
@@ -145,7 +147,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
       <div className="panel-head">
         <div>
           <h2>Ordermentum integration</h2>
-          <span>Fast deltas keep recent work moving. A separate complete mirror rechecks all supported Ordermentum domains and refuses to report success while data is incomplete.</span>
+          <span>Fast deltas keep recent work moving. A separate complete mirror rechecks all supported Ordermentum domains, records source disappearance and refuses to report success while data is incomplete.</span>
         </div>
         <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh status'}</button>
       </div>
@@ -158,7 +160,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
 
       {mirrorHealth && mirrorStatus !== 'COMPLETE' ? (
         <div className="sync-error-banner desktop-error-banner">
-          COMPLETE MIRROR {mirrorStatus} · Projection gaps, missing detail, unknown source states, or finance reconciliation still require attention. EcoFlow is retaining the source payloads and will not silently classify them as ready.
+          COMPLETE MIRROR {mirrorStatus} · Projection gaps, missing detail, unknown source states, finance reconciliation or an Ordermentum record disappearing during active fulfilment still require attention. EcoFlow retains the source history and never silently releases it.
         </div>
       ) : null}
 
@@ -166,6 +168,8 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         <div><strong><span className={`pill pill-${mirrorTone(mirrorStatus)}`}>{mirrorStatus}</span></strong><span>complete mirror contract</span></div>
         <div><strong>{orderCoverage}</strong><span>projected / raw orders</span></div>
         <div><strong>{invoiceCoverage}</strong><span>projected / raw invoices</span></div>
+        <div><strong>{sourceMissing}</strong><span>retained source-missing history</span></div>
+        <div><strong>{activeSourceMissing}</strong><span>source missing during active fulfilment</span></div>
         <div><strong>{formatTime(mirrorHealth?.checked_at)}</strong><span>mirror verification</span></div>
         <div><strong>{latestJob?.status ?? 'NO DURABLE JOB'}</strong><span>latest fast-sync job</span></div>
         <div><strong>{formatTime(latestOrderAt)}</strong><span>{orderFeedStale ? 'stale order delta' : 'latest order delta'}</span></div>
@@ -193,7 +197,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         })}
       </div>
 
-      <p className="panel-note">Complete mirror schedule: recent commercial data is reconciled daily; all Ordermentum history is rechecked weekly. Orders, invoices, purchaser detail, products, variants, price groups and stock locations are retained independently.</p>
+      <p className="panel-note">Complete mirror schedule: recent commercial data is reconciled daily; all Ordermentum history is rechecked weekly. A source record that disappears is retained as SOURCE_MISSING history and removed from release eligibility.</p>
 
       {message ? <div className="sync-error-banner">{message}</div> : null}
       {error ? <div className="sync-error-banner desktop-error-banner">Failed to trigger sync: {error}</div> : null}
@@ -208,6 +212,8 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
         <div className="table-row"><span><strong>Recent invoice detail gaps</strong></span><span>{numberValue(mirrorHealth?.recent_orders_missing_invoice_detail)}</span><span>0</span><span>{numberValue(mirrorHealth?.recent_orders_missing_invoice_detail) ? 'BLOCKED' : 'COMPLETE'}</span></div>
         <div className="table-row"><span><strong>Unknown recent source states</strong></span><span>{numberValue(mirrorHealth?.unknown_recent_statuses)}</span><span>0</span><span>{numberValue(mirrorHealth?.unknown_recent_statuses) ? 'REVIEW' : 'CLASSIFIED'}</span></div>
         <div className="table-row"><span><strong>Finance reconciliation review</strong></span><span>{numberValue(mirrorHealth?.recent_finance_reviews)}</span><span>0</span><span>{numberValue(mirrorHealth?.recent_finance_reviews) ? 'REVIEW' : 'RECONCILED'}</span></div>
+        <div className="table-row"><span><strong>Retained source-missing history</strong></span><span>{sourceMissing}</span><span>Audit only</span><span>{sourceMissing ? 'RETAINED' : 'NONE'}</span></div>
+        <div className="table-row"><span><strong>Source missing during active fulfilment</strong></span><span>{activeSourceMissing}</span><span>0</span><span>{activeSourceMissing ? 'STOP & INVESTIGATE' : 'CLEAR'}</span></div>
       </div>
 
       <div className="table-like">
