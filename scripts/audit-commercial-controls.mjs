@@ -7,6 +7,7 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 
 const ownerBundle = read('src/enhancers/OwnerEnhancers.tsx');
 const accountBundle = read('src/enhancers/AccountEnhancers.tsx');
+const dashboard = read('src/AuthoritativeDashboard.tsx');
 const ownershipDomain = read('src/domain/dataOwnership.ts');
 const ownershipUi = read('src/CommercialSourceBoundary.tsx');
 const priceUi = read('src/PriceMatrixWorkbench.tsx');
@@ -14,8 +15,11 @@ const priceRepo = read('src/data/repositories/priceMatrix.ts');
 const storeRepo = read('src/data/repositories/storeIntelligence.ts');
 const accountsUi = read('src/AccountsStatementWorkbench.tsx');
 const accountsRepo = read('src/data/repositories/accountsStatement.ts');
+const app = read('src/app/App.tsx');
 const orderUi = read('src/OrderPlatformExperience.tsx');
 const orderRepo = read('src/data/repositories/orderOperations.ts');
+const sourceProjection = read('src/data/repositories/supabaseOrdermentumViews.ts');
+const resilientProjection = read('src/data/repositories/resilientOrdermentumViews.ts');
 const syncRepo = read('src/features/team/ordermentumSync.ts');
 const syncSettings = read('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx');
 const mirror = read('scripts/ordermentum-complete-mirror.mjs');
@@ -29,12 +33,18 @@ const deploy = read('.github/workflows/deploy-supabase-migrations.yml');
 
 has(ownerBundle, 'CommercialSourceBoundary', 'Owner/Admin must receive the source ownership contract.');
 has(accountBundle, 'CommercialSourceBoundary', 'Accounts must receive the source ownership contract.');
+has(ownerBundle, 'AuthoritativeDashboard', 'Owner/Admin dashboard must use authoritative server counts.');
+has(accountBundle, 'AuthoritativeDashboard', 'Accounts dashboard must use authoritative server counts.');
+has(dashboard, 'loadOrderOperationsSummary', 'Dashboard order KPIs must come from the server summary.');
+has(dashboard, 'v_ecoflow_ordermentum_mirror_health_v2', 'Dashboard must expose verified mirror health.');
+has(dashboard, 'Exact server classification', 'Dashboard must not describe a capped browser slice as the total.');
 lacks(ownerBundle, 'PriceMatrixWorkbench', 'Owner bundle must not expose local price editing.');
 lacks(accountBundle, 'PriceMatrixWorkbench', 'Accounts bundle must not expose local price editing.');
 has(ownershipDomain, 'ORDERMENTUM_SOURCE_DOMAINS', 'Commercial ownership domains must be explicit.');
 has(ownershipDomain, 'ECOFLOW_OPERATIONAL_DOMAINS', 'Operational ownership domains must be explicit.');
 has(ownershipUi, 'One commercial source. One operational system.', 'The platform must explain the one-way source boundary.');
 has(ownershipUi, 'SOURCE_MISSING', 'Source deletion must retain history rather than physically delete it.');
+has(ownershipUi, 'SOURCE SKU STATUS IS READ ONLY', 'Inventory must not expose commercial SKU status editing.');
 
 has(priceUi, 'ORDERMENTUM PRICE MIRROR · READ ONLY', 'Selling prices must be presented as a read-only mirror.');
 has(priceUi, 'managed in Ordermentum', 'The price surface must direct changes to Ordermentum.');
@@ -56,12 +66,22 @@ has(accountsRepo, "functions.invoke('statement-dispatch'", 'Statement PDF/email 
 has(accountsOpsMigration, 'ecoflow_account_release_holds', 'Accounts holds must remain an EcoFlow operational record.');
 has(accountsOpsMigration, 'ecoflow_record_accounts_statement_action', 'Accounts workflow RPC must be durable.');
 has(accountsOpsMigration, 'v_ecoflow_order_operations_v5', 'Release eligibility must include operational account holds.');
-has(accountsOpsMigration, 'v_payments', 'Statement totals must use mirrored source payment facts.');
+has(accountsOpsMigration, 'amount_due', 'Statement totals must use mirrored source amount due.');
 has(orderRepo, 'effective_release_eligible', 'Order reads must apply effective account-hold eligibility.');
 has(orderUi, 'ACCOUNT HOLD', 'Order Control must show account holds explicitly.');
 has(statementFunction, "['OWNER','ADMIN','ACCOUNT']", 'Only office roles may generate or send statements.');
 lacks(statementFunction, 'body.recipient', 'Browser must not choose an arbitrary statement recipient.');
 has(deploy, 'functions deploy statement-dispatch', 'Production deployment must include statement dispatch.');
+
+has(app, "order.releaseGateStatus === 'READY_TO_RELEASE'", 'Driver-run release must require the authoritative release gate.');
+has(app, 'order.hasInternalOrder === true', 'Driver-run release must require a database-created internal order.');
+has(app, '&& !order.releaseBlockers', 'Driver-run release must reject unresolved blockers.');
+has(sourceProjection, "normalized === 'paid'", 'Payment status parsing must match paid explicitly.');
+lacks(sourceProjection, "normalized.includes('paid')", 'Unpaid must never be classified as paid by substring.');
+has(sourceProjection, 'isAccountHold', 'Source projection must recognise operational account holds.');
+has(resilientProjection, "'placed'", 'Placed Ordermentum orders must be recognised as current source orders.');
+has(resilientProjection, 'account release holds', 'Native release control must load effective account holds.');
+has(resilientProjection, 'The source order may be eligible for database internalisation', 'Internalisation eligibility must remain separate from run release.');
 
 has(migration, 'ecoflow_ordermentum_source_presence', 'Source presence must be durable.');
 has(migration, 'ecoflow_reject_commercial_mirror_write', 'Database must reject source-mirror writes.');
@@ -85,4 +105,4 @@ has(runUi, 'Run history and replay', 'Delivery page must expose run history repl
 has(runUi, 'Archive data is read-only', 'Historical runs must remain read-only.');
 has(runRepo, 'v_ecoflow_delivery_run_catalog', 'Run history must load from server catalog.');
 
-console.log('Ordermentum source ownership, EcoFlow operational writes, statements and run history audit passed.');
+console.log('Ordermentum source ownership, strict release, authoritative dashboard, EcoFlow operational writes, statements and run history audit passed.');
