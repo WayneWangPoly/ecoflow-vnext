@@ -85,14 +85,21 @@ await timed('complete invoice detail mirror', () => runNode('scripts/ordermentum
   '--delay-ms=300',
 ]));
 
+// Projection RPCs parse JSON and upsert orders, invoices and lines inside one
+// database transaction. Start conservatively and let the projection scripts
+// reduce their batch again when Supabase reports SQLSTATE 57014.
 await timed('project raw orders', () => runNode('scripts/project-ordermentum-raw-orders.mjs', [
-  '--batch-limit', '500',
-  '--max-batches', '40',
+  '--batch-limit', '100',
+  '--min-batch-limit', '5',
+  '--max-batches', '400',
+  '--delay-ms', '100',
 ]));
 
 await timed('project raw invoices', () => runNode('scripts/project-ordermentum-raw-invoices.mjs', [
-  '--batch-limit', '500',
-  '--max-batches', '40',
+  '--batch-limit', '100',
+  '--min-batch-limit', '10',
+  '--max-batches', '400',
+  '--delay-ms', '100',
 ]));
 
 await timed('finalise Ordermentum source presence', () => runNode('scripts/finalise-ordermentum-source-presence.mjs', [

@@ -27,6 +27,8 @@ jobs:
         run: node scripts/audit-commercial-controls.mjs
       - name: Audit optional Ordermentum capabilities
         run: node scripts/audit-ordermentum-optional-capabilities.mjs
+      - name: Audit adaptive Ordermentum projection
+        run: node scripts/audit-ordermentum-projection-resilience.mjs
       - name: TypeScript check
         run: node ./node_modules/typescript/bin/tsc -b --pretty false
       - name: Vite production bundle
