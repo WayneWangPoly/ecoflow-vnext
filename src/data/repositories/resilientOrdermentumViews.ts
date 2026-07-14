@@ -1,5 +1,5 @@
 import {
-  applySupabaseOrdermentumViews,
+  applySupabaseOrdermentumViews as applyBaseSupabaseOrdermentumViews,
   type SupabaseDraftRow,
   type SupabaseExceptionRow,
   type SupabaseInboxRow,
@@ -12,9 +12,11 @@ import {
   type SupabaseStoreSiteRow,
   type SupabaseSyncHealthRow,
 } from './supabaseOrdermentumViews';
+import { getOrderBucketCounts } from '@/domain/orderBuckets';
+import type { EcoFlowDataSet, ImportedOrder, OrderStatus } from '@/domain/types';
 import { supabase } from '@/lib/supabaseClient';
 
-export { applySupabaseOrdermentumViews };
+export type { SupabaseOrdermentumViews };
 
 type InventoryLocationRow = {
   sku: string | null;
@@ -57,6 +59,21 @@ export class OperationalSnapshotError extends Error {
     this.status = status;
   }
 }
+
+const EXPLICIT_CURRENT_SOURCE_STATUSES = new Set([
+  'new',
+  'pending',
+  'processing',
+  'confirmed',
+  'accepted',
+  'approved',
+  'open',
+  'ready',
+  'paid',
+  'unpaid',
+  'in_progress',
+  'partially_fulfilled',
+]);
 
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
@@ -143,7 +160,14 @@ function enrichInboxAmounts(rows: SupabaseInboxRow[], lines: SupabaseOrderLineRo
   return rows.map((row) => {
     const existing = numberValue(row.invoice_total) || numberValue(row.order_items_total);
     if (existing) return row;
-    const derived = [row.external_order_id, row.om_order_id, row.order_number, row.external_order_number, row.invoice_number, row.external_invoice_number]
+    const derived = [
+      row.external_order_id,
+      row.om_order_id,
+      row.order_number,
+      row.external_order_number,
+      row.invoice_number,
+      row.external_invoice_number,
+    ]
       .filter((key): key is string => Boolean(key))
       .map((key) => totals.get(key) || 0)
       .find((value) => value > 0) || numberValue(row.total_due);
@@ -171,7 +195,12 @@ function liveLocationsBySku(rows: LiveLocationBalanceRow[]) {
   ]));
 }
 
-function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: InventoryLocationRow[], barcodeRows: BarcodeShelfRow[], liveBalanceRows: LiveLocationBalanceRow[]) {
+function mergeSkuLocations(
+  masterRows: SupabaseSkuMasterRow[],
+  inventoryRows: InventoryLocationRow[],
+  barcodeRows: BarcodeShelfRow[],
+  liveBalanceRows: LiveLocationBalanceRow[],
+) {
   const bySku = new Map<string, SupabaseSkuMasterRow>();
   masterRows.forEach((row) => {
     if (row.external_sku_code) bySku.set(row.external_sku_code.toUpperCase(), row);
@@ -219,6 +248,10 @@ function mergeSkuLocations(masterRows: SupabaseSkuMasterRow[], inventoryRows: In
   return [...bySku.values()];
 }
 
+function addKeys<T>(map: Map<string, T>, row: T, values: Array<string | null | undefined>) {
+  values.filter((value): value is string => Boolean(value)).forEach((value) => map.set(value, row));
+}
+
 function activeOrderKeys(rows: SupabaseInboxRow[]) {
   const keys = new Set<string>();
   rows.forEach((row) => {
@@ -243,21 +276,128 @@ function scopeAndDedupeExceptions(rows: SupabaseExceptionRow[], inbox: SupabaseI
   });
 }
 
+function warehouseStatus(draft?: SupabaseDraftRow): OrderStatus | null {
+  if (!draft?.internal_order_id) return null;
+  const gate = String(draft.warehouse_gate_status || '').toLowerCase();
+  if (['out_for_delivery', 'driver_assigned', 'on_route', 'en_route'].includes(gate)) return 'OUT_FOR_DELIVERY';
+  if (['staged', 'packed', 'ready_for_delivery'].includes(gate)) return 'STAGED';
+  if (['picking', 'pick_started'].includes(gate)) return 'PICKING';
+  return null;
+}
+
+/**
+ * The base projection still supplies the existing domain object used by the
+ * warehouse and driver surfaces. This final pass enforces the new boundary:
+ * source status may describe an order, but only an explicit current state may
+ * make it releasable. Existing internal orders are never recreated.
+ */
+export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: ResilientOrdermentumViews): EcoFlowDataSet {
+  const projected = applyBaseSupabaseOrdermentumViews(base, views);
+  const inboxByKey = new Map<string, SupabaseInboxRow>();
+  views.inbox.forEach((row) => addKeys(inboxByKey, row, [
+    row.raw_order_id,
+    row.external_order_id,
+    row.external_order_number,
+    row.order_number,
+    row.invoice_number,
+    row.external_invoice_number,
+  ]));
+
+  const draftByKey = new Map<string, SupabaseDraftRow>();
+  views.drafts.forEach((draft) => addKeys(draftByKey, draft, [
+    draft.raw_order_id,
+    draft.external_order_id,
+    draft.external_order_number,
+    draft.order_number,
+    draft.invoice_number,
+  ]));
+
+  const orders = projected.orders.map((order): ImportedOrder => {
+    const row = inboxByKey.get(order.id)
+      || inboxByKey.get(order.externalOrderId)
+      || inboxByKey.get(order.orderNo)
+      || inboxByKey.get(order.invoiceNo);
+    const draft = draftByKey.get(order.id)
+      || draftByKey.get(order.externalOrderId)
+      || draftByKey.get(order.orderNo)
+      || draftByKey.get(order.invoiceNo);
+
+    const liveWarehouseStatus = warehouseStatus(draft);
+    if (liveWarehouseStatus) {
+      return {
+        ...order,
+        status: liveWarehouseStatus,
+        selected: false,
+        canCreateInternalOrder: false,
+        hasInternalOrder: true,
+      };
+    }
+
+    if (draft?.internal_order_id) {
+      return {
+        ...order,
+        selected: order.status === 'RELEASE_READY',
+        canCreateInternalOrder: false,
+        hasInternalOrder: true,
+      };
+    }
+
+    const sourceStatus = String(row?.order_status || '').trim().toLowerCase();
+    if (!EXPLICIT_CURRENT_SOURCE_STATUSES.has(sourceStatus)) {
+      const blocker = sourceStatus
+        ? `Ordermentum status “${row?.order_status}” requires review before release.`
+        : 'Ordermentum source status is missing; review before release.';
+      return {
+        ...order,
+        status: 'IMPORTED',
+        selected: false,
+        canCreateInternalOrder: false,
+        hasInternalOrder: false,
+        releaseGateStatus: 'BLOCKED_DATA',
+        releaseBlockers: blocker,
+        changeSummary: blocker,
+        openExceptionCount: Math.max(1, order.openExceptionCount),
+      };
+    }
+
+    return {
+      ...order,
+      selected: order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false,
+      hasInternalOrder: false,
+    };
+  });
+
+  return {
+    ...projected,
+    orders,
+    bucketCounts: getOrderBucketCounts(orders, projected.businessDay.date),
+    repositoryStatus: {
+      ...projected.repositoryStatus,
+      label: 'Supabase Ordermentum current operations',
+      sourceFiles: ['v_ecoflow_order_operations_v2', 'v_ecoflow_ordermentum_ui_active_inbox'],
+      counts: { ...projected.repositoryStatus.counts, recentOrders: orders.length },
+    },
+    summary: {
+      ...projected.summary,
+      recentOrdersCount: orders.length,
+      sourceFiles: ['Supabase current operations model'],
+    },
+  };
+}
+
 export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrdermentumViews | null> {
   if (!hasSupabaseConfig()) return null;
 
-  // These five sources define the current operational order lifecycle. A failed
-  // read must fail the snapshot rather than silently converting real work to 0.
+  // These sources define the current operational slice. They fail closed so a
+  // broken read can never turn a real queue into a misleading zero.
   const [inboxResult, exceptionResult, lineResult, draftResult, orderResult] = await Promise.all([
-    requiredFetch<SupabaseInboxRow[]>('active order inbox', 'v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=1000'),
-    requiredFetch<SupabaseExceptionRow[]>('active exceptions', 'v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000'),
-    requiredFetch<SupabaseOrderLineRow[]>('active order lines', 'v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000'),
-    requiredFetch<SupabaseDraftRow[]>('active internal drafts', 'v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000'),
-    requiredFetch<SupabaseOmOrderRow[]>('active Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=id,order_number,retailer_id,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc&limit=2000'),
+    requiredFetch<SupabaseInboxRow[]>('current order inbox', 'v_ecoflow_ordermentum_ui_active_inbox?select=*&order=order_updated_at.desc&limit=1000'),
+    requiredFetch<SupabaseExceptionRow[]>('current exceptions', 'v_ecoflow_ordermentum_ui_active_exceptions?select=*&order=detected_at.desc&limit=1000'),
+    requiredFetch<SupabaseOrderLineRow[]>('current order lines', 'v_ecoflow_ordermentum_ui_active_order_lines?select=*&order=order_number.asc&limit=6000'),
+    requiredFetch<SupabaseDraftRow[]>('current internal drafts', 'v_ecoflow_ordermentum_ui_active_drafts?select=*&order=last_synced_at.desc&limit=2000'),
+    requiredFetch<SupabaseOmOrderRow[]>('current Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=id,order_number,retailer_id,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc&limit=2000'),
   ]);
 
-  // Supporting masters improve names, locations and summary KPIs. A failure is
-  // visible as degraded health but does not erase the trusted active order list.
   const [healthResult, skuResult, inventoryResult, barcodeResult, liveBalanceResult, storeResult, releaseResult, mappingResult] = await Promise.all([
     optionalFetch<SupabaseSyncHealthRow[]>('sync health', 'v_ecoflow_ordermentum_sync_health?select=*', []),
     optionalFetch<SupabaseSkuMasterRow[]>('SKU master', 'v_ecoflow_app_sku_master?select=*&limit=3000', []),
@@ -269,36 +409,34 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
     optionalFetch<SupabaseSkuMappingCandidateRow[]>('SKU mapping candidates', 'v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=1000', []),
   ]);
 
-  const inbox = inboxResult.data;
-  const lines = lineResult.data;
+  const inbox = enrichInboxAmounts(inboxResult.data, lineResult.data);
   const exceptions = scopeAndDedupeExceptions(exceptionResult.data, inbox);
-  const diagnostics = [
-    inboxResult.diagnostic,
-    exceptionResult.diagnostic,
-    lineResult.diagnostic,
-    draftResult.diagnostic,
-    orderResult.diagnostic,
-    healthResult.diagnostic,
-    skuResult.diagnostic,
-    inventoryResult.diagnostic,
-    barcodeResult.diagnostic,
-    liveBalanceResult.diagnostic,
-    storeResult.diagnostic,
-    releaseResult.diagnostic,
-    mappingResult.diagnostic,
-  ];
 
   return {
-    inbox: enrichInboxAmounts(inbox, lines),
+    inbox,
     exceptions,
     health: healthResult.data[0] || null,
-    lines,
+    lines: lineResult.data,
     drafts: draftResult.data,
     omOrders: orderResult.data,
     skuMaster: mergeSkuLocations(skuResult.data, inventoryResult.data, barcodeResult.data, liveBalanceResult.data),
     storeSites: storeResult.data,
     releaseSummary: releaseResult.data[0] || null,
     skuMappingCandidates: mappingResult.data,
-    diagnostics,
+    diagnostics: [
+      inboxResult.diagnostic,
+      exceptionResult.diagnostic,
+      lineResult.diagnostic,
+      draftResult.diagnostic,
+      orderResult.diagnostic,
+      healthResult.diagnostic,
+      skuResult.diagnostic,
+      inventoryResult.diagnostic,
+      barcodeResult.diagnostic,
+      liveBalanceResult.diagnostic,
+      storeResult.diagnostic,
+      releaseResult.diagnostic,
+      mappingResult.diagnostic,
+    ],
   };
 }

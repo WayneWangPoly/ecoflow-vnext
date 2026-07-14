@@ -64,7 +64,7 @@ export function DashboardPage({
       <section className="owner-command-unavailable" role="alert">
         <div>
           <strong>Live dashboard unavailable</strong>
-          <span>{loadError || 'EcoFlow could not load a consistent current-lifecycle snapshot. No sample figures are shown.'}</span>
+          <span>{loadError || 'EcoFlow could not load a consistent current-operations snapshot. No sample figures are shown.'}</span>
         </div>
         <button type="button" disabled={loading} onClick={() => void onReload()}>
           {loading ? 'Retrying…' : 'Retry live data'}
@@ -76,7 +76,7 @@ export function DashboardPage({
   const roleName = role === 'account' ? 'ACCOUNTS' : role.toUpperCase();
   const subtitle = role === 'account'
     ? 'Accounts control across today’s Ordermentum changes, release blockers and receivables.'
-    : 'One clear operating view across today’s orders, mapping pressure and customer risk.';
+    : 'One clear operating view across current orders, fulfilment pressure and customer risk.';
 
   return (
     <section className="owner-command-shell">
@@ -90,7 +90,7 @@ export function DashboardPage({
         <div className="owner-command-hero-metrics">
           <DashboardMetric label="New today" value={view.count('newToday')} helper="First seen today" tone="good" />
           <DashboardMetric label="Updated today" value={view.count('updatedToday')} helper="Changed today" tone="blue" />
-          <DashboardMetric label="Active orders" value={view.activeOrders} helper={`${orders.length} current lifecycle records`} tone="warn" />
+          <DashboardMetric label="Current orders" value={view.activeOrders} helper={`${orders.length} live operational records`} tone="warn" />
           <DashboardMetric label="Open AR" value={money(view.openAr)} helper="Outstanding balance" />
         </div>
       </section>
@@ -140,7 +140,7 @@ export function DashboardPage({
           <header className="owner-command-panel-header">
             <div>
               <h2>Daily control queue</h2>
-              <p>Actionable changes and blockers only. Unchanged records remain in Ordermentum Inbox history.</p>
+              <p>Current changes and blockers only. Completed and historical records remain searchable on Orders.</p>
             </div>
             <div className="owner-command-header-actions">
               <DashboardPill tone={view.actionableCount ? 'warn' : 'good'}>

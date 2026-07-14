@@ -5,7 +5,6 @@ import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { ActiveExceptionClarityEnhancer } from '../ActiveExceptionClarityEnhancer';
-import { LegacyReviewArchiveControl } from '../LegacyReviewArchiveControl';
 import { OrderPlatformExperience } from '../OrderPlatformExperience';
 import { OwnerDeliveryAlerts } from '../OwnerDeliveryAlerts';
 import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
@@ -14,6 +13,7 @@ import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import '../orderPlatformTable.css';
+import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
 import '../storeStatementPressure.css';
@@ -44,7 +44,6 @@ export default function OwnerEnhancers() {
       <AccountsStatementWorkbench />
       <DeliveryRunHistory />
       <OrderPlatformExperience />
-      <LegacyReviewArchiveControl />
     </>
   );
 }
