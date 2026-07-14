@@ -1,0 +1,43 @@
+name: Apply inventory source-boundary patch
+
+on:
+  push:
+    branches:
+      - refactor/commercial-source-boundary-v1
+    paths:
+      - scripts/apply-inventory-source-boundary-patch.mjs
+      - .github/workflows/apply-inventory-source-boundary-patch.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-inventory-source-boundary-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/commercial-source-boundary-v1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply inventory source boundary
+        run: node scripts/apply-inventory-source-boundary-patch.mjs
+      - name: Commit patched source
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Inventory source boundary already applied."
+            exit 0
+          fi
+          git config user.name "EcoFlow Source Boundary Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/data/repositories/inventoryControl.ts
+          git commit -m "Block local commercial SKU status and naming writes"
+          git push origin HEAD:refactor/commercial-source-boundary-v1
