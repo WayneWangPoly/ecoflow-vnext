@@ -175,6 +175,7 @@ export const RESOURCE_DEFINITIONS = {
     detailPath: null,
     detailType: 'stock_location_detail',
     needsSupplierId: true,
+    optionalCapability: true,
   },
   leads: {
     path: '/v1/leads',
