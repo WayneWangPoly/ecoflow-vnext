@@ -93,7 +93,7 @@ begin
     ) values (
       v_store,true,coalesce(v_note,'Accounts release hold'),v_id,auth.uid(),now()
     )
-    on conflict(store_id) do update set
+    on conflict on constraint ecoflow_account_release_holds_pkey do update set
       active=true,
       hold_reason=excluded.hold_reason,
       source_action_id=excluded.source_action_id,
@@ -105,7 +105,7 @@ begin
     ) values (
       v_store,false,coalesce(v_note,'Accounts release hold cleared'),v_id,auth.uid(),now()
     )
-    on conflict(store_id) do update set
+    on conflict on constraint ecoflow_account_release_holds_pkey do update set
       active=false,
       hold_reason=excluded.hold_reason,
       source_action_id=excluded.source_action_id,
