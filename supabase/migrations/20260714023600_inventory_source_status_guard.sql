@@ -4,23 +4,8 @@
 
 begin;
 
-do $$
-declare
-  v_rec record;
-begin
-  for v_rec in
-    select
-      p.oid::regprocedure::text as signature,
-      pg_get_function_result(p.oid) as result_type,
-      pg_get_function_arguments(p.oid) as arguments
-    from pg_proc p
-    join pg_namespace n on n.oid=p.pronamespace
-    where n.nspname='public' and p.proname='ecoflow_apply_inventory_sku_action'
-  loop
-    raise notice 'INVENTORY_ACTION_SIGNATURE=% RESULT=% ARGUMENTS=%', v_rec.signature, v_rec.result_type, v_rec.arguments;
-  end loop;
-end $$;
-
+-- Production already has the operational inventory action engine. Fresh schema
+-- contract tests may not, so discover and preserve it only when present.
 do $$
 begin
   if to_regprocedure('public.ecoflow_apply_inventory_sku_action_internal_v1(text,text,text,text)') is null
@@ -71,15 +56,22 @@ begin
     raise exception 'INVENTORY_ACTION_ENGINE_UNAVAILABLE';
   end if;
 
-  return query
-  select *
-  from public.ecoflow_apply_inventory_sku_action_internal_v1(
-    p_sku,p_action,p_value,p_note
-  );
+  -- Dynamic SQL keeps this migration installable in clean contract schemas
+  -- where the legacy engine is intentionally absent. Production calls still
+  -- delegate to the preserved operational engine with typed parameters.
+  return query execute
+    'select * from public.ecoflow_apply_inventory_sku_action_internal_v1($1,$2,$3,$4)'
+    using p_sku,p_action,p_value,p_note;
 end;
 $$;
 
-revoke all on function public.ecoflow_apply_inventory_sku_action_internal_v1(text,text,text,text) from public, anon, authenticated;
+do $$
+begin
+  if to_regprocedure('public.ecoflow_apply_inventory_sku_action_internal_v1(text,text,text,text)') is not null then
+    execute 'revoke all on function public.ecoflow_apply_inventory_sku_action_internal_v1(text,text,text,text) from public, anon, authenticated';
+  end if;
+end $$;
+
 revoke all on function public.ecoflow_apply_inventory_sku_action(text,text,text,text) from public, anon;
 grant execute on function public.ecoflow_apply_inventory_sku_action(text,text,text,text) to authenticated;
 
