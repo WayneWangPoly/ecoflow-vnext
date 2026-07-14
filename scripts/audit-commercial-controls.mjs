@@ -15,6 +15,8 @@ const storeRepo = read('src/data/repositories/storeIntelligence.ts');
 const accountsUi = read('src/AccountsStatementWorkbench.tsx');
 const accountsRepo = read('src/data/repositories/accountsStatement.ts');
 const orderRepo = read('src/data/repositories/orderOperations.ts');
+const syncRepo = read('src/features/team/ordermentumSync.ts');
+const syncSettings = read('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx');
 const mirror = read('scripts/ordermentum-complete-mirror.mjs');
 const presence = read('scripts/finalise-ordermentum-source-presence.mjs');
 const migration = read('supabase/migrations/20260714023000_commercial_source_boundary_v1.sql');
@@ -65,6 +67,9 @@ has(mirror, 'finalise-ordermentum-source-presence.mjs', 'Complete mirror must fi
 has(presence, 'SOURCE_MISSING', 'Full history reconciliation must mark disappeared source records.');
 has(orderRepo, 'v_ecoflow_order_operations_v4', 'Orders must prefer the source-presence model.');
 has(orderRepo, 'source_presence_status', 'Orders must expose source presence.');
+has(syncRepo, 'v_ecoflow_ordermentum_mirror_health_v2', 'Settings must prefer source-presence-aware mirror health.');
+has(syncSettings, 'Source missing during active fulfilment', 'Settings must surface active source disappearance as a stop condition.');
+has(syncSettings, 'Retained source-missing history', 'Settings must show preserved source-missing history.');
 
 has(ownerBundle, 'DeliveryRunHistory', 'Owner/Admin must retain delivery run history.');
 has(accountBundle, 'DeliveryRunHistory', 'Accounts must retain delivery run history.');
