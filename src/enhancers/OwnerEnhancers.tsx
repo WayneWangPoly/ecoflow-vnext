@@ -1,5 +1,6 @@
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
+import { AuthoritativeDashboard } from '../AuthoritativeDashboard';
 import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
@@ -12,6 +13,7 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
+import '../authoritativeDashboard.css';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -31,6 +33,7 @@ export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
+      <AuthoritativeDashboard />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />
