@@ -1,5 +1,5 @@
 -- Ordermentum is the sole source of commercial truth.
--- EcoFlow mirrors commercial facts and owns only internal workflow, warehouse,
+-- EcoFlow mirrors commercial facts and owns internal workflow, warehouse,
 -- delivery, communication preferences, documents, security and audit records.
 
 begin;
@@ -38,6 +38,29 @@ begin
   end if;
 end $$;
 
+create or replace function public.ecoflow_request_role()
+returns text
+language plpgsql
+stable
+set search_path=public
+as $$
+declare
+  v_role text := nullif(current_setting('request.jwt.claim.role', true), '');
+  v_claims text;
+begin
+  if v_role is not null then return v_role; end if;
+  v_claims := nullif(current_setting('request.jwt.claims', true), '');
+  if v_claims is not null then
+    begin
+      v_role := nullif(v_claims::jsonb->>'role', '');
+    exception when others then
+      v_role := null;
+    end;
+  end if;
+  return coalesce(v_role, current_user);
+end;
+$$;
+
 create or replace function public.ecoflow_reject_commercial_mirror_write()
 returns trigger
 language plpgsql
@@ -45,14 +68,11 @@ security definer
 set search_path=public
 as $$
 declare
-  v_role text := coalesce(
-    nullif(current_setting('request.jwt.claim.role', true), ''),
-    nullif(current_setting('request.jwt.claims', true)::jsonb->>'role', ''),
-    current_user
-  );
+  v_role text := public.ecoflow_request_role();
 begin
   if v_role in ('service_role','postgres','supabase_admin') or current_user in ('postgres','supabase_admin') then
-    return case when tg_op='DELETE' then old else new end;
+    if tg_op='DELETE' then return old; end if;
+    return new;
   end if;
   raise exception 'ORDERMENTUM_SOURCE_OWNED: % is a read-only commercial mirror; change the source in Ordermentum and sync again', tg_table_name
     using errcode='42501';
@@ -66,11 +86,7 @@ security definer
 set search_path=public
 as $$
 declare
-  v_role text := coalesce(
-    nullif(current_setting('request.jwt.claim.role', true), ''),
-    nullif(current_setting('request.jwt.claims', true)::jsonb->>'role', ''),
-    current_user
-  );
+  v_role text := public.ecoflow_request_role();
   v_old jsonb;
   v_new jsonb;
   v_key text;
@@ -81,7 +97,8 @@ declare
   ];
 begin
   if v_role in ('service_role','postgres','supabase_admin') or current_user in ('postgres','supabase_admin') then
-    return case when tg_op='DELETE' then old else new end;
+    if tg_op='DELETE' then return old; end if;
+    return new;
   end if;
 
   if tg_op in ('INSERT','DELETE') then
@@ -101,8 +118,8 @@ begin
 end;
 $$;
 
--- Protect raw mirrors, canonical Ordermentum projections and retired local
--- commercial substitutes. Service-role sync and projection remain allowed.
+-- Protect raw mirrors, canonical projections and retired local commercial
+-- substitutes. Service-role sync and projection remain allowed.
 do $$
 declare
   v_table text;
@@ -143,8 +160,7 @@ begin
   end if;
 end $$;
 
--- Remove browser execution rights from legacy local substitutes. Existing rows
--- remain queryable for audit but no longer influence mirrored commercial truth.
+-- Remove browser execution rights from legacy local price/payment substitutes.
 do $$
 declare
   v_signature text;
@@ -167,20 +183,20 @@ end $$;
 create or replace view public.v_ecoflow_data_ownership_contract_v1 as
 select * from (values
   ('CUSTOMERS_STORES','ORDERMENTUM','SOURCE_MIRROR','Ordermentum','Names, addresses, phones, delivery instructions, price groups and payment terms','Retain history and mark SOURCE_MISSING'),
-  ('PRODUCTS_SKUS_PRICES','ORDERMENTUM','SOURCE_MIRROR','Ordermentum','Products, variants, SKUs, source barcodes and selling prices','Retain historical order lines and mark inactive/missing'),
+  ('PRODUCTS_SKUS_PRICES','ORDERMENTUM','SOURCE_MIRROR','Ordermentum','Products, variants, SKUs, source barcodes and selling prices','Retain historical order lines and mark inactive or missing'),
   ('ORDERS_LINES','ORDERMENTUM','SOURCE_MIRROR','Ordermentum','Commercial order, quantities, requested delivery, amount and cancellation','Retain audit copy and remove release eligibility'),
   ('INVOICES_PAYMENTS','ORDERMENTUM','SOURCE_MIRROR','Ordermentum','Invoice, GST, freight, surcharge, payment status, method and amount due','Retain statement history and flag source gap'),
   ('WAREHOUSE_STOCK','ECOFLOW','OPERATIONAL_RECORD','EcoFlow','Receiving, physical stock, racks, local barcode verification, pick, pack and stage','Reverse by auditable stock movement'),
   ('DELIVERY_POD','ECOFLOW','OPERATIONAL_RECORD','EcoFlow','Run release, route, driver progress, POD, failed delivery and returns','Preserve completed run and POD history'),
   ('OFFICE_WORKFLOW','ECOFLOW','OPERATIONAL_RECORD','EcoFlow','Internal order, release hold, collection note, statement document and communication preference','Close or supersede with audit'),
-  ('SECURITY_AUDIT','ECOFLOW','OPERATIONAL_RECORD','EcoFlow','Users, roles, approvals, integration jobs and activity logs','Deactivate access; retain events')
+  ('SECURITY_AUDIT','ECOFLOW','OPERATIONAL_RECORD','EcoFlow','Users, roles, approvals, integration jobs and activity logs','Deactivate access and retain events')
 ) as ownership(domain, authoritative_system, ownership_mode, write_location, examples, deletion_rule);
 
 grant select on public.v_ecoflow_data_ownership_contract_v1 to authenticated;
 revoke all on public.v_ecoflow_data_ownership_contract_v1 from anon;
 
--- Read-only selling-price mirror. A historical EcoFlow override can remain in
--- the old table for audit, but it is deliberately ignored here.
+-- Read-only selling-price mirror. Historical EcoFlow overrides remain audit-only
+-- and are deliberately ignored.
 do $$
 begin
   if to_regclass('public.v_ecoflow_price_matrix_workbench') is not null then
@@ -208,57 +224,12 @@ begin
   end if;
 end $$;
 
--- Curated source mirrors: no raw payload is exposed to the UI.
+-- Accounts AR is rebuilt from mirrored Ordermentum invoice/payment truth.
+-- Legacy EcoFlow receipts never reduce a source invoice balance.
 do $$
 begin
-  if to_regclass('public.ordermentum_raw_master_resources') is not null then
-    execute $stores$
-      create or replace view public.v_ecoflow_ordermentum_store_mirror_v1 as
-      select distinct on (external_id)
-        external_id as store_id,
-        coalesce(nullif(payload->>'name',''), nullif(payload->>'businessName',''), nullif(payload#>>'{retailer,name}','')) as store_name,
-        coalesce(nullif(payload->>'address',''), nullif(payload->>'formattedAddress',''), nullif(payload#>>'{deliveryAddress,formatted}','')) as address,
-        coalesce(nullif(payload->>'suburb',''), nullif(payload#>>'{deliveryAddress,suburb}','')) as suburb,
-        coalesce(nullif(payload->>'phone',''), nullif(payload->>'contactPhone','')) as contact_phone,
-        coalesce(nullif(payload->>'deliveryInstructions',''), nullif(payload->>'deliveryNote','')) as delivery_instructions,
-        coalesce(nullif(payload->>'priceGroupId',''), nullif(payload#>>'{priceGroup,id}','')) as price_group_id,
-        coalesce(nullif(payload->>'paymentTerms',''), nullif(payload->>'paymentTerm','')) as payment_terms,
-        remote_updated_at,
-        last_synced_at
-      from public.ordermentum_raw_master_resources
-      where resource_type in ('purchasers','purchaser_detail')
-        and coalesce(is_deleted_or_missing,false)=false
-      order by external_id, case when resource_type='purchaser_detail' then 0 else 1 end, last_synced_at desc
-    $stores$;
-
-    execute $catalog$
-      create or replace view public.v_ecoflow_ordermentum_catalog_mirror_v1 as
-      select distinct on (resource_type, external_id)
-        resource_type,
-        external_id,
-        coalesce(nullif(payload->>'sku',''), nullif(payload->>'SKU',''), nullif(payload->>'itemCode',''), nullif(payload->>'code','')) as sku,
-        coalesce(nullif(payload->>'name',''), nullif(payload->>'productName',''), nullif(payload#>>'{product,name}','')) as product_name,
-        coalesce(nullif(payload->>'status',''), nullif(payload->>'productStatus','')) as source_status,
-        coalesce(nullif(payload->>'barcode',''), nullif(payload->>'gtin','')) as source_barcode,
-        public.ecoflow_om_safe_numeric(coalesce(payload->>'basePrice', payload->>'price')) as source_price,
-        remote_updated_at,
-        last_synced_at
-      from public.ordermentum_raw_master_resources
-      where resource_type in ('products','product_detail','variants')
-        and coalesce(is_deleted_or_missing,false)=false
-      order by resource_type, external_id, last_synced_at desc
-    $catalog$;
-
-    grant select on public.v_ecoflow_ordermentum_store_mirror_v1, public.v_ecoflow_ordermentum_catalog_mirror_v1 to authenticated;
-    revoke all on public.v_ecoflow_ordermentum_store_mirror_v1, public.v_ecoflow_ordermentum_catalog_mirror_v1 from anon;
-  end if;
-end $$;
-
--- Finance statements are rebuilt from mirrored Ordermentum invoice truth. Local
--- legacy receipts do not reduce AR and cannot mark an invoice paid.
-do $$
-begin
-  if to_regclass('public.v_ecoflow_order_financial_truth_v1') is not null then
+  if to_regclass('public.v_ecoflow_order_financial_truth_v1') is not null
+     and to_regclass('public.v_ecoflow_order_operations_v3') is not null then
     execute $accounts$
       create or replace view public.v_ecoflow_accounts_live_statement_lines as
       select
@@ -270,11 +241,14 @@ begin
         coalesce(f.invoice_date, f.financial_observed_at)::timestamptz as order_ts,
         f.invoice_due_at::timestamptz as due_at,
         coalesce(f.invoice_total,0)::numeric as invoice_value,
-        greatest(coalesce(f.invoice_total,0)-coalesce(
-          case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.amount_due end,
-          case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.invoice_total end,
+        greatest(
+          coalesce(f.invoice_total,0)-coalesce(
+            case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.amount_due end,
+            case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.invoice_total end,
+            0
+          ),
           0
-        ),0)::numeric as allocated_amount,
+        )::numeric as allocated_amount,
         coalesce(
           case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.amount_due end,
           case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.invoice_total end,
@@ -282,7 +256,7 @@ begin
         )::numeric as outstanding_amount,
         greatest(current_date-coalesce(f.invoice_date::date,current_date),0)::numeric as age_days,
         case
-          when coalesce(case when lower(coalesce(f.invoice_payment_status,''))='paid' then 0 else f.amount_due end,0)<=0 then 0
+          when lower(coalesce(f.invoice_payment_status,''))='paid' or coalesce(f.amount_due,0)<=0 then 0::numeric
           when f.invoice_due_at is not null and f.invoice_due_at::date<current_date then (current_date-f.invoice_due_at::date)::numeric
           else 0::numeric
         end as overdue_days,
@@ -312,78 +286,15 @@ begin
   end if;
 end $$;
 
--- V4 adds source-presence state without conflating it with fulfilment. Missing
--- source orders are historical unless physical fulfilment is already active.
+-- Add explicit source presence without mixing it into the Ordermentum or EcoFlow
+-- lifecycle status columns. Consumers decide how to present missing history.
 do $$
 begin
   if to_regclass('public.v_ecoflow_order_operations_v3') is not null then
     execute $operations$
       create or replace view public.v_ecoflow_order_operations_v4 as
       select
-        o.operation_key,
-        o.raw_order_id,
-        o.external_order_id,
-        o.external_order_number,
-        o.external_invoice_number,
-        o.order_number,
-        o.invoice_number,
-        o.retailer_id,
-        o.store_name,
-        o.source_order_status,
-        o.source_invoice_status,
-        o.source_payment_status,
-        o.invoice_payment_status,
-        o.internal_order_id,
-        o.internalisation_status,
-        o.account_release_status,
-        o.warehouse_gate_status,
-        case
-          when p.source_status='SOURCE_MISSING'
-            and o.fulfilment_status not in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY') then 'HISTORY'
-          else o.fulfilment_status
-        end as fulfilment_status,
-        case when p.source_status='SOURCE_MISSING' then 'BLOCKED_DATA' else o.data_quality_status end as data_quality_status,
-        case
-          when p.source_status='SOURCE_MISSING'
-            and o.fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY') then 'CURRENT'
-          when p.source_status='SOURCE_MISSING' then 'HISTORY'
-          else o.operational_scope
-        end as operational_scope,
-        case when p.source_status='SOURCE_MISSING' then false else o.release_eligible end as release_eligible,
-        case
-          when p.source_status='SOURCE_MISSING'
-            and o.fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY')
-            then 'Ordermentum source record is missing while EcoFlow fulfilment is active · investigate before continuing'
-          when p.source_status='SOURCE_MISSING'
-            then 'Ordermentum source record is missing · retained as read-only history'
-          else o.classification_reason
-        end as classification_reason,
-        o.order_value,
-        o.line_count,
-        o.unmapped_line_count,
-        o.barcode_blocked_line_count,
-        o.source_created_at,
-        o.source_updated_at,
-        o.source_business_at,
-        o.requested_delivery_at,
-        o.observed_at,
-        o.order_subtotal,
-        o.order_gst,
-        o.order_total,
-        o.invoice_subtotal,
-        o.invoice_gst,
-        o.surcharge_type,
-        o.surcharge_rate,
-        o.surcharge_amount,
-        o.invoice_total,
-        o.amount_due,
-        o.invoice_order_variance,
-        o.payment_method,
-        o.payment_terms,
-        o.reconciliation_status,
-        o.invoice_date,
-        o.invoice_due_at,
-        o.unleashed_sync_status,
+        o.*,
         coalesce(p.source_status,'PRESENT') as source_presence_status,
         p.last_seen_at as source_last_seen_at,
         p.missing_since as source_missing_since
@@ -397,17 +308,23 @@ begin
       create or replace view public.v_ecoflow_order_operations_summary_v4 as
       select
         count(*)::numeric as total_orders,
-        count(*) filter (where operational_scope='CURRENT')::numeric as current_orders,
-        count(*) filter (where operational_scope='REVIEW')::numeric as source_review_orders,
-        count(*) filter (where release_eligible)::numeric as ready_to_release,
-        count(*) filter (where operational_scope in ('CURRENT','REVIEW') and (data_quality_status<>'READY' or fulfilment_status='SOURCE_REVIEW'))::numeric as blocked_orders,
-        count(*) filter (where operational_scope='CURRENT' and fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY'))::numeric as in_progress_orders,
+        count(*) filter (where operational_scope='CURRENT' and source_presence_status<>'SOURCE_MISSING')::numeric as current_orders,
+        count(*) filter (where operational_scope='REVIEW' and source_presence_status<>'SOURCE_MISSING')::numeric as source_review_orders,
+        count(*) filter (where release_eligible and source_presence_status<>'SOURCE_MISSING')::numeric as ready_to_release,
+        count(*) filter (
+          where operational_scope in ('CURRENT','REVIEW')
+            and (data_quality_status<>'READY' or fulfilment_status='SOURCE_REVIEW' or source_presence_status='SOURCE_MISSING')
+        )::numeric as blocked_orders,
+        count(*) filter (
+          where operational_scope='CURRENT'
+            and fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY')
+        )::numeric as in_progress_orders,
         count(*) filter (where fulfilment_status='COMPLETED')::numeric as completed_orders,
         count(*) filter (where fulfilment_status='CANCELLED')::numeric as cancelled_orders,
         count(*) filter (where reconciliation_status='SURCHARGE_MATCHED')::numeric as surcharge_invoices,
         count(*) filter (where reconciliation_status in ('REVIEW','MISSING_INVOICE'))::numeric as finance_review_orders,
         count(*) filter (where source_presence_status='SOURCE_MISSING')::numeric as source_missing_orders,
-        coalesce(sum(order_value) filter (where operational_scope in ('CURRENT','REVIEW')),0)::numeric as current_value,
+        coalesce(sum(order_value) filter (where operational_scope in ('CURRENT','REVIEW') and source_presence_status<>'SOURCE_MISSING'),0)::numeric as current_value,
         max(source_updated_at) as latest_source_update,
         max(observed_at) as last_observed_at
       from public.v_ecoflow_order_operations_v4
@@ -428,7 +345,8 @@ declare
   v_count integer := 0;
   v_view text;
 begin
-  delete from public.ecoflow_ui_active_order_keys;
+  if to_regclass('public.ecoflow_ui_active_order_keys') is null then return 0; end if;
+  execute 'delete from public.ecoflow_ui_active_order_keys';
   v_view := case
     when to_regclass('public.v_ecoflow_order_operations_v4') is not null then 'public.v_ecoflow_order_operations_v4'
     when to_regclass('public.v_ecoflow_order_operations_v3') is not null then 'public.v_ecoflow_order_operations_v3'
@@ -443,6 +361,10 @@ begin
     cross join lateral (values(o.raw_order_id),(o.external_order_id),(o.external_order_number),(o.order_number),(o.invoice_number)) keys(key_value)
     where o.operational_scope in ('CURRENT','REVIEW')
       and o.fulfilment_status not in ('COMPLETED','CANCELLED','HISTORY')
+      and (
+        coalesce(to_jsonb(o)->>'source_presence_status','PRESENT')<>'SOURCE_MISSING'
+        or o.fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY')
+      )
       and nullif(keys.key_value,'') is not null
     on conflict(order_key) do update set refreshed_at=excluded.refreshed_at
   $sql$, v_view);
@@ -454,10 +376,11 @@ $$;
 revoke all on function public.ecoflow_refresh_ui_active_order_keys() from public, anon, authenticated;
 grant execute on function public.ecoflow_refresh_ui_active_order_keys() to service_role;
 
--- Extend mirror health with explicit source-disappearance controls.
+-- Extend mirror health with source-disappearance controls.
 do $$
 begin
-  if to_regclass('public.v_ecoflow_ordermentum_mirror_health_v1') is not null then
+  if to_regclass('public.v_ecoflow_ordermentum_mirror_health_v1') is not null
+     and to_regclass('public.v_ecoflow_order_operations_v4') is not null then
     execute $health$
       create or replace view public.v_ecoflow_ordermentum_mirror_health_v2 as
       with presence as (
@@ -468,7 +391,9 @@ begin
       ), active_missing as (
         select count(*)::numeric as active_source_missing_orders
         from public.v_ecoflow_order_operations_v4
-        where source_presence_status='SOURCE_MISSING' and operational_scope='CURRENT'
+        where source_presence_status='SOURCE_MISSING'
+          and operational_scope='CURRENT'
+          and fulfilment_status in ('RELEASED','PICKING','STAGED','OUT_FOR_DELIVERY')
       )
       select
         case when h.overall_status='COMPLETE' and a.active_source_missing_orders=0 then 'COMPLETE' else 'DEGRADED' end as overall_status,
@@ -502,6 +427,12 @@ begin
   end if;
 end $$;
 
-select public.ecoflow_refresh_ui_active_order_keys();
+do $$
+begin
+  if to_regclass('public.ecoflow_ui_active_order_keys') is not null then
+    perform public.ecoflow_refresh_ui_active_order_keys();
+  end if;
+end $$;
+
 notify pgrst, 'reload schema';
 commit;
