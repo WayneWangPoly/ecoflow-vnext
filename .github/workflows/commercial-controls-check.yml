@@ -98,6 +98,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023000_commercial_source_boundary_v1.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023100_commercial_source_boundary_function_revoke.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023200_commercial_source_boundary_trigger_invoker.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023300_commercial_source_mirror_read_grants.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Execute commercial controls contract
         shell: bash
         run: |
