@@ -55,6 +55,10 @@ export type OrderOperationRow = {
   source_presence_status?: 'PRESENT' | 'SOURCE_MISSING' | string | null;
   source_last_seen_at?: string | null;
   source_missing_since?: string | null;
+  account_hold_active?: boolean | null;
+  account_hold_reason?: string | null;
+  effective_account_release_status?: string | null;
+  effective_release_eligible?: boolean | null;
 };
 
 export type OrderOperationsSummary = {
@@ -69,6 +73,7 @@ export type OrderOperationsSummary = {
   surcharge_invoices?: number | string | null;
   finance_review_orders?: number | string | null;
   source_missing_orders?: number | string | null;
+  account_hold_orders?: number | string | null;
   current_value: number | string | null;
   latest_source_update: string | null;
   last_observed_at: string | null;
@@ -81,9 +86,22 @@ function errorMessage(error: unknown) { if (error instanceof Error) return error
 function safeSearch(value: string) { return value.trim().replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80); }
 function missingView(error: unknown) { const text = errorMessage(error).toLowerCase(); return text.includes('does not exist') || text.includes('schema cache') || text.includes('pgrst205') || text.includes('42p01'); }
 
+function effectiveRow(row: OrderOperationRow): OrderOperationRow {
+  if (row.effective_release_eligible == null && !row.effective_account_release_status) return row;
+  const held = row.account_hold_active === true;
+  return {
+    ...row,
+    release_eligible: row.effective_release_eligible === true,
+    account_release_status: row.effective_account_release_status || row.account_release_status,
+    classification_reason: held
+      ? `EcoFlow account release hold · ${row.account_hold_reason || 'Accounts review required'}`
+      : row.classification_reason,
+  };
+}
+
 export async function loadOrderOperationsSummary(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
-  for (const view of ['v_ecoflow_order_operations_summary_v4', 'v_ecoflow_order_operations_summary_v3', 'v_ecoflow_order_operations_summary_v2']) {
+  for (const view of ['v_ecoflow_order_operations_summary_v5', 'v_ecoflow_order_operations_summary_v4', 'v_ecoflow_order_operations_summary_v3', 'v_ecoflow_order_operations_summary_v2']) {
     const result = await active.from(view).select('*').maybeSingle();
     if (!result.error) return (result.data ?? null) as OrderOperationsSummary | null;
     if (!missingView(result.error)) throw new Error(errorMessage(result.error));
@@ -99,18 +117,20 @@ export async function loadOrderOperationsPage(input: { mode: OrderOperationsMode
   const to = from + pageSize - 1;
   const needle = safeSearch(input.query || '');
 
-  async function loadFrom(view: string, hasPresence: boolean) {
+  async function loadFrom(view: string, hasPresence: boolean, hasEffectiveHold: boolean) {
     let request = active.from(view).select('*', { count: 'exact' });
 
     if (input.mode === 'ready') {
-      request = request.eq('release_eligible', true);
+      request = request.eq(hasEffectiveHold ? 'effective_release_eligible' : 'release_eligible', true);
       if (hasPresence) request = request.neq('source_presence_status', 'SOURCE_MISSING');
     } else if (input.mode === 'blocked') {
       request = request
         .in('operational_scope', ['CURRENT', 'REVIEW'])
-        .or(hasPresence
-          ? 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW,source_presence_status.eq.SOURCE_MISSING'
-          : 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
+        .or(hasEffectiveHold
+          ? 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW,source_presence_status.eq.SOURCE_MISSING,account_hold_active.eq.true'
+          : hasPresence
+            ? 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW,source_presence_status.eq.SOURCE_MISSING'
+            : 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
     } else if (input.mode === 'progress') {
       request = request.in('fulfilment_status', ['RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY']);
     } else if (input.mode === 'history') {
@@ -139,13 +159,17 @@ export async function loadOrderOperationsPage(input: { mode: OrderOperationsMode
   }
 
   const sources = [
-    { view: 'v_ecoflow_order_operations_v4', hasPresence: true },
-    { view: 'v_ecoflow_order_operations_v3', hasPresence: false },
-    { view: 'v_ecoflow_order_operations_v2', hasPresence: false },
+    { view: 'v_ecoflow_order_operations_v5', hasPresence: true, hasEffectiveHold: true },
+    { view: 'v_ecoflow_order_operations_v4', hasPresence: true, hasEffectiveHold: false },
+    { view: 'v_ecoflow_order_operations_v3', hasPresence: false, hasEffectiveHold: false },
+    { view: 'v_ecoflow_order_operations_v2', hasPresence: false, hasEffectiveHold: false },
   ];
   for (const source of sources) {
-    const result = await loadFrom(source.view, source.hasPresence);
-    if (!result.error) return { rows: (result.data ?? []) as OrderOperationRow[], total: result.count ?? 0, page, pageSize };
+    const result = await loadFrom(source.view, source.hasPresence, source.hasEffectiveHold);
+    if (!result.error) {
+      const rows = ((result.data ?? []) as OrderOperationRow[]).map(effectiveRow);
+      return { rows, total: result.count ?? 0, page, pageSize };
+    }
     if (!missingView(result.error)) throw new Error(errorMessage(result.error));
   }
   return { rows: [], total: 0, page, pageSize };
