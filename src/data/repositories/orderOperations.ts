@@ -52,6 +52,9 @@ export type OrderOperationRow = {
   invoice_date?: string | null;
   invoice_due_at?: string | null;
   unleashed_sync_status?: string | null;
+  source_presence_status?: 'PRESENT' | 'SOURCE_MISSING' | string | null;
+  source_last_seen_at?: string | null;
+  source_missing_since?: string | null;
 };
 
 export type OrderOperationsSummary = {
@@ -65,67 +68,30 @@ export type OrderOperationsSummary = {
   cancelled_orders: number | string | null;
   surcharge_invoices?: number | string | null;
   finance_review_orders?: number | string | null;
+  source_missing_orders?: number | string | null;
   current_value: number | string | null;
   latest_source_update: string | null;
   last_observed_at: string | null;
 };
 
-export type OrderOperationsPage = {
-  rows: OrderOperationRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
+export type OrderOperationsPage = { rows: OrderOperationRow[]; total: number; page: number; pageSize: number };
 
-function requireSupabase(client?: SupabaseClient | null) {
-  const active = client ?? supabase;
-  if (!active) throw new Error('Supabase is not configured.');
-  return active;
-}
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === 'object') {
-    const record = error as Record<string, unknown>;
-    const parts = [record.message, record.details, record.hint, record.code].filter(Boolean).map(String);
-    return parts.length ? parts.join(' · ') : JSON.stringify(record);
-  }
-  return String(error);
-}
-
-function safeSearch(value: string) {
-  return value.trim().replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
-}
-
-function missingView(error: unknown) {
-  const text = errorMessage(error).toLowerCase();
-  return text.includes('does not exist') || text.includes('schema cache') || text.includes('pgrst205') || text.includes('42p01');
-}
+function requireSupabase(client?: SupabaseClient | null) { const active = client ?? supabase; if (!active) throw new Error('Supabase is not configured.'); return active; }
+function errorMessage(error: unknown) { if (error instanceof Error) return error.message; if (error && typeof error === 'object') { const record = error as Record<string, unknown>; const parts = [record.message, record.details, record.hint, record.code].filter(Boolean).map(String); return parts.length ? parts.join(' · ') : JSON.stringify(record); } return String(error); }
+function safeSearch(value: string) { return value.trim().replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80); }
+function missingView(error: unknown) { const text = errorMessage(error).toLowerCase(); return text.includes('does not exist') || text.includes('schema cache') || text.includes('pgrst205') || text.includes('42p01'); }
 
 export async function loadOrderOperationsSummary(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
-  const primary = await active
-    .from('v_ecoflow_order_operations_summary_v3')
-    .select('*')
-    .maybeSingle();
-
-  if (!primary.error) return (primary.data ?? null) as OrderOperationsSummary | null;
-  if (!missingView(primary.error)) throw new Error(errorMessage(primary.error));
-
-  const fallback = await active
-    .from('v_ecoflow_order_operations_summary_v2')
-    .select('*')
-    .maybeSingle();
-  if (fallback.error) throw new Error(errorMessage(fallback.error));
-  return (fallback.data ?? null) as OrderOperationsSummary | null;
+  for (const view of ['v_ecoflow_order_operations_summary_v4', 'v_ecoflow_order_operations_summary_v3', 'v_ecoflow_order_operations_summary_v2']) {
+    const result = await active.from(view).select('*').maybeSingle();
+    if (!result.error) return (result.data ?? null) as OrderOperationsSummary | null;
+    if (!missingView(result.error)) throw new Error(errorMessage(result.error));
+  }
+  return null;
 }
 
-export async function loadOrderOperationsPage(input: {
-  mode: OrderOperationsMode;
-  page: number;
-  pageSize: number;
-  query?: string;
-}, client?: SupabaseClient | null): Promise<OrderOperationsPage> {
+export async function loadOrderOperationsPage(input: { mode: OrderOperationsMode; page: number; pageSize: number; query?: string }, client?: SupabaseClient | null): Promise<OrderOperationsPage> {
   const active = requireSupabase(client);
   const page = Math.max(1, Math.floor(input.page || 1));
   const pageSize = Math.max(10, Math.min(100, Math.floor(input.pageSize || 25)));
@@ -133,20 +99,28 @@ export async function loadOrderOperationsPage(input: {
   const to = from + pageSize - 1;
   const needle = safeSearch(input.query || '');
 
-  async function loadFrom(view: string) {
-    let request = active
-      .from(view)
-      .select('*', { count: 'exact' });
+  async function loadFrom(view: string, hasPresence: boolean) {
+    let request = active.from(view).select('*', { count: 'exact' });
 
-    if (input.mode === 'ready') request = request.eq('release_eligible', true);
-    else if (input.mode === 'blocked') {
+    if (input.mode === 'ready') {
+      request = request.eq('release_eligible', true);
+      if (hasPresence) request = request.neq('source_presence_status', 'SOURCE_MISSING');
+    } else if (input.mode === 'blocked') {
       request = request
         .in('operational_scope', ['CURRENT', 'REVIEW'])
-        .or('data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
+        .or(hasPresence
+          ? 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW,source_presence_status.eq.SOURCE_MISSING'
+          : 'data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
     } else if (input.mode === 'progress') {
       request = request.in('fulfilment_status', ['RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY']);
-    } else if (input.mode === 'history') request = request.eq('operational_scope', 'HISTORY');
-    else request = request.in('operational_scope', ['CURRENT', 'REVIEW']);
+    } else if (input.mode === 'history') {
+      request = hasPresence
+        ? request.or('operational_scope.eq.HISTORY,source_presence_status.eq.SOURCE_MISSING')
+        : request.eq('operational_scope', 'HISTORY');
+    } else {
+      request = request.in('operational_scope', ['CURRENT', 'REVIEW']);
+      if (hasPresence) request = request.neq('source_presence_status', 'SOURCE_MISSING');
+    }
 
     if (needle) {
       request = request.or([
@@ -164,14 +138,15 @@ export async function loadOrderOperationsPage(input: {
       .range(from, to);
   }
 
-  let result = await loadFrom('v_ecoflow_order_operations_v3');
-  if (result.error && missingView(result.error)) result = await loadFrom('v_ecoflow_order_operations_v2');
-  if (result.error) throw new Error(errorMessage(result.error));
-
-  return {
-    rows: (result.data ?? []) as OrderOperationRow[],
-    total: result.count ?? 0,
-    page,
-    pageSize,
-  };
+  const sources = [
+    { view: 'v_ecoflow_order_operations_v4', hasPresence: true },
+    { view: 'v_ecoflow_order_operations_v3', hasPresence: false },
+    { view: 'v_ecoflow_order_operations_v2', hasPresence: false },
+  ];
+  for (const source of sources) {
+    const result = await loadFrom(source.view, source.hasPresence);
+    if (!result.error) return { rows: (result.data ?? []) as OrderOperationRow[], total: result.count ?? 0, page, pageSize };
+    if (!missingView(result.error)) throw new Error(errorMessage(result.error));
+  }
+  return { rows: [], total: 0, page, pageSize };
 }
