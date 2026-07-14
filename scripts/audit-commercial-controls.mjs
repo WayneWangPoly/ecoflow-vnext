@@ -29,7 +29,7 @@ lacks(ownerBundle, 'PriceMatrixWorkbench', 'Owner bundle must not expose local p
 lacks(accountBundle, 'PriceMatrixWorkbench', 'Accounts bundle must not expose local price editing.');
 has(ownershipDomain, 'ORDERMENTUM_SOURCE_DOMAINS', 'Commercial ownership domains must be explicit.');
 has(ownershipDomain, 'ECOFLOW_OPERATIONAL_DOMAINS', 'Operational ownership domains must be explicit.');
-has(ownershipUi, 'Ordermentum commercial source', 'The platform must explain the one-way source boundary.');
+has(ownershipUi, 'One commercial source. One operational system.', 'The platform must explain the one-way source boundary.');
 has(ownershipUi, 'SOURCE_MISSING', 'Source deletion must retain history rather than physically delete it.');
 
 has(priceUi, 'ORDERMENTUM PRICE MIRROR · READ ONLY', 'Selling prices must be presented as a read-only mirror.');
@@ -60,11 +60,11 @@ has(migration, 'v_ecoflow_data_ownership_contract_v1', 'Data ownership must be q
 has(migration, 'v_ecoflow_ordermentum_price_matrix_readonly_v1', 'Price view must ignore local overrides.');
 has(migration, 'v_ecoflow_order_operations_v4', 'Operations must expose source presence.');
 has(migration, 'v_ecoflow_ordermentum_mirror_health_v2', 'Mirror health must include source disappearance.');
-has(migration, "revoke execute on function", 'Legacy local commercial RPC execution must be revoked.');
+has(migration, 'revoke execute on function', 'Legacy local commercial RPC execution must be revoked.');
 has(mirror, 'finalise-ordermentum-source-presence.mjs', 'Complete mirror must finalise source presence.');
 has(presence, 'SOURCE_MISSING', 'Full history reconciliation must mark disappeared source records.');
 has(orderRepo, 'v_ecoflow_order_operations_v4', 'Orders must prefer the source-presence model.');
-has(orderRepo, "source_presence_status", 'Orders must expose source presence.');
+has(orderRepo, 'source_presence_status', 'Orders must expose source presence.');
 
 has(ownerBundle, 'DeliveryRunHistory', 'Owner/Admin must retain delivery run history.');
 has(accountBundle, 'DeliveryRunHistory', 'Accounts must retain delivery run history.');
