@@ -41,9 +41,9 @@ function title(value: string | null | undefined) {
 function statusTone(value: string | null | undefined) {
   const status = String(value || '').toUpperCase();
   if (status.includes('BLOCKED') || status.includes('CANCELLED')) return 'danger';
-  if (status.includes('REVIEW') || status === 'UNRELEASED') return 'warn';
+  if (status.includes('REVIEW') || status.includes('MISSING') || status === 'UNRELEASED') return 'warn';
   if (['PICKING', 'STAGED', 'OUT_FOR_DELIVERY', 'RELEASED'].includes(status)) return 'blue';
-  if (status === 'READY' || status === 'COMPLETED') return 'good';
+  if (status === 'READY' || status === 'COMPLETED' || status.includes('MATCHED')) return 'good';
   return 'neutral';
 }
 
@@ -97,8 +97,8 @@ function modeTitle(mode: OrderOperationsMode) {
 }
 
 function modeHelper(mode: OrderOperationsMode) {
-  if (mode === 'ready') return 'Data complete, source state recognised, and no internal order has been created yet.';
-  if (mode === 'blocked') return 'Current orders requiring source-status, invoice-detail, SKU, or barcode attention.';
+  if (mode === 'ready') return 'Ordermentum detail complete, source state recognised, and no internal order has been created yet.';
+  if (mode === 'blocked') return 'Current orders requiring source-status, invoice-detail, SKU, barcode, or reconciliation attention.';
   if (mode === 'progress') return 'Internal orders already moving through warehouse and delivery.';
   if (mode === 'history') return 'Completed, cancelled, and older Ordermentum records remain searchable outside the live queue.';
   return 'The live operating set only. Historical Ordermentum records do not enter this queue.';
@@ -112,6 +112,14 @@ function rowAction(row: OrderOperationRow) {
   return <MiniPill tone={statusTone(row.data_quality_status)}>{title(row.data_quality_status)}</MiniPill>;
 }
 
+function commercialDetail(row: OrderOperationRow) {
+  const orderTotal = row.order_total ?? row.order_value;
+  const surcharge = numberValue(row.surcharge_amount);
+  if (surcharge > 0) return `${money(orderTotal)} order + ${money(surcharge)} ${String(row.surcharge_type || 'surcharge').toLowerCase()}`;
+  if (row.invoice_total != null && row.order_total != null) return `${money(orderTotal)} order · no surcharge`;
+  return `${numberValue(row.line_count)} lines`;
+}
+
 function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage; mode: OrderOperationsMode; loading: boolean }) {
   if (loading && !pageData.rows.length) return <div className="order-platform-empty">Loading authoritative order records…</div>;
   if (!pageData.rows.length) return <div className="order-platform-empty">No orders match this work area.</div>;
@@ -119,7 +127,7 @@ function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage
   return (
     <div className="order-platform-table order-operations-table">
       <div className="order-platform-table-header">
-        <span>Order</span><span>Customer</span><span>Source</span><span>Fulfilment</span><span>Data</span><span>Updated</span><span>Value</span><span>Control</span>
+        <span>Order</span><span>Customer</span><span>Source / finance</span><span>Fulfilment</span><span>Data</span><span>Timing</span><span>Commercial</span><span>Control</span>
       </div>
       {pageData.rows.map((row) => (
         <article className="order-platform-table-row" key={`${mode}-${row.operation_key}`}>
@@ -133,7 +141,7 @@ function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage
           </span>
           <span>
             <MiniPill tone={row.operational_scope === 'REVIEW' ? 'warn' : 'neutral'}>{title(row.source_order_status || 'NOT SET')}</MiniPill>
-            <small>{row.source_invoice_status ? `invoice ${title(row.source_invoice_status)}` : 'source invoice status unavailable'}</small>
+            <small>{title(row.invoice_payment_status || row.source_payment_status || 'payment not set')} · {row.payment_method || 'method unavailable'}</small>
           </span>
           <span>
             <MiniPill tone={statusTone(row.fulfilment_status)}>{title(row.fulfilment_status)}</MiniPill>
@@ -144,10 +152,14 @@ function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage
             <small>{row.classification_reason}</small>
           </span>
           <span>
-            <strong>{timeText(row.source_business_at)}</strong>
-            <small>observed {timeText(row.observed_at)}</small>
+            <strong>{timeText(row.requested_delivery_at || row.source_business_at)}</strong>
+            <small>source observed {timeText(row.observed_at)}</small>
           </span>
-          <span><strong>{money(row.order_value)}</strong><small>{numberValue(row.line_count)} lines</small></span>
+          <span>
+            <strong>{money(row.invoice_total ?? row.order_total ?? row.order_value)}</strong>
+            <small>{commercialDetail(row)}</small>
+            {row.reconciliation_status ? <MiniPill tone={statusTone(row.reconciliation_status)}>{title(row.reconciliation_status)}</MiniPill> : null}
+          </span>
           <span className="order-platform-action-cell">{rowAction(row)}</span>
         </article>
       ))}
@@ -207,6 +219,8 @@ function OrderPlatformContent() {
       progress: numberValue(summary?.in_progress_orders),
       history: Math.max(0, total - current - review),
       completed: numberValue(summary?.completed_orders),
+      surcharge: numberValue(summary?.surcharge_invoices),
+      financeReview: numberValue(summary?.finance_review_orders),
     };
   }, [summary]);
 
@@ -225,9 +239,9 @@ function OrderPlatformContent() {
     <section className="order-platform-shell order-operations-v2">
       <section className="order-platform-hero order-operations-hero">
         <div>
-          <span>ORDER CONTROL · AUTHORITATIVE FLOW</span>
-          <h2>One order flow, from Ordermentum to delivery.</h2>
-          <p>Ordermentum remains the complete commercial record. EcoFlow shows only current work here, then moves released orders through warehouse and delivery without reclassifying history as active.</p>
+          <span>ORDER CONTROL · VERIFIED ORDERMENTUM MIRROR</span>
+          <h2>One commercial truth, from Ordermentum to delivery.</h2>
+          <p>Order, invoice, payment, surcharge and fulfilment remain separate facts. EcoFlow mirrors the full source record, verifies the links, and only then exposes current work for release.</p>
         </div>
         <div className="order-platform-actions">
           <button type="button" disabled={loading} onClick={() => setRefreshVersion((value) => value + 1)}>{loading ? 'Refreshing…' : 'Refresh order state'}</button>
@@ -239,18 +253,19 @@ function OrderPlatformContent() {
 
       <section className="order-platform-metrics order-operations-metrics">
         <Metric label="Current orders" value={counts.current} helper="Live work and source review only" intent="good" />
-        <Metric label="Ready for release" value={counts.ready} helper="Safe to create an internal order" intent="good" />
-        <Metric label="Blocked" value={counts.blocked} helper="Current action required" intent="warn" />
-        <Metric label="In fulfilment" value={counts.progress} helper="Released, picking, staged or on route" intent="blue" />
+        <Metric label="Ready for release" value={counts.ready} helper="Complete and explicitly eligible" intent="good" />
+        <Metric label="Blocked" value={counts.blocked} helper="Current operational action" intent="warn" />
+        <Metric label="In fulfilment" value={counts.progress} helper="Warehouse or delivery in progress" intent="blue" />
+        <Metric label="Finance review" value={counts.financeReview} helper={`${counts.surcharge} invoices carry a verified surcharge`} intent={counts.financeReview ? 'warn' : 'neutral'} />
         <Metric label="Completed" value={counts.completed} helper="Retained in searchable history" intent="neutral" />
       </section>
 
       <section className="order-ops-flow-strip" aria-label="Order operating flow">
-        <article><span>01</span><div><strong>Ordermentum</strong><small>Orders, stores, invoices and product facts</small></div></article>
+        <article><span>01</span><div><strong>Mirror</strong><small>Orders, invoices, stores, products and exact source payloads</small></div></article>
         <i>→</i>
-        <article><span>02</span><div><strong>Release</strong><small>Explicit eligibility only; unknown states stay blocked</small></div></article>
+        <article><span>02</span><div><strong>Verify</strong><small>Lines, totals, GST, surcharge, status and references</small></div></article>
         <i>→</i>
-        <article><span>03</span><div><strong>Warehouse</strong><small>Pick, pack and stage the internal order</small></div></article>
+        <article><span>03</span><div><strong>Warehouse</strong><small>Release, pick, pack and stage the internal order</small></div></article>
         <i>→</i>
         <article><span>04</span><div><strong>Delivery</strong><small>Route, POD and completion</small></div></article>
       </section>
@@ -270,7 +285,7 @@ function OrderPlatformContent() {
         </div>
 
         <div className="order-platform-toolbar">
-          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Search order, invoice or internal ID…" />
+          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Search order, invoice, customer or internal ID…" />
           <select value={mode} onChange={(event) => setMode(event.target.value as OrderOperationsMode)}>
             {modes.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
