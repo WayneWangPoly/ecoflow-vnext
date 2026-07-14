@@ -20,6 +20,21 @@ const delayMs = Number(args['delay-ms'] || 300);
 const pageSize = Math.max(50, Math.min(1000, Number(args['page-size'] || 500)));
 const limit = Math.max(1, Number(args.limit || 10000));
 
+const { data: runRow, error: runError } = await supabase
+  .from('ordermentum_master_sync_runs')
+  .insert({
+    run_type: 'MASTER_DATA_SYNC',
+    status: 'RUNNING',
+    supplier_id: supplierId,
+    resources_requested: ['invoice_detail'],
+    dry_run: false,
+    auth_mode: process.env.ORDERMENTUM_API_KEY ? 'api-key' : 'legacy-username-password',
+  })
+  .select('id')
+  .single();
+if (runError || !runRow) throw runError || new Error('Could not create invoice detail sync run.');
+const runId = runRow.id;
+
 async function loadAll(resourceType) {
   const rows = [];
   for (let from = 0; rows.length < limit; from += pageSize) {
@@ -108,7 +123,7 @@ for (const summary of summaries) {
       last_seen_at: now,
       last_synced_at: now,
       is_deleted_or_missing: false,
-      sync_run_id: null,
+      sync_run_id: runId,
     };
 
     const { error } = await supabase
@@ -126,7 +141,7 @@ for (const summary of summaries) {
           source_endpoint: result.path,
           payload: result.data,
           payload_hash: payloadHash,
-          sync_run_id: null,
+          sync_run_id: runId,
         });
       if (versionError) throw versionError;
     }
@@ -140,5 +155,26 @@ for (const summary of summaries) {
   if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-console.log(JSON.stringify({ action: 'invoice_detail_sync', ...counters, failures: failures.slice(0, 25) }, null, 2));
+const finalStatus = counters.failed > 0 ? 'PARTIAL' : 'SUCCEEDED';
+const { error: finalError } = await supabase
+  .from('ordermentum_master_sync_runs')
+  .update({
+    status: finalStatus,
+    resources_succeeded: counters.succeeded || counters.unchanged ? ['invoice_detail'] : [],
+    resources_failed: counters.failed ? ['invoice_detail'] : [],
+    endpoints_attempted: counters.attempted,
+    records_seen: counters.summaries,
+    records_upserted: counters.succeeded,
+    records_changed: counters.succeeded,
+    detail_attempted: counters.attempted,
+    detail_succeeded: counters.succeeded,
+    detail_failed: counters.failed,
+    finished_at: new Date().toISOString(),
+    last_error: counters.failed ? JSON.stringify(failures.slice(0, 10)).slice(0, 2000) : null,
+    notes: { unchanged: counters.unchanged, failures: failures.slice(0, 25) },
+  })
+  .eq('id', runId);
+if (finalError) throw finalError;
+
+console.log(JSON.stringify({ action: 'invoice_detail_sync', runId, status: finalStatus, ...counters, failures: failures.slice(0, 25) }, null, 2));
 if (counters.failed > 0) process.exitCode = 2;
