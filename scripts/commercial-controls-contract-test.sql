@@ -32,7 +32,10 @@ select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111'
 select set_config('request.jwt.claim.role','authenticated',false);
 set role authenticated;
 
-do $$ begin
+do $$
+declare
+  v_rows integer;
+begin
   begin
     perform public.ecoflow_set_price_matrix_price('CUP-12W','TIER1',9.50,current_date,'Local override');
     raise exception 'local price RPC unexpectedly allowed';
@@ -51,14 +54,16 @@ do $$ begin
 
   begin
     update public.om_orders set retailer_name='Changed locally' where id='ORD-A';
-    raise exception 'Ordermentum order mirror update unexpectedly allowed';
+    get diagnostics v_rows=row_count;
+    if v_rows>0 then raise exception 'Ordermentum order mirror update unexpectedly allowed'; end if;
   exception when others then
     if sqlerrm not like '%permission denied%' and sqlerrm not like '%ORDERMENTUM_SOURCE_OWNED%' then raise; end if;
   end;
 
   begin
     update public.ecoflow_store_sites set formatted_address='Changed locally' where retailer_id='STORE-1';
-    raise exception 'Ordermentum store source field update unexpectedly allowed';
+    get diagnostics v_rows=row_count;
+    if v_rows>0 then raise exception 'Ordermentum store source field update unexpectedly allowed'; end if;
   exception when others then
     if sqlerrm not like '%ORDERMENTUM_SOURCE_OWNED%' and sqlerrm not like '%permission denied%' then raise; end if;
   end;
