@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - 'ops/ordermentum-complete-mirror-v1.md'
+      - 'ops/commercial-source-boundary-v1.md'
   schedule:
     - cron: "30 17 * * *"
     - cron: "45 18 * * 6"
@@ -63,7 +64,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Initial complete mirror release" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Commercial source boundary release" >> "$GITHUB_ENV"
           elif [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "45 18 * * 6" ]; then
             echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
             echo "MIRROR_REASON=Weekly all-history reconciliation" >> "$GITHUB_ENV"
