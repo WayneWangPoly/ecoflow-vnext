@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { observeBody } from '@/lib/domObserver';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { observeBody } from '@/lib/domObserver';
 import {
-  loadCompletedArchivePreview,
-  loadLegacyInternalReviewOrders,
-  loadOrderPlatformGuardrails,
-  loadOrderPlatformLatestOrders,
-  recordLegacyReviewDecision,
-  type LegacyReviewDecision,
-  type OrderPlatformGuardrailRow,
-  type OrderPlatformLatestOrderRow,
-} from '@/data/repositories/orderPlatform';
-
-type PlatformMode = 'active' | 'legacy' | 'archive';
+  loadOrderOperationsPage,
+  loadOrderOperationsSummary,
+  type OrderOperationRow,
+  type OrderOperationsMode,
+  type OrderOperationsPage,
+  type OrderOperationsSummary,
+} from '@/data/repositories/orderOperations';
 
 function numberValue(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -21,51 +17,41 @@ function numberValue(value: unknown) {
 }
 
 function money(value: unknown) {
-  const parsed = numberValue(value);
-  return parsed.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+  return numberValue(value).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
 }
 
 function timeText(value?: string | null) {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString('en-AU', {
+    timeZone: 'Australia/Adelaide',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function title(value: string | null | undefined) {
   return String(value || 'UNKNOWN').replace(/_/g, ' ');
 }
 
-function guardrail(guardrails: OrderPlatformGuardrailRow[], name: string) {
-  return guardrails.find((row) => row.check_name === name);
-}
-
-function statusTone(status: string | null | undefined) {
-  if (status === 'READY_TO_INTERNALISE') return 'good';
-  if (status === 'BLOCKED_MAPPING' || status === 'BLOCKED_DATA') return 'danger';
-  if (status === 'PICKING' || status === 'STAGED') return 'blue';
-  if (status === 'INTERNAL_ORDER_CREATED') return 'warn';
-  if (status === 'COMPLETED') return 'blue';
+function statusTone(value: string | null | undefined) {
+  const status = String(value || '').toUpperCase();
+  if (status.includes('BLOCKED') || status.includes('CANCELLED')) return 'danger';
+  if (status.includes('REVIEW') || status === 'UNRELEASED') return 'warn';
+  if (['PICKING', 'STAGED', 'OUT_FOR_DELIVERY', 'RELEASED'].includes(status)) return 'blue';
+  if (status === 'READY' || status === 'COMPLETED') return 'good';
   return 'neutral';
-}
-
-function modeTitle(mode: PlatformMode) {
-  if (mode === 'legacy') return 'Legacy internal review';
-  if (mode === 'archive') return 'Archive / history preview';
-  return 'Active workflow';
-}
-
-function modeHelper(mode: PlatformMode) {
-  if (mode === 'legacy') return 'Quarantined historical internal drafts. Review before archive, cancel, or rebuild.';
-  if (mode === 'archive') return 'Completed and historical orders stay searchable but outside the hot path.';
-  return 'Live operational orders only. This is the table operators should work from.';
 }
 
 function MiniPill({ children, tone = 'neutral' }: { children: ReactNode; tone?: string }) {
   return <span className={`order-platform-pill order-platform-pill-${tone}`}>{children}</span>;
 }
 
-function PlatformMetric({ label, value, helper, intent = 'neutral' }: { label: string; value: string | number; helper: string; intent?: string }) {
+function Metric({ label, value, helper, intent = 'neutral' }: { label: string; value: string | number; helper: string; intent?: string }) {
   return (
     <article className={`order-platform-metric order-platform-metric-${intent}`}>
       <strong>{value}</strong>
@@ -75,45 +61,19 @@ function PlatformMetric({ label, value, helper, intent = 'neutral' }: { label: s
   );
 }
 
-function OrderCard({ order }: { order: OrderPlatformLatestOrderRow }) {
-  return (
-    <article className={`order-platform-order order-platform-order-${String(order.lifecycle_status || '').toLowerCase()}`}>
-      <div>
-        <strong>{order.order_number || order.lifecycle_id || 'Unknown order'}</strong>
-        <span>{order.invoice_number || 'invoice pending'} · {money(order.invoice_total)}</span>
-      </div>
-      <MiniPill tone={statusTone(order.lifecycle_status)}>{title(order.lifecycle_status)}</MiniPill>
-      <small>{[order.ordermentum_order_status, order.internalisation_status, order.warehouse_gate_status].filter(Boolean).join(' · ') || 'No lifecycle detail'} · {timeText(order.lifecycle_updated_at)}</small>
-    </article>
-  );
-}
-
-function orderSearchText(order: OrderPlatformLatestOrderRow) {
-  return [
-    order.lifecycle_id,
-    order.order_number,
-    order.invoice_number,
-    order.ordermentum_order_status,
-    order.ordermentum_invoice_status,
-    order.internalisation_status,
-    order.warehouse_gate_status,
-    order.lifecycle_status,
-    order.internal_order_id,
-    order.platform_bucket,
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
 function useOrdersPortalHost() {
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    function locate() {
-      const heading = Array.from(document.querySelectorAll<HTMLElement>('h2')).find((node) => node.textContent?.trim() === 'Order control');
+    return observeBody(() => {
+      const heading = Array.from(document.querySelectorAll<HTMLElement>('h2'))
+        .find((node) => node.textContent?.trim() === 'Order control');
       const panel = heading?.closest<HTMLElement>('.panel');
       if (!panel) {
         setHost(null);
         return;
       }
+
       panel.classList.add('orders-control-native-panel-hidden');
       let mount = document.querySelector<HTMLElement>('.order-platform-react-mount');
       if (!mount) {
@@ -122,272 +82,213 @@ function useOrdersPortalHost() {
         panel.insertAdjacentElement('beforebegin', mount);
       }
       setHost(mount);
-    }
-
-    const stopObserving = observeBody(locate);
-    return stopObserving;
+    });
   }, []);
 
   return host;
 }
 
-function CompactOrderTable({
-  mode,
-  rows,
-  query,
-  onQueryChange,
-  statusFilter,
-  onStatusFilterChange,
-  statusOptions,
-  pageSize,
-  onPageSizeChange,
-  page,
-  onPageChange,
-  decisionBusy,
-  onLegacyDecision,
-}: {
-  mode: PlatformMode;
-  rows: OrderPlatformLatestOrderRow[];
-  query: string;
-  onQueryChange: (value: string) => void;
-  statusFilter: string;
-  onStatusFilterChange: (value: string) => void;
-  statusOptions: string[];
-  pageSize: number;
-  onPageSizeChange: (value: number) => void;
-  page: number;
-  onPageChange: (value: number) => void;
-  decisionBusy?: string;
-  onLegacyDecision?: (order: OrderPlatformLatestOrderRow, decision: LegacyReviewDecision) => void;
-}) {
-  const filtered = rows.filter((order) => {
-    const matchesText = !query.trim() || orderSearchText(order).includes(query.trim().toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || order.lifecycle_status === statusFilter;
-    return matchesText && matchesStatus;
-  });
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize);
+function modeTitle(mode: OrderOperationsMode) {
+  if (mode === 'ready') return 'Ready for release';
+  if (mode === 'blocked') return 'Blocked orders';
+  if (mode === 'progress') return 'In fulfilment';
+  if (mode === 'history') return 'Completed and historical orders';
+  return 'Current orders';
+}
+
+function modeHelper(mode: OrderOperationsMode) {
+  if (mode === 'ready') return 'Data complete, source state recognised, and no internal order has been created yet.';
+  if (mode === 'blocked') return 'Current orders requiring source-status, invoice-detail, SKU, or barcode attention.';
+  if (mode === 'progress') return 'Internal orders already moving through warehouse and delivery.';
+  if (mode === 'history') return 'Completed, cancelled, and older Ordermentum records remain searchable outside the live queue.';
+  return 'The live operating set only. Historical Ordermentum records do not enter this queue.';
+}
+
+function rowAction(row: OrderOperationRow) {
+  if (row.release_eligible) return <MiniPill tone="good">READY TO RELEASE</MiniPill>;
+  if (row.internal_order_id) return <MiniPill tone="blue">INTERNAL ORDER</MiniPill>;
+  if (row.operational_scope === 'HISTORY') return <MiniPill tone="neutral">HISTORY</MiniPill>;
+  if (row.fulfilment_status === 'SOURCE_REVIEW') return <MiniPill tone="warn">SOURCE REVIEW</MiniPill>;
+  return <MiniPill tone={statusTone(row.data_quality_status)}>{title(row.data_quality_status)}</MiniPill>;
+}
+
+function OrderTable({ pageData, mode, loading }: { pageData: OrderOperationsPage; mode: OrderOperationsMode; loading: boolean }) {
+  if (loading && !pageData.rows.length) return <div className="order-platform-empty">Loading authoritative order records…</div>;
+  if (!pageData.rows.length) return <div className="order-platform-empty">No orders match this work area.</div>;
 
   return (
-    <section className="order-platform-compact-table-panel">
-      <div className="order-platform-table-headline">
-        <div>
-          <h3>{modeTitle(mode)}</h3>
-          <p>{modeHelper(mode)}</p>
-        </div>
-        <MiniPill tone={mode === 'active' ? 'good' : mode === 'legacy' ? 'warn' : 'blue'}>{filtered.length} shown</MiniPill>
+    <div className="order-platform-table order-operations-table">
+      <div className="order-platform-table-header">
+        <span>Order</span><span>Customer</span><span>Source</span><span>Fulfilment</span><span>Data</span><span>Updated</span><span>Value</span><span>Control</span>
       </div>
-
-      <div className="order-platform-toolbar">
-        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search order, invoice, status, internal ID…" />
-        <select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
-          <option value="ALL">All statuses</option>
-          {statusOptions.map((status) => <option value={status} key={status}>{title(status)}</option>)}
-        </select>
-        <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
-          <option value={25}>25 rows</option>
-          <option value={50}>50 rows</option>
-          <option value={100}>100 rows</option>
-        </select>
-      </div>
-
-      <div className="order-platform-table">
-        <div className="order-platform-table-header">
-          <span>Order</span><span>Bucket</span><span>Lifecycle</span><span>Internal</span><span>Updated</span><span>Value</span><span>Gate</span><span>Action</span>
-        </div>
-        {pageRows.map((order) => {
-          const busy = Boolean(order.lifecycle_id && decisionBusy === order.lifecycle_id);
-          return (
-            <article className="order-platform-table-row" key={`${mode}-${order.lifecycle_id}-${order.order_number}-${order.invoice_number}`}>
-              <span><strong>{order.order_number || order.lifecycle_id || 'Unknown'}</strong><small>{order.invoice_number || 'invoice pending'}</small></span>
-              <span><MiniPill tone={mode === 'active' ? 'good' : mode === 'legacy' ? 'warn' : 'blue'}>{order.platform_bucket || (mode === 'legacy' ? 'LEGACY_REVIEW' : mode === 'archive' ? 'ARCHIVE' : 'ACTIVE')}</MiniPill></span>
-              <span><MiniPill tone={statusTone(order.lifecycle_status)}>{title(order.lifecycle_status)}</MiniPill><small>{[order.internalisation_status, order.warehouse_gate_status].filter(Boolean).join(' · ') || 'no detail'}</small></span>
-              <span><strong>{order.internal_order_id ? 'Created' : 'Not created'}</strong><small>{order.internal_order_id || '—'}</small></span>
-              <span>{timeText(order.lifecycle_updated_at)}</span>
-              <span>{money(order.invoice_total)}</span>
-              <span><MiniPill tone={order.can_internalise ? 'good' : 'neutral'}>{order.can_internalise ? 'CAN INTERNALISE' : 'LOCKED'}</MiniPill></span>
-              <span className="order-platform-action-cell">
-                {mode === 'legacy' && onLegacyDecision ? (
-                  <>
-                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'ARCHIVE_APPROVED')}>Archive</button>
-                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'CANCEL_DRAFT_REQUESTED')}>Cancel draft</button>
-                    <button type="button" disabled={busy || !order.lifecycle_id} onClick={() => onLegacyDecision(order, 'REBUILD_REQUESTED')}>Rebuild</button>
-                  </>
-                ) : <MiniPill tone="neutral">Read only</MiniPill>}
-              </span>
-            </article>
-          );
-        })}
-        {!pageRows.length ? <div className="order-platform-empty">No matching orders.</div> : null}
-      </div>
-
-      <div className="order-platform-pagination">
-        <button type="button" onClick={() => onPageChange(Math.max(1, safePage - 1))} disabled={safePage <= 1}>Previous</button>
-        <span>Page {safePage} of {pageCount} · {filtered.length} rows</span>
-        <button type="button" onClick={() => onPageChange(Math.min(pageCount, safePage + 1))} disabled={safePage >= pageCount}>Next</button>
-      </div>
-    </section>
+      {pageData.rows.map((row) => (
+        <article className="order-platform-table-row" key={`${mode}-${row.operation_key}`}>
+          <span>
+            <strong>{row.order_number || row.operation_key}</strong>
+            <small>{row.invoice_number || 'invoice pending'}</small>
+          </span>
+          <span>
+            <strong>{row.store_name || 'Ordermentum customer'}</strong>
+            <small>{row.line_count ? `${numberValue(row.line_count)} lines` : 'line detail pending'}</small>
+          </span>
+          <span>
+            <MiniPill tone={row.operational_scope === 'REVIEW' ? 'warn' : 'neutral'}>{title(row.source_order_status || 'NOT SET')}</MiniPill>
+            <small>{row.source_invoice_status ? `invoice ${title(row.source_invoice_status)}` : 'source invoice status unavailable'}</small>
+          </span>
+          <span>
+            <MiniPill tone={statusTone(row.fulfilment_status)}>{title(row.fulfilment_status)}</MiniPill>
+            <small>{row.internal_order_id ? `internal ${row.internal_order_id.slice(0, 8)}` : 'not internalised'}</small>
+          </span>
+          <span>
+            <MiniPill tone={statusTone(row.data_quality_status)}>{title(row.data_quality_status)}</MiniPill>
+            <small>{row.classification_reason}</small>
+          </span>
+          <span>
+            <strong>{timeText(row.source_business_at)}</strong>
+            <small>observed {timeText(row.observed_at)}</small>
+          </span>
+          <span><strong>{money(row.order_value)}</strong><small>{numberValue(row.line_count)} lines</small></span>
+          <span className="order-platform-action-cell">{rowAction(row)}</span>
+        </article>
+      ))}
+    </div>
   );
 }
 
 function OrderPlatformContent() {
-  const [guardrails, setGuardrails] = useState<OrderPlatformGuardrailRow[]>([]);
-  const [orders, setOrders] = useState<OrderPlatformLatestOrderRow[]>([]);
-  const [legacyRows, setLegacyRows] = useState<OrderPlatformLatestOrderRow[]>([]);
-  const [archiveRows, setArchiveRows] = useState<OrderPlatformLatestOrderRow[]>([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [mode, setMode] = useState<PlatformMode>('active');
-  const [pageSize, setPageSize] = useState(25);
+  const [summary, setSummary] = useState<OrderOperationsSummary | null>(null);
+  const [pageData, setPageData] = useState<OrderOperationsPage>({ rows: [], total: 0, page: 1, pageSize: 25 });
+  const [mode, setMode] = useState<OrderOperationsMode>('current');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [queryInput, setQueryInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [decisionBusy, setDecisionBusy] = useState('');
-  const [loadedAt, setLoadedAt] = useState('');
 
-  async function reload() {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput.trim()), 280);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
+
+  useEffect(() => { setPage(1); }, [mode, query, pageSize]);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
     setError('');
-    try {
-      const [nextGuardrails, nextOrders, nextLegacy, nextArchive] = await Promise.all([
-        loadOrderPlatformGuardrails(),
-        loadOrderPlatformLatestOrders(),
-        loadLegacyInternalReviewOrders(),
-        loadCompletedArchivePreview(),
-      ]);
-      setGuardrails(nextGuardrails);
-      setOrders(nextOrders);
-      setLegacyRows(nextLegacy);
-      setArchiveRows(nextArchive);
-      setLoadedAt(new Date().toISOString());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
 
-  async function decideLegacy(order: OrderPlatformLatestOrderRow, decision: LegacyReviewDecision) {
-    if (!order.lifecycle_id) return;
-    setDecisionBusy(order.lifecycle_id);
-    setNotice('');
-    setError('');
-    try {
-      await recordLegacyReviewDecision({
-        lifecycleId: order.lifecycle_id,
-        decision,
-        note: `${decision} from Orders platform control for ${order.order_number || order.lifecycle_id}`,
-      });
-      setNotice(`${order.order_number || order.lifecycle_id} marked as ${title(decision)}.`);
-      await reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDecisionBusy('');
-    }
-  }
+    void Promise.all([
+      loadOrderOperationsSummary(),
+      loadOrderOperationsPage({ mode, page, pageSize, query }),
+    ]).then(([nextSummary, nextPage]) => {
+      if (!active) return;
+      setSummary(nextSummary);
+      setPageData(nextPage);
+    }).catch((reason) => {
+      if (!active) return;
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
 
-  useEffect(() => { void reload(); }, []);
-  useEffect(() => { setPage(1); }, [mode, query, statusFilter, pageSize]);
+    return () => { active = false; };
+  }, [mode, page, pageSize, query, refreshVersion]);
 
-  const raw = guardrail(guardrails, 'ordermentum_raw_inbox');
-  const active = guardrail(guardrails, 'orders_active_workflow');
-  const legacy = guardrail(guardrails, 'legacy_internal_review');
-  const archive = guardrail(guardrails, 'completed_archive');
+  const counts = useMemo(() => {
+    const total = numberValue(summary?.total_orders);
+    const current = numberValue(summary?.current_orders);
+    const review = numberValue(summary?.source_review_orders);
+    return {
+      current: current + review,
+      ready: numberValue(summary?.ready_to_release),
+      blocked: numberValue(summary?.blocked_orders) + review,
+      progress: numberValue(summary?.in_progress_orders),
+      history: Math.max(0, total - current - review),
+      completed: numberValue(summary?.completed_orders),
+    };
+  }, [summary]);
 
-  const activeSearchRows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return orders;
-    return orders.filter((order) => orderSearchText(order).includes(needle));
-  }, [orders, query]);
+  const pageCount = Math.max(1, Math.ceil(pageData.total / pageData.pageSize));
+  const safePage = Math.min(page, pageCount);
 
-  const groups = useMemo(() => ({
-    ready: activeSearchRows.filter((order) => order.lifecycle_status === 'READY_TO_INTERNALISE'),
-    mapping: activeSearchRows.filter((order) => order.lifecycle_status === 'BLOCKED_MAPPING'),
-    data: activeSearchRows.filter((order) => order.lifecycle_status === 'BLOCKED_DATA'),
-    internal: activeSearchRows.filter((order) => order.lifecycle_status === 'INTERNAL_ORDER_CREATED'),
-    warehouse: activeSearchRows.filter((order) => order.lifecycle_status === 'PICKING'),
-    staged: activeSearchRows.filter((order) => order.lifecycle_status === 'STAGED'),
-  }), [activeSearchRows]);
-
-  const tableRows = mode === 'legacy' ? legacyRows : mode === 'archive' ? archiveRows : orders;
-  const statusOptions = useMemo(() => Array.from(new Set(tableRows.map((row) => row.lifecycle_status).filter((status): status is string => Boolean(status)))).sort(), [tableRows]);
+  const modes: Array<{ key: OrderOperationsMode; label: string; count: number }> = [
+    { key: 'current', label: 'Current', count: counts.current },
+    { key: 'ready', label: 'Ready', count: counts.ready },
+    { key: 'blocked', label: 'Blocked', count: counts.blocked },
+    { key: 'progress', label: 'In progress', count: counts.progress },
+    { key: 'history', label: 'History', count: counts.history },
+  ];
 
   return (
-    <section className="order-platform-shell">
-      <section className="order-platform-hero">
+    <section className="order-platform-shell order-operations-v2">
+      <section className="order-platform-hero order-operations-hero">
         <div>
-          <span>ORDER PLATFORM CONTROL</span>
-          <h2>Ordermentum intake stays broad. EcoFlow workflow stays clean.</h2>
-          <p>Raw Ordermentum history is retained for audit/search. Active Orders only use lifecycle-gated rows that are safe for accounts, warehouse, and driver operations.</p>
+          <span>ORDER CONTROL · AUTHORITATIVE FLOW</span>
+          <h2>One order flow, from Ordermentum to delivery.</h2>
+          <p>Ordermentum remains the complete commercial record. EcoFlow shows only current work here, then moves released orders through warehouse and delivery without reclassifying history as active.</p>
         </div>
         <div className="order-platform-actions">
-          <button type="button" onClick={() => void reload()}>Refresh platform state</button>
-          <small>{loadedAt ? `checked ${timeText(loadedAt)}` : 'checking platform state'}</small>
+          <button type="button" disabled={loading} onClick={() => setRefreshVersion((value) => value + 1)}>{loading ? 'Refreshing…' : 'Refresh order state'}</button>
+          <small>Latest source change {timeText(summary?.latest_source_update)}</small>
         </div>
       </section>
 
-      {error ? <div className="order-platform-error">{error}</div> : null}
-      {notice ? <div className="order-platform-notice">{notice}</div> : null}
+      {error ? <div className="order-platform-error">Order control could not load. {error}</div> : null}
 
-      <section className="order-platform-metrics">
-        <PlatformMetric label="Raw Ordermentum" value={numberValue(raw?.row_count)} helper="retained history; not a work queue" intent="neutral" />
-        <PlatformMetric label="Active workflow" value={numberValue(active?.row_count)} helper={`${money(active?.total_value)} currently actionable`} intent="good" />
-        <PlatformMetric label="Legacy review" value={numberValue(legacy?.row_count)} helper="held outside pick/route until owner review" intent="warn" />
-        <PlatformMetric label="Archive" value={numberValue(archive?.row_count)} helper="completed/history out of hot path" intent="blue" />
+      <section className="order-platform-metrics order-operations-metrics">
+        <Metric label="Current orders" value={counts.current} helper="Live work and source review only" intent="good" />
+        <Metric label="Ready for release" value={counts.ready} helper="Safe to create an internal order" intent="good" />
+        <Metric label="Blocked" value={counts.blocked} helper="Current action required" intent="warn" />
+        <Metric label="In fulfilment" value={counts.progress} helper="Released, picking, staged or on route" intent="blue" />
+        <Metric label="Completed" value={counts.completed} helper="Retained in searchable history" intent="neutral" />
       </section>
 
-      <section className="order-platform-board">
-        <div className="order-platform-board-head">
-          <div>
-            <h3>Active workflow lanes</h3>
-            <p>Designed for a growing daily feed: search/filter the hot path, not the full archive.</p>
-          </div>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, invoice, status…" />
+      <section className="order-ops-flow-strip" aria-label="Order operating flow">
+        <article><span>01</span><div><strong>Ordermentum</strong><small>Orders, stores, invoices and product facts</small></div></article>
+        <i>→</i>
+        <article><span>02</span><div><strong>Release</strong><small>Explicit eligibility only; unknown states stay blocked</small></div></article>
+        <i>→</i>
+        <article><span>03</span><div><strong>Warehouse</strong><small>Pick, pack and stage the internal order</small></div></article>
+        <i>→</i>
+        <article><span>04</span><div><strong>Delivery</strong><small>Route, POD and completion</small></div></article>
+      </section>
+
+      <nav className="order-platform-mode-tabs order-operations-mode-tabs" aria-label="Order work areas">
+        {modes.map((item) => (
+          <button key={item.key} type="button" className={mode === item.key ? 'active' : ''} onClick={() => setMode(item.key)}>
+            <strong>{item.label}</strong><span>{item.count}</span>
+          </button>
+        ))}
+      </nav>
+
+      <section className="order-platform-compact-table-panel">
+        <div className="order-platform-table-headline">
+          <div><h3>{modeTitle(mode)}</h3><p>{modeHelper(mode)}</p></div>
+          <MiniPill tone={mode === 'blocked' ? 'danger' : mode === 'ready' ? 'good' : 'blue'}>{pageData.total} records</MiniPill>
         </div>
-        <div className="order-platform-lanes">
-          {[
-            ['ready', 'Ready to internalise', groups.ready, 'Safe to create internal order.'],
-            ['mapping', 'Mapping blocked', groups.mapping, 'SKU/barcode/store mapping needs fixing.'],
-            ['data', 'Data blocked', groups.data, 'Ordermentum detail is incomplete.'],
-            ['internal', 'Internal order', groups.internal, 'Created internally; not yet warehouse work.'],
-            ['warehouse', 'Picking', groups.warehouse, 'Warehouse is working.'],
-            ['staged', 'Staged', groups.staged, 'Ready for driver route.'],
-          ].map(([key, label, rows, helper]) => (
-            <section className={`order-platform-lane order-platform-lane-${key}`} key={String(key)}>
-              <header><strong>{String(label)}</strong><span>{(rows as OrderPlatformLatestOrderRow[]).length}</span></header>
-              <small>{String(helper)}</small>
-              <div className="order-platform-order-list">
-                {(rows as OrderPlatformLatestOrderRow[]).slice(0, 5).map((order) => <OrderCard key={`${order.lifecycle_id}-${order.lifecycle_status}`} order={order} />)}
-                {!(rows as OrderPlatformLatestOrderRow[]).length ? <div className="order-platform-empty">Clear</div> : null}
-                {(rows as OrderPlatformLatestOrderRow[]).length > 5 ? <div className="order-platform-more">+{(rows as OrderPlatformLatestOrderRow[]).length - 5} more</div> : null}
-              </div>
-            </section>
-          ))}
+
+        <div className="order-platform-toolbar">
+          <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Search order, invoice or internal ID…" />
+          <select value={mode} onChange={(event) => setMode(event.target.value as OrderOperationsMode)}>
+            {modes.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+          </select>
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+            <option value={100}>100 rows</option>
+          </select>
+        </div>
+
+        <OrderTable pageData={pageData} mode={mode} loading={loading} />
+
+        <div className="order-platform-pagination">
+          <button type="button" onClick={() => setPage(Math.max(1, safePage - 1))} disabled={safePage <= 1 || loading}>Previous</button>
+          <span>Page {safePage} of {pageCount} · {pageData.total} records</span>
+          <button type="button" onClick={() => setPage(Math.min(pageCount, safePage + 1))} disabled={safePage >= pageCount || loading}>Next</button>
         </div>
       </section>
-
-      <section className="order-platform-mode-tabs" aria-label="Order platform work areas">
-        <button type="button" className={mode === 'active' ? 'active' : ''} onClick={() => setMode('active')}><strong>Active</strong><span>{orders.length}</span></button>
-        <button type="button" className={mode === 'legacy' ? 'active' : ''} onClick={() => setMode('legacy')}><strong>Legacy Review</strong><span>{legacyRows.length}</span></button>
-        <button type="button" className={mode === 'archive' ? 'active' : ''} onClick={() => setMode('archive')}><strong>Archive</strong><span>{archiveRows.length}</span></button>
-      </section>
-
-      <CompactOrderTable
-        mode={mode}
-        rows={tableRows}
-        query={query}
-        onQueryChange={setQuery}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        statusOptions={statusOptions}
-        pageSize={pageSize}
-        onPageSizeChange={setPageSize}
-        page={page}
-        onPageChange={setPage}
-        decisionBusy={decisionBusy}
-        onLegacyDecision={decideLegacy}
-      />
-
     </section>
   );
 }
