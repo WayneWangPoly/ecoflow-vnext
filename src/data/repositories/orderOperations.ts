@@ -1,4 +1,3 @@
-import type { PostgrestFilterBuilder } from '@supabase/postgrest-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -12,6 +11,8 @@ export type OrderOperationRow = {
   external_invoice_number: string | null;
   order_number: string;
   invoice_number: string | null;
+  retailer_id: string | null;
+  store_name: string | null;
   source_order_status: string | null;
   source_invoice_status: string | null;
   source_payment_status: string | null;
@@ -32,6 +33,7 @@ export type OrderOperationRow = {
   source_created_at: string | null;
   source_updated_at: string | null;
   source_business_at: string | null;
+  requested_delivery_at: string | null;
   observed_at: string | null;
 };
 
@@ -76,20 +78,6 @@ function safeSearch(value: string) {
   return value.trim().replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
 }
 
-function applyMode<T>(query: PostgrestFilterBuilder<any, any, T[], unknown>, mode: OrderOperationsMode) {
-  if (mode === 'ready') return query.eq('release_eligible', true);
-  if (mode === 'blocked') {
-    return query
-      .in('operational_scope', ['CURRENT', 'REVIEW'])
-      .or('data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
-  }
-  if (mode === 'progress') {
-    return query.in('fulfilment_status', ['RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY']);
-  }
-  if (mode === 'history') return query.eq('operational_scope', 'HISTORY');
-  return query.in('operational_scope', ['CURRENT', 'REVIEW']);
-}
-
 export async function loadOrderOperationsSummary(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
@@ -117,7 +105,15 @@ export async function loadOrderOperationsPage(input: {
     .from('v_ecoflow_order_operations_v2')
     .select('*', { count: 'exact' });
 
-  request = applyMode(request, input.mode);
+  if (input.mode === 'ready') request = request.eq('release_eligible', true);
+  else if (input.mode === 'blocked') {
+    request = request
+      .in('operational_scope', ['CURRENT', 'REVIEW'])
+      .or('data_quality_status.neq.READY,fulfilment_status.eq.SOURCE_REVIEW');
+  } else if (input.mode === 'progress') {
+    request = request.in('fulfilment_status', ['RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY']);
+  } else if (input.mode === 'history') request = request.eq('operational_scope', 'HISTORY');
+  else request = request.in('operational_scope', ['CURRENT', 'REVIEW']);
 
   const needle = safeSearch(input.query || '');
   if (needle) {
@@ -126,6 +122,7 @@ export async function loadOrderOperationsPage(input: {
       `invoice_number.ilike.%${needle}%`,
       `internal_order_id.ilike.%${needle}%`,
       `external_order_number.ilike.%${needle}%`,
+      `store_name.ilike.%${needle}%`,
     ].join(','));
   }
 
