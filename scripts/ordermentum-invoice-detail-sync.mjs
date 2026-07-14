@@ -37,11 +37,21 @@ async function loadAll(resourceType) {
   return rows.slice(0, limit);
 }
 
+function fillTemplate(template, externalId) {
+  return String(template || '')
+    .replace(/\{\{\s*(id|invoiceId)\s*\}\}/g, encodeURIComponent(externalId))
+    .replace(/\{\{\s*baseUrl\s*\}\}/g, process.env.ORDERMENTUM_API_BASE_URL || 'https://api.ordermentum.com');
+}
+
 async function fetchInvoiceDetail(externalId) {
+  const configured = process.env.ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE
+    ? fillTemplate(process.env.ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE, externalId)
+    : null;
   const candidates = [
+    configured,
     `/v1/invoices/${encodeURIComponent(externalId)}`,
     `/v2/invoices/${encodeURIComponent(externalId)}`,
-  ];
+  ].filter(Boolean);
   let lastResult = null;
   for (const path of candidates) {
     const result = await fetchOrdermentumJson(token, path, {});
