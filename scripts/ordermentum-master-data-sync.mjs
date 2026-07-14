@@ -43,7 +43,16 @@ const counters = {
 };
 const resourcesSucceeded = [];
 const resourcesFailed = [];
+const resourcesUnavailable = [];
 const errors = [];
+const warnings = [];
+const detailFailuresByResource = {};
+
+function isOptionalCapabilityUnavailable(resource, error) {
+  const definition = RESOURCE_DEFINITIONS[resource];
+  const message = error instanceof Error ? error.message : String(error);
+  return definition?.optionalCapability === true && /failed\s+(404|405)\b/i.test(message);
+}
 
 if (supabase) {
   const { data, error } = await supabase
@@ -153,6 +162,7 @@ async function syncResource(resource) {
         counters.detailSucceeded += 1;
       } else {
         counters.detailFailed += 1;
+        detailFailuresByResource[resource] = (detailFailuresByResource[resource] || 0) + 1;
         console.warn(`[${resource}] detail ${externalId} failed ${result.status}: ${JSON.stringify(result.data).slice(0, 400)}`);
       }
       if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -178,18 +188,27 @@ try {
       resourcesSucceeded.push(resource);
       console.log(`[${resource}] completed: ${count}`);
     } catch (error) {
+      if (isOptionalCapabilityUnavailable(resource, error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        resourcesUnavailable.push(resource);
+        warnings.push({ resource, message });
+        console.warn(`[${resource}] unavailable optional Ordermentum capability: ${message}`);
+        continue;
+      }
+      const message = error instanceof Error ? error.message : String(error);
       resourcesFailed.push(resource);
-      errors.push({ resource, message: error.message });
-      console.error(`[${resource}] failed:`, error.message);
+      errors.push({ resource, message });
+      console.error(`[${resource}] failed:`, message);
     }
   }
 
   try {
     await projectOperationalStores();
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     resourcesFailed.push('store_projection');
-    errors.push({ resource: 'store_projection', message: error.message });
-    console.error('[store_projection] failed:', error.message);
+    errors.push({ resource: 'store_projection', message });
+    console.error('[store_projection] failed:', message);
   }
 
   const status = dryRun ? 'DRY_RUN' : (resourcesFailed.length ? 'PARTIAL' : 'SUCCEEDED');
@@ -210,11 +229,29 @@ try {
         detail_failed: counters.detailFailed,
         finished_at: new Date().toISOString(),
         last_error: errors.length ? JSON.stringify(errors).slice(0, 2000) : null,
-        notes: { errors, storesProjected: counters.storesProjected },
+        notes: {
+          errors,
+          warnings,
+          resourcesUnavailable,
+          detailFailuresByResource,
+          storesProjected: counters.storesProjected,
+        },
       })
       .eq('id', runId);
   }
-  console.log(JSON.stringify({ runId, dryRun, supplierId, resources, resourcesSucceeded, resourcesFailed, ...counters, errors }, null, 2));
+  console.log(JSON.stringify({
+    runId,
+    dryRun,
+    supplierId,
+    resources,
+    resourcesSucceeded,
+    resourcesUnavailable,
+    resourcesFailed,
+    ...counters,
+    detailFailuresByResource,
+    warnings,
+    errors,
+  }, null, 2));
   if (resourcesFailed.length) process.exitCode = 2;
 } catch (error) {
   if (supabase && runId) {
