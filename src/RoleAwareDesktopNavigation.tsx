@@ -3,8 +3,10 @@ import { observeBody } from '@/lib/domObserver';
 
 const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Delivery', 'Stores', 'Reconciliation', 'Settings']);
 const businessLabels: Record<string, string> = {
-  Ordermentum: 'Ordermentum Inbox',
-  Reconciliation: 'Accounts',
+  Ordermentum: 'Release Control',
+  Inventory: 'Inventory & Products',
+  Stores: 'Stores Mirror',
+  Reconciliation: 'Accounts Mirror',
 };
 
 function normaliseRole(value?: string | null) {
@@ -63,10 +65,10 @@ export function RoleAwareDesktopNavigation() {
         nav.appendChild(helper);
       }
       helper.textContent = role === 'ACCOUNT'
-        ? 'Accounts workspace: route planning, statements, stores and order controls.'
+        ? 'Accounts: Ordermentum finance mirror, statements and collection workflow. Source invoices and payments remain read-only.'
         : role === 'ADMIN'
-          ? 'Admin workspace: full operations, security and workspace access.'
-          : 'Owner workspace: full operating command centre.';
+          ? 'Admin: verified commercial mirror plus EcoFlow warehouse, delivery, security and audit controls.'
+          : 'Owner: Ordermentum is the commercial source; EcoFlow controls internal fulfilment and physical operations.';
 
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {
         const accountsButton = buttons.find((button) => buttonBaseLabel(button) === 'Reconciliation');
