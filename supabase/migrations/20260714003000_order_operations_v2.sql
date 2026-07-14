@@ -79,6 +79,23 @@ with inbox_ranked as (
   select *
   from draft_ranked
   where row_rank = 1
+), om_ranked as (
+  select
+    coalesce(nullif(order_number::text, ''), id::text) as operation_key,
+    retailer_id::text as retailer_id,
+    retailer_name::text as retailer_name,
+    delivery_date::timestamptz as delivery_date,
+    due_at::timestamptz as due_at,
+    updated_at::timestamptz as om_updated_at,
+    row_number() over (
+      partition by coalesce(nullif(order_number::text, ''), id::text)
+      order by updated_at desc nulls last
+    ) as row_rank
+  from public.om_orders
+), om as (
+  select *
+  from om_ranked
+  where row_rank = 1
 ), normalised as (
   select
     i.*,
@@ -89,14 +106,20 @@ with inbox_ranked as (
     coalesce(d.unmapped_line_count, 0) as unmapped_line_count,
     coalesce(d.barcode_blocked_line_count, 0) as barcode_blocked_line_count,
     d.internal_updated_at,
+    o.retailer_id,
+    o.retailer_name,
+    o.delivery_date,
+    o.due_at,
+    o.om_updated_at,
     lower(trim(coalesce(i.order_status, ''))) as order_status_key,
     lower(trim(coalesce(i.invoice_status, ''))) as invoice_status_key,
     lower(trim(coalesce(d.internalisation_status, ''))) as internalisation_status_key,
     lower(trim(coalesce(d.warehouse_gate_status, ''))) as warehouse_gate_status_key,
     lower(trim(coalesce(d.account_release_status, ''))) as account_release_status_key,
-    coalesce(i.invoice_due_at, i.invoice_date, i.order_updated_at, i.order_created_at) as source_business_at
+    coalesce(o.due_at, o.delivery_date, i.invoice_due_at, i.invoice_date, i.order_updated_at, i.order_created_at) as source_business_at
   from inbox i
   left join drafts d using (operation_key)
+  left join om o using (operation_key)
 ), classified as (
   select
     n.*,
@@ -116,6 +139,7 @@ with inbox_ranked as (
         'open', 'ready', 'paid', 'unpaid', 'in_progress', 'partially_fulfilled'
       )
     ) as source_explicitly_current,
+    (source_business_at >= now() - interval '60 days') as source_recent,
     (
       coalesce(n.invoice_detail_missing, false)
       or coalesce(n.line_items_missing, false)
@@ -134,10 +158,10 @@ with inbox_ranked as (
       when warehouse_gate_status_key in ('out_for_delivery', 'driver_assigned', 'on_route', 'en_route') then 'OUT_FOR_DELIVERY'
       when warehouse_gate_status_key in ('staged', 'packed', 'ready_for_delivery') then 'STAGED'
       when warehouse_gate_status_key in ('picking', 'pick_started') then 'PICKING'
-      when nullif(internal_order_id, '') is not null then 'RELEASED'
-      when data_detail_blocked or data_mapping_blocked then 'BLOCKED'
-      when source_explicitly_current then 'UNRELEASED'
-      when source_business_at >= now() - interval '45 days' then 'SOURCE_REVIEW'
+      when source_recent and nullif(internal_order_id, '') is not null then 'RELEASED'
+      when source_recent and (data_detail_blocked or data_mapping_blocked) then 'BLOCKED'
+      when source_recent and source_explicitly_current then 'UNRELEASED'
+      when source_recent then 'SOURCE_REVIEW'
       else 'HISTORY'
     end as fulfilment_status,
     case
@@ -147,9 +171,13 @@ with inbox_ranked as (
     end as data_quality_status,
     case
       when source_cancelled or source_completed then 'HISTORY'
-      when nullif(internal_order_id, '') is not null then 'CURRENT'
-      when source_explicitly_current then 'CURRENT'
-      when source_business_at >= now() - interval '45 days' then 'REVIEW'
+      when warehouse_gate_status_key in (
+        'out_for_delivery', 'driver_assigned', 'on_route', 'en_route',
+        'staged', 'packed', 'ready_for_delivery', 'picking', 'pick_started'
+      ) then 'CURRENT'
+      when source_recent and source_explicitly_current then 'CURRENT'
+      when source_recent and nullif(internal_order_id, '') is not null then 'CURRENT'
+      when source_recent then 'REVIEW'
       else 'HISTORY'
     end as operational_scope
   from classified c
@@ -162,6 +190,8 @@ select
   external_invoice_number,
   coalesce(order_number, external_order_number, operation_key) as order_number,
   coalesce(invoice_number, external_invoice_number) as invoice_number,
+  retailer_id,
+  retailer_name as store_name,
   order_status as source_order_status,
   invoice_status as source_invoice_status,
   payment_status as source_payment_status,
@@ -187,8 +217,8 @@ select
     when fulfilment_status = 'SOURCE_REVIEW' then 'Recent source status is not recognised; review before release'
     when data_detail_blocked then 'Ordermentum invoice or line detail is incomplete'
     when data_mapping_blocked then 'SKU or barcode mapping is incomplete'
-    when nullif(internal_order_id, '') is not null then 'Internal order already exists'
-    when source_explicitly_current then 'Current Ordermentum order'
+    when nullif(internal_order_id, '') is not null and operational_scope = 'CURRENT' then 'Internal order already exists'
+    when source_explicitly_current and operational_scope = 'CURRENT' then 'Current Ordermentum order'
     else 'Historical Ordermentum record'
   end as classification_reason,
   coalesce(invoice_total, total_due, 0)::numeric as order_value,
@@ -196,10 +226,12 @@ select
   unmapped_line_count,
   barcode_blocked_line_count,
   order_created_at as source_created_at,
-  order_updated_at as source_updated_at,
+  coalesce(order_updated_at, om_updated_at) as source_updated_at,
   source_business_at,
+  coalesce(due_at, delivery_date, invoice_due_at, invoice_date) as requested_delivery_at,
   greatest(
     coalesce(order_updated_at, '1900-01-01'::timestamptz),
+    coalesce(om_updated_at, '1900-01-01'::timestamptz),
     coalesce(last_synced_at, '1900-01-01'::timestamptz),
     coalesce(internal_updated_at, '1900-01-01'::timestamptz)
   ) as observed_at
@@ -214,7 +246,10 @@ select
   count(*) filter (where operational_scope = 'REVIEW')::numeric as source_review_orders,
   count(*) filter (where release_eligible)::numeric as ready_to_release,
   count(*) filter (where data_quality_status <> 'READY' and operational_scope in ('CURRENT', 'REVIEW'))::numeric as blocked_orders,
-  count(*) filter (where fulfilment_status in ('RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY'))::numeric as in_progress_orders,
+  count(*) filter (
+    where operational_scope = 'CURRENT'
+      and fulfilment_status in ('RELEASED', 'PICKING', 'STAGED', 'OUT_FOR_DELIVERY')
+  )::numeric as in_progress_orders,
   count(*) filter (where fulfilment_status = 'COMPLETED')::numeric as completed_orders,
   count(*) filter (where fulfilment_status = 'CANCELLED')::numeric as cancelled_orders,
   coalesce(sum(order_value) filter (where operational_scope in ('CURRENT', 'REVIEW')), 0)::numeric as current_value,
