@@ -1,6 +1,6 @@
-import { PriceMatrixWorkbench } from '../PriceMatrixWorkbench';
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
+import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
@@ -18,26 +18,26 @@ import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
 import '../storeStatementPressure.css';
 import '../accountsStatementWorkbench.css';
-import '../priceMatrixWorkbench.css';
 import '../deliveryRunHistory.css';
 import '../roleAwareNavigation.css';
 import '../inventoryControlCenter.css';
 import '../inventoryMovementLedger.css';
 import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
+import '../commercialSourceBoundary.css';
 
 /** Owner/Admin desktop capabilities only. */
 export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
+      <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />
       <OwnerDeliveryAlerts />
       <OwnerDriverTrackingMap />
       <OwnerDeliveryGovernance />
       <OwnerOrderIntelligence />
-      <PriceMatrixWorkbench />
       <OwnerStoreIntelligence />
       <InventoryControlCenter />
       <InventoryMasterCatalog />
