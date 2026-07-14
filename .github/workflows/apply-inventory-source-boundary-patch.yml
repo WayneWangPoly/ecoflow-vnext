@@ -32,6 +32,7 @@ jobs:
       - name: Commit patched source
         shell: bash
         run: |
+          # This workflow is intentionally one-shot; the source file is committed back to the branch.
           if git diff --quiet; then
             echo "Inventory source boundary already applied."
             exit 0
