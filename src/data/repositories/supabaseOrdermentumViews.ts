@@ -241,10 +241,17 @@ function formatTime(iso: string | null | undefined, fallbackIndex: number) {
 }
 
 function paymentStatus(value: string | null | undefined): PaymentStatus {
-  const normalized = String(value || '').toLowerCase();
-  if (normalized.includes('paid')) return 'PAID';
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized.includes('hold') || normalized.includes('credit_review')) return 'CREDIT_HOLD';
   if (normalized.includes('overdue')) return 'OVERDUE';
+  if (normalized === 'paid' || normalized === 'settled' || normalized === 'payment_received') return 'PAID';
   return 'UNPAID';
+}
+
+function isAccountHold(value: string | null | undefined) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return ['HOLD_PAYMENT_REVIEW', 'REVIEW_PAYMENT', 'CREDIT_HOLD', 'ON_HOLD', 'HELD'].includes(normalized)
+    || normalized.includes('HOLD');
 }
 
 function isCompletedOrder(row: SupabaseInboxRow, draft?: SupabaseDraftRow): boolean {
@@ -282,7 +289,7 @@ function orderStatus(row: SupabaseInboxRow, draft?: SupabaseDraftRow): OrderStat
   const gate = String(draft?.warehouse_gate_status || '').toUpperCase();
   if (['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(internalisation) || ['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(gate)) return 'MAPPING_EXCEPTION';
   if (['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(internalisation) || ['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(gate)) return 'MAPPING_EXCEPTION';
-  if (String(draft?.account_release_status || '') === 'HOLD_PAYMENT_REVIEW') return 'IMPORTED';
+  if (isAccountHold(draft?.account_release_status)) return 'IMPORTED';
   // Internal order created and nothing blocking: the order stays releasable to today's run.
   // (Previously this returned IMPORTED, which removed internalised orders from the release queue.)
   if (draft?.internal_order_id) return 'RELEASE_READY';
@@ -310,7 +317,7 @@ function gateStatusFromOrder(status: OrderStatus, draft?: SupabaseDraftRow): Rel
   if (['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(internalisation) || ['BLOCKED_MAPPING', 'NOT_ELIGIBLE_MAPPING', 'BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(gate)) return 'BLOCKED_MAPPING';
   if (['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(internalisation) || ['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(gate)) return 'BLOCKED_DATA';
   if (internalisation === 'BLOCKED_STOCK' || gate === 'BLOCKED_STOCK') return 'BLOCKED_STOCK';
-  if (String(draft?.account_release_status || '') === 'HOLD_PAYMENT_REVIEW') return 'REVIEW_PAYMENT';
+  if (isAccountHold(draft?.account_release_status)) return 'REVIEW_PAYMENT';
   if (status === 'MAPPING_EXCEPTION') return 'BLOCKED_DATA';
   return 'READY_TO_RELEASE';
 }
@@ -324,7 +331,7 @@ function blockersFromDraft(draft?: SupabaseDraftRow): string {
   const gate = String(draft.warehouse_gate_status || '').toUpperCase();
   if (['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(internalisation) || ['BLOCKED_DATA', 'NOT_ELIGIBLE_DATA'].includes(gate)) parts.push('Order line detail missing — refresh invoice detail before release');
   if (unmapped) parts.push(`${unmapped} line${unmapped === 1 ? '' : 's'} need SKU mapping`);
-  if (String(draft.account_release_status || '') === 'HOLD_PAYMENT_REVIEW') parts.push('Payment review hold');
+  if (isAccountHold(draft.account_release_status)) parts.push('EcoFlow account release hold');
   if (barcodeBlocked || ['BLOCKED_BARCODE', 'BARCODE_BLOCKED'].includes(gate)) parts.push(`${barcodeBlocked || 'Some'} line${barcodeBlocked === 1 ? '' : 's'} await barcode confirmation`);
   return parts.join(' · ');
 }

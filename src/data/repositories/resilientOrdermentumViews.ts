@@ -36,6 +36,12 @@ type LiveLocationBalanceRow = {
   on_hand_location: number | string | null;
 };
 
+type AccountReleaseHoldRow = {
+  store_id: string;
+  active: boolean | null;
+  hold_reason: string | null;
+};
+
 export type OperationalSourceDiagnostic = {
   source: string;
   required: boolean;
@@ -46,6 +52,7 @@ export type OperationalSourceDiagnostic = {
 
 export type ResilientOrdermentumViews = SupabaseOrdermentumViews & {
   diagnostics: OperationalSourceDiagnostic[];
+  accountHolds: AccountReleaseHoldRow[];
 };
 
 export class OperationalSnapshotError extends Error {
@@ -63,6 +70,7 @@ export class OperationalSnapshotError extends Error {
 const EXPLICIT_CURRENT_SOURCE_STATUSES = new Set([
   'new',
   'pending',
+  'placed',
   'processing',
   'confirmed',
   'accepted',
@@ -312,6 +320,14 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Resil
     draft.invoice_number,
   ]));
 
+  const omOrderByKey = new Map<string, SupabaseOmOrderRow>();
+  views.omOrders.forEach((row) => addKeys(omOrderByKey, row, [row.id, row.order_number]));
+  const holdByStoreId = new Map(
+    views.accountHolds
+      .filter((hold) => hold.active !== false && hold.store_id)
+      .map((hold) => [hold.store_id, hold] as const),
+  );
+
   const orders = projected.orders.map((order): ImportedOrder => {
     const row = inboxByKey.get(order.id)
       || inboxByKey.get(order.externalOrderId)
@@ -321,8 +337,47 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Resil
       || draftByKey.get(order.externalOrderId)
       || draftByKey.get(order.orderNo)
       || draftByKey.get(order.invoiceNo);
-
+    const omOrder = omOrderByKey.get(order.externalOrderId)
+      || omOrderByKey.get(order.id)
+      || omOrderByKey.get(order.orderNo);
+    const accountHold = omOrder?.retailer_id ? holdByStoreId.get(omOrder.retailer_id) : undefined;
+    const sourceStatus = String(row?.order_status || '').trim().toLowerCase();
+    const sourceRecognised = EXPLICIT_CURRENT_SOURCE_STATUSES.has(sourceStatus);
     const liveWarehouseStatus = warehouseStatus(draft);
+
+    if (!sourceRecognised) {
+      const blocker = sourceStatus
+        ? `Ordermentum status “${row?.order_status}” requires review before release.`
+        : 'Ordermentum source status is missing; review before release.';
+      return {
+        ...order,
+        status: liveWarehouseStatus || 'IMPORTED',
+        selected: false,
+        canCreateInternalOrder: false,
+        hasInternalOrder: Boolean(draft?.internal_order_id),
+        releaseGateStatus: 'BLOCKED_DATA',
+        releaseBlockers: blocker,
+        changeSummary: blocker,
+        openExceptionCount: Math.max(1, order.openExceptionCount),
+      };
+    }
+
+    if (accountHold) {
+      const blocker = `EcoFlow account release hold · ${accountHold.hold_reason || 'Accounts review required'}`;
+      return {
+        ...order,
+        status: liveWarehouseStatus || 'IMPORTED',
+        paymentStatus: 'CREDIT_HOLD',
+        selected: false,
+        canCreateInternalOrder: false,
+        hasInternalOrder: Boolean(draft?.internal_order_id),
+        releaseGateStatus: 'REVIEW_PAYMENT',
+        releaseBlockers: blocker,
+        changeSummary: blocker,
+        openExceptionCount: Math.max(1, order.openExceptionCount),
+      };
+    }
+
     if (liveWarehouseStatus) {
       return {
         ...order,
@@ -334,35 +389,23 @@ export function applySupabaseOrdermentumViews(base: EcoFlowDataSet, views: Resil
     }
 
     if (draft?.internal_order_id) {
+      const releaseReady = order.status === 'RELEASE_READY'
+        && order.releaseGateStatus === 'READY_TO_RELEASE'
+        && !order.releaseBlockers;
       return {
         ...order,
-        selected: order.status === 'RELEASE_READY',
+        selected: releaseReady,
         canCreateInternalOrder: false,
         hasInternalOrder: true,
       };
     }
 
-    const sourceStatus = String(row?.order_status || '').trim().toLowerCase();
-    if (!EXPLICIT_CURRENT_SOURCE_STATUSES.has(sourceStatus)) {
-      const blocker = sourceStatus
-        ? `Ordermentum status “${row?.order_status}” requires review before release.`
-        : 'Ordermentum source status is missing; review before release.';
-      return {
-        ...order,
-        status: 'IMPORTED',
-        selected: false,
-        canCreateInternalOrder: false,
-        hasInternalOrder: false,
-        releaseGateStatus: 'BLOCKED_DATA',
-        releaseBlockers: blocker,
-        changeSummary: blocker,
-        openExceptionCount: Math.max(1, order.openExceptionCount),
-      };
-    }
-
+    // The source order may be eligible for database internalisation, but it is
+    // not yet eligible for a driver run. The strict run-release predicate also
+    // requires hasInternalOrder=true after the RPC completes and data reloads.
     return {
       ...order,
-      selected: order.status === 'RELEASE_READY' && order.canCreateInternalOrder !== false,
+      selected: false,
       hasInternalOrder: false,
     };
   });
@@ -398,7 +441,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
     requiredFetch<SupabaseOmOrderRow[]>('current Ordermentum orders', 'v_ecoflow_ordermentum_ui_active_om_orders?select=id,order_number,retailer_id,retailer_name,delivery_date,due_at,total_quantity&order=updated_at.desc&limit=2000'),
   ]);
 
-  const [healthResult, skuResult, inventoryResult, barcodeResult, liveBalanceResult, storeResult, releaseResult, mappingResult] = await Promise.all([
+  const [healthResult, skuResult, inventoryResult, barcodeResult, liveBalanceResult, storeResult, releaseResult, mappingResult, holdResult] = await Promise.all([
     optionalFetch<SupabaseSyncHealthRow[]>('sync health', 'v_ecoflow_ordermentum_sync_health?select=*', []),
     optionalFetch<SupabaseSkuMasterRow[]>('SKU master', 'v_ecoflow_app_sku_master?select=*&limit=3000', []),
     optionalFetch<InventoryLocationRow[]>('inventory SKU control', 'v_ecoflow_inventory_sku_control?select=sku,fixed_shelf,primary_barcode,control_status&limit=3000', []),
@@ -407,6 +450,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
     optionalFetch<SupabaseStoreSiteRow[]>('store site master', 'ecoflow_store_sites?select=*&limit=1000', []),
     optionalFetch<SupabaseReleaseSummaryRow[]>('release summary', 'v_ecoflow_ordermentum_release_summary_v2?select=*', []),
     optionalFetch<SupabaseSkuMappingCandidateRow[]>('SKU mapping candidates', 'v_ecoflow_ordermentum_sku_mapping_candidates?select=*&order=order_count.desc&limit=1000', []),
+    optionalFetch<AccountReleaseHoldRow[]>('account release holds', 'v_ecoflow_account_release_holds_v1?select=store_id,active,hold_reason&limit=1000', []),
   ]);
 
   const inbox = enrichInboxAmounts(inboxResult.data, lineResult.data);
@@ -423,6 +467,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
     storeSites: storeResult.data,
     releaseSummary: releaseResult.data[0] || null,
     skuMappingCandidates: mappingResult.data,
+    accountHolds: holdResult.data,
     diagnostics: [
       inboxResult.diagnostic,
       exceptionResult.diagnostic,
@@ -437,6 +482,7 @@ export async function loadSupabaseOrdermentumViews(): Promise<ResilientOrderment
       storeResult.diagnostic,
       releaseResult.diagnostic,
       mappingResult.diagnostic,
+      holdResult.diagnostic,
     ],
   };
 }

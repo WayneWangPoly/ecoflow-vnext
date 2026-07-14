@@ -483,8 +483,14 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
     const order = orders.find((item) => item.id === exception.orderId);
     return order ? order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0 : true;
   });
-  // Releasable: gate passed and either the internal order already exists (normal path) or it can be created.
-  const releasable = (order: ImportedOrder) => order.status === 'RELEASE_READY' && (order.hasInternalOrder || order.canCreateInternalOrder !== false);
+  // Run release is step two: the authoritative gate must still pass and the
+  // database-created internal order must already exist. Source orders that are
+  // merely eligible for internalisation can never be inserted into a driver run.
+  const releasable = (order: ImportedOrder) =>
+    order.status === 'RELEASE_READY'
+    && order.releaseGateStatus === 'READY_TO_RELEASE'
+    && order.hasInternalOrder === true
+    && !order.releaseBlockers;
   const ready = orders.filter((order) => releasable(order) && !day.releasedOrders[order.id]);
   const selectedReady = ready.filter((order) => order.selected).length;
   const releasedCount = Object.keys(day.releasedOrders).length;
