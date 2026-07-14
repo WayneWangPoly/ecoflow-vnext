@@ -68,6 +68,28 @@ export type OrderSyncRunRow = {
   [key: string]: unknown;
 };
 
+export type OrdermentumMirrorHealthRow = {
+  overall_status: 'COMPLETE' | 'DEGRADED' | 'FAILED' | string;
+  raw_order_count: number | string | null;
+  projected_order_count: number | string | null;
+  order_projection_missing: number | string | null;
+  raw_invoice_count: number | string | null;
+  projected_invoice_count: number | string | null;
+  invoice_projection_missing: number | string | null;
+  recent_orders_missing_lines: number | string | null;
+  recent_orders_missing_invoice_detail: number | string | null;
+  unknown_recent_statuses: number | string | null;
+  recent_finance_reviews: number | string | null;
+  purchaser_count: number | string | null;
+  product_count: number | string | null;
+  variant_count: number | string | null;
+  price_group_count: number | string | null;
+  stock_location_count: number | string | null;
+  latest_raw_order_sync: string | null;
+  latest_master_sync: string | null;
+  checked_at: string | null;
+};
+
 export async function triggerOrdermentumSync(
   supabase: SupabaseClient,
   input: { mode: OrdermentumSyncMode; reason?: string }
@@ -85,7 +107,7 @@ export async function triggerOrdermentumSync(
 }
 
 export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
-  const [masterHealth, recentRuns, operationalJobs] = await Promise.allSettled([
+  const [masterHealth, recentRuns, operationalJobs, mirrorHealth] = await Promise.allSettled([
     supabase
       .from('v_ecoflow_ordermentum_master_data_sync_health')
       .select('*')
@@ -100,6 +122,10 @@ export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
       .select('*')
       .order('requested_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('v_ecoflow_ordermentum_mirror_health_v1')
+      .select('*')
+      .maybeSingle(),
   ]);
 
   const masterData = masterHealth.status === 'fulfilled' && !masterHealth.value.error
@@ -123,12 +149,21 @@ export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
     ? operationalJobs.value.error?.message ?? null
     : operationalJobs.reason instanceof Error ? operationalJobs.reason.message : String(operationalJobs.reason);
 
+  const mirror = mirrorHealth.status === 'fulfilled' && !mirrorHealth.value.error
+    ? ((mirrorHealth.value.data ?? null) as OrdermentumMirrorHealthRow | null)
+    : null;
+  const mirrorError = mirrorHealth.status === 'fulfilled'
+    ? mirrorHealth.value.error?.message ?? null
+    : mirrorHealth.reason instanceof Error ? mirrorHealth.reason.message : String(mirrorHealth.reason);
+
   return {
     masterHealth: masterData,
     orderRuns,
     operationalJobs: jobs,
+    mirrorHealth: mirror,
     masterError,
     orderError,
     jobError,
+    mirrorError,
   };
 }
