@@ -66,7 +66,8 @@ has(accountsRepo, "functions.invoke('statement-dispatch'", 'Statement PDF/email 
 has(accountsOpsMigration, 'ecoflow_account_release_holds', 'Accounts holds must remain an EcoFlow operational record.');
 has(accountsOpsMigration, 'ecoflow_record_accounts_statement_action', 'Accounts workflow RPC must be durable.');
 has(accountsOpsMigration, 'v_ecoflow_order_operations_v5', 'Release eligibility must include operational account holds.');
-has(accountsOpsMigration, 'amount_due', 'Statement totals must use mirrored source amount due.');
+has(accountsOpsMigration, 'v_ecoflow_accounts_live_statement_lines', 'Statement snapshots must use the source-finance statement view.');
+has(accountsOpsMigration, 'retired EcoFlow payment receipts do not alter', 'Retired local payments must not change statement truth.');
 has(orderRepo, 'effective_release_eligible', 'Order reads must apply effective account-hold eligibility.');
 has(orderUi, 'ACCOUNT HOLD', 'Order Control must show account holds explicitly.');
 has(statementFunction, "['OWNER','ADMIN','ACCOUNT']", 'Only office roles may generate or send statements.');
