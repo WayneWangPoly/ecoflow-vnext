@@ -90,11 +90,12 @@ jobs:
             echo "==> $file" | tee -a commercial-controls-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a commercial-controls-contract.log
           done
-      - name: Apply commercial controls migration
+      - name: Apply commercial controls and source boundary
         shell: bash
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260711190000_commercial_controls.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023000_commercial_source_boundary_v1.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Execute commercial controls contract
         shell: bash
         run: |
