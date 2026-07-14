@@ -1,0 +1,122 @@
+name: EcoFlow Ordermentum Complete Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "How much Ordermentum history to re-read"
+        required: true
+        default: "full_history"
+        type: choice
+        options:
+          - recent
+          - full_history
+  push:
+    branches: [main]
+    paths:
+      - 'ops/ordermentum-complete-mirror-v1.md'
+  schedule:
+    - cron: "30 17 * * *"
+    - cron: "45 18 * * 6"
+
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+
+jobs:
+  complete-mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+      ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+      ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+      ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+      ORDERMENTUM_ORDER_DETAIL_URL_TEMPLATE: ${{ secrets.ORDERMENTUM_ORDER_DETAIL_URL_TEMPLATE }}
+      ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE: ${{ secrets.ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE }}
+      ORDERMENTUM_FULL_SYNC_FROM: ${{ secrets.ORDERMENTUM_FULL_SYNC_FROM }}
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
+      ORDERMENTUM_FETCH_TIMEOUT_MS: "60000"
+      SUPABASE_FETCH_TIMEOUT_MS: "60000"
+      ORDERMENTUM_FETCH_RETRIES: "3"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Resolve mirror scope
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Initial complete mirror release" >> "$GITHUB_ENV"
+          elif [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "45 18 * * 6" ]; then
+            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Weekly all-history reconciliation" >> "$GITHUB_ENV"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Daily complete-domain reconciliation" >> "$GITHUB_ENV"
+          else
+            echo "MIRROR_SCOPE=${{ inputs.scope }}" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Owner or Admin requested complete mirror" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID; do
+            if [ -z "${!name}" ]; then echo "Missing required secret/env: $name"; missing=1; fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
+      - name: Allow production migration to settle
+        if: github.event_name == 'push'
+        run: sleep 120
+
+      - name: Mirror every supported Ordermentum domain
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "Scope: $MIRROR_SCOPE"
+          echo "Reason: $MIRROR_REASON"
+          node scripts/ordermentum-complete-mirror.mjs --scope="$MIRROR_SCOPE" 2>&1 | tee /tmp/ordermentum-complete-mirror.log
+
+      - name: Publish mirror summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Ordermentum complete mirror"
+            echo ""
+            echo "- Scope: $MIRROR_SCOPE"
+            echo "- Reason: $MIRROR_REASON"
+            echo "- Workflow run: $GITHUB_RUN_ID"
+            echo ""
+            echo '```text'
+            tail -n 80 /tmp/ordermentum-complete-mirror.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete mirror log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordermentum-complete-mirror-${{ github.run_id }}
+          path: /tmp/ordermentum-complete-mirror.log
+          if-no-files-found: warn
+          retention-days: 30
