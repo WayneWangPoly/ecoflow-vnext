@@ -108,6 +108,7 @@ jobs:
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/commercial-controls-contract-test.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/commercial-source-boundary-hold-contract.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/commercial-source-boundary-inventory-contract.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Upload database contract log
         if: always()
         uses: actions/upload-artifact@v4
