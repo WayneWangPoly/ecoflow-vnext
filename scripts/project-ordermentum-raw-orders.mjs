@@ -107,10 +107,20 @@ if (!converged) {
   );
 }
 
-// The homepage reads its active order slice through the persisted key set,
-// so refresh it whenever the projection may have changed lifecycle membership.
-const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
-console.log(JSON.stringify({ action: 'refresh_ui_active_order_keys', keys: refreshedKeys }));
+// Active-order keys are only a derived acceleration cache for legacy UI views.
+// They are not part of the commercial mirror completeness contract, so a cache
+// timeout must never invalidate successfully mirrored orders and invoices.
+try {
+  const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+  console.log(JSON.stringify({ action: 'refresh_ui_active_order_keys', keys: refreshedKeys }));
+} catch (error) {
+  console.warn(JSON.stringify({
+    action: 'refresh_ui_active_order_keys_deferred',
+    blocking: false,
+    reason: isStatementTimeout(error) ? 'SUPABASE_STATEMENT_TIMEOUT' : 'DERIVED_CACHE_REFRESH_FAILED',
+    message: error instanceof Error ? error.message : String(error),
+  }));
+}
 
 if (totals.failed_orders > 0) {
   console.error(`[project] ${totals.failed_orders} raw order(s) could not be projected into om_orders:`);
