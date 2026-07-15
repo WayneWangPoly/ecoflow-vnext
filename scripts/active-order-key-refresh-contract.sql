@@ -1,5 +1,13 @@
 \set ON_ERROR_STOP on
 
+-- The production schema already owns this derived cache. The isolated commercial
+-- fixture intentionally omits it, so create only the minimal compatible shape
+-- needed to execute the refresh function contract.
+create table if not exists public.ecoflow_ui_active_order_keys (
+  order_key text primary key,
+  refreshed_at timestamptz not null default now()
+);
+
 insert into public.ecoflow_ui_active_order_keys(order_key,refreshed_at)
 values ('__STALE_ACTIVE_KEY_CONTRACT__',now()-interval '1 day')
 on conflict(order_key) do update set refreshed_at=excluded.refreshed_at;
