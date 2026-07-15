@@ -71,27 +71,50 @@ jobs:
             mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
           done
 
-      - name: Remove runtime work from pending schema migration copy
+      - name: Remove runtime work from pending schema migration copies
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('supabase/migrations/20260714013000_ordermentum_complete_mirror_v1.sql')
-          source = path.read_text()
-          old = "select public.ecoflow_project_ordermentum_raw_invoices(10000);\nselect public.ecoflow_refresh_ui_active_order_keys();\n\nnotify pgrst, 'reload schema';"
-          new = "-- Runtime projection and cache refresh run after deployment in bounded batches.\n\nnotify pgrst, 'reload schema';"
-          if old in source:
-              path.write_text(source.replace(old, new))
-              print('Sanitised pending migration in runner workspace.')
-          elif 'select public.ecoflow_project_ordermentum_raw_invoices(10000);' in source or 'select public.ecoflow_refresh_ui_active_order_keys();' in source:
-              raise SystemExit('Pending migration contains an unexpected runtime execution form.')
-          else:
-              print('Pending migration is already data-free.')
+          def replace_or_confirm(path_name: str, old: str, new: str, forbidden: str) -> None:
+              path = Path(path_name)
+              source = path.read_text()
+              if old in source:
+                  path.write_text(source.replace(old, new))
+                  print(f'Sanitised runtime migration work in {path_name}.')
+                  return
+              if forbidden in source:
+                  raise SystemExit(f'{path_name} contains an unexpected runtime execution form: {forbidden}')
+              print(f'{path_name} is already free of the targeted runtime execution.')
+
+          replace_or_confirm(
+              'supabase/migrations/20260714013000_ordermentum_complete_mirror_v1.sql',
+              "select public.ecoflow_project_ordermentum_raw_invoices(10000);\nselect public.ecoflow_refresh_ui_active_order_keys();\n\nnotify pgrst, 'reload schema';",
+              "-- Runtime projection and cache refresh run after deployment in bounded batches.\n\nnotify pgrst, 'reload schema';",
+              'select public.ecoflow_project_ordermentum_raw_invoices(10000);',
+          )
+
+          replace_or_confirm(
+              'supabase/migrations/20260714023000_commercial_source_boundary_v1.sql',
+              "do $$\nbegin\n  if to_regclass('public.ecoflow_ui_active_order_keys') is not null then\n    perform public.ecoflow_refresh_ui_active_order_keys();\n  end if;\nend $$;\n\nnotify pgrst, 'reload schema';",
+              "-- Active-key refresh is runtime data work and is executed only after all\n-- schema migrations install the final safe refresh function.\n\nnotify pgrst, 'reload schema';",
+              'perform public.ecoflow_refresh_ui_active_order_keys();',
+          )
+
+          replace_or_confirm(
+              'supabase/migrations/20260715001000_active_order_keys_safe_refresh.sql',
+              "select public.ecoflow_refresh_ui_active_order_keys();\nnotify pgrst, 'reload schema';",
+              "-- The complete-mirror workflow refreshes active keys after deployment.\nnotify pgrst, 'reload schema';",
+              'select public.ecoflow_refresh_ui_active_order_keys();',
+          )
           PY
-          ! grep -Fq 'select public.ecoflow_project_ordermentum_raw_invoices(10000);' supabase/migrations/20260714013000_ordermentum_complete_mirror_v1.sql
-          ! grep -Fq 'select public.ecoflow_refresh_ui_active_order_keys();' supabase/migrations/20260714013000_ordermentum_complete_mirror_v1.sql
+
+          ! grep -R -Fq 'select public.ecoflow_project_ordermentum_raw_invoices(10000);' supabase/migrations
+          ! grep -R -Fq 'perform public.ecoflow_refresh_ui_active_order_keys();' supabase/migrations
+          ! grep -R -Fq 'select public.ecoflow_refresh_ui_active_order_keys();' supabase/migrations
+          echo 'All deployment-time Ordermentum projection and active-key refresh calls are removed from the runner migration set.'
 
       - name: Install deployment tools
         shell: bash
