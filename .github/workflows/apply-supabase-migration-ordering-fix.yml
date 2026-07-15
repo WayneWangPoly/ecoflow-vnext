@@ -1,0 +1,43 @@
+name: Apply Supabase migration ordering fix
+
+on:
+  push:
+    branches:
+      - fix/supabase-migration-ordering
+    paths:
+      - scripts/apply-supabase-migration-ordering-fix.mjs
+      - .github/workflows/apply-supabase-migration-ordering-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-supabase-migration-ordering-fix
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/supabase-migration-ordering
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch migration and workflow ordering
+        run: node scripts/apply-supabase-migration-ordering-fix.mjs
+      - name: Commit patched release files
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Supabase migration ordering fix already applied."
+            exit 0
+          fi
+          git config user.name "EcoFlow Release Ordering Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Run complete mirror only after database deployment"
+          git push origin HEAD:fix/supabase-migration-ordering
