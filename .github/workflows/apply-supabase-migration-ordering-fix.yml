@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  pull-requests: write
 
 concurrency:
   group: apply-supabase-migration-ordering-fix
@@ -30,19 +30,33 @@ jobs:
           node-version: 22
       - name: Patch migration and workflow ordering
         run: node scripts/apply-supabase-migration-ordering-fix.mjs
-      - name: Commit patched release files
+      - name: Publish corrected release pull request
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet; then
             echo "Supabase migration ordering fix already applied."
             exit 0
           fi
+
+          branch="fix/runtime-migration-ordering-applied"
           git config user.name "EcoFlow Release Ordering Bot"
           git config user.email "actions@users.noreply.github.com"
+          git checkout -B "$branch"
           git add -A
           git commit -m "Run complete mirror only after database deployment"
-          git push origin HEAD:main
-      - name: Deploy corrected Supabase migrations
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run deploy-supabase-migrations.yml --ref main
+          git push --force origin "HEAD:$branch"
+
+          existing="$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" \
+              --title "Run complete mirror only after database deployment" \
+              --body "Removes runtime data projection from the pending schema migration and starts the complete mirror only after the production Supabase deployment succeeds."
+          else
+            gh pr create \
+              --head "$branch" \
+              --base main \
+              --title "Run complete mirror only after database deployment" \
+              --body "Removes runtime data projection from the pending schema migration and starts the complete mirror only after the production Supabase deployment succeeds."
+          fi
