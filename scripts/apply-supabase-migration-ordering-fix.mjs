@@ -35,8 +35,8 @@ if (replaceExactly(
 
 if (replaceExactly(
   workflowPath,
-  `          if [ "${{ github.event_name }}" = "push" ]; then\n            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"\n            echo "MIRROR_REASON=Commercial source boundary release" >> "$GITHUB_ENV"`,
-  `          if [ "${{ github.event_name }}" = "workflow_run" ]; then\n            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"\n            echo "MIRROR_REASON=Supabase production migrations completed successfully" >> "$GITHUB_ENV"`,
+  `          if [ "\${{ github.event_name }}" = "push" ]; then\n            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"\n            echo "MIRROR_REASON=Commercial source boundary release" >> "$GITHUB_ENV"`,
+  `          if [ "\${{ github.event_name }}" = "workflow_run" ]; then\n            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"\n            echo "MIRROR_REASON=Supabase production migrations completed successfully" >> "$GITHUB_ENV"`,
 )) changed.push(workflowPath);
 
 if (replaceExactly(
