@@ -1,6 +1,7 @@
 name: Apply Supabase migration ordering fix
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
