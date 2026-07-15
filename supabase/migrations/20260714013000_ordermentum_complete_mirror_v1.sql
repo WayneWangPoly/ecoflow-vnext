@@ -577,8 +577,10 @@ $$;
 revoke all on function public.ecoflow_refresh_ui_active_order_keys() from public, anon, authenticated;
 grant execute on function public.ecoflow_refresh_ui_active_order_keys() to service_role;
 
-select public.ecoflow_project_ordermentum_raw_invoices(10000);
-select public.ecoflow_refresh_ui_active_order_keys();
+-- Data projection and active-key refresh are intentionally executed by the
+-- post-deployment complete-mirror workflow in bounded RPC batches. Running them
+-- inside the migration transaction exceeds production statement_timeout and can
+-- invoke a superseded refresh function before later corrective migrations apply.
 
 notify pgrst, 'reload schema';
 commit;
