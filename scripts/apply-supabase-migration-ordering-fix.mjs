@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 
+// One-shot main-branch repair. The script removes itself after committing the corrected release files.
 function replaceExactly(path, before, after) {
   const source = fs.readFileSync(path, 'utf8');
   if (source.includes(after)) return false;
