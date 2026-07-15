@@ -31,6 +31,8 @@ jobs:
         run: node scripts/audit-ordermentum-projection-resilience.mjs
       - name: Audit active-order key refresh
         run: node scripts/audit-active-order-key-refresh.mjs
+      - name: Audit active-order cache boundary
+        run: node scripts/audit-active-order-key-cache-boundary.mjs
       - name: TypeScript check
         run: node ./node_modules/typescript/bin/tsc -b --pretty false
       - name: Vite production bundle
@@ -109,6 +111,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023500_accounts_workflow_audit_read.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260714023600_inventory_source_status_guard.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715001000_active_order_keys_safe_refresh.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715003000_active_order_keys_lightweight_refresh.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Execute commercial controls contract
         shell: bash
         run: |
@@ -116,7 +119,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f scripts/commercial-controls-contract-test.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/commercial-source-boundary-hold-contract.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/commercial-source-boundary-inventory-contract.sql 2>&1 | tee -a commercial-controls-contract.log
-          psql -v ON_ERROR_STOP=1 -f scripts/active-order-key-refresh-contract.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/active-order-key-lightweight-contract.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Upload database contract log
         if: always()
         uses: actions/upload-artifact@v4

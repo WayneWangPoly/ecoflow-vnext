@@ -160,20 +160,25 @@ jobs:
           done
           exit 1
 
-      - name: Verify safe production active-key function
+      - name: Verify lightweight production active-key function
         shell: bash
         run: |
           set -euo pipefail
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc \
             "select pg_get_functiondef('public.ecoflow_refresh_ui_active_order_keys()'::regprocedure);" \
             > /tmp/active-key-function.sql
-          if grep -Fq 'delete from public.ecoflow_ui_active_order_keys;' /tmp/active-key-function.sql; then
-            echo 'Production still contains the unsafe unconditional DELETE.'
+          if grep -Fq 'v_ecoflow_order_operations_v' /tmp/active-key-function.sql; then
+            echo 'Production active-key refresh still scans the expensive operations view.'
             cat /tmp/active-key-function.sql
             exit 1
           fi
-          grep -Fq 'refreshed_at < v_refresh_at' /tmp/active-key-function.sql
-          echo 'Safe active-key function is installed in production.'
+          if grep -Fq 'delete from public.ecoflow_ui_active_order_keys' /tmp/active-key-function.sql; then
+            echo 'Production active-key refresh still deletes the cache during rebuild.'
+            cat /tmp/active-key-function.sql
+            exit 1
+          fi
+          grep -Fq 'from public.om_orders o' /tmp/active-key-function.sql
+          echo 'Lightweight active-key function is installed in production.'
 
       - name: Deploy required Edge Functions
         shell: bash
