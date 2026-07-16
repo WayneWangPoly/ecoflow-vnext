@@ -117,6 +117,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715003000_active_order_keys_lightweight_refresh.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715010000_ordermentum_resumable_history_pipeline.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260716013000_lightweight_ordermentum_catalog_upsert.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260717001000_ordermentum_mirror_status_snapshot.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Execute commercial controls contract
         shell: bash
         run: |
