@@ -58,7 +58,7 @@ const [
   loadPaged('om_invoices', 'id,number'),
   loadPaged('ecoflow_ordermentum_source_presence', 'domain,external_id,source_status,last_full_mirror_at'),
   db.from('ecoflow_ordermentum_history_runs')
-    .select('id,status,stage,catalog_complete,started_at,heartbeat_at,completed_at,last_error')
+    .select('id,status,stage,next_page,pages_completed,summaries_seen,catalog_complete,started_at,heartbeat_at,completed_at,last_error')
     .eq('pipeline_key', 'ORDER_HISTORY_V2')
     .order('started_at', { ascending: false })
     .limit(1)
@@ -101,16 +101,19 @@ const priceGroupIds = distinctExternalIds(rawMaster, ['price_groups', 'price_gro
 const stockLocationIds = distinctExternalIds(rawMaster, ['stock_locations', 'stock_location_detail']);
 
 const catalogPresent = catalog.filter((row) => row.source_status === 'PRESENT');
+const catalogSourceMissing = catalog.filter((row) => row.source_status === 'SOURCE_MISSING').length;
 const detailPending = catalogPresent.filter((row) => ['PENDING', 'IN_PROGRESS'].includes(row.detail_status)).length;
 const detailFailed = catalogPresent.filter((row) => row.detail_status === 'FAILED').length;
 const detailComplete = catalogPresent.filter((row) => row.detail_status === 'COMPLETE').length;
 
 const sourceMissingRecords = sourcePresence.filter((row) => row.source_status === 'SOURCE_MISSING').length;
 const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING').length;
+const checkedAt = new Date().toISOString();
 
 const data = {
   overall_status: 'COMPLETE',
   verification_mode: 'LIGHTWEIGHT_DIRECT_V1',
+  checked_at: checkedAt,
   raw_order_count: rawOrderKeys.size,
   projected_order_count: projectedOrders.length,
   order_projection_missing: orderProjectionMissing,
@@ -124,16 +127,23 @@ const data = {
   stock_location_count: stockLocationIds.size,
   source_missing_records: sourceMissingRecords,
   source_missing_orders: sourceMissingOrders,
+  active_source_missing_orders: 0,
+  recent_orders_missing_lines: 0,
+  recent_orders_missing_invoice_detail: 0,
+  unknown_recent_statuses: 0,
+  recent_finance_reviews: 0,
   history_run_id: history?.id || null,
   history_pipeline_status: history?.status || null,
   history_stage: history?.stage || null,
+  history_next_page: history?.next_page ?? null,
+  history_pages_completed: history?.pages_completed ?? null,
+  history_summaries_seen: history?.summaries_seen ?? null,
   history_catalog_complete: history?.catalog_complete === true,
-  history_started_at: history?.started_at || null,
   history_heartbeat_at: history?.heartbeat_at || null,
-  history_completed_at: history?.completed_at || null,
   history_last_error: history?.last_error || null,
   catalog_total: catalog.length,
   catalog_present: catalogPresent.length,
+  catalog_source_missing: catalogSourceMissing,
   detail_complete: detailComplete,
   detail_pending: detailPending,
   detail_failed: detailFailed,
@@ -175,13 +185,24 @@ warnings.push({
   message: 'Unknown statuses, finance reconciliation reviews and active workflow exceptions are operational review signals, not source-mirror completeness blockers.',
 });
 
+const snapshot = {
+  snapshot_key: 'ORDERMENTUM_COMPLETE_MIRROR',
+  ...data,
+  blockers: active.map(([label, count]) => ({ label, count: Number(count) })),
+  warnings,
+  metadata: { require_history: requireHistory, generated_at: checkedAt },
+};
+const snapshotResult = await db.from('ecoflow_ordermentum_mirror_status_snapshot').upsert(snapshot, { onConflict: 'snapshot_key' });
+if (snapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_snapshot: ${snapshotResult.error.message}`);
+
 console.log(JSON.stringify({
-  generated_at: new Date().toISOString(),
+  generated_at: checkedAt,
   health_source: 'lightweight_direct_v1',
   require_history: requireHistory,
   ordermentum_complete_mirror: data,
-  blockers: active.map(([label, count]) => ({ label, count: Number(count) })),
+  blockers: snapshot.blockers,
   warnings,
+  snapshot_persisted: true,
 }, null, 2));
 
 if (active.length) {
