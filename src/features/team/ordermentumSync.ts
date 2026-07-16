@@ -7,6 +7,7 @@ export type MasterSyncHealthRow = { resource_type?: string; resource_count?: num
 export type OrderSyncRunRow = { run_type?: string | null; status?: string | null; orders_seen?: number | null; orders_upserted?: number | null; orders_changed?: number | null; last_error?: string | null; started_at?: string | null; finished_at?: string | null; [key: string]: unknown; };
 
 export type OrdermentumMirrorHealthRow = {
+  snapshot_key?: string | null; verification_mode?: string | null;
   overall_status: 'COMPLETE' | 'DEGRADED' | 'FAILED' | string;
   raw_order_count: number | string | null; projected_order_count: number | string | null; order_projection_missing: number | string | null;
   raw_invoice_count: number | string | null; projected_invoice_count: number | string | null; invoice_projection_missing: number | string | null;
@@ -15,7 +16,7 @@ export type OrdermentumMirrorHealthRow = {
   purchaser_count: number | string | null; product_count: number | string | null; variant_count: number | string | null;
   price_group_count: number | string | null; stock_location_count: number | string | null;
   source_missing_records?: number | string | null; source_missing_orders?: number | string | null; active_source_missing_orders?: number | string | null;
-  latest_raw_order_sync: string | null; latest_master_sync: string | null; checked_at: string | null;
+  latest_raw_order_sync?: string | null; latest_master_sync?: string | null; checked_at: string | null;
   history_run_id?: string | null; history_pipeline_status?: string | null; history_stage?: string | null;
   history_next_page?: number | string | null; history_pages_completed?: number | string | null; history_summaries_seen?: number | string | null;
   history_catalog_complete?: boolean | null; history_heartbeat_at?: string | null; history_last_error?: string | null;
@@ -31,6 +32,9 @@ function isMissingRelation(error: unknown) {
 }
 
 async function loadMirrorHealth(supabase: SupabaseClient) {
+  const snapshot = await supabase.from('ecoflow_ordermentum_mirror_status_snapshot').select('*').eq('snapshot_key', 'ORDERMENTUM_COMPLETE_MIRROR').maybeSingle();
+  if (!snapshot.error) return snapshot;
+  if (!isMissingRelation(snapshot.error)) return snapshot;
   for (const view of ['v_ecoflow_ordermentum_mirror_health_v3', 'v_ecoflow_ordermentum_mirror_health_v2', 'v_ecoflow_ordermentum_mirror_health_v1']) {
     const result = await supabase.from(view).select('*').maybeSingle();
     if (!result.error || !isMissingRelation(result.error)) return result;
