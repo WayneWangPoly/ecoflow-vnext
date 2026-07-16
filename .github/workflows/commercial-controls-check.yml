@@ -35,6 +35,8 @@ jobs:
         run: node scripts/audit-active-order-key-cache-boundary.mjs
       - name: Audit resumable Ordermentum history
         run: node scripts/audit-ordermentum-resumable-history.mjs
+      - name: Audit bounded Ordermentum catalog upsert
+        run: node scripts/audit-ordermentum-catalog-upsert.mjs
       - name: TypeScript check
         run: node ./node_modules/typescript/bin/tsc -b --pretty false
       - name: Vite production bundle
@@ -114,6 +116,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715001000_active_order_keys_safe_refresh.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715003000_active_order_keys_lightweight_refresh.sql 2>&1 | tee -a commercial-controls-contract.log
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260715010000_ordermentum_resumable_history_pipeline.sql 2>&1 | tee -a commercial-controls-contract.log
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260716013000_lightweight_ordermentum_catalog_upsert.sql 2>&1 | tee -a commercial-controls-contract.log
       - name: Execute commercial controls contract
         shell: bash
         run: |
