@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const migration = fs.readFileSync('supabase/migrations/20260715010000_ordermentum_resumable_history_pipeline.sql', 'utf8');
+const snapshotMigration = fs.readFileSync('supabase/migrations/20260717001000_ordermentum_mirror_status_snapshot.sql', 'utf8');
 const pipeline = fs.readFileSync('scripts/ordermentum-history-pipeline.mjs', 'utf8');
 const common = fs.readFileSync('scripts/ordermentum-history-common.mjs', 'utf8');
 const catalog = fs.readFileSync('scripts/ordermentum-history-catalog.mjs', 'utf8');
@@ -11,10 +12,13 @@ const orchestrator = fs.readFileSync('scripts/ordermentum-complete-mirror.mjs', 
 const master = fs.readFileSync('scripts/ordermentum-master-data-sync.mjs', 'utf8');
 const finalise = fs.readFileSync('scripts/finalise-ordermentum-source-presence.mjs', 'utf8');
 const verify = fs.readFileSync('scripts/verify-ordermentum-complete-mirror.mjs', 'utf8');
+const settingsLoader = fs.readFileSync('src/features/team/ordermentumSync.ts', 'utf8');
 
 for (const fragment of ['ecoflow_ordermentum_history_runs','ecoflow_ordermentum_order_catalog','ecoflow_upsert_ordermentum_catalog_page','ecoflow_claim_ordermentum_detail_batch','for update skip locked','v_ecoflow_ordermentum_mirror_health_v3']) {
   assert.ok(migration.toLowerCase().includes(fragment.toLowerCase()), `Missing durable history contract: ${fragment}`);
 }
+assert.ok(snapshotMigration.includes('ecoflow_ordermentum_mirror_status_snapshot'), 'Mirror status snapshot table is missing.');
+assert.ok(snapshotMigration.includes('grant select') && snapshotMigration.includes('to authenticated'), 'Authenticated users must be able to read the mirror status snapshot.');
 assert.ok(common.includes("mode === 'restart'"), 'History pipeline must support explicit restart.');
 assert.ok(common.includes('next_page'), 'Catalog checkpoint must be durable.');
 assert.ok(common.includes('timeBudgetMinutes'), 'History work must carry a wall-clock budget.');
@@ -32,6 +36,8 @@ assert.ok(finalise.includes('ecoflow_ordermentum_order_catalog'), 'Full source p
 assert.ok(finalise.includes('refresh_ui_active_order_keys_deferred'), 'UI cache refresh must be non-blocking.');
 assert.ok(!/v_ecoflow_ordermentum_mirror_health_v\d/i.test(verify), 'Final verification must not execute the heavy mirror-health view stack.');
 assert.ok(verify.includes('LIGHTWEIGHT_DIRECT_V1') && verify.includes("'ordermentum_raw_orders'") && verify.includes("'om_orders'") && verify.includes("'om_invoices'"), 'Final completion must use direct lightweight source/projection checks.');
+assert.ok(verify.includes("from('ecoflow_ordermentum_mirror_status_snapshot').upsert"), 'Final verification must persist the lightweight status snapshot.');
+assert.ok(settingsLoader.indexOf("from('ecoflow_ordermentum_mirror_status_snapshot')") < settingsLoader.indexOf("'v_ecoflow_ordermentum_mirror_health_v3'"), 'Settings must read the snapshot before legacy heavy health views.');
 for (const script of ['scripts/ordermentum-complete-mirror.mjs', 'scripts/verify-ordermentum-complete-mirror.mjs']) {
   const syntax = spawnSync(process.execPath, ['--check', script], { encoding: 'utf8' });
   assert.equal(syntax.status, 0, `${script} syntax error: ${syntax.stderr || syntax.stdout}`);
