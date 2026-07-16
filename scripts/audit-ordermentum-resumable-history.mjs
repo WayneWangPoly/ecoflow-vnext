@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const migration = fs.readFileSync('supabase/migrations/20260715010000_ordermentum_resumable_history_pipeline.sql', 'utf8');
 const pipeline = fs.readFileSync('scripts/ordermentum-history-pipeline.mjs', 'utf8');
@@ -24,8 +25,15 @@ assert.ok(details.includes('maxDetailsPerSlice'), 'Detail work must be bounded p
 assert.ok(pipeline.includes('PAUSED_CATALOG') && pipeline.includes('PAUSED_DETAILS'), 'Incomplete slices must pause cleanly.');
 assert.ok(orchestrator.includes("'resume_history'"), 'Complete mirror must expose resumable history mode.');
 assert.ok(orchestrator.includes('complete_mirror_paused'), 'Paused history must not be reported as complete.');
+assert.ok(orchestrator.includes('finalisation_completed_at'), 'Completed finalisation must be checkpointed before verification.');
+assert.ok(orchestrator.includes('complete_mirror_finalisation_reused') && orchestrator.includes('complete_mirror_finalisation_recovered'), 'Finalisation must be reusable after a verification failure.');
 assert.ok(master.includes('detailSkippedUnchanged') && master.includes('detail-changed-only'), 'Unchanged master detail must be skipped.');
 assert.ok(finalise.includes('ecoflow_ordermentum_order_catalog'), 'Full source presence must use the durable catalog.');
 assert.ok(finalise.includes('refresh_ui_active_order_keys_deferred'), 'UI cache refresh must be non-blocking.');
-assert.ok(verify.includes('v_ecoflow_ordermentum_mirror_health_v3') && verify.includes('requireHistory'), 'Full completion must use pipeline-aware health.');
+assert.ok(!/v_ecoflow_ordermentum_mirror_health_v\d/i.test(verify), 'Final verification must not execute the heavy mirror-health view stack.');
+assert.ok(verify.includes('LIGHTWEIGHT_DIRECT_V1') && verify.includes("'ordermentum_raw_orders'") && verify.includes("'om_orders'") && verify.includes("'om_invoices'"), 'Final completion must use direct lightweight source/projection checks.');
+for (const script of ['scripts/ordermentum-complete-mirror.mjs', 'scripts/verify-ordermentum-complete-mirror.mjs']) {
+  const syntax = spawnSync(process.execPath, ['--check', script], { encoding: 'utf8' });
+  assert.equal(syntax.status, 0, `${script} syntax error: ${syntax.stderr || syntax.stdout}`);
+}
 console.log('Resumable Ordermentum history pipeline audit passed.');
