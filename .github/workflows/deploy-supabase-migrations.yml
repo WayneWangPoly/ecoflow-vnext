@@ -412,30 +412,73 @@ jobs:
           fi
           echo "frontend files changed in this commit: $FRONTEND_CHANGED"
 
-          VERCEL_STATE=none
-          for i in $(seq 1 20); do
-            VERCEL_STATE=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
-              --jq '[.statuses[] | select(.context == "Vercel")][0].state // "none"')
-            echo "poll $i: Vercel status = $VERCEL_STATE"
-            case "$VERCEL_STATE" in
-              success|failure|error) break ;;
-            esac
-            sleep 30
-          done
-
-          if [ "$VERCEL_STATE" = 'success' ]; then
+          if [ "$FRONTEND_CHANGED" = 'no' ]; then
             STATE='success'
-            DESCRIPTION='Frontend and database deployed from the same commit'
-          elif [ "$FRONTEND_CHANGED" = 'no' ]; then
-            STATE='success'
-            DESCRIPTION="No frontend changes in this commit; Vercel state '$VERCEL_STATE' does not create skew"
+            DESCRIPTION='No frontend changes in this commit; no Vercel release check is required'
           else
-            STATE='failure'
-            DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' while this commit changes frontend files. Redeploy the frontend before operating."
+            VERCEL_STATE=none
+            for i in $(seq 1 20); do
+              RESPONSE_FILE="/tmp/vercel-status-$i.json"
+              ERROR_FILE="/tmp/vercel-status-$i.err"
+              if gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" > "$RESPONSE_FILE" 2> "$ERROR_FILE"; then
+                VERCEL_STATE=$(python3 - "$RESPONSE_FILE" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          try:
+              payload = json.load(open(path, encoding='utf-8'))
+          except Exception as error:
+              print(f"invalid:{type(error).__name__}")
+              raise SystemExit(0)
+
+          statuses = payload.get('statuses') if isinstance(payload, dict) else None
+          state = 'none'
+          if isinstance(statuses, list):
+              for status in statuses:
+                  if isinstance(status, dict) and status.get('context') == 'Vercel':
+                      state = str(status.get('state') or 'none')
+                      break
+          print(state)
+          PY
+                )
+                if [[ "$VERCEL_STATE" == invalid:* ]]; then
+                  echo "poll $i: GitHub returned a non-JSON status response; retrying"
+                  head -c 200 "$RESPONSE_FILE" || true
+                  VERCEL_STATE=api_error
+                else
+                  echo "poll $i: Vercel status = $VERCEL_STATE"
+                fi
+              else
+                echo "poll $i: GitHub status API failed; retrying"
+                head -c 300 "$ERROR_FILE" || true
+                VERCEL_STATE=api_error
+              fi
+              case "$VERCEL_STATE" in
+                success|failure|error) break ;;
+              esac
+              sleep 30
+            done
+
+            if [ "$VERCEL_STATE" = 'success' ]; then
+              STATE='success'
+              DESCRIPTION='Frontend and database deployed from the same commit'
+            else
+              STATE='failure'
+              DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' while this commit changes frontend files. Redeploy the frontend before operating."
+            fi
           fi
+
           echo "$DESCRIPTION"
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -f state="$STATE" \
-            -f context='Release sync' \
-            -f description="$DESCRIPTION" \
-            -f target_url="$DEPLOYMENT_STATUS_URL"
+          for attempt in 1 2 3; do
+            if gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state="$STATE" \
+              -f context='Release sync' \
+              -f description="$DESCRIPTION" \
+              -f target_url="$DEPLOYMENT_STATUS_URL"; then
+              exit 0
+            fi
+            echo "release status publish attempt $attempt failed; retrying in 10s"
+            [ "$attempt" = 3 ] && exit 1
+            sleep 10
+          done
