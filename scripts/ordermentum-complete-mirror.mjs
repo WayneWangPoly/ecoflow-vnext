@@ -45,6 +45,10 @@ async function timed(label, work) {
 
 function readJson(path) { return JSON.parse(fs.readFileSync(path, 'utf8')); }
 function isoDaysAgo(days) { return new Date(Date.now() - days * 86_400_000).toISOString(); }
+function time(value) {
+  const parsed = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 const args = parseArgs(process.argv);
 const legacyScope = args.scope ? String(args.scope) : null;
@@ -59,7 +63,7 @@ const mirrorStart = new Date().toISOString();
 
 console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart, timeBudgetMinutes: Number(timeBudgetMinutes) }, null, 2));
 
-async function projectAndVerify({ scope, historyRunId = null, requireHistory = false }) {
+async function runFinalisationData({ scope, historyRunId = null }) {
   await timed('complete Ordermentum master mirror', () => runNode('scripts/ordermentum-master-data-sync.mjs', [
     '--resources=purchasers,price_groups,products,variants,invoices,stock_locations', '--page-size=50', '--max-pages=200', '--detail', '--detail-changed-only', '--delay-ms=300',
   ]));
@@ -69,11 +73,86 @@ async function projectAndVerify({ scope, historyRunId = null, requireHistory = f
   await timed('finalise Ordermentum source presence', () => runNode('scripts/finalise-ordermentum-source-presence.mjs', [
     `--scope=${scope}`, `--mirror-start=${mirrorStart}`, ...(historyRunId ? [`--history-run-id=${historyRunId}`] : []),
   ]));
-  await timed('verify complete mirror', () => runNode('scripts/verify-ordermentum-complete-mirror.mjs', [`--require-history=${requireHistory ? 'true' : 'false'}`]));
+}
+
+async function verifyMirror(requireHistory) {
+  await timed(requireHistory ? 'verify completed history contract' : 'verify complete mirror', () =>
+    runNode('scripts/verify-ordermentum-complete-mirror.mjs', [`--require-history=${requireHistory ? 'true' : 'false'}`]));
+}
+
+async function loadHistoryRun(historyRunId) {
+  const result = await db.from('ecoflow_ordermentum_history_runs')
+    .select('id,status,stage,started_at,heartbeat_at,metadata')
+    .eq('id', historyRunId)
+    .single();
+  if (result.error || !result.data) throw result.error || new Error(`History run ${historyRunId} is unavailable.`);
+  return result.data;
+}
+
+async function latestFullPresenceAt() {
+  const result = await db.from('ecoflow_ordermentum_source_presence')
+    .select('last_full_mirror_at')
+    .not('last_full_mirror_at', 'is', null)
+    .order('last_full_mirror_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  return result.data?.last_full_mirror_at || null;
+}
+
+async function saveFinalisationCheckpoint(run, patch) {
+  const metadata = { ...(run.metadata || {}), ...patch };
+  const result = await db.from('ecoflow_ordermentum_history_runs')
+    .update({ metadata, heartbeat_at: new Date().toISOString() })
+    .eq('id', run.id)
+    .select('id,metadata')
+    .single();
+  if (result.error || !result.data) throw result.error || new Error(`Could not save finalisation checkpoint for ${run.id}.`);
+  return result.data.metadata;
+}
+
+async function ensureHistoryFinalised(historyRunId) {
+  const run = await loadHistoryRun(historyRunId);
+  const existing = run.metadata?.finalisation_completed_at;
+  if (existing) {
+    console.log(JSON.stringify({
+      action: 'complete_mirror_finalisation_reused',
+      historyRunId,
+      finalisationCompletedAt: existing,
+      inferred: Boolean(run.metadata?.finalisation_checkpoint_inferred),
+    }, null, 2));
+    return;
+  }
+
+  const latestPresenceAt = await latestFullPresenceAt();
+  if (run.stage === 'READY_TO_FINALISE' && time(latestPresenceAt) >= time(run.started_at)) {
+    const completedAt = latestPresenceAt || new Date().toISOString();
+    await saveFinalisationCheckpoint(run, {
+      finalisation_completed_at: completedAt,
+      finalisation_mirror_start: completedAt,
+      finalisation_checkpoint_inferred: true,
+    });
+    console.log(JSON.stringify({
+      action: 'complete_mirror_finalisation_recovered',
+      historyRunId,
+      finalisationCompletedAt: completedAt,
+      reason: 'A full source-presence checkpoint newer than this history run proves the data finalisation stages already completed.',
+    }, null, 2));
+    return;
+  }
+
+  await runFinalisationData({ scope: 'full_history', historyRunId });
+  const completedAt = new Date().toISOString();
+  await saveFinalisationCheckpoint(run, {
+    finalisation_completed_at: completedAt,
+    finalisation_mirror_start: mirrorStart,
+    finalisation_checkpoint_inferred: false,
+  });
+  console.log(JSON.stringify({ action: 'complete_mirror_finalisation_checkpointed', historyRunId, finalisationCompletedAt: completedAt }, null, 2));
 }
 
 if (mode === 'verify_only') {
-  await timed('verify complete mirror', () => runNode('scripts/verify-ordermentum-complete-mirror.mjs', ['--require-history=true']));
+  await verifyMirror(true);
   console.log(JSON.stringify({ action: 'complete_mirror_verified', mode, completedAt: new Date().toISOString() }, null, 2));
   process.exit(0);
 }
@@ -84,7 +163,8 @@ if (mode === 'recent') {
   await timed('recent order detail reconciliation', () => runNode('scripts/ordermentum-sync-now-legacy.mjs', [
     '--script', 'scripts/ordermentum-backfill-window.mjs', '--from', from, '--to', to, '--page-size', '50', '--max-pages', '100',
   ]));
-  await projectAndVerify({ scope: 'recent', requireHistory: false });
+  await runFinalisationData({ scope: 'recent' });
+  await verifyMirror(false);
   console.log(JSON.stringify({ action: 'complete_mirror_succeeded', mode, mirrorStart, completedAt: new Date().toISOString() }, null, 2));
   process.exit(0);
 }
@@ -109,19 +189,27 @@ const historyRunId = history.runId;
 if (!historyRunId) throw new Error(`History pipeline returned no run id: ${JSON.stringify(history)}`);
 
 if (history.state === 'READY_TO_FINALISE') {
-  await projectAndVerify({ scope: 'full_history', historyRunId, requireHistory: false });
+  await ensureHistoryFinalised(historyRunId);
+  await verifyMirror(false);
+  const run = await loadHistoryRun(historyRunId);
   const result = await db.from('ecoflow_ordermentum_history_runs').update({
-    status: 'COMPLETE', stage: 'COMPLETE', completed_at: new Date().toISOString(), heartbeat_at: new Date().toISOString(), last_error: null,
+    status: 'COMPLETE',
+    stage: 'COMPLETE',
+    completed_at: new Date().toISOString(),
+    heartbeat_at: new Date().toISOString(),
+    last_error: null,
+    metadata: { ...(run.metadata || {}), verification_completed_at: new Date().toISOString(), verification_mode: 'LIGHTWEIGHT_DIRECT_V1' },
   }).eq('id', historyRunId).select('id').single();
   if (result.error || !result.data) throw result.error || new Error('Could not mark history pipeline complete.');
-  await timed('verify completed history contract', () => runNode('scripts/verify-ordermentum-complete-mirror.mjs', ['--require-history=true']));
+  await verifyMirror(true);
   console.log(JSON.stringify({ action: 'complete_mirror_succeeded', mode, historyRunId, mirrorStart, completedAt: new Date().toISOString() }, null, 2));
   process.exit(0);
 }
 
 if (history.state === 'COMPLETE') {
-  await timed('verify completed history contract', () => runNode('scripts/verify-ordermentum-complete-mirror.mjs', ['--require-history=true']));
+  await verifyMirror(true);
   console.log(JSON.stringify({ action: 'complete_mirror_succeeded', mode, historyRunId, mirrorStart, completedAt: new Date().toISOString() }, null, 2));
   process.exit(0);
 }
+
 throw new Error(`Unexpected history pipeline state: ${JSON.stringify(history)}`);
