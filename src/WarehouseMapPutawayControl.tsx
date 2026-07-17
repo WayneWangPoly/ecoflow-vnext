@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 
 const PUTAWAY_REQUEST_EVENT = 'ecoflow:warehouse-putaway-request';
 
-type PutawayRequestEvent = CustomEvent<{ locationCode?: string; slotCount?: number; action?: string }>;
+type PutawayRequestEvent = CustomEvent<{ locationCode?: string }>;
 
 function selectedLocationCode() {
   return document.querySelector<HTMLElement>('.location-detail-block > strong')?.textContent?.trim() || '';
@@ -13,7 +13,6 @@ function selectedLocationCode() {
 export function WarehouseMapPutawayControl() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [locationCode, setLocationCode] = useState('');
-  const [slotCount, setSlotCount] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -32,8 +31,7 @@ export function WarehouseMapPutawayControl() {
       setHost(mount);
       setLocationCode(selectedLocationCode());
     }
-    const stopObserving = observeBody(locate);
-    return stopObserving;
+    return observeBody(locate);
   }, []);
 
   useEffect(() => {
@@ -42,11 +40,8 @@ export function WarehouseMapPutawayControl() {
       const code = detail?.locationCode?.trim() || selectedLocationCode();
       if (!code) return;
       setLocationCode(code);
-      setSlotCount(detail?.slotCount ?? null);
       window.localStorage.setItem('ecoflow-putaway-target', code);
-      setNotice(detail?.action === 'ADD_SKU_SLOT'
-        ? `${code}: another SKU position has been added${detail.slotCount ? ` (slot ${detail.slotCount})` : ''}. Scan the next SKU into this same location.`
-        : `${code} selected as the next controlled putaway location.`);
+      setNotice(`${code} selected as the next controlled warehouse location.`);
     }
     window.addEventListener(PUTAWAY_REQUEST_EVENT, handlePutawayRequest);
     return () => window.removeEventListener(PUTAWAY_REQUEST_EVENT, handlePutawayRequest);
@@ -62,27 +57,26 @@ export function WarehouseMapPutawayControl() {
   function useForPutaway() {
     if (!locationCode) return;
     window.localStorage.setItem('ecoflow-putaway-target', locationCode);
-    setNotice(`${locationCode} saved as the next putaway target.`);
+    setNotice(`${locationCode} saved as the next controlled putaway target.`);
   }
 
   if (!host) return null;
-  const receiveHref = `/?role=warehouse&tab=receive&location=${encodeURIComponent(locationCode)}`;
-  const barcodeHref = `/?role=warehouse&tab=receive&mode=barcode&location=${encodeURIComponent(locationCode)}`;
+  const stocktakeHref = `/?workspace=warehouse&mode=stocktake&location=${encodeURIComponent(locationCode)}`;
+  const receiveHref = `/?workspace=warehouse&mode=receive&location=${encodeURIComponent(locationCode)}`;
   return createPortal(
     <section className="warehouse-putaway-control">
-      <div className="warehouse-map-card-head compact-head"><h2>Location SKU control</h2><span>First stocktake and putaway</span></div>
+      <div className="warehouse-map-card-head compact-head"><h2>Location actions</h2><span>Read-only map · controlled workflows</span></div>
       <div className="warehouse-putaway-target">
         <span>SELECTED LOCATION</span>
         <strong>{locationCode || 'Choose a rack position'}</strong>
-        <p>The + button adds another SKU position inside this physical cell; it does not add stock quantity. All stock increases still go through the controlled Receive batch. Use Barcode setup for the first warehouse scan, then Receive for real incoming stock so barcode checks and the stock ledger remain controlled.</p>
-        {slotCount ? <small>{slotCount} SKU positions are now configured for this cell.</small> : null}
+        <p>Warehouse Map never changes stock quantity or SKU assignment directly. Start First stocktake for opening stock, or Daily receiving for a real inbound movement; both post through the controlled stock ledger transaction.</p>
       </div>
       {notice ? <div className="warehouse-putaway-notice" role="status">{notice}</div> : null}
       <div className="warehouse-putaway-actions">
         <button type="button" disabled={!locationCode} onClick={() => void copyLocation()}>Copy location</button>
         <button type="button" disabled={!locationCode} onClick={useForPutaway}>Set putaway target</button>
-        <a className={locationCode ? 'primary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? barcodeHref : undefined}>Open Barcode setup</a>
-        <a className={locationCode ? 'primary secondary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? receiveHref : undefined}>Open Receive</a>
+        <a className={locationCode ? 'primary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? stocktakeHref : undefined}>Start stocktake here</a>
+        <a className={locationCode ? 'primary secondary' : 'disabled'} aria-disabled={!locationCode} href={locationCode ? receiveHref : undefined}>Open daily receiving</a>
       </div>
     </section>,
     host,
