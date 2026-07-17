@@ -1,53 +1,4 @@
-/* Multi-SKU capacity and Owner rack naming. */
-.warehouse-level-add-primary.needs-cell-selection {
-  border-style: dashed !important;
-  opacity: .78;
-}
-
-.warehouse-level-add-primary:disabled {
-  cursor: wait;
-  opacity: .7;
-}
-
-.warehouse-level-add-hint {
-  grid-column: 1 / -1 !important;
-  grid-row: 4 !important;
-  display: block !important;
-  margin-top: 1px !important;
-  padding: 6px 8px !important;
-  border-radius: 7px !important;
-  background: #eaf7ef !important;
-  color: #0d6545 !important;
-  font-size: 10px !important;
-  font-weight: 800 !important;
-  line-height: 1.3 !important;
-}
-
-.warehouse-level-add-hint[data-tone='error'] {
-  background: #fff0ed !important;
-  color: #9b2e24 !important;
-}
-
-.rack-bin-grid .slot-placeholder {
-  border: 1px dashed #91bba7 !important;
-  border-radius: 7px !important;
-  background: #f0faf4 !important;
-  padding: 6px 7px !important;
-}
-
-.rack-bin-grid .slot-placeholder b {
-  color: #0d6545 !important;
-}
-
-.rack-bin-grid .slot-placeholder small {
-  color: #5f776b !important;
-}
-
-.rack-bin-grid .slot-more-open {
-  color: #0d6545 !important;
-  background: #eaf7ef !important;
-}
-
+/* Warehouse visual metadata: rack labels, bin order and same-cell SKU order. */
 .warehouse-putaway-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
@@ -61,6 +12,74 @@
 .warehouse-putaway-target small {
   color: #0d6545;
   font-weight: 750;
+}
+
+.rack-bin-grid .slot-item-wrap {
+  display: flex !important;
+  align-items: stretch;
+  gap: 5px !important;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1px 0 3px;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+.rack-bin-grid .slot-mini {
+  flex: 0 0 min(88px, 78%);
+  min-width: 68px;
+  padding: 5px 6px;
+  border: 1px solid rgba(16, 47, 40, .12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .78);
+}
+
+.rack-bin-grid .slot-mini b,
+.rack-bin-grid .slot-mini small {
+  pointer-events: none;
+}
+
+body.warehouse-layout-editing .rack-bin-grid .slot-mini[data-sku-key] {
+  cursor: grab;
+  touch-action: none;
+  border-color: rgba(22, 105, 76, .42);
+  box-shadow: inset 0 0 0 1px rgba(22, 105, 76, .08);
+}
+
+body.warehouse-layout-editing .rack-bin-grid .slot-mini[data-sku-key]:active,
+body.warehouse-layout-editing .rack-bin-grid .slot-mini.sku-visual-dragging {
+  cursor: grabbing;
+}
+
+.rack-bin-grid .slot-item-wrap.sku-order-editing {
+  outline: 2px solid rgba(22, 105, 76, .24);
+  outline-offset: 2px;
+  border-radius: 8px;
+  background: rgba(235, 248, 241, .74);
+}
+
+.rack-bin-grid .slot-mini.sku-visual-dragging {
+  position: relative;
+  z-index: 5;
+  opacity: .82;
+  border-color: #16694c;
+  background: #e8f6ee;
+  box-shadow: 0 8px 18px rgba(13, 84, 59, .2);
+  transform: scale(1.03);
+}
+
+.warehouse-sku-order-editor-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(164, 229, 199, .26);
+  border-radius: 8px;
+  color: rgba(238, 255, 247, .82);
+  background: rgba(255, 255, 255, .06);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .warehouse-rack-name-editor {
@@ -135,5 +154,9 @@
 @media (max-width: 760px) {
   .warehouse-putaway-actions {
     grid-template-columns: 1fr !important;
+  }
+
+  .rack-bin-grid .slot-mini {
+    flex-basis: 76px;
   }
 }
