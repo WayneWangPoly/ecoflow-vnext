@@ -5,6 +5,8 @@ export type TriggerOrdermentumSyncResult = { ok: boolean; existing?: boolean; mo
 export type OperationalSyncJobRow = { id: string; job_type: string; mode: OrdermentumSyncMode; reason: string | null; status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'PARTIAL' | 'FAILED' | 'CANCELLED'; stage: string; stage_number: number; stage_total: number; requested_by_email: string | null; requested_at: string; started_at: string | null; last_heartbeat_at: string | null; completed_at: string | null; records_seen: number; records_upserted: number; records_changed: number; records_failed: number; error_code: string | null; error_message: string | null; workflow_repository: string | null; workflow_name: string | null; workflow_ref: string | null; workflow_run_id: string | null; updated_at: string; };
 export type MasterSyncHealthRow = { resource_type?: string; resource_count?: number; latest_synced_at?: string | null; latest_payload_seen_at?: string | null; latest_run_status?: string | null; latest_error?: string | null; [key: string]: unknown; };
 export type OrderSyncRunRow = { run_type?: string | null; status?: string | null; orders_seen?: number | null; orders_upserted?: number | null; orders_changed?: number | null; last_error?: string | null; started_at?: string | null; finished_at?: string | null; [key: string]: unknown; };
+export type OrdermentumMirrorBlocker = { label?: string | null; count?: number | string | null };
+export type OrdermentumMirrorWarning = { code?: string | null; count?: number | string | null; blocking?: boolean | null; message?: string | null };
 
 export type OrdermentumMirrorHealthRow = {
   snapshot_key?: string | null; verification_mode?: string | null;
@@ -22,6 +24,9 @@ export type OrdermentumMirrorHealthRow = {
   history_catalog_complete?: boolean | null; history_heartbeat_at?: string | null; history_last_error?: string | null;
   catalog_total?: number | string | null; catalog_present?: number | string | null; catalog_source_missing?: number | string | null;
   detail_complete?: number | string | null; detail_pending?: number | string | null; detail_failed?: number | string | null;
+  blockers?: OrdermentumMirrorBlocker[] | null;
+  warnings?: OrdermentumMirrorWarning[] | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 function isMissingRelation(error: unknown) {
