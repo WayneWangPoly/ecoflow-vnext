@@ -3,28 +3,32 @@ import { observeBody } from '@/lib/domObserver';
 import { loadWarehouseLayout, saveWarehouseLayout, type WarehouseLayoutBox, type WarehouseLayoutState } from '@/data/repositories/warehouseLayout';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import {
-  WAREHOUSE_LAYOUT_STORAGE_KEY,
   WAREHOUSE_SITE_CODE,
-  WAREHOUSE_SKU_SLOT_CHANGED_EVENT,
+  mergeSkuVisualOrders,
   readLocalWarehouseLayout,
-  skuSlotCountsFromLayout,
+  skuVisualOrdersFromLayout,
   writeLocalWarehouseLayout,
 } from '@/lib/warehouseLayoutMetadata';
 import { supabase } from '@/lib/supabaseClient';
 
-const STORAGE_KEY = WAREHOUSE_LAYOUT_STORAGE_KEY;
 const SITE_CODE = WAREHOUSE_SITE_CODE;
 const BIN_PREFIX = 'bin-order:';
 
 type BinOrders = Record<string, string[]>;
+type SkuVisualOrders = Record<string, string[]>;
 type LayoutOrderBox = WarehouseLayoutBox & { binOrder?: string[] };
-type SlotCounts = Record<string, number>;
 
 type RackContext = {
   card: HTMLElement;
   grid: HTMLElement;
   rackId: string;
   side: string;
+};
+
+type ActiveSkuDrag = {
+  item: HTMLElement;
+  wrap: HTMLElement;
+  locationCode: string;
 };
 
 function readStoredLayout(): WarehouseLayoutState {
@@ -79,6 +83,10 @@ function mergeOrders(layout: WarehouseLayoutState, orders: BinOrders) {
   return merged;
 }
 
+function mergeVisualPreferences(layout: WarehouseLayoutState, binOrders: BinOrders, skuOrders: SkuVisualOrders) {
+  return mergeSkuVisualOrders(mergeOrders(layout, binOrders), skuOrders);
+}
+
 function applyVisibleOrder(orders: BinOrders) {
   const context = rackContext();
   if (!context) return;
@@ -88,9 +96,10 @@ function applyVisibleOrder(orders: BinOrders) {
   const currentColumns = binColumns(context.grid);
   const currentOrder = currentColumns.map(binCode);
   const available = new Set(currentOrder);
+  const requestedUpper = requested.map((bin) => bin.toUpperCase());
   const desiredOrder = [
-    ...requested.map((bin) => bin.toUpperCase()).filter((bin) => available.has(bin)),
-    ...currentOrder.filter((bin) => !requested.map((item) => item.toUpperCase()).includes(bin)),
+    ...requestedUpper.filter((bin) => available.has(bin)),
+    ...currentOrder.filter((bin) => !requestedUpper.includes(bin)),
   ];
   if (currentOrder.join('|') === desiredOrder.join('|')) return;
 
@@ -104,9 +113,10 @@ function applyVisibleOrder(orders: BinOrders) {
 function captureVisibleOrder(orders: BinOrders) {
   const context = rackContext();
   if (!context) return orders;
-  const next = { ...orders };
-  next[orderKey(context.rackId, context.side)] = binColumns(context.grid).map(binCode).filter(Boolean);
-  return next;
+  return {
+    ...orders,
+    [orderKey(context.rackId, context.side)]: binColumns(context.grid).map(binCode).filter(Boolean),
+  };
 }
 
 function naturalVisibleOrder() {
@@ -139,38 +149,44 @@ function locationRowsFor(rows: WarehouseLocationItemRow[], code: string) {
   return rows.filter((row) => row.location_code === code);
 }
 
-function appendOpenSlots(wrap: HTMLElement, code: string, startAt: number, openSlots: number) {
-  const visibleOpenSlots = Math.min(openSlots, 3);
-  for (let index = 0; index < visibleOpenSlots; index += 1) {
-    const number = startAt + index + 1;
-    const item = document.createElement('span');
-    item.className = 'slot-mini slot-placeholder';
-    const sku = document.createElement('b');
-    sku.textContent = `SKU slot ${number}`;
-    const helper = document.createElement('small');
-    helper.textContent = `Scan next SKU into ${code}`;
-    item.append(sku, helper);
-    wrap.appendChild(item);
-  }
-  if (openSlots > visibleOpenSlots) {
-    const more = document.createElement('span');
-    more.className = 'slot-more-items slot-more-open';
-    more.textContent = `+${openSlots - visibleOpenSlots} more open SKU slot${openSlots - visibleOpenSlots === 1 ? '' : 's'}`;
-    wrap.appendChild(more);
-  }
+function skuVisualKey(row: WarehouseLocationItemRow) {
+  return `${String(row.sku || '').trim().toUpperCase()}::${String(row.unit_level || 'unknown').trim().toLowerCase()}`;
 }
 
-function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], slotCounts: SlotCounts) {
+function orderedItemRows(rows: WarehouseLocationItemRow[], requested: string[] | undefined) {
+  if (!requested?.length) return [...rows];
+  const rank = new Map(requested.map((key, index) => [key, index]));
+  return [...rows].sort((left, right) => {
+    const leftRank = rank.get(skuVisualKey(left));
+    const rightRank = rank.get(skuVisualKey(right));
+    if (leftRank !== undefined || rightRank !== undefined) return (leftRank ?? Number.MAX_SAFE_INTEGER) - (rightRank ?? Number.MAX_SAFE_INTEGER);
+    return String(left.sku || '').localeCompare(String(right.sku || ''), undefined, { numeric: true });
+  });
+}
+
+function captureVisibleSkuOrders(orders: SkuVisualOrders) {
+  const next = { ...orders };
+  document.querySelectorAll<HTMLElement>('.warehouse-rack-card .location-cell[data-location-code]').forEach((cell) => {
+    const code = cell.dataset.locationCode?.trim().toUpperCase();
+    if (!code) return;
+    const keys = Array.from(cell.querySelectorAll<HTMLElement>(':scope .slot-item-wrap > .slot-mini[data-sku-key]'))
+      .map((item) => item.dataset.skuKey || '')
+      .filter(Boolean);
+    if (keys.length > 1) next[code] = keys;
+    else delete next[code];
+  });
+  return next;
+}
+
+function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], skuOrders: SkuVisualOrders) {
   const codeElement = cell.querySelector<HTMLElement>('.location-code');
   if (!codeElement) return;
   const code = codeElement.textContent?.trim() || '';
   if (!code) return;
-  if (cell.dataset.locationCode !== code) cell.dataset.locationCode = code;
+  cell.dataset.locationCode = code;
 
   const locationRows = locationRowsFor(rows, code);
-  const itemRows = itemRowsFor(rows, code);
-  const configuredSlots = Math.max(1, itemRows.length, Number(slotCounts[code.toUpperCase()] || 1));
-  cell.dataset.skuSlotCount = String(configuredSlots);
+  const itemRows = orderedItemRows(itemRowsFor(rows, code), skuOrders[code.toUpperCase()]);
   const categories = Array.from(new Set(locationRows.map((row) => row.location_category || '').filter(Boolean)));
   const category = categories.join(' / ') || itemRows[0]?.product_name || '';
 
@@ -185,8 +201,7 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], slotC
 
   let wrap = cell.querySelector<HTMLElement>('.slot-item-wrap');
   const empty = cell.querySelector<HTMLElement>('.slot-empty');
-  const openSlots = Math.max(0, configuredSlots - itemRows.length);
-  if (!itemRows.length && configuredSlots === 1) {
+  if (!itemRows.length) {
     wrap?.remove();
     if (empty) {
       empty.classList.add('slot-empty-label');
@@ -200,20 +215,20 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], slotC
     wrap.className = 'slot-item-wrap';
     categoryElement.insertAdjacentElement('afterend', wrap);
   }
+  wrap.dataset.locationCode = code;
   wrap.classList.remove('split');
   empty?.remove();
 
-  const signature = JSON.stringify({
-    items: itemRows.map((row) => [row.sku, row.quantity, row.sku_total_quantity, row.unit_level]),
-    configuredSlots,
-  });
+  const signature = JSON.stringify(itemRows.map((row) => [skuVisualKey(row), row.quantity, row.sku_total_quantity, row.unit_level]));
   if (wrap.dataset.signature === signature) return;
   wrap.dataset.signature = signature;
   wrap.replaceChildren();
 
-  itemRows.slice(0, 3).forEach((row) => {
+  itemRows.forEach((row) => {
     const item = document.createElement('span');
     item.className = 'slot-mini';
+    item.dataset.skuKey = skuVisualKey(row);
+    item.dataset.locationCode = code;
     const sku = document.createElement('b');
     sku.textContent = row.sku || 'SKU pending';
     const quantity = document.createElement('small');
@@ -223,47 +238,37 @@ function decorateCell(cell: HTMLElement, rows: WarehouseLocationItemRow[], slotC
     item.append(sku, quantity);
     wrap!.appendChild(item);
   });
-
-  if (itemRows.length > 3) {
-    const more = document.createElement('span');
-    more.className = 'slot-more-items';
-    more.textContent = `+${itemRows.length - 3} more SKU${itemRows.length - 3 === 1 ? '' : 's'}`;
-    wrap.appendChild(more);
-  }
-  if (openSlots > 0) appendOpenSlots(wrap, code, itemRows.length, openSlots);
 }
 
-function ensureAddButton(halfRow: HTMLElement, cell: HTMLElement) {
-  let addButton = cell.nextElementSibling as HTMLButtonElement | null;
-  if (!addButton?.classList.contains('warehouse-slot-add')) {
-    addButton = document.createElement('button');
-    addButton.type = 'button';
-    addButton.className = 'warehouse-slot-add';
-    addButton.textContent = '+';
-    cell.insertAdjacentElement('afterend', addButton);
-  }
-  const code = cell.querySelector<HTMLElement>('.location-code')?.textContent?.trim() || 'location';
-  const title = `Select ${code} to add another SKU`;
-  if (addButton.title !== title) addButton.title = title;
-  if (addButton.getAttribute('aria-label') !== title) addButton.setAttribute('aria-label', title);
-  addButton.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    cell.click();
-  };
-  halfRow.classList.add('warehouse-slot-row');
+function removeLegacySkuPositionControls() {
+  document.querySelectorAll<HTMLElement>(
+    '.warehouse-slot-add, .warehouse-slot-add-primary, .warehouse-level-add-primary, .warehouse-level-add-hint, .slot-placeholder, .slot-more-open',
+  ).forEach((element) => element.remove());
 }
 
-function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders, slotCounts: SlotCounts) {
+function ensureEditorHint() {
+  const editor = document.querySelector<HTMLElement>('.warehouse-layout-editor');
+  if (!editor) return;
+  let hint = editor.querySelector<HTMLElement>('.warehouse-sku-order-editor-hint');
+  if (!hint) {
+    hint = document.createElement('p');
+    hint.className = 'warehouse-sku-order-editor-hint';
+    editor.appendChild(hint);
+  }
+  hint.textContent = 'Drag SKU cards left or right only inside their current location. This changes visual order only—never location assignment, quantity or stock history.';
+}
+
+function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders, skuOrders: SkuVisualOrders) {
+  removeLegacySkuPositionControls();
   applyVisibleOrder(orders);
   const context = rackContext();
   if (!context) return;
-  if (context.grid.dataset.rackId !== context.rackId) context.grid.dataset.rackId = context.rackId;
-  if (context.grid.dataset.rackSide !== context.side) context.grid.dataset.rackSide = context.side;
+  context.grid.dataset.rackId = context.rackId;
+  context.grid.dataset.rackSide = context.side;
 
   binColumns(context.grid).forEach((column) => {
     const bin = binCode(column);
-    if (column.dataset.binCode !== bin) column.dataset.binCode = bin;
+    column.dataset.binCode = bin;
     column.querySelectorAll<HTMLElement>('.rack-level-row').forEach((levelRow) => {
       const halfRow = levelRow.querySelector<HTMLElement>('.rack-half-row');
       if (!halfRow) return;
@@ -283,22 +288,21 @@ function decorateVisibleRack(rows: WarehouseLocationItemRow[], orders: BinOrders
         setText(label, shortLocationCode(fullCode));
       });
 
-      cells.forEach((cell) => {
-        decorateCell(cell, rows, slotCounts);
-        ensureAddButton(halfRow, cell);
-      });
+      cells.forEach((cell) => decorateCell(cell, rows, skuOrders));
     });
   });
+
+  if (document.body.classList.contains('warehouse-layout-editing')) ensureEditorHint();
 }
 
-async function persistOrders(orders: BinOrders) {
-  const localLayout = mergeOrders(readStoredLayout(), orders);
+async function persistVisualPreferences(binOrders: BinOrders, skuOrders: SkuVisualOrders) {
+  const localLayout = mergeVisualPreferences(readStoredLayout(), binOrders, skuOrders);
   writeLocalWarehouseLayout(localLayout);
   if (!supabase) return;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const row = await loadWarehouseLayout(SITE_CODE);
-    const merged = mergeOrders(row?.layout_json || localLayout, orders);
+    const merged = mergeVisualPreferences(row?.layout_json || localLayout, binOrders, skuOrders);
     try {
       const saved = await saveWarehouseLayout({ siteCode: SITE_CODE, layout: merged, expectedVersion: row?.layout_version ?? null });
       writeLocalWarehouseLayout(saved?.layout_json || merged);
@@ -313,10 +317,12 @@ export function WarehouseMapRackEnhancer() {
   const rowsRef = useRef<WarehouseLocationItemRow[]>([]);
   const initialLayout = readStoredLayout();
   const ordersRef = useRef<BinOrders>(ordersFromLayout(initialLayout));
-  const slotCountsRef = useRef<SlotCounts>(skuSlotCountsFromLayout(initialLayout));
-  const snapshotRef = useRef<BinOrders>({});
+  const skuOrdersRef = useRef<SkuVisualOrders>(skuVisualOrdersFromLayout(initialLayout));
+  const binSnapshotRef = useRef<BinOrders>({});
+  const skuSnapshotRef = useRef<SkuVisualOrders>({});
   const editingRef = useRef(false);
   const activeColumnRef = useRef<HTMLElement | null>(null);
+  const activeSkuRef = useRef<ActiveSkuDrag | null>(null);
 
   useEffect(() => {
     if (window.location.pathname !== '/warehouse-map') return;
@@ -324,38 +330,52 @@ export function WarehouseMapRackEnhancer() {
     void loadWarehouseLocationItems()
       .then((rows) => {
         rowsRef.current = rows;
-        decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
+        decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current);
       })
-      .catch(() => decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current));
+      .catch(() => decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current));
 
     if (supabase) {
       void loadWarehouseLayout(SITE_CODE).then((row) => {
         if (!row?.layout_json) return;
         ordersRef.current = { ...ordersRef.current, ...ordersFromLayout(row.layout_json) };
-        slotCountsRef.current = { ...slotCountsRef.current, ...skuSlotCountsFromLayout(row.layout_json) };
-        const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        writeLocalWarehouseLayout({ ...merged, ...row.layout_json });
-        decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
+        skuOrdersRef.current = { ...skuOrdersRef.current, ...skuVisualOrdersFromLayout(row.layout_json) };
+        const merged = mergeVisualPreferences({ ...readStoredLayout(), ...row.layout_json }, ordersRef.current, skuOrdersRef.current);
+        writeLocalWarehouseLayout(merged);
+        decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current);
       }).catch(() => undefined);
     }
 
     function synchronise() {
       const editing = document.body.classList.contains('warehouse-layout-editing');
-      if (editing && !editingRef.current) snapshotRef.current = structuredClone(ordersRef.current);
+      if (editing && !editingRef.current) {
+        binSnapshotRef.current = structuredClone(ordersRef.current);
+        skuSnapshotRef.current = structuredClone(skuOrdersRef.current);
+      }
       editingRef.current = editing;
-      decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
-    }
-
-    function handleSlotChanged(event: Event) {
-      const detail = (event as CustomEvent<{ locationCode?: string; slotCount?: number; layout?: WarehouseLayoutState }>).detail;
-      if (detail?.layout) slotCountsRef.current = skuSlotCountsFromLayout(detail.layout);
-      else if (detail?.locationCode && detail?.slotCount) slotCountsRef.current[detail.locationCode.toUpperCase()] = detail.slotCount;
-      decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
+      decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current);
     }
 
     function pointerDown(event: PointerEvent) {
       if (!document.body.classList.contains('warehouse-layout-editing')) return;
-      const column = (event.target as HTMLElement).closest<HTMLElement>('.warehouse-rack-card .rack-bin-column');
+      const target = event.target as HTMLElement;
+      const skuItem = target.closest<HTMLElement>('.warehouse-rack-card .location-cell .slot-mini[data-sku-key]');
+      if (skuItem) {
+        const wrap = skuItem.closest<HTMLElement>('.slot-item-wrap');
+        const cell = skuItem.closest<HTMLElement>('.location-cell[data-location-code]');
+        const locationCode = cell?.dataset.locationCode?.trim().toUpperCase() || '';
+        if (!wrap || !locationCode || wrap.querySelectorAll(':scope > .slot-mini[data-sku-key]').length < 2) return;
+        event.preventDefault();
+        event.stopPropagation();
+        activeSkuRef.current = { item: skuItem, wrap, locationCode };
+        skuItem.classList.add('sku-visual-dragging');
+        wrap.classList.add('sku-order-editing');
+        const editorTitle = document.querySelector<HTMLElement>('.warehouse-layout-editor > div:first-child strong');
+        if (editorTitle) editorTitle.textContent = `${locationCode} · visual SKU order`;
+        skuItem.setPointerCapture?.(event.pointerId);
+        return;
+      }
+
+      const column = target.closest<HTMLElement>('.warehouse-rack-card .rack-bin-column');
       if (!column) return;
       event.preventDefault();
       event.stopPropagation();
@@ -369,6 +389,20 @@ export function WarehouseMapRackEnhancer() {
     }
 
     function pointerMove(event: PointerEvent) {
+      const activeSku = activeSkuRef.current;
+      if (activeSku) {
+        event.preventDefault();
+        const siblings = Array.from(activeSku.wrap.querySelectorAll<HTMLElement>(':scope > .slot-mini[data-sku-key]'))
+          .filter((item) => item !== activeSku.item);
+        const before = siblings.find((item) => {
+          const rect = item.getBoundingClientRect();
+          return event.clientX < rect.left + rect.width / 2;
+        });
+        if (before) activeSku.wrap.insertBefore(activeSku.item, before);
+        else activeSku.wrap.appendChild(activeSku.item);
+        return;
+      }
+
       const active = activeColumnRef.current;
       if (!active) return;
       event.preventDefault();
@@ -383,13 +417,22 @@ export function WarehouseMapRackEnhancer() {
     }
 
     function pointerUp() {
+      const activeSku = activeSkuRef.current;
+      if (activeSku) {
+        activeSku.item.classList.remove('sku-visual-dragging');
+        activeSku.wrap.classList.remove('sku-order-editing');
+        activeSkuRef.current = null;
+        skuOrdersRef.current = captureVisibleSkuOrders(skuOrdersRef.current);
+        writeLocalWarehouseLayout(mergeVisualPreferences(readStoredLayout(), ordersRef.current, skuOrdersRef.current));
+      }
+
       const active = activeColumnRef.current;
-      if (!active) return;
-      active.classList.remove('bin-dragging');
-      activeColumnRef.current = null;
-      ordersRef.current = captureVisibleOrder(ordersRef.current);
-      const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-      writeLocalWarehouseLayout(merged);
+      if (active) {
+        active.classList.remove('bin-dragging');
+        activeColumnRef.current = null;
+        ordersRef.current = captureVisibleOrder(ordersRef.current);
+        writeLocalWarehouseLayout(mergeVisualPreferences(readStoredLayout(), ordersRef.current, skuOrdersRef.current));
+      }
     }
 
     function controls(event: MouseEvent) {
@@ -397,23 +440,26 @@ export function WarehouseMapRackEnhancer() {
       const label = button?.textContent?.trim() || '';
       if (!button) return;
       if (label === 'Cancel') {
-        ordersRef.current = structuredClone(snapshotRef.current);
-        const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        writeLocalWarehouseLayout(merged);
-        window.setTimeout(() => decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current), 0);
+        ordersRef.current = structuredClone(binSnapshotRef.current);
+        skuOrdersRef.current = structuredClone(skuSnapshotRef.current);
+        writeLocalWarehouseLayout(mergeVisualPreferences(readStoredLayout(), ordersRef.current, skuOrdersRef.current));
+        window.setTimeout(() => decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current), 0);
       } else if (label === 'Reset to system') {
         ordersRef.current = {};
+        skuOrdersRef.current = {};
         naturalVisibleOrder();
-        const merged = mergeOrders(readStoredLayout(), ordersRef.current);
-        writeLocalWarehouseLayout(merged);
+        writeLocalWarehouseLayout(mergeVisualPreferences(readStoredLayout(), ordersRef.current, skuOrdersRef.current));
+        window.setTimeout(() => decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current), 0);
       } else if (label === 'Save layout' || label === 'Saving…') {
         ordersRef.current = captureVisibleOrder(ordersRef.current);
-        window.setTimeout(() => void persistOrders(ordersRef.current).catch(() => undefined), 450);
+        skuOrdersRef.current = captureVisibleSkuOrders(skuOrdersRef.current);
+        window.setTimeout(() => void persistVisualPreferences(ordersRef.current, skuOrdersRef.current).catch(() => undefined), 450);
       } else if (label === 'Reload cloud' && supabase) {
         window.setTimeout(() => void loadWarehouseLayout(SITE_CODE).then((row) => {
           ordersRef.current = ordersFromLayout(row?.layout_json || {});
-          slotCountsRef.current = skuSlotCountsFromLayout(row?.layout_json || {});
-          decorateVisibleRack(rowsRef.current, ordersRef.current, slotCountsRef.current);
+          skuOrdersRef.current = skuVisualOrdersFromLayout(row?.layout_json || {});
+          writeLocalWarehouseLayout(row?.layout_json || {});
+          decorateVisibleRack(rowsRef.current, ordersRef.current, skuOrdersRef.current);
         }), 250);
       }
     }
@@ -422,7 +468,7 @@ export function WarehouseMapRackEnhancer() {
     document.addEventListener('pointerdown', pointerDown, true);
     window.addEventListener('pointermove', pointerMove, { passive: false });
     window.addEventListener('pointerup', pointerUp);
-    window.addEventListener(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, handleSlotChanged);
+    window.addEventListener('pointercancel', pointerUp);
     document.addEventListener('click', controls);
     synchronise();
 
@@ -431,7 +477,7 @@ export function WarehouseMapRackEnhancer() {
       document.removeEventListener('pointerdown', pointerDown, true);
       window.removeEventListener('pointermove', pointerMove);
       window.removeEventListener('pointerup', pointerUp);
-      window.removeEventListener(WAREHOUSE_SKU_SLOT_CHANGED_EVENT, handleSlotChanged);
+      window.removeEventListener('pointercancel', pointerUp);
       document.removeEventListener('click', controls);
     };
   }, []);
