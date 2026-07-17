@@ -43,6 +43,19 @@ function distinctExternalIds(rows, resourceTypes) {
   return ids;
 }
 
+function groupRawOrderAliases(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const candidates = [text(row.external_order_id), text(row.external_order_number)].filter(Boolean);
+    if (!candidates.length) continue;
+    const identity = candidates[0];
+    const aliases = groups.get(identity) || new Set();
+    candidates.forEach((candidate) => aliases.add(candidate));
+    groups.set(identity, aliases);
+  }
+  return groups;
+}
+
 const [
   rawOrders,
   projectedOrders,
@@ -74,13 +87,12 @@ for (const row of projectedOrders) {
   addKey(projectedOrderKeys, row.id);
   addKey(projectedOrderKeys, row.order_number);
 }
-const rawOrderKeys = new Set();
+const rawOrderGroups = groupRawOrderAliases(rawOrders);
 let orderProjectionMissing = 0;
-for (const row of rawOrders) {
-  const candidates = [text(row.external_order_id), text(row.external_order_number)].filter(Boolean);
-  if (!candidates.length) continue;
-  candidates.forEach((candidate) => rawOrderKeys.add(candidate));
-  if (!candidates.some((candidate) => projectedOrderKeys.has(candidate))) orderProjectionMissing += 1;
+let sourceBackedProjectedOrders = 0;
+for (const aliases of rawOrderGroups.values()) {
+  if ([...aliases].some((candidate) => projectedOrderKeys.has(candidate))) sourceBackedProjectedOrders += 1;
+  else orderProjectionMissing += 1;
 }
 
 const projectedInvoiceKeys = new Set();
@@ -93,6 +105,9 @@ let invoiceProjectionMissing = 0;
 for (const id of rawInvoiceIds) {
   if (!projectedInvoiceKeys.has(id)) invoiceProjectionMissing += 1;
 }
+const sourceBackedProjectedInvoices = projectedInvoices.filter((row) => (
+  rawInvoiceIds.has(text(row.id)) || rawInvoiceIds.has(text(row.number))
+)).length;
 
 const purchaserIds = distinctExternalIds(rawMaster, ['purchasers', 'purchaser_detail']);
 const productIds = distinctExternalIds(rawMaster, ['products', 'product_detail']);
@@ -112,13 +127,13 @@ const checkedAt = new Date().toISOString();
 
 const data = {
   overall_status: 'COMPLETE',
-  verification_mode: 'LIGHTWEIGHT_DIRECT_V1',
+  verification_mode: 'LIGHTWEIGHT_DIRECT_V2',
   checked_at: checkedAt,
-  raw_order_count: rawOrderKeys.size,
-  projected_order_count: projectedOrders.length,
+  raw_order_count: rawOrderGroups.size,
+  projected_order_count: sourceBackedProjectedOrders,
   order_projection_missing: orderProjectionMissing,
   raw_invoice_count: rawInvoiceIds.size,
-  projected_invoice_count: projectedInvoices.length,
+  projected_invoice_count: sourceBackedProjectedInvoices,
   invoice_projection_missing: invoiceProjectionMissing,
   purchaser_count: purchaserIds.size,
   product_count: productIds.size,
@@ -150,7 +165,7 @@ const data = {
 };
 
 const blockers = [
-  ['raw order source empty', rawOrderKeys.size === 0 ? 1 : 0],
+  ['raw order source empty', rawOrderGroups.size === 0 ? 1 : 0],
   ['order projection gaps', orderProjectionMissing],
   ['raw invoice source empty', rawInvoiceIds.size === 0 ? 1 : 0],
   ['invoice projection gaps', invoiceProjectionMissing],
@@ -190,14 +205,20 @@ const snapshot = {
   ...data,
   blockers: active.map(([label, count]) => ({ label, count: Number(count) })),
   warnings,
-  metadata: { require_history: requireHistory, generated_at: checkedAt },
+  metadata: {
+    require_history: requireHistory,
+    generated_at: checkedAt,
+    canonical_order_table_rows: projectedOrders.length,
+    canonical_invoice_table_rows: projectedInvoices.length,
+    count_semantics: 'source-backed distinct records',
+  },
 };
 const snapshotResult = await db.from('ecoflow_ordermentum_mirror_status_snapshot').upsert(snapshot, { onConflict: 'snapshot_key' });
 if (snapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_snapshot: ${snapshotResult.error.message}`);
 
 console.log(JSON.stringify({
   generated_at: checkedAt,
-  health_source: 'lightweight_direct_v1',
+  health_source: 'lightweight_direct_v2',
   require_history: requireHistory,
   ordermentum_complete_mirror: data,
   blockers: snapshot.blockers,
