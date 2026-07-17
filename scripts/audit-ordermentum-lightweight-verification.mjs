@@ -20,7 +20,11 @@ assert(!/v_ecoflow_ordermentum_mirror_health_v\d/i.test(verifier), 'Final verifi
 for (const table of ['ordermentum_raw_orders', 'om_orders', 'ordermentum_raw_master_resources', 'om_invoices', 'ecoflow_ordermentum_order_catalog']) {
   assert(verifier.includes(`'${table}'`), `Lightweight verifier must read ${table} directly.`);
 }
-assert(verifier.includes('LIGHTWEIGHT_DIRECT_V1'), 'Lightweight verification mode marker is missing.');
+assert(verifier.includes('LIGHTWEIGHT_DIRECT_V2'), 'Lightweight verification v2 mode marker is missing.');
+assert(verifier.includes('groupRawOrderAliases'), 'Raw orders must be counted as distinct source records, not as both UUID and order-number aliases.');
+assert(verifier.includes('sourceBackedProjectedOrders'), 'Projected order count must use source-backed distinct records.');
+assert(verifier.includes('sourceBackedProjectedInvoices'), 'Projected invoice count must exclude retained canonical rows that are absent from the current source mirror.');
+assert(verifier.includes("count_semantics: 'source-backed distinct records'"), 'Snapshot metadata must state its counting semantics.');
 assert(orchestrator.includes('finalisation_completed_at'), 'Finalisation completion must be persisted before verification.');
 assert(orchestrator.includes('complete_mirror_finalisation_reused'), 'Finalisation checkpoint reuse log is missing.');
 assert(orchestrator.includes('complete_mirror_finalisation_recovered'), 'Recovery of the already-completed production finalisation is missing.');
