@@ -160,11 +160,12 @@ function CustomerDetail({ customer, lines, documents, busy, loading, loadError, 
   }, [customer?.store_id]);
 
   if (!customer?.store_id) return <section className="accounts-detail accounts-empty">Select a customer to review mirrored invoice detail.</section>;
+  const activeCustomer = customer;
 
   async function saveContact() {
     setLocalBusy('contact'); setError('');
     try {
-      await saveBillingContact({ storeId: customer.store_id!, storeName: customer.store_name || customer.store_id!, email, contactName: contact, enabled: emailEnabled });
+      await saveBillingContact({ storeId: activeCustomer.store_id!, storeName: activeCustomer.store_name || activeCustomer.store_id!, email, contactName: contact, enabled: emailEnabled });
       setMessage('Statement delivery preference saved in EcoFlow. This does not change the Ordermentum customer master.');
       await onReload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
@@ -173,7 +174,7 @@ function CustomerDetail({ customer, lines, documents, busy, loading, loadError, 
   async function generate(send: boolean) {
     setLocalBusy(send ? 'send' : 'generate'); setError(''); setMessage('');
     try {
-      const created = await createStatementDocument({ storeId: customer.store_id!, periodStart, periodEnd });
+      const created = await createStatementDocument({ storeId: activeCustomer.store_id!, periodStart, periodEnd });
       const statement = created[0];
       if (!statement?.id) throw new Error('Statement snapshot was not created.');
       const result = await dispatchStatement({ statementId: statement.id, send });
