@@ -22,6 +22,10 @@ const mapModules = read('src/enhancers/WarehouseMapRouteModules.tsx');
 const mapRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
 const mapOwnerEdit = read('src/WarehouseMapOwnerEdit.tsx');
 const mapPutaway = read('src/WarehouseMapPutawayControl.tsx');
+const mapInteraction = read('src/WarehouseMapInteractionFix.tsx');
+const mapRackEnhancer = read('src/WarehouseMapRackEnhancer.tsx');
+const layoutRepository = read('src/data/repositories/warehouseLayout.ts');
+const layoutMetadata = read('src/lib/warehouseLayoutMetadata.ts');
 const driverApp = read('src/app/DriverApp.tsx');
 const app = read('src/app/App.tsx');
 const driverRun = read('src/domain/driverRun.ts');
@@ -79,6 +83,22 @@ has(firstStocktake, 'crypto.randomUUID()', 'First-stocktake retries must use ide
 lacks(firstStocktake, 'recordInventoryMovement', 'First stocktake must not write the stock ledger directly.');
 lacks(firstStocktake, 'receiveByBarcode', 'First stocktake must not use the legacy direct receive RPC.');
 
+// Warehouse Map is read-only; layout editing may change presentation only.
+lacks(mapInteraction, 'incrementWarehouseSkuSlot', 'Warehouse Map must not expose + SKU position capacity changes.');
+lacks(mapInteraction, 'ADD_SKU_SLOT', 'Legacy add-SKU-slot events must not remain active.');
+lacks(mapRackEnhancer, 'appendOpenSlots', 'Warehouse cells must not render artificial empty SKU positions.');
+lacks(mapRackEnhancer, 'slot-placeholder', 'Warehouse cells must display real SKU balances only.');
+has(layoutRepository, 'skuOrder?: string[]', 'Layout metadata must support visual-only SKU ordering.');
+has(layoutRepository, 'never changes SKU assignment, quantity or the stock ledger', 'The visual-order data boundary must be explicit.');
+has(layoutMetadata, 'skuVisualOrdersFromLayout', 'Visual SKU order must load from the shared cloud layout.');
+has(layoutMetadata, 'mergeSkuVisualOrders', 'Visual SKU order must persist through one layout metadata path.');
+has(mapRackEnhancer, 'activeSkuRef', 'Layout edit must implement a dedicated SKU visual drag state.');
+has(mapRackEnhancer, "closest<HTMLElement>('.slot-item-wrap')", 'A dragged SKU must remain attached to its original location wrapper.');
+has(mapRackEnhancer, 'captureVisibleSkuOrders', 'Layout Save must capture the visual SKU order.');
+has(mapRackEnhancer, 'skuOrdersRef.current = structuredClone(skuSnapshotRef.current)', 'Layout Cancel must restore the previous SKU visual order.');
+has(mapPutaway, 'Warehouse Map never changes stock quantity or SKU assignment directly', 'Map location actions must explain the read-only stock boundary.');
+has(mapPutaway, 'Start stocktake here', 'Map may start the controlled first-stocktake workflow for a selected location.');
+
 // Authentication, roles and bundle isolation.
 has(main, 'ProductionConfigurationError', 'Missing production auth configuration must lock the application.');
 has(main, 'SurfaceModuleGate', 'Role-specific modules must be lazy loaded by operational surface.');
@@ -95,7 +115,6 @@ has(ownerBundle, 'OwnerDriverTrackingMap', 'Owner bundle must include driver tra
 lacks(accountBundle, 'OwnerDriverTrackingMap', 'Accounts must not download owner tracking.');
 lacks(driverBundle, 'DriverPodQualityEnhancer', 'Legacy overlay POD must be removed after native consolidation.');
 has(mapOwnerEdit, 'saveWarehouseLayout', 'Owner layout edits must persist with cloud versioning.');
-has(mapPutaway, 'All stock increases still go through the controlled Receive batch', 'Map must explain the single receiving path.');
 
 // Route ownership, loading and shared state.
 has(app, 'Office route approval', 'Owner desktop must provide route planning and approval.');
@@ -173,4 +192,4 @@ has(integrationPanel, 'Sync orders + invoices now', 'Owner must have a clear del
 has(integrationPanel, 'Sync stores', 'Owner must have an isolated store sync action.');
 has(integrationPanel, 'Sync SKU', 'Owner must have an isolated SKU sync action.');
 
-console.log('EcoFlow production workflow and guided first-stocktake semantic audit passed.');
+console.log('EcoFlow production workflow, read-only Warehouse Map and visual SKU-order audit passed.');
