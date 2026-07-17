@@ -42,23 +42,4 @@ has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'active sou
 has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'retained source-missing', 'Settings must show retained source-missing history.');
 has('src/DeliveryRunHistory.tsx', 'Run history and replay', 'Delivery history missing.');
 has('src/data/repositories/runHistory.ts', 'v_ecoflow_delivery_run_catalog', 'Run catalog missing.');
-
-// Temporary CI workspace patch used only to capture the exact corrected source as an artifact.
-const accountsPath = 'src/AccountsStatementWorkbench.tsx';
-let accountsSource = read(accountsPath);
-accountsSource = accountsSource
-  .replace(
-    'if (!customer?.store_id) return <section className="accounts-detail accounts-empty">Select a customer to review mirrored invoice detail.</section>;\n\n  async function saveContact()',
-    'if (!customer?.store_id) return <section className="accounts-detail accounts-empty">Select a customer to review mirrored invoice detail.</section>;\n  const activeCustomer = customer;\n\n  async function saveContact()',
-  )
-  .replace('storeId: customer.store_id!, storeName: customer.store_name || customer.store_id!', 'storeId: activeCustomer.store_id!, storeName: activeCustomer.store_name || activeCustomer.store_id!')
-  .replace('storeId: customer.store_id!, periodStart, periodEnd', 'storeId: activeCustomer.store_id!, periodStart, periodEnd');
-fs.writeFileSync(accountsPath, accountsSource);
-
-const encodedAccounts = Buffer.from(accountsSource, 'utf8').toString('base64');
-fs.writeFileSync(
-  'node_modules/typescript/bin/tsc',
-  `#!/usr/bin/env node\nprocess.on('exit',()=>{console.log('__PATCHED_ACCOUNTS_BASE64__');console.log('${encodedAccounts}');});\nrequire('../lib/tsc.js');\n`,
-);
-
 console.log('Commercial source ownership, native Today dashboard, resilient Accounts loading, strict release, statements, resumable mirror and run-history audit passed.');
