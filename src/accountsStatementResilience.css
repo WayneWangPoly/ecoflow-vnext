@@ -1,0 +1,53 @@
+.accounts-statement-workbench-mount,
+.accounts-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.accounts-shell {
+  overflow-x: hidden;
+}
+
+.accounts-hero > * {
+  min-width: 0;
+}
+
+.accounts-hero > .source-boundary-inline {
+  display: none !important;
+}
+
+.accounts-hero h2,
+.accounts-hero p,
+.accounts-detail-hero h3,
+.accounts-detail-hero p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.accounts-grid,
+.accounts-panel,
+.accounts-detail,
+.accounts-customer-list,
+.accounts-invoice-list,
+.accounts-followup-list {
+  min-width: 0;
+}
+
+.accounts-detail-loading {
+  border-radius: 14px;
+  background: rgba(36, 102, 170, 0.08);
+  color: #2466aa;
+  padding: 13px 14px;
+  font-weight: 900;
+}
+
+.accounts-detail-source-error {
+  margin: 0;
+}
+
+@media (max-width: 1180px) {
+  .accounts-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

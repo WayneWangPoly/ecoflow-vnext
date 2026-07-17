@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { observeBody } from '@/lib/domObserver';
 import {
   createStatementDocument,
   dispatchStatement,
-  loadAccountsArKpis,
-  loadAccountsFollowupQueue,
   loadAccountsStatementCustomers,
   loadAccountsStatementExportRows,
   loadAccountsStatementLines,
@@ -21,6 +19,7 @@ import {
   type AccountsStatementLineRow,
   type StatementDocumentRow,
 } from '@/data/repositories/accountsStatement';
+import './accountsStatementResilience.css';
 
 type PriorityFilter = 'ALL' | 'URGENT_COLLECTION' | 'COLLECTION' | 'SEND_STATEMENT' | 'ON_HOLD' | 'CLEAR';
 type CustomerSort = 'priority' | 'open' | 'overdue' | 'recent' | 'name';
@@ -38,6 +37,13 @@ function tone(value?: string | null): 'good' | 'warn' | 'danger' | 'blue' | 'neu
   return 'neutral';
 }
 function priorityWeight(value?: string | null) { return value === 'ON_HOLD' ? 0 : value === 'URGENT_COLLECTION' ? 1 : value === 'COLLECTION' ? 2 : value === 'SEND_STATEMENT' ? 3 : 4; }
+function friendlyError(area: string, reason: unknown) {
+  const detail = reason instanceof Error ? reason.message : String(reason);
+  if (/57014|statement timeout|canceling statement|cancelling statement/i.test(detail)) {
+    return `${area} timed out. The rest of Accounts remains available; refresh this section after the current database load settles.`;
+  }
+  return `${area}: ${detail}`;
+}
 
 function Pill({ children, tone: pillTone = 'neutral' }: { children: ReactNode; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral' }) {
   return <span className={`accounts-pill accounts-pill-${pillTone}`}>{children}</span>;
@@ -77,6 +83,36 @@ function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
 }
 
+function deriveKpis(customers: AccountsStatementCustomerRow[]): AccountsArKpis {
+  const dated = customers.map((row) => row.latest_invoice_at).filter(Boolean) as string[];
+  return {
+    open_ar_value: customers.reduce((sum, row) => sum + num(row.open_statement_value), 0),
+    overdue_ar_value: customers.reduce((sum, row) => sum + num(row.overdue_statement_value), 0),
+    open_customers: customers.filter((row) => num(row.open_statement_value) > 0).length,
+    overdue_customers: customers.filter((row) => num(row.overdue_statement_value) > 0).length,
+    open_invoices: customers.reduce((sum, row) => sum + num(row.open_invoice_count), 0),
+    overdue_invoices: customers.reduce((sum, row) => sum + num(row.overdue_invoice_count), 0),
+    statement_value_30d: customers.reduce((sum, row) => sum + num(row.statement_value_30d), 0),
+    worst_overdue_days: customers.reduce((worst, row) => Math.max(worst, num(row.worst_overdue_days)), 0),
+    urgent_customers: customers.filter((row) => row.accounts_priority === 'URGENT_COLLECTION').length,
+    held_customers: customers.filter((row) => row.accounts_priority === 'ON_HOLD').length,
+    latest_invoice_at: dated.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null,
+  };
+}
+function deriveFollowups(customers: AccountsStatementCustomerRow[]): AccountsFollowupRow[] {
+  return customers
+    .filter((row) => row.accounts_priority && row.accounts_priority !== 'CLEAR')
+    .map((row) => ({
+      ...row,
+      next_action: row.accounts_priority === 'ON_HOLD' ? 'CHECK_ACCOUNT_HOLD'
+        : row.accounts_priority === 'URGENT_COLLECTION' ? 'CALL_AND_ESCALATE'
+          : row.accounts_priority === 'COLLECTION' ? 'SEND_REMINDER'
+            : 'SEND_STATEMENT',
+    }))
+    .sort((left, right) => priorityWeight(left.accounts_priority) - priorityWeight(right.accounts_priority)
+      || num(right.overdue_statement_value) - num(left.overdue_statement_value));
+}
+
 function CustomerRow({ row, selected, onSelect }: { row: AccountsStatementCustomerRow; selected: boolean; onSelect: () => void }) {
   return (
     <article className={`accounts-customer-row ${selected ? 'selected' : ''}`} onClick={onSelect}>
@@ -88,45 +124,23 @@ function CustomerRow({ row, selected, onSelect }: { row: AccountsStatementCustom
     </article>
   );
 }
-
 function InvoiceRow({ row }: { row: AccountsStatementLineRow }) {
-  return (
-    <article className="accounts-invoice-row">
-      <div><strong>{row.invoice_number || 'No invoice'}</strong><span>{row.order_number || 'order pending'} · {dateText(row.order_ts)}</span></div>
-      <span>{dateText(row.due_at)}</span>
-      <strong>{money(row.outstanding_amount)}</strong>
-      <span>{money(row.invoice_value)} invoice</span>
-      <Pill tone={tone(row.accounts_signal)}>{title(row.accounts_signal)}</Pill>
-    </article>
-  );
+  return <article className="accounts-invoice-row"><div><strong>{row.invoice_number || 'No invoice'}</strong><span>{row.order_number || 'order pending'} · {dateText(row.order_ts)}</span></div><span>{dateText(row.due_at)}</span><strong>{money(row.outstanding_amount)}</strong><span>{money(row.invoice_value)} invoice</span><Pill tone={tone(row.accounts_signal)}>{title(row.accounts_signal)}</Pill></article>;
 }
-
 function FollowupRow({ row }: { row: AccountsFollowupRow }) {
   return <article className="accounts-followup-row"><div><strong>{row.store_name}</strong><span>{title(row.next_action)} · {row.billing_email || row.contact_phone || 'contact pending'}</span></div><span>{money(row.open_statement_value)}</span><span>{money(row.overdue_statement_value)}</span><Pill tone={tone(row.accounts_priority)}>{title(row.accounts_priority)}</Pill></article>;
 }
-
 function StatementHistory({ documents, onOpen }: { documents: StatementDocumentRow[]; onOpen: (row: StatementDocumentRow) => void }) {
-  return (
-    <div className="accounts-document-list">
-      {documents.slice(0, 12).map((row) => (
-        <article key={row.id}>
-          <div><strong>{row.statement_number}</strong><span>{dateText(row.period_start)} – {dateText(row.period_end)} · {row.line_count} lines</span></div>
-          <strong>{money(row.closing_balance)}</strong>
-          <Pill tone={tone(row.document_status)}>{title(row.document_status)}</Pill>
-          {row.storage_path ? <button type="button" onClick={() => onOpen(row)}>Open PDF</button> : null}
-          {row.error_message ? <small>{row.error_message}</small> : null}
-        </article>
-      ))}
-      {!documents.length ? <p className="accounts-empty">No formal statement has been generated for this customer.</p> : null}
-    </div>
-  );
+  return <div className="accounts-document-list">{documents.slice(0, 12).map((row) => <article key={row.id}><div><strong>{row.statement_number}</strong><span>{dateText(row.period_start)} – {dateText(row.period_end)} · {row.line_count} lines</span></div><strong>{money(row.closing_balance)}</strong><Pill tone={tone(row.document_status)}>{title(row.document_status)}</Pill>{row.storage_path ? <button type="button" onClick={() => onOpen(row)}>Open PDF</button> : null}{row.error_message ? <small>{row.error_message}</small> : null}</article>)}{!documents.length ? <p className="accounts-empty">No formal statement has been generated for this customer.</p> : null}</div>;
 }
 
-function CustomerDetail({ customer, lines, documents, busy, onAction, onReload }: {
+function CustomerDetail({ customer, lines, documents, busy, loading, loadError, onAction, onReload }: {
   customer?: AccountsStatementCustomerRow;
   lines: AccountsStatementLineRow[];
   documents: StatementDocumentRow[];
   busy: string;
+  loading: boolean;
+  loadError: string;
   onAction: (action: AccountsStatementAction, note?: string, value?: string) => void;
   onReload: () => Promise<void>;
 }) {
@@ -141,29 +155,26 @@ function CustomerDetail({ customer, lines, documents, busy, onAction, onReload }
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setNote('');
-    setEmail(customer?.billing_email || '');
-    setContact(customer?.billing_contact_name || '');
-    setEmailEnabled(customer?.billing_enabled !== false);
-    setMessage(''); setError('');
+    setNote(''); setEmail(customer?.billing_email || ''); setContact(customer?.billing_contact_name || '');
+    setEmailEnabled(customer?.billing_enabled !== false); setMessage(''); setError('');
   }, [customer?.store_id]);
 
   if (!customer?.store_id) return <section className="accounts-detail accounts-empty">Select a customer to review mirrored invoice detail.</section>;
+  const activeCustomer = customer;
 
   async function saveContact() {
     setLocalBusy('contact'); setError('');
     try {
-      await saveBillingContact({ storeId: customer!.store_id!, storeName: customer!.store_name || customer!.store_id!, email, contactName: contact, enabled: emailEnabled });
+      await saveBillingContact({ storeId: activeCustomer.store_id!, storeName: activeCustomer.store_name || activeCustomer.store_id!, email, contactName: contact, enabled: emailEnabled });
       setMessage('Statement delivery preference saved in EcoFlow. This does not change the Ordermentum customer master.');
       await onReload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setLocalBusy(''); }
   }
-
   async function generate(send: boolean) {
     setLocalBusy(send ? 'send' : 'generate'); setError(''); setMessage('');
     try {
-      const created = await createStatementDocument({ storeId: customer!.store_id!, periodStart, periodEnd });
+      const created = await createStatementDocument({ storeId: activeCustomer.store_id!, periodStart, periodEnd });
       const statement = created[0];
       if (!statement?.id) throw new Error('Statement snapshot was not created.');
       const result = await dispatchStatement({ statementId: statement.id, send });
@@ -172,17 +183,18 @@ function CustomerDetail({ customer, lines, documents, busy, onAction, onReload }
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setLocalBusy(''); }
   }
-
   async function openPdf(row: StatementDocumentRow) {
     if (!row.storage_path) return;
     try { window.open(await statementSignedUrl(row.storage_path), '_blank', 'noopener,noreferrer'); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
 
+  const outstanding = lines.filter((line) => num(line.outstanding_amount) > 0);
   return (
     <section className="accounts-detail">
       <section className="accounts-detail-hero"><div><span>ORDERMENTUM FINANCE MIRROR</span><h3>{customer.store_name}</h3><p>{customer.address || 'Address pending'} · invoice and payment facts are read-only</p></div><Pill tone={tone(customer.accounts_priority)}>{title(customer.accounts_priority)}</Pill></section>
       {error ? <div className="accounts-error">{error}</div> : null}{message ? <div className="accounts-notice">{message}</div> : null}
+      {loadError ? <div className="accounts-error accounts-detail-source-error">{loadError}</div> : null}
       <div className="accounts-notice">Invoice total, payment status, amount due and due date come from Ordermentum. Correct or record a payment there, then refresh this mirror.</div>
       <section className="accounts-detail-metrics"><div><strong>{money(customer.open_statement_value)}</strong><span>mirrored amount due</span></div><div><strong>{money(customer.overdue_statement_value)}</strong><span>overdue</span></div><div><strong>{units(customer.open_invoice_count)}</strong><span>open invoices</span></div><div><strong>{units(customer.worst_overdue_days)}</strong><span>worst days</span></div></section>
       <section className="accounts-commercial-grid">
@@ -190,7 +202,7 @@ function CustomerDetail({ customer, lines, documents, busy, onAction, onReload }
         <div className="accounts-form-card"><h4>Formal statement</h4><label>Period start<input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)}/></label><label>Period end<input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)}/></label><div><button type="button" disabled={Boolean(localBusy)} onClick={() => void generate(false)}>Generate PDF</button><button type="button" disabled={Boolean(localBusy) || !emailEnabled || !email} onClick={() => void generate(true)}>Generate &amp; send</button></div></div>
       </section>
       <section className="accounts-action-card"><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="EcoFlow collection note, promise, dispute or operational hold reason…"/><div><button type="button" disabled={busy === 'MARK_REVIEWED'} onClick={() => onAction('MARK_REVIEWED', note || 'Statement reviewed')}>Mark reviewed</button><button type="button" disabled={busy === 'PROMISE_TO_PAY'} onClick={() => onAction('PROMISE_TO_PAY', note || 'Promise to pay recorded')}>Promise to pay</button><button type="button" disabled={busy === 'DISPUTE_RAISED'} onClick={() => onAction('DISPUTE_RAISED', note || 'Dispute raised')}>Dispute</button><button type="button" disabled={busy === 'HOLD_ACCOUNT'} onClick={() => onAction('HOLD_ACCOUNT', note || 'Operational release hold recorded')}>Hold release</button><button type="button" disabled={busy === 'CLEAR_HOLD'} onClick={() => onAction('CLEAR_HOLD', note || 'Operational release hold cleared')}>Clear hold</button></div></section>
-      <section className="accounts-invoice-list">{lines.filter((line) => num(line.outstanding_amount) > 0).slice(0, 24).map((line) => <InvoiceRow key={`${line.internal_order_id}-${line.invoice_number}`} row={line}/>)}{!lines.some((line) => num(line.outstanding_amount) > 0) ? <div className="accounts-empty">No outstanding mirrored invoices.</div> : null}</section>
+      <section className="accounts-invoice-list">{loading ? <div className="accounts-detail-loading">Loading this customer’s mirrored invoices…</div> : outstanding.slice(0, 24).map((line) => <InvoiceRow key={`${line.internal_order_id}-${line.invoice_number}`} row={line}/>)}{!loading && !loadError && !outstanding.length ? <div className="accounts-empty">No outstanding mirrored invoices.</div> : null}</section>
       <section className="accounts-history-grid"><div><h4>Statement history</h4><StatementHistory documents={documents} onOpen={openPdf}/></div></section>
     </section>
   );
@@ -207,22 +219,45 @@ function AccountsContent() {
   const [sort, setSort] = useState<CustomerSort>('priority');
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const [detailError, setDetailError] = useState('');
   const [notice, setNotice] = useState('');
   const [latest, setLatest] = useState('');
 
-  async function reload() {
-    setError('');
+  const reloadSummary = useCallback(async () => {
+    setSummaryLoading(true); setSummaryError('');
     try {
-      const [nextKpis, nextCustomers, nextLines, nextFollowups, nextDocuments] = await Promise.all([
-        loadAccountsArKpis(), loadAccountsStatementCustomers(), loadAccountsStatementLines(), loadAccountsFollowupQueue(), loadStatementDocuments(),
-      ]);
-      setKpis(nextKpis); setCustomers(nextCustomers); setLines(nextLines); setFollowups(nextFollowups); setDocuments(nextDocuments);
-      setSelectedStoreId((current) => current || nextCustomers[0]?.store_id || '');
+      const nextCustomers = await loadAccountsStatementCustomers();
+      setCustomers(nextCustomers);
+      setKpis(deriveKpis(nextCustomers));
+      setFollowups(deriveFollowups(nextCustomers));
+      setSelectedStoreId((current) => nextCustomers.some((row) => row.store_id === current) ? current : nextCustomers[0]?.store_id || '');
       setLatest(new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-  }
-  useEffect(() => { void reload(); }, []);
+    } catch (reason) {
+      setSummaryError(friendlyError('Customer finance summary', reason));
+    } finally { setSummaryLoading(false); }
+  }, []);
+
+  const reloadDetail = useCallback(async (storeId: string) => {
+    if (!storeId) { setLines([]); setDocuments([]); setDetailError(''); return; }
+    setDetailLoading(true); setDetailError(''); setLines([]); setDocuments([]);
+    const [lineResult, documentResult] = await Promise.allSettled([
+      loadAccountsStatementLines(storeId),
+      loadStatementDocuments(storeId),
+    ]);
+    const errors: string[] = [];
+    if (lineResult.status === 'fulfilled') setLines(lineResult.value);
+    else errors.push(friendlyError('Invoice detail', lineResult.reason));
+    if (documentResult.status === 'fulfilled') setDocuments(documentResult.value);
+    else errors.push(friendlyError('Statement history', documentResult.reason));
+    setDetailError(errors.join(' '));
+    setDetailLoading(false);
+  }, []);
+
+  useEffect(() => { void reloadSummary(); }, [reloadSummary]);
+  useEffect(() => { void reloadDetail(selectedStoreId); }, [reloadDetail, selectedStoreId]);
 
   const visibleCustomers = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -236,35 +271,36 @@ function AccountsContent() {
   }, [customers, filter, query, sort]);
 
   const selectedCustomer = customers.find((customer) => customer.store_id === selectedStoreId) || visibleCustomers[0];
-  const selectedLines = lines.filter((line) => line.store_id === selectedCustomer?.store_id);
-  const selectedDocs = documents.filter((document) => document.store_id === selectedCustomer?.store_id);
 
+  async function reloadAll() {
+    await reloadSummary();
+    if (selectedStoreId) await reloadDetail(selectedStoreId);
+  }
   async function runAction(action: AccountsStatementAction, note?: string, value?: string) {
     if (!selectedCustomer?.store_id) return;
-    setBusy(action); setError('');
+    setBusy(action); setSummaryError('');
     try {
       const result = await recordAccountsStatementAction({ storeId: selectedCustomer.store_id, action, note, value });
       setNotice(`${selectedCustomer.store_name}: ${title(result[0]?.action_status || 'RECORDED')}.`);
-      await reload();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+      await reloadAll();
+    } catch (reason) { setSummaryError(friendlyError('Accounts action', reason)); }
     finally { setBusy(''); }
   }
-
   async function exportCsv() {
     try {
       const rows = await loadAccountsStatementExportRows();
       downloadCsv(`ecoflow-ordermentum-finance-mirror-${new Date().toISOString().slice(0, 10)}.csv`, rows);
       setNotice(`${rows.length} mirrored invoice rows exported.`);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    } catch (reason) { setSummaryError(friendlyError('CSV export', reason)); }
   }
 
   return (
     <section className="accounts-shell">
-      <section className="accounts-hero"><div><span>ACCOUNTS · VERIFIED ORDERMENTUM MIRROR</span><h2>Invoice truth from Ordermentum. Workflow and statements in EcoFlow.</h2><p>EcoFlow does not edit invoices, mark payments or allocate substitute receipts. It mirrors amount due and supports collection notes, release holds and immutable statement documents.</p></div><div className="accounts-actions"><button type="button" onClick={() => void reload()}>Refresh mirror</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>
-      {error ? <div className="accounts-error">{error}</div> : null}{notice ? <div className="accounts-notice">{notice}</div> : null}
+      <section className="accounts-hero"><div><span>ACCOUNTS · VERIFIED ORDERMENTUM MIRROR</span><h2>Invoice truth from Ordermentum. Workflow and statements in EcoFlow.</h2><p>EcoFlow does not edit invoices, mark payments or allocate substitute receipts. It mirrors amount due and supports collection notes, release holds and immutable statement documents.</p></div><div className="accounts-actions"><button type="button" disabled={summaryLoading} onClick={() => void reloadAll()}>{summaryLoading ? 'Refreshing…' : 'Refresh mirror'}</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>
+      {summaryError ? <div className="accounts-error">{summaryError}</div> : null}{notice ? <div className="accounts-notice">{notice}</div> : null}
       <section className="accounts-metrics"><Metric label="Open AR" value={money(kpis?.open_ar_value)} helper={`${units(kpis?.open_invoices)} mirrored open invoices`} tone="blue"/><Metric label="Overdue AR" value={money(kpis?.overdue_ar_value)} helper={`${units(kpis?.overdue_customers)} overdue customers`} tone={num(kpis?.overdue_ar_value) ? 'warn' : 'good'}/><Metric label="Urgent customers" value={units(kpis?.urgent_customers)} helper={`worst ${units(kpis?.worst_overdue_days)} days`} tone={num(kpis?.urgent_customers) ? 'danger' : 'good'}/><Metric label="30d invoiced" value={money(kpis?.statement_value_30d)} helper={`latest ${dateText(kpis?.latest_invoice_at)}`} tone="good"/></section>
       <section className="accounts-controlbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer, statement contact, phone or SKU"/><select value={filter} onChange={(event) => setFilter(event.target.value as PriorityFilter)}><option value="ALL">All priorities</option><option value="URGENT_COLLECTION">Urgent collection</option><option value="COLLECTION">Collection</option><option value="SEND_STATEMENT">Send statement</option><option value="ON_HOLD">On hold</option><option value="CLEAR">Clear</option></select><select value={sort} onChange={(event) => setSort(event.target.value as CustomerSort)}><option value="priority">Sort by priority</option><option value="open">Sort by open value</option><option value="overdue">Sort by overdue</option><option value="recent">Most recent invoice</option><option value="name">Customer name</option></select></section>
-      <section className="accounts-grid"><section className="accounts-panel"><header><div><h3>Customer statement queue</h3><p>Balances reflect the latest mirrored Ordermentum amount due.</p></div><Pill tone="blue">{visibleCustomers.length}</Pill></header><div className="accounts-customer-list">{visibleCustomers.slice(0, 50).map((customer) => <CustomerRow key={customer.store_id || customer.store_name || 'unknown'} row={customer} selected={customer.store_id === selectedCustomer?.store_id} onSelect={() => setSelectedStoreId(customer.store_id || '')}/>)}{!visibleCustomers.length ? <div className="accounts-empty">No customers match this filter.</div> : null}</div></section><CustomerDetail customer={selectedCustomer} lines={selectedLines} documents={selectedDocs} busy={busy} onAction={runAction} onReload={reload}/></section>
+      <section className="accounts-grid"><section className="accounts-panel"><header><div><h3>Customer statement queue</h3><p>Balances reflect the latest mirrored Ordermentum amount due.</p></div><Pill tone="blue">{visibleCustomers.length}</Pill></header><div className="accounts-customer-list">{summaryLoading && !customers.length ? <div className="accounts-detail-loading">Loading customer finance summary…</div> : visibleCustomers.slice(0, 50).map((customer) => <CustomerRow key={customer.store_id || customer.store_name || 'unknown'} row={customer} selected={customer.store_id === selectedCustomer?.store_id} onSelect={() => setSelectedStoreId(customer.store_id || '')}/>)}{!summaryLoading && !visibleCustomers.length ? <div className="accounts-empty">No customers match this filter.</div> : null}</div></section><CustomerDetail customer={selectedCustomer} lines={lines} documents={documents} busy={busy} loading={detailLoading} loadError={detailError} onAction={runAction} onReload={reloadAll}/></section>
       <section className="accounts-panel"><header><div><h3>Follow-up queue</h3><p>EcoFlow collection and statement actions based on mirrored finance facts.</p></div><Pill tone={followups.length ? 'warn' : 'good'}>{followups.length}</Pill></header><div className="accounts-followup-list">{followups.slice(0, 20).map((row) => <FollowupRow key={row.store_id || row.store_name || 'unknown'} row={row}/>)}{!followups.length ? <div className="accounts-empty">No accounts follow-up is required.</div> : null}</div></section>
     </section>
   );

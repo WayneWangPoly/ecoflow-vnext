@@ -22,6 +22,10 @@ has('src/data/repositories/priceMatrix.ts', 'ORDERMENTUM_SOURCE_OWNED', 'Price w
 has('src/data/repositories/storeIntelligence.ts', 'ORDERMENTUM_SOURCE_OWNED', 'Store commercial writes must be rejected.');
 has('src/AccountsStatementWorkbench.tsx', 'VERIFIED ORDERMENTUM MIRROR', 'Accounts finance source missing.');
 lacks('src/AccountsStatementWorkbench.tsx', '<h4>Record payment</h4>', 'Local payment entry returned.');
+has('src/AccountsStatementWorkbench.tsx', 'Promise.allSettled', 'Accounts detail sources must fail independently.');
+lacks('src/AccountsStatementWorkbench.tsx', 'loadAccountsStatementLines(),', 'Accounts must not load every invoice line during initial page startup.');
+has('src/data/repositories/accountsStatement.ts', ".eq('store_id', cleanStoreId)", 'Invoice detail must be filtered to the selected customer before transfer.');
+has('src/accountsStatementResilience.css', '.accounts-hero > .source-boundary-inline', 'Duplicate Accounts hero source notice must be suppressed.');
 has('src/data/repositories/accountsStatement.ts', 'ORDERMENTUM_SOURCE_OWNED', 'Local payment writes must be rejected.');
 has('supabase/migrations/20260714023400_accounts_operational_holds_and_source_statements.sql', 'ecoflow_account_release_holds', 'Operational account holds missing.');
 has('src/app/App.tsx', "order.releaseGateStatus === 'READY_TO_RELEASE'", 'Strict release gate missing.');
@@ -38,4 +42,4 @@ has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'active sou
 has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'retained source-missing', 'Settings must show retained source-missing history.');
 has('src/DeliveryRunHistory.tsx', 'Run history and replay', 'Delivery history missing.');
 has('src/data/repositories/runHistory.ts', 'v_ecoflow_delivery_run_catalog', 'Run catalog missing.');
-console.log('Commercial source ownership, native Today dashboard, strict release, statements, resumable mirror and run-history audit passed.');
+console.log('Commercial source ownership, native Today dashboard, resilient Accounts loading, strict release, statements, resumable mirror and run-history audit passed.');
