@@ -28,6 +28,12 @@ function latestOrderRun(runs: OrderSyncRunRow[]) { return runs.find((run) => run
 function isActiveJob(job: OperationalSyncJobRow) { return job.status === 'QUEUED' || job.status === 'RUNNING'; }
 function jobTone(status: OperationalSyncJobRow['status']) { if (status === 'SUCCEEDED') return 'good'; if (status === 'QUEUED' || status === 'RUNNING' || status === 'PARTIAL') return 'warn'; return 'danger'; }
 function mirrorTone(status?: string | null) { if (status === 'COMPLETE') return 'good'; if (['LOADING','RUNNING','PAUSED','READY_TO_FINALISE','DEGRADED'].includes(String(status))) return 'warn'; return 'danger'; }
+function mirrorBlockerSummary(row: OrdermentumMirrorHealthRow | null) {
+  return (row?.blockers ?? [])
+    .filter((blocker) => numberValue(blocker.count) > 0)
+    .map((blocker) => `${blocker.label || 'verification control'}: ${numberValue(blocker.count)}`)
+    .join(' · ');
+}
 
 const syncButtons: Array<{ mode: OrdermentumSyncMode; label: string; detail: string }> = [
   { mode: 'orders_invoices', label: 'Sync orders + invoices now', detail: 'Fast delta from the saved high-watermark. Fetches changed orders and embedded invoice facts.' },
@@ -94,6 +100,12 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
   const sourceMissing = metric(mirrorHealth?.source_missing_records); const activeSourceMissing = metric(mirrorHealth?.active_source_missing_orders);
   const detailPending = metric(mirrorHealth?.detail_pending); const detailFailed = metric(mirrorHealth?.detail_failed);
   const loading = mirrorLoading || operationalLoading;
+  const blockerSummary = mirrorBlockerSummary(mirrorHealth);
+  const degradedExplanation = historyStatus !== 'COMPLETE'
+    ? 'The durable history backlog is incomplete; completed pages and details remain saved for the next checkpoint.'
+    : blockerSummary
+      ? `Verification blocker · ${blockerSummary}.`
+      : 'History is complete, but a current verification control still requires investigation.';
 
   async function trigger(mode: OrdermentumSyncMode) {
     setTriggeringMode(mode); setMessage(''); setError('');
@@ -113,7 +125,7 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
       {!operationalLoading && orderSourceError ? <div className="sync-error-banner desktop-error-banner">ORDER FEED STATUS UNAVAILABLE · {orderSourceError}</div> : null}
       {orderFeedStale ? <div className="sync-error-banner desktop-error-banner">ORDER FEED STALE · Last order delta: {formatTime(latestOrderAt)}. Run “Recover recent order feed”.</div> : null}
       {historyStatus === 'FAILED' ? <div className="sync-error-banner desktop-error-banner">HISTORY PIPELINE FAILED · {mirrorHealth?.history_last_error || `${detailFailed} detail record(s) require investigation.`} Completed pages and successful detail remain retained.</div> : null}
-      {mirrorHealth && mirrorStatus !== 'COMPLETE' ? <div className="sync-error-banner desktop-error-banner">COMPLETE MIRROR {mirrorStatus} · Expected while the durable history backlog is incomplete; commercial projection and active-source controls remain hard blockers.</div> : null}
+      {mirrorHealth && mirrorStatus !== 'COMPLETE' ? <div className="sync-error-banner desktop-error-banner">COMPLETE MIRROR {mirrorStatus} · {degradedExplanation}</div> : null}
 
       <div className="readiness-grid">
         <div><strong><span className={`pill pill-${mirrorTone(mirrorStatus)}`}>{mirrorStatus}</span></strong><span>complete mirror</span></div>
