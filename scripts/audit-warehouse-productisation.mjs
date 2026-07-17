@@ -10,6 +10,8 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 const receiving = read('src/WarehouseReceivingFlow.tsx');
 const stagedReceiving = read('src/data/repositories/stagedReceiving.ts');
 const barcodeSetup = read('src/WarehouseBarcodeSprint.tsx');
+const firstStocktake = read('src/FirstStocktakeFlow.tsx');
+const warehouseMount = read('src/WarehouseBarcodeSprintMount.tsx');
 const main = read('src/main.tsx');
 const authTypes = read('src/features/auth/authTypes.ts');
 const ownerBundle = read('src/enhancers/OwnerEnhancers.tsx');
@@ -64,6 +66,19 @@ has(warehouseMigration, 'WAREHOUSE_RECEIVING_LINE', 'Ledger and location balance
 lacks(barcodeSetup, 'Save + receive stock', 'Barcode setup must never become a stock receiving path.');
 lacks(inventory, '<option value="RECEIVE">', 'Inventory ledger must not expose uncontrolled Receive.');
 
+// Guided first stocktake: one operator flow, existing controlled posting boundary.
+has(warehouseMount, 'FirstStocktakeFlow', 'Warehouse preparation must expose one guided first-stocktake entry.');
+has(warehouseMount, "return 'stocktake'", 'First stocktake must be the default warehouse preparation mode.');
+has(firstStocktake, 'Step 1: enter or scan a warehouse location.', 'First stocktake must be location-first.');
+has(firstStocktake, 'recordBarcodeScan', 'First stocktake must save the package barcode mapping.');
+has(firstStocktake, "actionMode: 'MAP_AND_COUNT'", 'First stocktake mapping must record the observed count without directly posting stock.');
+has(firstStocktake, 'stageReceivingScan', 'First stocktake must stage the observed packages through the controlled receiving batch.');
+has(firstStocktake, 'setReceivingLineTick', 'Every first-stocktake line must require an explicit verification tick.');
+has(firstStocktake, 'finishStagedReceivingBatch', 'Opening stock must post through the existing controlled batch completion transaction.');
+has(firstStocktake, 'crypto.randomUUID()', 'First-stocktake retries must use idempotency keys.');
+lacks(firstStocktake, 'recordInventoryMovement', 'First stocktake must not write the stock ledger directly.');
+lacks(firstStocktake, 'receiveByBarcode', 'First stocktake must not use the legacy direct receive RPC.');
+
 // Authentication, roles and bundle isolation.
 has(main, 'ProductionConfigurationError', 'Missing production auth configuration must lock the application.');
 has(main, 'SurfaceModuleGate', 'Role-specific modules must be lazy loaded by operational surface.');
@@ -75,6 +90,7 @@ has(mapModules, 'WarehouseMapOwnerEdit', 'Map route must mount owner layout edit
 has(mapModules, 'WarehouseMapPutawayControl', 'Map route must mount controlled putaway guidance.');
 lacks(mapModules, 'WarehouseCameraScanner', 'Map route must not download warehouse scanner observers.');
 has(warehouseBundle, 'WarehouseCameraScanner', 'Warehouse operations must retain the camera scanner.');
+has(warehouseBundle, 'firstStocktakeFlow.css', 'Warehouse operations must load the guided field UI.');
 has(ownerBundle, 'OwnerDriverTrackingMap', 'Owner bundle must include driver tracking.');
 lacks(accountBundle, 'OwnerDriverTrackingMap', 'Accounts must not download owner tracking.');
 lacks(driverBundle, 'DriverPodQualityEnhancer', 'Legacy overlay POD must be removed after native consolidation.');
@@ -157,4 +173,4 @@ has(integrationPanel, 'Sync orders + invoices now', 'Owner must have a clear del
 has(integrationPanel, 'Sync stores', 'Owner must have an isolated store sync action.');
 has(integrationPanel, 'Sync SKU', 'Owner must have an isolated SKU sync action.');
 
-console.log('EcoFlow production workflow semantic audit passed.');
+console.log('EcoFlow production workflow and guided first-stocktake semantic audit passed.');
