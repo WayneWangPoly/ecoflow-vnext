@@ -97,7 +97,14 @@ jobs:
           set -o pipefail
           echo "Scope: $MIRROR_SCOPE"
           echo "Reason: $MIRROR_REASON"
-          node scripts/ordermentum-complete-mirror.mjs --scope="$MIRROR_SCOPE" --time-budget-minutes=45 --max-pages-per-slice=80 --max-details-per-slice=400 2>&1 | tee /tmp/ordermentum-complete-mirror.log
+          echo "Degraded notification policy: fail only for a new or changed blocker set"
+          node scripts/ordermentum-complete-mirror.mjs \
+            --scope="$MIRROR_SCOPE" \
+            --time-budget-minutes=45 \
+            --max-pages-per-slice=80 \
+            --max-details-per-slice=400 \
+            --degraded-exit-mode=transition \
+            2>&1 | tee /tmp/ordermentum-complete-mirror.log
 
       - name: Publish mirror summary
         if: always()
@@ -109,9 +116,10 @@ jobs:
             echo "- Scope: $MIRROR_SCOPE"
             echo "- Reason: $MIRROR_REASON"
             echo "- Workflow run: $GITHUB_RUN_ID"
+            echo "- DEGRADED alerts: only new or changed blocker sets fail the workflow"
             echo ""
             echo '```text'
-            tail -n 140 /tmp/ordermentum-complete-mirror.log 2>/dev/null || true
+            tail -n 160 /tmp/ordermentum-complete-mirror.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
