@@ -45,6 +45,7 @@ for (const source of [
 }
 assert.ok(timeoutSafeRepository.includes('offset'), 'Current operational paging must advance by offset.');
 assert.ok(timeoutSafeRepository.includes('snapshot was rejected rather than truncated'), 'A safety ceiling must fail closed instead of silently truncating the snapshot.');
+assert.ok(timeoutSafeRepository.includes('fetched: currentLoaded'), 'Sync batch fetched count must use the current loaded slice, not retained raw history.');
 assert.ok(dashboard.includes('loadOrderOperationsSummary'), 'Dashboard current-order total must come from the exact server summary.');
 assert.ok(dashboard.includes('exact server classification'), 'Dashboard must disclose exact current-order count semantics.');
 
