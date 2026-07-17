@@ -9,7 +9,7 @@ on:
       - 'agent/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   semantic:
@@ -38,45 +38,9 @@ jobs:
       - name: Audit bounded Ordermentum catalog upsert
         run: node scripts/audit-ordermentum-catalog-upsert.mjs
       - name: TypeScript check
-        shell: bash
-        run: |
-          set -o pipefail
-          node ./node_modules/typescript/bin/tsc -b --pretty false 2>&1 | tee typescript-check.log
-      - name: Upload TypeScript check log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: typescript-check
-          path: typescript-check.log
-          if-no-files-found: warn
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
       - name: Vite production bundle
         run: node ./node_modules/vite/bin/vite.js build
-      - name: Persist validated Accounts source
-        if: success() && github.event_name == 'pull_request' && github.head_ref == 'fix/accounts-timeout-and-layout'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! git diff --quiet -- src/AccountsStatementWorkbench.tsx; then
-            current_sha="$(curl -fsSL \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/src/AccountsStatementWorkbench.tsx?ref=${GITHUB_HEAD_REF}" | jq -r .sha)"
-            encoded="$(base64 -w0 src/AccountsStatementWorkbench.tsx)"
-            payload="$(jq -n \
-              --arg message "Fix Accounts selected-customer narrowing" \
-              --arg content "${encoded}" \
-              --arg sha "${current_sha}" \
-              --arg branch "${GITHUB_HEAD_REF}" \
-              '{message:$message,content:$content,sha:$sha,branch:$branch}')"
-            curl -fsSL -X PUT \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/src/AccountsStatementWorkbench.tsx" \
-              -d "${payload}"
-          fi
 
   database:
     runs-on: ubuntu-latest
