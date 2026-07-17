@@ -27,19 +27,49 @@ export type OrdermentumMirrorHealthRow = {
 function isMissingRelation(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const record = error as Record<string, unknown>;
-  const text = [record.message, record.details, record.hint, record.code].filter(Boolean).join(' ').toLowerCase();
-  return text.includes('does not exist') || text.includes('schema cache') || text.includes('pgrst205') || text.includes('42p01');
+  const value = [record.message, record.details, record.hint, record.code].filter(Boolean).join(' ').toLowerCase();
+  return value.includes('does not exist') || value.includes('schema cache') || value.includes('pgrst205') || value.includes('42p01');
 }
 
-async function loadMirrorHealth(supabase: SupabaseClient) {
-  const snapshot = await supabase.from('ecoflow_ordermentum_mirror_status_snapshot').select('*').eq('snapshot_key', 'ORDERMENTUM_COMPLETE_MIRROR').maybeSingle();
-  if (!snapshot.error) return snapshot;
-  if (!isMissingRelation(snapshot.error)) return snapshot;
-  for (const view of ['v_ecoflow_ordermentum_mirror_health_v3', 'v_ecoflow_ordermentum_mirror_health_v2', 'v_ecoflow_ordermentum_mirror_health_v1']) {
-    const result = await supabase.from(view).select('*').maybeSingle();
-    if (!result.error || !isMissingRelation(result.error)) return result;
+function errorMessage(error: unknown) {
+  if (!error) return null;
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const value = [record.message, record.details, record.hint, record.code].filter(Boolean).join(' · ');
+    if (value) return value;
   }
-  return { data: null, error: null };
+  return String(error);
+}
+
+function withTimeout<T>(task: PromiseLike<T>, label: string, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)} seconds.`)), timeoutMs);
+    Promise.resolve(task).then(resolve, reject).finally(() => window.clearTimeout(timer));
+  });
+}
+
+export async function loadOrdermentumMirrorHealth(supabase: SupabaseClient) {
+  const snapshot = await withTimeout(
+    supabase.from('ecoflow_ordermentum_mirror_status_snapshot').select('*').eq('snapshot_key', 'ORDERMENTUM_COMPLETE_MIRROR').maybeSingle(),
+    'Verified mirror status',
+    8000,
+  );
+  if (!snapshot.error) {
+    const mirrorHealth = (snapshot.data ?? null) as OrdermentumMirrorHealthRow | null;
+    return {
+      mirrorHealth,
+      mirrorError: mirrorHealth ? null : 'No verified mirror status snapshot has been published yet.',
+    };
+  }
+  if (!isMissingRelation(snapshot.error)) return { mirrorHealth: null, mirrorError: errorMessage(snapshot.error) };
+
+  for (const view of ['v_ecoflow_ordermentum_mirror_health_v3', 'v_ecoflow_ordermentum_mirror_health_v2', 'v_ecoflow_ordermentum_mirror_health_v1']) {
+    const result = await withTimeout(supabase.from(view).select('*').maybeSingle(), `${view} fallback`, 8000);
+    if (!result.error) return { mirrorHealth: (result.data ?? null) as OrdermentumMirrorHealthRow | null, mirrorError: null };
+    if (!isMissingRelation(result.error)) return { mirrorHealth: null, mirrorError: errorMessage(result.error) };
+  }
+  return { mirrorHealth: null, mirrorError: 'Ordermentum mirror status sources are unavailable.' };
 }
 
 export async function triggerOrdermentumSync(supabase: SupabaseClient, input: { mode: OrdermentumSyncMode; reason?: string }): Promise<TriggerOrdermentumSyncResult> {
@@ -49,20 +79,25 @@ export async function triggerOrdermentumSync(supabase: SupabaseClient, input: { 
   return data as TriggerOrdermentumSyncResult;
 }
 
-export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
-  const [masterHealth, recentRuns, operationalJobs, mirrorHealth] = await Promise.allSettled([
-    supabase.from('v_ecoflow_ordermentum_master_data_sync_health').select('*').order('resource_type', { ascending: true }),
-    supabase.from('ordermentum_sync_runs_v2').select('run_type,status,orders_seen,orders_upserted,orders_changed,last_error,started_at,finished_at').order('started_at', { ascending: false }).limit(5),
-    supabase.from('v_ecoflow_operational_sync_jobs').select('*').order('requested_at', { ascending: false }).limit(20),
-    loadMirrorHealth(supabase),
+export async function loadOrdermentumOperationalSyncSnapshot(supabase: SupabaseClient) {
+  const [masterHealth, recentRuns, operationalJobs] = await Promise.allSettled([
+    withTimeout(supabase.from('v_ecoflow_ordermentum_master_data_sync_health').select('*').order('resource_type', { ascending: true }), 'Master-data status', 12000),
+    withTimeout(supabase.from('ordermentum_sync_runs_v2').select('run_type,status,orders_seen,orders_upserted,orders_changed,last_error,started_at,finished_at').order('started_at', { ascending: false }).limit(5), 'Order-feed status', 12000),
+    withTimeout(supabase.from('v_ecoflow_operational_sync_jobs').select('*').order('requested_at', { ascending: false }).limit(20), 'Operational job status', 12000),
   ]);
   const masterData = masterHealth.status === 'fulfilled' && !masterHealth.value.error ? ((masterHealth.value.data ?? []) as MasterSyncHealthRow[]) : [];
-  const masterError = masterHealth.status === 'fulfilled' ? masterHealth.value.error?.message ?? null : masterHealth.reason instanceof Error ? masterHealth.reason.message : String(masterHealth.reason);
+  const masterError = masterHealth.status === 'fulfilled' ? errorMessage(masterHealth.value.error) : errorMessage(masterHealth.reason);
   const orderRuns = recentRuns.status === 'fulfilled' && !recentRuns.value.error ? ((recentRuns.value.data ?? []) as OrderSyncRunRow[]) : [];
-  const orderError = recentRuns.status === 'fulfilled' ? recentRuns.value.error?.message ?? null : recentRuns.reason instanceof Error ? recentRuns.reason.message : String(recentRuns.reason);
+  const orderError = recentRuns.status === 'fulfilled' ? errorMessage(recentRuns.value.error) : errorMessage(recentRuns.reason);
   const jobs = operationalJobs.status === 'fulfilled' && !operationalJobs.value.error ? ((operationalJobs.value.data ?? []) as OperationalSyncJobRow[]) : [];
-  const jobError = operationalJobs.status === 'fulfilled' ? operationalJobs.value.error?.message ?? null : operationalJobs.reason instanceof Error ? operationalJobs.reason.message : String(operationalJobs.reason);
-  const mirror = mirrorHealth.status === 'fulfilled' && !mirrorHealth.value.error ? ((mirrorHealth.value.data ?? null) as OrdermentumMirrorHealthRow | null) : null;
-  const mirrorError = mirrorHealth.status === 'fulfilled' ? mirrorHealth.value.error?.message ?? null : mirrorHealth.reason instanceof Error ? mirrorHealth.reason.message : String(mirrorHealth.reason);
-  return { masterHealth: masterData, orderRuns, operationalJobs: jobs, mirrorHealth: mirror, masterError, orderError, jobError, mirrorError };
+  const jobError = operationalJobs.status === 'fulfilled' ? errorMessage(operationalJobs.value.error) : errorMessage(operationalJobs.reason);
+  return { masterHealth: masterData, orderRuns, operationalJobs: jobs, masterError, orderError, jobError };
+}
+
+export async function loadOrdermentumSyncSnapshot(supabase: SupabaseClient) {
+  const [operational, mirror] = await Promise.all([
+    loadOrdermentumOperationalSyncSnapshot(supabase),
+    loadOrdermentumMirrorHealth(supabase),
+  ]);
+  return { ...operational, ...mirror };
 }
