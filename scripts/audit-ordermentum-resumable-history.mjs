@@ -35,7 +35,7 @@ assert.ok(master.includes('detailSkippedUnchanged') && master.includes('detail-c
 assert.ok(finalise.includes('ecoflow_ordermentum_order_catalog'), 'Full source presence must use the durable catalog.');
 assert.ok(finalise.includes('refresh_ui_active_order_keys_deferred'), 'UI cache refresh must be non-blocking.');
 assert.ok(!/v_ecoflow_ordermentum_mirror_health_v\d/i.test(verify), 'Final verification must not execute the heavy mirror-health view stack.');
-assert.ok(verify.includes('LIGHTWEIGHT_DIRECT_V1') && verify.includes("'ordermentum_raw_orders'") && verify.includes("'om_orders'") && verify.includes("'om_invoices'"), 'Final completion must use direct lightweight source/projection checks.');
+assert.ok(verify.includes('LIGHTWEIGHT_DIRECT_V2') && verify.includes("'ordermentum_raw_orders'") && verify.includes("'om_orders'") && verify.includes("'om_invoices'"), 'Final completion must use direct lightweight source/projection checks with distinct source-backed count semantics.');
 assert.ok(verify.includes("from('ecoflow_ordermentum_mirror_status_snapshot').upsert"), 'Final verification must persist the lightweight status snapshot.');
 assert.ok(settingsLoader.indexOf("from('ecoflow_ordermentum_mirror_status_snapshot')") < settingsLoader.indexOf("'v_ecoflow_ordermentum_mirror_health_v3'"), 'Settings must read the snapshot before legacy heavy health views.');
 for (const script of ['scripts/ordermentum-complete-mirror.mjs', 'scripts/verify-ordermentum-complete-mirror.mjs']) {
