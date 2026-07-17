@@ -87,7 +87,7 @@ lacks(firstStocktake, 'receiveByBarcode', 'First stocktake must not use the lega
 lacks(mapInteraction, 'incrementWarehouseSkuSlot', 'Warehouse Map must not expose + SKU position capacity changes.');
 lacks(mapInteraction, 'ADD_SKU_SLOT', 'Legacy add-SKU-slot events must not remain active.');
 lacks(mapRackEnhancer, 'appendOpenSlots', 'Warehouse cells must not render artificial empty SKU positions.');
-lacks(mapRackEnhancer, 'slot-placeholder', 'Warehouse cells must display real SKU balances only.');
+lacks(mapRackEnhancer, "item.className = 'slot-mini slot-placeholder'", 'Warehouse cells must not create artificial SKU placeholder cards.');
 has(layoutRepository, 'skuOrder?: string[]', 'Layout metadata must support visual-only SKU ordering.');
 has(layoutRepository, 'never changes SKU assignment, quantity or the stock ledger', 'The visual-order data boundary must be explicit.');
 has(layoutMetadata, 'skuVisualOrdersFromLayout', 'Visual SKU order must load from the shared cloud layout.');
