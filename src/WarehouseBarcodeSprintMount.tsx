@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
+import { FirstStocktakeFlow } from './FirstStocktakeFlow';
 import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
 import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
-type WarehouseOpsMode = 'receive' | 'returns' | 'barcode';
+type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns' | 'barcode';
 
 const modeCopy: Record<WarehouseOpsMode, { label: string; helper: string }> = {
-  receive: { label: 'Receive', helper: 'Daily inbound stock batches' },
-  returns: { label: 'Returns', helper: 'Inspect before stock release' },
-  barcode: { label: 'Barcode setup', helper: 'First stocktake: location, SKU and packaging barcode mapping' },
+  stocktake: { label: 'First stocktake', helper: 'Current preparation task: location, barcode, count and controlled opening stock' },
+  receive: { label: 'Daily receiving', helper: 'Inbound supplier deliveries after opening stock is established' },
+  returns: { label: 'Returns', helper: 'Inspect returned goods before stock release' },
+  barcode: { label: 'Barcode maintenance', helper: 'Advanced package rules, replacements and retired codes' },
 };
 
 function requestedMode(): WarehouseOpsMode {
   const value = new URLSearchParams(window.location.search).get('mode')?.toLowerCase();
-  return value === 'barcode' || value === 'returns' ? value : 'receive';
+  if (value === 'receive' || value === 'returns' || value === 'barcode') return value;
+  if (value === 'stocktake') return 'stocktake';
+  return 'stocktake';
 }
 
 export function WarehouseBarcodeSprintMount() {
@@ -32,7 +36,7 @@ export function WarehouseBarcodeSprintMount() {
 
       const buttons = Array.from(tabs.querySelectorAll<HTMLButtonElement>('button'));
       const activeTab = buttons.find((button) => button.classList.contains('active'))?.textContent?.trim();
-      if (!initialTabApplied.current && requestedMode() !== 'receive' && activeTab !== 'receive') {
+      if (!initialTabApplied.current && activeTab !== 'receive') {
         initialTabApplied.current = true;
         buttons.find((button) => button.textContent?.trim() === 'receive')?.click();
         return;
@@ -60,30 +64,29 @@ export function WarehouseBarcodeSprintMount() {
   if (!host) return null;
   return createPortal(
     <>
-      <nav className="warehouse-ops-switcher" aria-label="Warehouse receiving work areas">
+      <section className="warehouse-phase-banner">
+        <span>CURRENT RELEASE PHASE</span>
+        <strong>Prepare opening stock before daily receiving, picking and delivery.</strong>
+      </section>
+      <nav className="warehouse-ops-switcher" aria-label="Warehouse work areas">
         {(Object.keys(modeCopy) as WarehouseOpsMode[]).map((item) => (
           <button key={item} type="button" className={mode === item ? 'active' : ''} onClick={() => setMode(item)} title={modeCopy[item].helper}>{modeCopy[item].label}</button>
         ))}
       </nav>
       <div className="warehouse-ops-context">
-        <a href="/warehouse-map">Warehouse map</a>
-        <a href="/warehouse-map?mode=putaway">Putaway locations</a>
-        <a href="/?tab=inventory">Inventory control</a>
+        <a href="/warehouse-map">1 · Warehouse map</a>
+        <button type="button" className={mode === 'stocktake' ? 'active' : ''} onClick={() => setMode('stocktake')}>2 · First stocktake</button>
+        <a href="/?tab=inventory">3 · Review live stock</a>
       </div>
+      {mode === 'stocktake' ? <FirstStocktakeFlow /> : null}
       {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
       {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
       {mode === 'barcode' ? (
         <>
-          <section className="warehouse-first-stocktake-guide">
-            <span>FIRST STOCKTAKE · LOCATION FIRST</span>
-            <strong>Choose the physical cell, then scan every SKU and its packaging barcode.</strong>
-            <ol>
-              <li>Select or scan the A/B location.</li>
-              <li>Scan the SKU/item code stored there.</li>
-              <li>Scan carton, sleeve or unit barcode and record package size.</li>
-              <li>Count observed packages; post real opening stock only through the controlled stocktake/receiving action.</li>
-            </ol>
-            <small>The saved fixed shelf becomes the picker’s location hint. Warehouse Map and Pick therefore use the same SKU-to-location master.</small>
+          <section className="warehouse-first-stocktake-guide warehouse-advanced-guide">
+            <span>ADVANCED BARCODE MAINTENANCE</span>
+            <strong>Use this only for package-rule corrections, replacement packaging and retired codes.</strong>
+            <small>Normal first-stocktake work belongs in the guided First stocktake screen.</small>
           </section>
           <WarehouseBarcodeSprint />
         </>

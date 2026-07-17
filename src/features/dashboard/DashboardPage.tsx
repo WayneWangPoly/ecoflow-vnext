@@ -1,24 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
-import { formatDateTime } from '@/domain/syncModel';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EcoFlowDataSet, ImportedOrder, Role } from '@/domain/types';
-import {
-  loadOwnerCommandAttention,
-  loadOwnerCommandKpis,
-  type OwnerCommandAttentionRow,
-  type OwnerCommandKpis,
-} from '@/data/repositories/ownerCommandCenter';
 import {
   loadOrderOperationsSummary,
   type OrderOperationsSummary,
 } from '@/data/repositories/orderOperations';
 import {
-  DashboardAttentionRow,
-  DashboardLoading,
-  DashboardMetric,
-  DashboardOrderRow,
-  DashboardPill,
-} from './DashboardPrimitives';
-import { buildDashboardView, money, numberValue } from './dashboardModel';
+  loadBarcodeSprintKpis,
+  loadInventoryKpis,
+  type BarcodeSprintKpis,
+  type InventoryKpis,
+} from '@/data/repositories/inventoryControl';
+import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
+import {
+  loadOrdermentumMirrorHealth,
+  type OrdermentumMirrorHealthRow,
+} from '@/features/team/ordermentumSync';
+import { supabase } from '@/lib/supabaseClient';
+import './fieldReadinessDashboard.css';
 
 type DashboardPageProps = {
   role: Role;
@@ -32,6 +30,24 @@ type DashboardPageProps = {
   onOpenOrders: () => void;
 };
 
+function n(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function dateTime(value?: string | null) {
+  if (!value) return 'Not verified yet';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('en-AU', {
+    timeZone: 'Australia/Adelaide',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export function DashboardPage({
   role,
   data,
@@ -43,178 +59,139 @@ export function DashboardPage({
   onReload,
   onOpenOrders,
 }: DashboardPageProps) {
-  const [kpis, setKpis] = useState<OwnerCommandKpis | null>(null);
-  const [attention, setAttention] = useState<OwnerCommandAttentionRow[]>([]);
-  const [operationsSummary, setOperationsSummary] = useState<OrderOperationsSummary | null>(null);
+  const [operations, setOperations] = useState<OrderOperationsSummary | null>(null);
+  const [mirror, setMirror] = useState<OrdermentumMirrorHealthRow | null>(null);
+  const [inventory, setInventory] = useState<InventoryKpis | null>(null);
+  const [barcode, setBarcode] = useState<BarcodeSprintKpis | null>(null);
+  const [locations, setLocations] = useState<WarehouseLocationItemRow[]>([]);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusNotice, setStatusNotice] = useState('');
+
+  const reloadReadiness = useCallback(async () => {
+    setStatusLoading(true);
+    setStatusNotice('');
+    const checks = await Promise.allSettled([
+      loadOrderOperationsSummary(),
+      supabase ? loadOrdermentumMirrorHealth(supabase) : Promise.resolve({ mirrorHealth: null, mirrorError: 'Supabase is unavailable.' }),
+      loadInventoryKpis(),
+      loadBarcodeSprintKpis(),
+      loadWarehouseLocationItems(),
+    ]);
+
+    const [operationsResult, mirrorResult, inventoryResult, barcodeResult, locationsResult] = checks;
+    if (operationsResult.status === 'fulfilled') setOperations(operationsResult.value);
+    if (mirrorResult.status === 'fulfilled') {
+      setMirror(mirrorResult.value.mirrorHealth);
+      if (mirrorResult.value.mirrorError) setStatusNotice(mirrorResult.value.mirrorError);
+    }
+    if (inventoryResult.status === 'fulfilled') setInventory(inventoryResult.value);
+    if (barcodeResult.status === 'fulfilled') setBarcode(barcodeResult.value);
+    if (locationsResult.status === 'fulfilled') setLocations(locationsResult.value);
+
+    const unavailable = [
+      operationsResult.status === 'rejected' ? 'orders' : '',
+      mirrorResult.status === 'rejected' ? 'source verification' : '',
+      inventoryResult.status === 'rejected' ? 'inventory' : '',
+      barcodeResult.status === 'rejected' ? 'barcode coverage' : '',
+      locationsResult.status === 'rejected' ? 'warehouse locations' : '',
+    ].filter(Boolean);
+    if (unavailable.length) setStatusNotice(`Some readiness checks are unavailable: ${unavailable.join(', ')}.`);
+    setStatusLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!snapshotReady) return;
-    let active = true;
-    void Promise.allSettled([
-      loadOwnerCommandKpis(),
-      loadOwnerCommandAttention(),
-      loadOrderOperationsSummary(),
-    ]).then(([kpiResult, attentionResult, operationsResult]) => {
-      if (!active) return;
-      setKpis(kpiResult.status === 'fulfilled' ? kpiResult.value : null);
-      setAttention(attentionResult.status === 'fulfilled' ? attentionResult.value : []);
-      setOperationsSummary(operationsResult.status === 'fulfilled' ? operationsResult.value : null);
-    });
-    return () => { active = false; };
-  }, [snapshotReady, data.syncBatch.completedAt]);
+    void reloadReadiness();
+  }, [reloadReadiness, snapshotReady, data.syncBatch.completedAt]);
 
-  const view = useMemo(
-    () => snapshotReady ? buildDashboardView(data, orders, kpis) : null,
-    [data, kpis, orders, snapshotReady],
-  );
+  const locationCount = useMemo(() => new Set(locations.map((row) => row.location_code).filter(Boolean)).size, [locations]);
+  const liveLocationCount = useMemo(() => new Set(locations.filter((row) => row.item_id && n(row.quantity) > 0).map((row) => row.location_code).filter(Boolean)).size, [locations]);
+  const currentOrders = operations
+    ? n(operations.current_orders) + n(operations.source_review_orders)
+    : orders.length;
+  const mirrorStatus = mirror?.overall_status || (snapshotReady ? 'CHECKING' : 'UNAVAILABLE');
+  const mirrorReady = mirrorStatus === 'COMPLETE';
+  const firstStocktakeStarted = n(inventory?.live_on_hand_units) > 0 || liveLocationCount > 0;
+  const readinessStep = !mirrorReady ? 'source' : firstStocktakeStarted ? 'operate' : 'stocktake';
+  const roleName = role === 'admin' ? 'Admin' : role === 'owner' ? 'Owner' : role === 'account' ? 'Accounts' : 'Operations';
 
-  if (loading && !snapshotReady) return <DashboardLoading />;
-  if (!snapshotReady || !view) {
+  if (loading && !snapshotReady) {
+    return <section className="field-readiness-loading">Loading the trusted operating snapshot…</section>;
+  }
+
+  if (!snapshotReady) {
     return (
-      <section className="owner-command-unavailable" role="alert">
-        <div>
-          <strong>Live dashboard unavailable</strong>
-          <span>{loadError || 'EcoFlow could not load a consistent current-operations snapshot. No sample figures are shown.'}</span>
-        </div>
-        <button type="button" disabled={loading} onClick={() => void onReload()}>
-          {loading ? 'Retrying…' : 'Retry live data'}
-        </button>
+      <section className="field-readiness-unavailable" role="alert">
+        <div><strong>Live operating data is unavailable</strong><span>{loadError || 'EcoFlow will not show sample warehouse or order figures.'}</span></div>
+        <button type="button" onClick={() => void onReload()} disabled={loading}>{loading ? 'Retrying…' : 'Retry live data'}</button>
       </section>
     );
   }
 
-  const roleName = role === 'account' ? 'ACCOUNTS' : role.toUpperCase();
-  const subtitle = role === 'account'
-    ? 'Accounts control across today’s Ordermentum changes, release blockers and receivables.'
-    : 'One clear operating view across current orders, fulfilment pressure and customer risk.';
-  const exactCurrentOrders = operationsSummary
-    ? numberValue(operationsSummary.current_orders) + numberValue(operationsSummary.source_review_orders)
-    : view.activeOrders;
-  const currentCountMismatch = Boolean(operationsSummary) && exactCurrentOrders !== orders.length;
-
   return (
-    <section className="owner-command-shell">
-      <section className="owner-command-hero">
-        <div className="owner-command-hero-copy">
-          <span>{roleName} CONTROL</span>
-          <h1>Build the supply chain behind a cleaner food future.</h1>
-          <p>{subtitle}</p>
-          <small>{data.businessDay.label} · cutoff {data.businessDay.cutoffTime} · authenticated live workflow</small>
+    <section className="field-readiness-dashboard">
+      <header className="field-readiness-hero">
+        <div>
+          <span>{roleName.toUpperCase()} · CURRENT RELEASE PHASE</span>
+          <h1>Prepare the warehouse. Then run the day.</h1>
+          <p>Ordermentum supplies the commercial facts. EcoFlow turns those facts into physical stock, controlled picking, delivery and proof.</p>
+          <small>{data.businessDay.label} · source verification {dateTime(mirror?.checked_at)}</small>
         </div>
-        <div className="owner-command-hero-metrics">
-          <DashboardMetric label="New today" value={view.count('newToday')} helper="First seen today" tone="good" />
-          <DashboardMetric label="Updated today" value={view.count('updatedToday')} helper="Changed today" tone="blue" />
-          <DashboardMetric
-            label="Current orders"
-            value={exactCurrentOrders}
-            helper={operationsSummary
-              ? `${orders.length} current rows loaded · exact server classification`
-              : `${orders.length} current rows loaded · summary unavailable`}
-            tone={currentCountMismatch ? 'warn' : 'good'}
-          />
-          <DashboardMetric label="Open AR" value={money(view.openAr)} helper="Outstanding balance" />
+        <div className="field-readiness-actions">
+          <a className="field-primary-action" href="/?workspace=warehouse&mode=stocktake">Start first stocktake</a>
+          <a href="/warehouse-map">Open warehouse map</a>
+          <button type="button" onClick={() => void Promise.all([onReload(), reloadReadiness()])} disabled={loading || statusLoading}>{loading || statusLoading ? 'Refreshing…' : 'Refresh status'}</button>
         </div>
+      </header>
+
+      {loadError ? <div className="field-readiness-warning">The last trusted snapshot remains visible. Refresh issue: {loadError}</div> : null}
+      {healthNotice || statusNotice ? <div className="field-readiness-note">System note: {healthNotice || statusNotice}</div> : null}
+
+      <section className="field-purpose-grid">
+        <article className="field-purpose-card source-card">
+          <div className="field-stage-number">1</div>
+          <span>ORDERMENTUM · SOURCE</span>
+          <h2>Commercial facts arrive ready to use</h2>
+          <p>Customers, products, SKUs, package identifiers, orders and invoices remain managed in Ordermentum.</p>
+          <div className={`field-status-chip ${mirrorReady ? 'ready' : 'attention'}`}>{mirrorStatus}</div>
+          <small>{n(mirror?.projected_order_count)} orders available to EcoFlow · {n(mirror?.order_projection_missing)} projection gaps</small>
+        </article>
+
+        <article className="field-purpose-card current-card">
+          <div className="field-stage-number">2</div>
+          <span>ECOFLOW · CURRENT TASK</span>
+          <h2>{firstStocktakeStarted ? 'Continue warehouse stocktake' : 'Establish physical stock truth'}</h2>
+          <p>Go location by location. Select the Ordermentum SKU, scan its carton or sleeve barcode, count packages, verify the batch and post opening stock once.</p>
+          <a href="/?workspace=warehouse&mode=stocktake">Open guided first stocktake</a>
+          <small>{locationCount} warehouse locations available · {n(barcode?.registered_barcodes)} active package codes · {n(inventory?.live_on_hand_units)} live units posted</small>
+        </article>
+
+        <article className="field-purpose-card execution-card">
+          <div className="field-stage-number">3</div>
+          <span>ECOFLOW · DAILY EXECUTION</span>
+          <h2>Receive, pick, deliver and prove</h2>
+          <p>After opening stock is established, new deliveries use controlled receiving; orders move through release, picking, staging, driver route and two-photo POD.</p>
+          <div className="field-future-steps"><span>Daily receiving</span><span>Pick & stage</span><span>Deliver & POD</span></div>
+          <small>This stage uses the same SKU, barcode, location and stock ledger created during the first stocktake.</small>
+        </article>
       </section>
 
-      <section className="owner-command-syncbar">
-        <div className="owner-command-sync-summary">
-          <span className={`owner-command-sync-dot ${data.syncBatch.status === 'SUCCESS' ? 'is-good' : 'is-warn'}`} />
-          <div>
-            <strong>Sync control</strong>
-            <span>Last successful snapshot {formatDateTime(data.syncBatch.completedAt)}</span>
-          </div>
-          <DashboardPill tone={data.syncBatch.status === 'SUCCESS' ? 'good' : 'warn'}>{data.syncBatch.status}</DashboardPill>
-        </div>
-        <div className="owner-command-sync-metrics">
-          <div><strong>{data.syncBatch.fetched}</strong><span>Fetched</span></div>
-          <div><strong>{data.syncBatch.created}</strong><span>New</span></div>
-          <div><strong>{data.syncBatch.updated}</strong><span>Updated</span></div>
-          <div><strong>{data.syncBatch.unchanged}</strong><span>Unchanged</span></div>
-          <div className={view.dataCheckCount ? 'is-warning' : ''}>
-            <strong>{view.dataCheckCount}</strong><span>Active data checks</span>
-          </div>
-        </div>
-        <div className="owner-command-sync-actions">
-          <small>
-            Latest order change {view.latestOrderChange ? formatDateTime(view.latestOrderChange) : '—'}
-            <br />Current snapshot {formatDateTime(data.repositoryStatus?.loadedAt || data.syncBatch.completedAt)}
-          </small>
-          <button type="button" disabled={loading} onClick={() => void onReload()}>
-            {loading ? 'Refreshing…' : 'Refresh live data'}
-          </button>
-        </div>
+      <section className="field-readiness-sequence" aria-label="EcoFlow readiness sequence">
+        <article className={mirrorReady ? 'done' : 'current'}><b>✓</b><div><strong>Source data</strong><span>Verified commercial mirror</span></div></article>
+        <article className={readinessStep === 'stocktake' ? 'current' : firstStocktakeStarted ? 'done' : ''}><b>2</b><div><strong>First stocktake</strong><span>Location, barcode and opening count</span></div></article>
+        <article className={readinessStep === 'operate' ? 'current' : ''}><b>3</b><div><strong>Daily warehouse</strong><span>Receiving, picking and staging</span></div></article>
+        <article><b>4</b><div><strong>Delivery</strong><span>Route, POD and exceptions</span></div></article>
       </section>
 
-      {healthNotice ? (
-        <div className="owner-command-error">
-          System health notice: {healthNotice}. Core order totals remain live; review Settings for source details.
-        </div>
-      ) : null}
-      {loadError ? (
-        <div className="owner-command-error">
-          Refresh failed. The last trusted snapshot remains on screen. {loadError}
-        </div>
-      ) : null}
-
-      <section className="owner-command-workspace">
-        <section className="owner-command-panel owner-command-queue-panel">
-          <header className="owner-command-panel-header">
-            <div>
-              <h2>Daily control queue</h2>
-              <p>Current changes and blockers only. Completed and historical records remain searchable on Orders.</p>
-            </div>
-            <div className="owner-command-header-actions">
-              <DashboardPill tone={view.actionableCount ? 'warn' : 'good'}>
-                {view.queue.length} of {view.actionableCount} shown
-              </DashboardPill>
-              <button type="button" onClick={onOpenOrders}>View all orders</button>
-            </div>
-          </header>
-          <div className="owner-command-order-list">
-            {view.queue.map((order) => <DashboardOrderRow key={order.id} order={order} />)}
-            {!view.queue.length ? <div className="owner-command-empty">No orders need control-room attention.</div> : null}
-          </div>
-        </section>
-
-        <aside className="owner-command-rail">
-          <section className="owner-command-panel owner-command-rail-card">
-            <header className="owner-command-panel-header">
-              <div><h3>Operational buckets</h3><p>{data.businessDay.label}</p></div>
-            </header>
-            <div className="owner-command-buckets">
-              {view.bucketCounts
-                .filter((bucket) => ['exceptions', 'newToday', 'updatedToday', 'dueToday', 'carryOver'].includes(bucket.key))
-                .map((bucket) => (
-                  <article key={bucket.key}><strong>{bucket.count}</strong><span>{bucket.label}</span></article>
-                ))}
-            </div>
-          </section>
-
-          <section className="owner-command-panel owner-command-rail-card">
-            <header className="owner-command-panel-header">
-              <div><h3>Business pulse</h3><p>Best available live owner signals.</p></div>
-            </header>
-            <div className="owner-command-pulse-list">
-              <article><strong>{kpis?.top_sku_30d || '—'}</strong><span>Top SKU · {kpis?.top_product_30d || 'No product detail'}</span></article>
-              <article><strong>{kpis?.top_store_30d || '—'}</strong><span>Top store · {money(kpis?.top_store_revenue_30d)}</span></article>
-              <article><strong>{numberValue(kpis?.barcode_attention_lines)}</strong><span>Barcode attention lines</span></article>
-              <article><strong>{numberValue(kpis?.reorder_pressure_rows)}</strong><span>Reorder pressure rows</span></article>
-            </div>
-          </section>
-
-          <section className="owner-command-panel owner-command-rail-card">
-            <header className="owner-command-panel-header">
-              <div><h3>Priority attention</h3><p>Highest-value actions across the platform.</p></div>
-            </header>
-            <div className="owner-command-attention-list">
-              {attention.slice(0, 5).map((row, index) => (
-                <DashboardAttentionRow key={`${row.area}-${row.reference_id}-${index}`} row={row} />
-              ))}
-              {!attention.length ? <div className="owner-command-empty">No additional command-centre alerts.</div> : null}
-            </div>
-          </section>
-        </aside>
+      <section className="field-operations-strip">
+        <div><span>Current orders</span><strong>{currentOrders}</strong></div>
+        <div><span>Ready for release</span><strong>{n(operations?.ready_to_release)}</strong></div>
+        <div><span>In fulfilment</span><strong>{n(operations?.in_progress_orders)}</strong></div>
+        <div><span>Live stock locations</span><strong>{liveLocationCount}</strong></div>
+        <button type="button" onClick={onOpenOrders}>Review orders</button>
       </section>
+
+      <p className="field-system-footnote">System detail stays available under System. The normal operating path is Today → Warehouse map → First stocktake → Live stock.</p>
     </section>
   );
 }

@@ -9,6 +9,7 @@ import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
 import '../warehouseReceivingFlow.css';
 import '../warehouseBarcodeSprint.css';
 import '../warehouseFirstStocktake.css';
+import '../firstStocktakeFlow.css';
 import '../warehousePickHandoff.css';
 import '../fieldOpsGuardRails.css';
 import '../pickTaskOwnership.css';
@@ -16,7 +17,7 @@ import '../stageAndLoadExecution.css';
 import '../warehouseProductisation.css';
 import '../warehouseProductisationFixes.css';
 
-/** Warehouse phone modules: receive, pick, stage and scanner controls. */
+/** Warehouse phone modules: first stocktake, receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
   return (
     <>

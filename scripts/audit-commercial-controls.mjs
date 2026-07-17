@@ -7,9 +7,11 @@ const lacks = (path, text, message) => assert.ok(!read(path).includes(text), mes
 
 has('src/enhancers/OwnerEnhancers.tsx', 'CommercialSourceBoundary', 'Owner source boundary missing.');
 has('src/enhancers/AccountEnhancers.tsx', 'CommercialSourceBoundary', 'Accounts source boundary missing.');
-has('src/enhancers/OwnerEnhancers.tsx', 'AuthoritativeDashboard', 'Owner authoritative dashboard missing.');
+lacks('src/enhancers/OwnerEnhancers.tsx', 'AuthoritativeDashboard', 'Owner must use the native Today dashboard rather than a second portal dashboard.');
 has('src/enhancers/AccountEnhancers.tsx', 'AuthoritativeDashboard', 'Accounts authoritative dashboard missing.');
-has('src/AuthoritativeDashboard.tsx', 'loadOrderOperationsSummary', 'Dashboard must use server summary.');
+has('src/features/dashboard/DashboardPage.tsx', 'loadOrderOperationsSummary', 'Native Today dashboard must use the exact server order summary.');
+has('src/features/dashboard/DashboardPage.tsx', 'loadOrdermentumMirrorHealth', 'Native Today dashboard must retain verified mirror readiness.');
+has('src/features/dashboard/DashboardPage.tsx', 'Start first stocktake', 'Owner Today dashboard must lead to the current warehouse preparation task.');
 lacks('src/enhancers/OwnerEnhancers.tsx', 'PriceMatrixWorkbench', 'Owner must not edit prices locally.');
 lacks('src/enhancers/AccountEnhancers.tsx', 'PriceMatrixWorkbench', 'Accounts must not edit prices locally.');
 has('src/domain/dataOwnership.ts', 'ORDERMENTUM_SOURCE_DOMAINS', 'Ordermentum source domains missing.');
@@ -36,4 +38,4 @@ has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'active sou
 has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'retained source-missing', 'Settings must show retained source-missing history.');
 has('src/DeliveryRunHistory.tsx', 'Run history and replay', 'Delivery history missing.');
 has('src/data/repositories/runHistory.ts', 'v_ecoflow_delivery_run_catalog', 'Run catalog missing.');
-console.log('Commercial source ownership, strict release, statements, resumable mirror and run-history audit passed.');
+console.log('Commercial source ownership, native Today dashboard, strict release, statements, resumable mirror and run-history audit passed.');

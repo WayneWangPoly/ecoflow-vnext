@@ -1,6 +1,5 @@
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
-import { AuthoritativeDashboard } from '../AuthoritativeDashboard';
 import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
@@ -13,7 +12,6 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
-import '../authoritativeDashboard.css';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -28,12 +26,11 @@ import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
 
-/** Owner/Admin desktop capabilities only. */
+/** Owner/Admin desktop capabilities only. The Today dashboard is now native in App, not a DOM portal. */
 export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <AuthoritativeDashboard />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />

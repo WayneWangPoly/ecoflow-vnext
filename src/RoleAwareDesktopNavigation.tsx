@@ -3,10 +3,14 @@ import { observeBody } from '@/lib/domObserver';
 
 const accountAllowedTabs = new Set(['Dashboard', 'Orders', 'Delivery', 'Stores', 'Reconciliation', 'Settings']);
 const businessLabels: Record<string, string> = {
-  Ordermentum: 'Release Control',
-  Inventory: 'Inventory & Products',
-  Stores: 'Stores Mirror',
-  Reconciliation: 'Accounts Mirror',
+  Dashboard: 'Today',
+  Ordermentum: 'Release',
+  Orders: 'Order search',
+  Inventory: 'Warehouse & Stock',
+  Stores: 'Customers',
+  Reconciliation: 'Accounts',
+  Logs: 'Audit',
+  Settings: 'System',
 };
 
 function normaliseRole(value?: string | null) {
@@ -65,10 +69,10 @@ export function RoleAwareDesktopNavigation() {
         nav.appendChild(helper);
       }
       helper.textContent = role === 'ACCOUNT'
-        ? 'Accounts: Ordermentum finance mirror, statements and collection workflow. Source invoices and payments remain read-only.'
+        ? 'Normal path: Today → Accounts → Customers. Source invoices and payments stay read-only.'
         : role === 'ADMIN'
-          ? 'Admin: verified commercial mirror plus EcoFlow warehouse, delivery, security and audit controls.'
-          : 'Owner: Ordermentum is the commercial source; EcoFlow controls internal fulfilment and physical operations.';
+          ? 'Current phase: Today → Warehouse preparation → First stocktake.'
+          : 'Current phase: Today → Warehouse preparation → First stocktake.';
 
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {
         const accountsButton = buttons.find((button) => buttonBaseLabel(button) === 'Reconciliation');
