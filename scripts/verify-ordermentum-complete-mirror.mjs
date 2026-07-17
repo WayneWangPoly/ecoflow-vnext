@@ -9,9 +9,42 @@ const requireHistory = process.argv.some((arg) => arg === '--require-history=tru
 const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const pageSize = 1000;
 const maxRows = 100000;
+const recentCutoff = Date.now() - 60 * 24 * 60 * 60 * 1000;
+const terminalOrderStatuses = new Set([
+  'cancelled', 'canceled', 'void', 'voided',
+  'completed', 'complete', 'closed', 'delivered', 'fulfilled',
+  'finalised', 'finalized',
+]);
+const explicitCurrentStatuses = new Set([
+  'new', 'pending', 'placed', 'processing', 'confirmed', 'accepted',
+  'approved', 'open', 'ready', 'paid', 'unpaid', 'in_progress',
+  'partially_fulfilled',
+]);
 
 function text(value) {
   return value == null ? '' : String(value).trim();
+}
+
+function timestamp(value) {
+  const parsed = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function canonicalStatus(row) {
+  return text(row.order_status || row.status).toLowerCase();
+}
+
+function isOperationallyCurrent(row) {
+  if (row.cancelled === true || text(row.cancelled).toLowerCase() === 'true' || row.cancelled_at) return false;
+  const status = canonicalStatus(row);
+  if (terminalOrderStatuses.has(status)) return false;
+  const activity = Math.max(
+    timestamp(row.delivery_date),
+    timestamp(row.due_at),
+    timestamp(row.updated_at),
+    timestamp(row.created_at),
+  );
+  return activity >= recentCutoff;
 }
 
 async function loadPaged(table, columns, configure = (query) => query) {
@@ -66,7 +99,7 @@ const [
   catalog,
 ] = await Promise.all([
   loadPaged('ordermentum_raw_orders', 'external_order_id,external_order_number'),
-  loadPaged('om_orders', 'id,order_number'),
+  loadPaged('om_orders', 'id,order_number,status,order_status,cancelled,cancelled_at,delivery_date,due_at,created_at,updated_at'),
   loadPaged('ordermentum_raw_master_resources', 'resource_type,external_id,is_deleted_or_missing'),
   loadPaged('om_invoices', 'id,number'),
   loadPaged('ecoflow_ordermentum_source_presence', 'domain,external_id,source_status,last_full_mirror_at'),
@@ -122,7 +155,13 @@ const detailFailed = catalogPresent.filter((row) => row.detail_status === 'FAILE
 const detailComplete = catalogPresent.filter((row) => row.detail_status === 'COMPLETE').length;
 
 const sourceMissingRecords = sourcePresence.filter((row) => row.source_status === 'SOURCE_MISSING').length;
-const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING').length;
+const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING');
+const sourceMissingOrderKeys = new Set(sourceMissingOrders.map((row) => text(row.external_id)).filter(Boolean));
+const currentCanonicalOrders = projectedOrders.filter(isOperationallyCurrent);
+const activeSourceMissingOrders = currentCanonicalOrders.filter((row) => (
+  sourceMissingOrderKeys.has(text(row.id)) || sourceMissingOrderKeys.has(text(row.order_number))
+)).length;
+const unknownRecentStatuses = currentCanonicalOrders.filter((row) => !explicitCurrentStatuses.has(canonicalStatus(row))).length;
 const checkedAt = new Date().toISOString();
 
 const data = {
@@ -141,11 +180,11 @@ const data = {
   price_group_count: priceGroupIds.size,
   stock_location_count: stockLocationIds.size,
   source_missing_records: sourceMissingRecords,
-  source_missing_orders: sourceMissingOrders,
-  active_source_missing_orders: 0,
+  source_missing_orders: sourceMissingOrders.length,
+  active_source_missing_orders: activeSourceMissingOrders,
   recent_orders_missing_lines: 0,
   recent_orders_missing_invoice_detail: 0,
-  unknown_recent_statuses: 0,
+  unknown_recent_statuses: unknownRecentStatuses,
   recent_finance_reviews: 0,
   history_run_id: history?.id || null,
   history_pipeline_status: history?.status || null,
@@ -172,6 +211,7 @@ const blockers = [
   ['purchaser source empty', purchaserIds.size === 0 ? 1 : 0],
   ['product and variant source empty', productIds.size + variantIds.size === 0 ? 1 : 0],
   ['price group source empty', priceGroupIds.size === 0 ? 1 : 0],
+  ['active source-missing orders', activeSourceMissingOrders],
 ];
 
 if (requireHistory) {
@@ -186,12 +226,20 @@ const active = blockers.filter((entry) => Number(entry[1]) > 0);
 if (active.length) data.overall_status = 'DEGRADED';
 
 const warnings = [];
-if (sourceMissingOrders > 0) {
+if (sourceMissingOrders.length > 0) {
   warnings.push({
     code: 'SOURCE_MISSING_HISTORY_RETAINED',
-    count: sourceMissingOrders,
+    count: sourceMissingOrders.length,
     blocking: false,
     message: 'Orders removed from Ordermentum are retained as historical SOURCE_MISSING records.',
+  });
+}
+if (unknownRecentStatuses > 0) {
+  warnings.push({
+    code: 'UNKNOWN_CURRENT_SOURCE_STATUS',
+    count: unknownRecentStatuses,
+    blocking: false,
+    message: 'Recent non-terminal source statuses are retained for operational review and remain fail-closed for release.',
   });
 }
 warnings.push({
@@ -210,6 +258,7 @@ const snapshot = {
     generated_at: checkedAt,
     canonical_order_table_rows: projectedOrders.length,
     canonical_invoice_table_rows: projectedInvoices.length,
+    operationally_current_order_rows: currentCanonicalOrders.length,
     count_semantics: 'source-backed distinct records',
   },
 };
