@@ -9,9 +9,42 @@ const requireHistory = process.argv.some((arg) => arg === '--require-history=tru
 const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const pageSize = 1000;
 const maxRows = 100000;
+const recentCutoff = Date.now() - 60 * 24 * 60 * 60 * 1000;
+const terminalOrderStatuses = new Set([
+  'cancelled', 'canceled', 'void', 'voided',
+  'completed', 'complete', 'closed', 'delivered', 'fulfilled',
+  'finalised', 'finalized',
+]);
+const explicitCurrentStatuses = new Set([
+  'new', 'pending', 'placed', 'processing', 'confirmed', 'accepted',
+  'approved', 'open', 'ready', 'paid', 'unpaid', 'in_progress',
+  'partially_fulfilled',
+]);
 
 function text(value) {
   return value == null ? '' : String(value).trim();
+}
+
+function timestamp(value) {
+  const parsed = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function canonicalStatus(row) {
+  return text(row.order_status || row.status).toLowerCase();
+}
+
+function isOperationallyCurrent(row) {
+  if (row.cancelled === true || text(row.cancelled).toLowerCase() === 'true' || row.cancelled_at) return false;
+  const status = canonicalStatus(row);
+  if (terminalOrderStatuses.has(status)) return false;
+  const activity = Math.max(
+    timestamp(row.delivery_date),
+    timestamp(row.due_at),
+    timestamp(row.updated_at),
+    timestamp(row.created_at),
+  );
+  return activity >= recentCutoff;
 }
 
 async function loadPaged(table, columns, configure = (query) => query) {
@@ -43,6 +76,19 @@ function distinctExternalIds(rows, resourceTypes) {
   return ids;
 }
 
+function groupRawOrderAliases(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const candidates = [text(row.external_order_id), text(row.external_order_number)].filter(Boolean);
+    if (!candidates.length) continue;
+    const identity = candidates[0];
+    const aliases = groups.get(identity) || new Set();
+    candidates.forEach((candidate) => aliases.add(candidate));
+    groups.set(identity, aliases);
+  }
+  return groups;
+}
+
 const [
   rawOrders,
   projectedOrders,
@@ -53,7 +99,7 @@ const [
   catalog,
 ] = await Promise.all([
   loadPaged('ordermentum_raw_orders', 'external_order_id,external_order_number'),
-  loadPaged('om_orders', 'id,order_number'),
+  loadPaged('om_orders', 'id,order_number,status,order_status,cancelled,cancelled_at,delivery_date,due_at,created_at,updated_at'),
   loadPaged('ordermentum_raw_master_resources', 'resource_type,external_id,is_deleted_or_missing'),
   loadPaged('om_invoices', 'id,number'),
   loadPaged('ecoflow_ordermentum_source_presence', 'domain,external_id,source_status,last_full_mirror_at'),
@@ -74,13 +120,12 @@ for (const row of projectedOrders) {
   addKey(projectedOrderKeys, row.id);
   addKey(projectedOrderKeys, row.order_number);
 }
-const rawOrderKeys = new Set();
+const rawOrderGroups = groupRawOrderAliases(rawOrders);
 let orderProjectionMissing = 0;
-for (const row of rawOrders) {
-  const candidates = [text(row.external_order_id), text(row.external_order_number)].filter(Boolean);
-  if (!candidates.length) continue;
-  candidates.forEach((candidate) => rawOrderKeys.add(candidate));
-  if (!candidates.some((candidate) => projectedOrderKeys.has(candidate))) orderProjectionMissing += 1;
+let sourceBackedProjectedOrders = 0;
+for (const aliases of rawOrderGroups.values()) {
+  if ([...aliases].some((candidate) => projectedOrderKeys.has(candidate))) sourceBackedProjectedOrders += 1;
+  else orderProjectionMissing += 1;
 }
 
 const projectedInvoiceKeys = new Set();
@@ -93,6 +138,9 @@ let invoiceProjectionMissing = 0;
 for (const id of rawInvoiceIds) {
   if (!projectedInvoiceKeys.has(id)) invoiceProjectionMissing += 1;
 }
+const sourceBackedProjectedInvoices = projectedInvoices.filter((row) => (
+  rawInvoiceIds.has(text(row.id)) || rawInvoiceIds.has(text(row.number))
+)).length;
 
 const purchaserIds = distinctExternalIds(rawMaster, ['purchasers', 'purchaser_detail']);
 const productIds = distinctExternalIds(rawMaster, ['products', 'product_detail']);
@@ -107,18 +155,24 @@ const detailFailed = catalogPresent.filter((row) => row.detail_status === 'FAILE
 const detailComplete = catalogPresent.filter((row) => row.detail_status === 'COMPLETE').length;
 
 const sourceMissingRecords = sourcePresence.filter((row) => row.source_status === 'SOURCE_MISSING').length;
-const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING').length;
+const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING');
+const sourceMissingOrderKeys = new Set(sourceMissingOrders.map((row) => text(row.external_id)).filter(Boolean));
+const currentCanonicalOrders = projectedOrders.filter(isOperationallyCurrent);
+const activeSourceMissingOrders = currentCanonicalOrders.filter((row) => (
+  sourceMissingOrderKeys.has(text(row.id)) || sourceMissingOrderKeys.has(text(row.order_number))
+)).length;
+const unknownRecentStatuses = currentCanonicalOrders.filter((row) => !explicitCurrentStatuses.has(canonicalStatus(row))).length;
 const checkedAt = new Date().toISOString();
 
 const data = {
   overall_status: 'COMPLETE',
-  verification_mode: 'LIGHTWEIGHT_DIRECT_V1',
+  verification_mode: 'LIGHTWEIGHT_DIRECT_V2',
   checked_at: checkedAt,
-  raw_order_count: rawOrderKeys.size,
-  projected_order_count: projectedOrders.length,
+  raw_order_count: rawOrderGroups.size,
+  projected_order_count: sourceBackedProjectedOrders,
   order_projection_missing: orderProjectionMissing,
   raw_invoice_count: rawInvoiceIds.size,
-  projected_invoice_count: projectedInvoices.length,
+  projected_invoice_count: sourceBackedProjectedInvoices,
   invoice_projection_missing: invoiceProjectionMissing,
   purchaser_count: purchaserIds.size,
   product_count: productIds.size,
@@ -126,11 +180,11 @@ const data = {
   price_group_count: priceGroupIds.size,
   stock_location_count: stockLocationIds.size,
   source_missing_records: sourceMissingRecords,
-  source_missing_orders: sourceMissingOrders,
-  active_source_missing_orders: 0,
+  source_missing_orders: sourceMissingOrders.length,
+  active_source_missing_orders: activeSourceMissingOrders,
   recent_orders_missing_lines: 0,
   recent_orders_missing_invoice_detail: 0,
-  unknown_recent_statuses: 0,
+  unknown_recent_statuses: unknownRecentStatuses,
   recent_finance_reviews: 0,
   history_run_id: history?.id || null,
   history_pipeline_status: history?.status || null,
@@ -150,13 +204,14 @@ const data = {
 };
 
 const blockers = [
-  ['raw order source empty', rawOrderKeys.size === 0 ? 1 : 0],
+  ['raw order source empty', rawOrderGroups.size === 0 ? 1 : 0],
   ['order projection gaps', orderProjectionMissing],
   ['raw invoice source empty', rawInvoiceIds.size === 0 ? 1 : 0],
   ['invoice projection gaps', invoiceProjectionMissing],
   ['purchaser source empty', purchaserIds.size === 0 ? 1 : 0],
   ['product and variant source empty', productIds.size + variantIds.size === 0 ? 1 : 0],
   ['price group source empty', priceGroupIds.size === 0 ? 1 : 0],
+  ['active source-missing orders', activeSourceMissingOrders],
 ];
 
 if (requireHistory) {
@@ -171,12 +226,20 @@ const active = blockers.filter((entry) => Number(entry[1]) > 0);
 if (active.length) data.overall_status = 'DEGRADED';
 
 const warnings = [];
-if (sourceMissingOrders > 0) {
+if (sourceMissingOrders.length > 0) {
   warnings.push({
     code: 'SOURCE_MISSING_HISTORY_RETAINED',
-    count: sourceMissingOrders,
+    count: sourceMissingOrders.length,
     blocking: false,
     message: 'Orders removed from Ordermentum are retained as historical SOURCE_MISSING records.',
+  });
+}
+if (unknownRecentStatuses > 0) {
+  warnings.push({
+    code: 'UNKNOWN_CURRENT_SOURCE_STATUS',
+    count: unknownRecentStatuses,
+    blocking: false,
+    message: 'Recent non-terminal source statuses are retained for operational review and remain fail-closed for release.',
   });
 }
 warnings.push({
@@ -190,14 +253,21 @@ const snapshot = {
   ...data,
   blockers: active.map(([label, count]) => ({ label, count: Number(count) })),
   warnings,
-  metadata: { require_history: requireHistory, generated_at: checkedAt },
+  metadata: {
+    require_history: requireHistory,
+    generated_at: checkedAt,
+    canonical_order_table_rows: projectedOrders.length,
+    canonical_invoice_table_rows: projectedInvoices.length,
+    operationally_current_order_rows: currentCanonicalOrders.length,
+    count_semantics: 'source-backed distinct records',
+  },
 };
 const snapshotResult = await db.from('ecoflow_ordermentum_mirror_status_snapshot').upsert(snapshot, { onConflict: 'snapshot_key' });
 if (snapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_snapshot: ${snapshotResult.error.message}`);
 
 console.log(JSON.stringify({
   generated_at: checkedAt,
-  health_source: 'lightweight_direct_v1',
+  health_source: 'lightweight_direct_v2',
   require_history: requireHistory,
   ordermentum_complete_mirror: data,
   blockers: snapshot.blockers,

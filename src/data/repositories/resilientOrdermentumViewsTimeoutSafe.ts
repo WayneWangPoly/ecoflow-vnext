@@ -19,39 +19,115 @@ const ACTIVE_EXCEPTION_COLUMNS = [
   'detected_at',
 ].join(',');
 
+const PAGED_ACTIVE_SOURCES = [
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_inbox', pageSize: 500, maxRows: 10000 },
+  { path: ACTIVE_EXCEPTION_PATH, pageSize: 300, maxRows: 10000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_order_lines', pageSize: 500, maxRows: 50000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_drafts', pageSize: 500, maxRows: 10000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_om_orders', pageSize: 500, maxRows: 10000 },
+] as const;
+
+type PagedSource = (typeof PAGED_ACTIVE_SOURCES)[number];
+
 let inFlightSnapshot: Promise<ResilientOrdermentumViews | null> | null = null;
 
-function isActiveExceptionRequest(input: RequestInfo | URL) {
-  const url = typeof input === 'string'
+function requestUrl(input: RequestInfo | URL) {
+  return typeof input === 'string'
     ? input
     : input instanceof URL
       ? input.toString()
       : input.url;
-  return url.includes(ACTIVE_EXCEPTION_PATH);
 }
 
-function lighterActiveExceptionRequest(input: RequestInfo | URL): RequestInfo | URL {
-  if (!isActiveExceptionRequest(input)) return input;
-  const rawUrl = typeof input === 'string'
-    ? input
-    : input instanceof URL
-      ? input.toString()
-      : input.url;
-  const url = new URL(rawUrl);
-  url.searchParams.set('select', ACTIVE_EXCEPTION_COLUMNS);
-  url.searchParams.delete('order');
-  url.searchParams.set('limit', '300');
+function pagedSourceFor(input: RequestInfo | URL): PagedSource | null {
+  const url = requestUrl(input);
+  return PAGED_ACTIVE_SOURCES.find((source) => url.includes(source.path)) ?? null;
+}
+
+function pageRequest(input: RequestInfo | URL, source: PagedSource, offset: number): RequestInfo | URL {
+  const url = new URL(requestUrl(input));
+  url.searchParams.set('limit', String(source.pageSize));
+  url.searchParams.set('offset', String(offset));
+
+  if (source.path === ACTIVE_EXCEPTION_PATH) {
+    url.searchParams.set('select', ACTIVE_EXCEPTION_COLUMNS);
+    url.searchParams.delete('order');
+  }
 
   if (typeof input === 'string') return url.toString();
   if (input instanceof URL) return url;
   return new Request(url.toString(), input);
 }
 
+async function responseText(response: Response) {
+  try {
+    return await response.clone().text();
+  } catch {
+    return '';
+  }
+}
+
 async function isStatementTimeout(response: Response) {
   if (response.ok) return false;
-  const body = await response.clone().text();
-  const normalized = body.toLowerCase();
+  const normalized = (await responseText(response)).toLowerCase();
   return normalized.includes('57014') || normalized.includes('statement timeout');
+}
+
+function jsonResponse(value: unknown, status = 200) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+async function fetchPagedSource(
+  nativeFetch: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  source: PagedSource,
+): Promise<{ response: Response; activeExceptionTimedOut: boolean }> {
+  const rows: unknown[] = [];
+  let activeExceptionTimedOut = false;
+
+  for (let offset = 0; offset < source.maxRows; offset += source.pageSize) {
+    const response = await nativeFetch(pageRequest(input, source, offset), init);
+
+    if (source.path === ACTIVE_EXCEPTION_PATH && await isStatementTimeout(response)) {
+      activeExceptionTimedOut = true;
+      return { response: jsonResponse([]), activeExceptionTimedOut };
+    }
+
+    if (!response.ok) return { response, activeExceptionTimedOut };
+
+    let page: unknown;
+    try {
+      page = await response.json();
+    } catch {
+      return {
+        response: jsonResponse({
+          message: `${source.path} returned a non-JSON response while paging current operational data.`,
+        }, 502),
+        activeExceptionTimedOut,
+      };
+    }
+
+    if (!Array.isArray(page)) {
+      return {
+        response: jsonResponse({ message: `${source.path} did not return a row array.` }, 502),
+        activeExceptionTimedOut,
+      };
+    }
+
+    rows.push(...page);
+    if (page.length < source.pageSize) return { response: jsonResponse(rows), activeExceptionTimedOut };
+  }
+
+  return {
+    response: jsonResponse({
+      message: `${source.path} reached the current-operation safety ceiling of ${source.maxRows} rows. The snapshot was rejected rather than truncated.`,
+    }, 409),
+    activeExceptionTimedOut,
+  };
 }
 
 async function loadTimeoutSafeSnapshot(): Promise<ResilientOrdermentumViews | null> {
@@ -59,18 +135,12 @@ async function loadTimeoutSafeSnapshot(): Promise<ResilientOrdermentumViews | nu
   let activeExceptionTimedOut = false;
 
   const guardedFetch: typeof fetch = async (input, init) => {
-    const activeExceptionRequest = isActiveExceptionRequest(input);
-    const response = await nativeFetch(lighterActiveExceptionRequest(input), init);
+    const source = pagedSourceFor(input);
+    if (!source) return nativeFetch(input, init);
 
-    if (activeExceptionRequest && await isStatementTimeout(response)) {
-      activeExceptionTimedOut = true;
-      return new Response('[]', {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-
-    return response;
+    const result = await fetchPagedSource(nativeFetch, input, init, source);
+    activeExceptionTimedOut ||= result.activeExceptionTimedOut;
+    return result.response;
   };
 
   globalThis.fetch = guardedFetch;
