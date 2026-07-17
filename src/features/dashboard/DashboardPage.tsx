@@ -8,6 +8,10 @@ import {
   type OwnerCommandKpis,
 } from '@/data/repositories/ownerCommandCenter';
 import {
+  loadOrderOperationsSummary,
+  type OrderOperationsSummary,
+} from '@/data/repositories/orderOperations';
+import {
   DashboardAttentionRow,
   DashboardLoading,
   DashboardMetric,
@@ -41,14 +45,20 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const [kpis, setKpis] = useState<OwnerCommandKpis | null>(null);
   const [attention, setAttention] = useState<OwnerCommandAttentionRow[]>([]);
+  const [operationsSummary, setOperationsSummary] = useState<OrderOperationsSummary | null>(null);
 
   useEffect(() => {
     if (!snapshotReady) return;
     let active = true;
-    void Promise.allSettled([loadOwnerCommandKpis(), loadOwnerCommandAttention()]).then(([kpiResult, attentionResult]) => {
+    void Promise.allSettled([
+      loadOwnerCommandKpis(),
+      loadOwnerCommandAttention(),
+      loadOrderOperationsSummary(),
+    ]).then(([kpiResult, attentionResult, operationsResult]) => {
       if (!active) return;
       setKpis(kpiResult.status === 'fulfilled' ? kpiResult.value : null);
       setAttention(attentionResult.status === 'fulfilled' ? attentionResult.value : []);
+      setOperationsSummary(operationsResult.status === 'fulfilled' ? operationsResult.value : null);
     });
     return () => { active = false; };
   }, [snapshotReady, data.syncBatch.completedAt]);
@@ -77,6 +87,10 @@ export function DashboardPage({
   const subtitle = role === 'account'
     ? 'Accounts control across today’s Ordermentum changes, release blockers and receivables.'
     : 'One clear operating view across current orders, fulfilment pressure and customer risk.';
+  const exactCurrentOrders = operationsSummary
+    ? numberValue(operationsSummary.current_orders) + numberValue(operationsSummary.source_review_orders)
+    : view.activeOrders;
+  const currentCountMismatch = Boolean(operationsSummary) && exactCurrentOrders !== orders.length;
 
   return (
     <section className="owner-command-shell">
@@ -90,7 +104,14 @@ export function DashboardPage({
         <div className="owner-command-hero-metrics">
           <DashboardMetric label="New today" value={view.count('newToday')} helper="First seen today" tone="good" />
           <DashboardMetric label="Updated today" value={view.count('updatedToday')} helper="Changed today" tone="blue" />
-          <DashboardMetric label="Current orders" value={view.activeOrders} helper={`${orders.length} live operational records`} tone="warn" />
+          <DashboardMetric
+            label="Current orders"
+            value={exactCurrentOrders}
+            helper={operationsSummary
+              ? `${orders.length} current rows loaded · exact server classification`
+              : `${orders.length} current rows loaded · summary unavailable`}
+            tone={currentCountMismatch ? 'warn' : 'good'}
+          />
           <DashboardMetric label="Open AR" value={money(view.openAr)} helper="Outstanding balance" />
         </div>
       </section>
