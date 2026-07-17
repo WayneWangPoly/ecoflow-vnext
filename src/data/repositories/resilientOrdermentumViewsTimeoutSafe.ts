@@ -1,4 +1,5 @@
 import {
+  applySupabaseOrdermentumViews as applyBaseProjection,
   loadSupabaseOrdermentumViews as loadBaseSnapshot,
   type ResilientOrdermentumViews,
 } from './resilientOrdermentumViews';
@@ -163,6 +164,20 @@ async function loadTimeoutSafeSnapshot(): Promise<ResilientOrdermentumViews | nu
   } finally {
     globalThis.fetch = nativeFetch;
   }
+}
+
+export function applySupabaseOrdermentumViews(
+  ...args: Parameters<typeof applyBaseProjection>
+): ReturnType<typeof applyBaseProjection> {
+  const projected = applyBaseProjection(...args);
+  const currentLoaded = projected.orders.length;
+  return {
+    ...projected,
+    syncBatch: {
+      ...projected.syncBatch,
+      fetched: currentLoaded,
+    },
+  };
 }
 
 export function loadSupabaseOrdermentumViews(): Promise<ResilientOrdermentumViews | null> {
