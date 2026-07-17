@@ -25,6 +25,11 @@ assert(verifier.includes('groupRawOrderAliases'), 'Raw orders must be counted as
 assert(verifier.includes('sourceBackedProjectedOrders'), 'Projected order count must use source-backed distinct records.');
 assert(verifier.includes('sourceBackedProjectedInvoices'), 'Projected invoice count must exclude retained canonical rows that are absent from the current source mirror.');
 assert(verifier.includes("count_semantics: 'source-backed distinct records'"), 'Snapshot metadata must state its counting semantics.');
+assert(verifier.includes('activeSourceMissingOrders'), 'Active source-missing orders must be computed from canonical source and presence rows.');
+assert(verifier.includes("['active source-missing orders', activeSourceMissingOrders]"), 'Active source-missing orders must remain a hard mirror blocker.');
+assert(verifier.includes('unknownRecentStatuses'), 'Unknown recent source statuses must be computed rather than hardcoded.');
+assert(!verifier.includes('active_source_missing_orders: 0'), 'Active source-missing status must never be hardcoded to zero.');
+assert(!verifier.includes('unknown_recent_statuses: 0'), 'Unknown current status count must never be hardcoded to zero.');
 assert(orchestrator.includes('finalisation_completed_at'), 'Finalisation completion must be persisted before verification.');
 assert(orchestrator.includes('complete_mirror_finalisation_reused'), 'Finalisation checkpoint reuse log is missing.');
 assert(orchestrator.includes('complete_mirror_finalisation_recovered'), 'Recovery of the already-completed production finalisation is missing.');
