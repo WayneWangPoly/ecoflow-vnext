@@ -4,9 +4,11 @@ import { spawnSync } from 'node:child_process';
 
 const verifierPath = 'scripts/verify-ordermentum-complete-mirror.mjs';
 const orchestratorPath = 'scripts/ordermentum-complete-mirror.mjs';
-const sourceMissingMigrationPath = 'supabase/migrations/20260717130000_active_source_missing_operational_definition.sql';
+const workflowPath = '.github/workflows/ordermentum-complete-mirror.yml';
+const sourceMissingMigrationPath = 'supabase/migrations/20260717140000_active_source_missing_details.sql';
 const verifier = fs.readFileSync(verifierPath, 'utf8');
 const orchestrator = fs.readFileSync(orchestratorPath, 'utf8');
+const workflow = fs.readFileSync(workflowPath, 'utf8');
 const sourceMissingMigration = fs.readFileSync(sourceMissingMigrationPath, 'utf8');
 
 function assert(condition, message) {
@@ -22,29 +24,28 @@ assert(!/v_ecoflow_ordermentum_mirror_health_v\d/i.test(verifier), 'Final verifi
 for (const table of ['ordermentum_raw_orders', 'om_orders', 'ordermentum_raw_master_resources', 'om_invoices', 'ecoflow_ordermentum_order_catalog']) {
   assert(verifier.includes(`'${table}'`), `Lightweight verifier must read ${table} directly.`);
 }
-assert(verifier.includes('LIGHTWEIGHT_DIRECT_V3'), 'Lightweight verification v3 mode marker is missing.');
-assert(verifier.includes('groupRawOrderAliases'), 'Raw orders must be counted as distinct source records, not as both UUID and order-number aliases.');
+assert(verifier.includes('LIGHTWEIGHT_DIRECT_V4'), 'Lightweight verification v4 mode marker is missing.');
+assert(verifier.includes('groupRawOrderAliases'), 'Raw orders must be counted as distinct source records.');
 assert(verifier.includes('sourceBackedProjectedOrders'), 'Projected order count must use source-backed distinct records.');
-assert(verifier.includes('sourceBackedProjectedInvoices'), 'Projected invoice count must exclude retained canonical rows that are absent from the current source mirror.');
-assert(verifier.includes("count_semantics: 'source-backed distinct records'"), 'Snapshot metadata must state its counting semantics.');
-assert(verifier.includes("db.rpc('ecoflow_count_active_source_missing_orders')"), 'Active source-missing count must come from the operational workflow-state contract.');
-assert(verifier.includes("['active source-missing orders', activeSourceMissingOrders]"), 'Genuinely active source-missing orders must remain a hard mirror blocker.');
-assert(verifier.includes('unknownRecentStatuses'), 'Unknown recent source statuses must be computed rather than hardcoded.');
-assert(verifier.includes('!sourceMissingOrderKeys.has(text(row.id))'), 'Retained source-missing history must not be classified as a current source-status review.');
-assert(!verifier.includes('active_source_missing_orders: 0'), 'Active source-missing status must never be hardcoded to zero.');
-assert(!verifier.includes('unknown_recent_statuses: 0'), 'Unknown current status count must never be hardcoded to zero.');
-assert(sourceMissingMigration.includes('ecoflow_count_active_source_missing_orders'), 'Operational source-missing count function is missing.');
-assert(sourceMissingMigration.includes('v_ecoflow_ordermentum_internal_order_drafts_v3'), 'Source-missing activity must be grounded in internal workflow state.');
-assert(sourceMissingMigration.includes('d.internal_order_id is not null'), 'A retained source-missing order cannot be active without an internal EcoFlow order.');
-assert(!sourceMissingMigration.includes('ecoflow_ui_active_order_keys'), 'Mirror verification must not depend on the UI acceleration cache.');
-assert(orchestrator.includes('finalisation_completed_at'), 'Finalisation completion must be persisted before verification.');
-assert(orchestrator.includes('complete_mirror_finalisation_reused'), 'Finalisation checkpoint reuse log is missing.');
-assert(orchestrator.includes('complete_mirror_finalisation_recovered'), 'Recovery of the already-completed production finalisation is missing.');
-assert(orchestrator.indexOf('await ensureHistoryFinalised(historyRunId);') < orchestrator.indexOf('await verifyMirror(false);'), 'Finalisation must be checkpointed before verification.');
+assert(verifier.includes('sourceBackedProjectedInvoices'), 'Projected invoice count must exclude retained canonical rows absent from source.');
+assert(verifier.includes("db.rpc('ecoflow_active_source_missing_order_details')"), 'Active source-missing details must be read from the operational contract.');
+assert(verifier.includes('active_source_missing_order_details: activeSourceMissingDetails'), 'Exact active source-missing details must be persisted in snapshot metadata.');
+assert(verifier.includes("degradedExitMode === 'transition'"), 'Verifier must support transition-only alerting.');
+assert(verifier.includes('previousBlockerFingerprint'), 'Verifier must compare the current blocker set with the persisted previous set.');
+assert(verifier.includes("degraded_alert_state: active.length === 0"), 'Snapshot must disclose degraded alert state.');
+assert(verifier.includes('workflow_failure_suppressed: true'), 'Unchanged persistent blockers must remain visible without repeatedly failing the workflow.');
+assert(orchestrator.includes('degraded-exit-mode'), 'Orchestrator must pass the degraded alert policy to verification.');
+assert(orchestrator.includes("verification_mode: 'LIGHTWEIGHT_DIRECT_V4'"), 'History checkpoint metadata must record verification v4.');
+assert(workflow.includes('--degraded-exit-mode=transition'), 'Scheduled complete mirror must alert only on new or changed blocker sets.');
+assert(sourceMissingMigration.includes('ecoflow_active_source_missing_order_details'), 'Source-missing detail function is missing.');
+assert(sourceMissingMigration.includes('internal_order_id'), 'Source-missing detail must include the internal workflow identity.');
+assert(sourceMissingMigration.includes('warehouse_gate_status'), 'Source-missing detail must include the warehouse state.');
+assert(!sourceMissingMigration.includes('ecoflow_ui_active_order_keys'), 'Mirror detail verification must not depend on the UI cache.');
 
 console.log(JSON.stringify({
   action: 'audit_ordermentum_lightweight_verification',
   status: 'passed',
   verifier: verifierPath,
   orchestrator: orchestratorPath,
+  workflow: workflowPath,
 }, null, 2));

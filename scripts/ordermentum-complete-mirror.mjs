@@ -58,10 +58,12 @@ if (!['recent', 'resume_history', 'restart_history', 'verify_only'].includes(mod
 requireEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ORDERMENTUM_USERNAME', 'ORDERMENTUM_PASSWORD', 'ORDERMENTUM_SUPPLIER_ID']);
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const timeBudgetMinutes = String(args['time-budget-minutes'] || process.env.ORDERMENTUM_HISTORY_SLICE_MINUTES || 45);
+const degradedExitMode = String(args['degraded-exit-mode'] || process.env.ORDERMENTUM_DEGRADED_EXIT_MODE || 'always').toLowerCase();
+if (!['always', 'transition', 'never'].includes(degradedExitMode)) throw new Error(`Unsupported degraded exit mode: ${degradedExitMode}`);
 const resultFile = '/tmp/ordermentum-history-pipeline-result.json';
 const mirrorStart = new Date().toISOString();
 
-console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart, timeBudgetMinutes: Number(timeBudgetMinutes) }, null, 2));
+console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart, timeBudgetMinutes: Number(timeBudgetMinutes), degradedExitMode }, null, 2));
 
 async function runFinalisationData({ scope, historyRunId = null }) {
   await timed('complete Ordermentum master mirror', () => runNode('scripts/ordermentum-master-data-sync.mjs', [
@@ -77,7 +79,10 @@ async function runFinalisationData({ scope, historyRunId = null }) {
 
 async function verifyMirror(requireHistory) {
   await timed(requireHistory ? 'verify completed history contract' : 'verify complete mirror', () =>
-    runNode('scripts/verify-ordermentum-complete-mirror.mjs', [`--require-history=${requireHistory ? 'true' : 'false'}`]));
+    runNode('scripts/verify-ordermentum-complete-mirror.mjs', [
+      `--require-history=${requireHistory ? 'true' : 'false'}`,
+      `--degraded-exit-mode=${degradedExitMode}`,
+    ]));
 }
 
 async function loadHistoryRun(historyRunId) {
@@ -198,7 +203,7 @@ if (history.state === 'READY_TO_FINALISE') {
     completed_at: new Date().toISOString(),
     heartbeat_at: new Date().toISOString(),
     last_error: null,
-    metadata: { ...(run.metadata || {}), verification_completed_at: new Date().toISOString(), verification_mode: 'LIGHTWEIGHT_DIRECT_V1' },
+    metadata: { ...(run.metadata || {}), verification_completed_at: new Date().toISOString(), verification_mode: 'LIGHTWEIGHT_DIRECT_V4' },
   }).eq('id', historyRunId).select('id').single();
   if (result.error || !result.data) throw result.error || new Error('Could not mark history pipeline complete.');
   await verifyMirror(true);

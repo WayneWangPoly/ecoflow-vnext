@@ -5,7 +5,20 @@ const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error('Supabase service credentials are required.');
 
+function argValue(name) {
+  const prefix = `--${name}=`;
+  const inline = process.argv.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(`--${name}`);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
 const requireHistory = process.argv.some((arg) => arg === '--require-history=true');
+const degradedExitMode = String(argValue('degraded-exit-mode') || process.env.ORDERMENTUM_DEGRADED_EXIT_MODE || 'always').toLowerCase();
+if (!['always', 'transition', 'never'].includes(degradedExitMode)) {
+  throw new Error(`Unsupported --degraded-exit-mode: ${degradedExitMode}`);
+}
+
 const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const pageSize = 1000;
 const maxRows = 100000;
@@ -89,6 +102,19 @@ function groupRawOrderAliases(rows) {
   return groups;
 }
 
+function normalizedBlockers(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => Array.isArray(row)
+      ? { label: text(row[0]), count: Number(row[1]) || 0 }
+      : { label: text(row?.label), count: Number(row?.count) || 0 })
+    .filter((row) => row.label && row.count > 0)
+    .sort((left, right) => left.label.localeCompare(right.label) || left.count - right.count);
+}
+
+function blockerFingerprint(rows) {
+  return JSON.stringify(normalizedBlockers(rows));
+}
+
 const [
   rawOrders,
   projectedOrders,
@@ -97,7 +123,8 @@ const [
   sourcePresence,
   historyResult,
   catalog,
-  activeSourceMissingResult,
+  activeSourceMissingDetailsResult,
+  previousSnapshotResult,
 ] = await Promise.all([
   loadPaged('ordermentum_raw_orders', 'external_order_id,external_order_number'),
   loadPaged('om_orders', 'id,order_number,status,order_status,cancelled,cancelled_at,delivery_date,due_at,created_at,updated_at'),
@@ -111,16 +138,22 @@ const [
     .limit(1)
     .maybeSingle(),
   loadPaged('ecoflow_ordermentum_order_catalog', 'order_key,source_status,detail_status,last_full_seen_run_id'),
-  db.rpc('ecoflow_count_active_source_missing_orders'),
+  db.rpc('ecoflow_active_source_missing_order_details'),
+  db.from('ecoflow_ordermentum_mirror_status_snapshot')
+    .select('overall_status,blockers,metadata')
+    .eq('snapshot_key', 'ORDERMENTUM_COMPLETE_MIRROR')
+    .maybeSingle(),
 ]);
 
 if (historyResult.error) throw new Error(`ecoflow_ordermentum_history_runs: ${historyResult.error.message}`);
-if (activeSourceMissingResult.error) throw new Error(`ecoflow_count_active_source_missing_orders: ${activeSourceMissingResult.error.message}`);
+if (activeSourceMissingDetailsResult.error) throw new Error(`ecoflow_active_source_missing_order_details: ${activeSourceMissingDetailsResult.error.message}`);
+if (previousSnapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_snapshot: ${previousSnapshotResult.error.message}`);
 const history = historyResult.data || null;
-const activeSourceMissingOrders = Number(activeSourceMissingResult.data ?? 0);
-if (!Number.isFinite(activeSourceMissingOrders) || activeSourceMissingOrders < 0) {
-  throw new Error(`ecoflow_count_active_source_missing_orders returned an invalid count: ${activeSourceMissingResult.data}`);
-}
+const previousSnapshot = previousSnapshotResult.data || null;
+const activeSourceMissingDetails = Array.isArray(activeSourceMissingDetailsResult.data)
+  ? activeSourceMissingDetailsResult.data
+  : [];
+const activeSourceMissingOrders = activeSourceMissingDetails.length;
 
 const projectedOrderKeys = new Set();
 for (const row of projectedOrders) {
@@ -174,7 +207,7 @@ const checkedAt = new Date().toISOString();
 
 const data = {
   overall_status: 'COMPLETE',
-  verification_mode: 'LIGHTWEIGHT_DIRECT_V3',
+  verification_mode: 'LIGHTWEIGHT_DIRECT_V4',
   checked_at: checkedAt,
   raw_order_count: rawOrderGroups.size,
   projected_order_count: sourceBackedProjectedOrders,
@@ -230,8 +263,16 @@ if (requireHistory) {
   blockers.push(['history details failed', detailFailed]);
 }
 
-const active = blockers.filter((entry) => Number(entry[1]) > 0);
+const active = normalizedBlockers(blockers);
 if (active.length) data.overall_status = 'DEGRADED';
+const currentBlockerFingerprint = blockerFingerprint(active);
+const previousBlockerFingerprint = text(previousSnapshot?.metadata?.blocker_fingerprint)
+  || blockerFingerprint(previousSnapshot?.blockers || []);
+const blockerChanged = currentBlockerFingerprint !== previousBlockerFingerprint;
+const shouldFailForDegraded = active.length > 0 && (
+  degradedExitMode === 'always'
+  || (degradedExitMode === 'transition' && blockerChanged)
+);
 
 const warnings = [];
 if (sourceMissingOrders.length > 0) {
@@ -259,7 +300,7 @@ warnings.push({
 const snapshot = {
   snapshot_key: 'ORDERMENTUM_COMPLETE_MIRROR',
   ...data,
-  blockers: active.map(([label, count]) => ({ label, count: Number(count) })),
+  blockers: active,
   warnings,
   metadata: {
     require_history: requireHistory,
@@ -268,7 +309,17 @@ const snapshot = {
     canonical_invoice_table_rows: projectedInvoices.length,
     operationally_current_order_rows: currentCanonicalOrders.length,
     active_source_missing_semantics: 'SOURCE_MISSING orders with a non-terminal EcoFlow internal workflow',
+    active_source_missing_order_details: activeSourceMissingDetails,
     count_semantics: 'source-backed distinct records',
+    blocker_fingerprint: currentBlockerFingerprint,
+    previous_blocker_fingerprint: previousBlockerFingerprint,
+    blocker_changed: blockerChanged,
+    degraded_exit_mode: degradedExitMode,
+    degraded_alert_state: active.length === 0
+      ? 'CLEAR'
+      : shouldFailForDegraded
+        ? 'NEW_OR_CHANGED'
+        : 'UNCHANGED_SUPPRESSED',
   },
 };
 const snapshotResult = await db.from('ecoflow_ordermentum_mirror_status_snapshot').upsert(snapshot, { onConflict: 'snapshot_key' });
@@ -276,14 +327,31 @@ if (snapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_sna
 
 console.log(JSON.stringify({
   generated_at: checkedAt,
-  health_source: 'lightweight_direct_v3',
+  health_source: 'lightweight_direct_v4',
   require_history: requireHistory,
+  degraded_exit_mode: degradedExitMode,
   ordermentum_complete_mirror: data,
   blockers: snapshot.blockers,
+  active_source_missing_order_details: activeSourceMissingDetails,
+  degraded_alert: {
+    blocker_changed: blockerChanged,
+    should_fail: shouldFailForDegraded,
+    state: snapshot.metadata.degraded_alert_state,
+  },
   warnings,
   snapshot_persisted: true,
 }, null, 2));
 
+if (shouldFailForDegraded) {
+  throw new Error(`Ordermentum mirror is DEGRADED with a new or changed blocker: ${active.map(({ label, count }) => `${label}: ${count}`).join('; ')}`);
+}
+
 if (active.length) {
-  throw new Error(`Ordermentum mirror is DEGRADED: ${active.map(([label, count]) => `${label}: ${count}`).join('; ')}`);
+  console.warn(JSON.stringify({
+    action: 'complete_mirror_degraded_unchanged',
+    blocking: true,
+    workflow_failure_suppressed: true,
+    message: 'The persisted mirror remains DEGRADED, but this blocker set is unchanged and has already been notified.',
+    blockers: active,
+  }));
 }
