@@ -97,6 +97,7 @@ const [
   sourcePresence,
   historyResult,
   catalog,
+  activeSourceMissingResult,
 ] = await Promise.all([
   loadPaged('ordermentum_raw_orders', 'external_order_id,external_order_number'),
   loadPaged('om_orders', 'id,order_number,status,order_status,cancelled,cancelled_at,delivery_date,due_at,created_at,updated_at'),
@@ -110,10 +111,16 @@ const [
     .limit(1)
     .maybeSingle(),
   loadPaged('ecoflow_ordermentum_order_catalog', 'order_key,source_status,detail_status,last_full_seen_run_id'),
+  db.rpc('ecoflow_count_active_source_missing_orders'),
 ]);
 
 if (historyResult.error) throw new Error(`ecoflow_ordermentum_history_runs: ${historyResult.error.message}`);
+if (activeSourceMissingResult.error) throw new Error(`ecoflow_count_active_source_missing_orders: ${activeSourceMissingResult.error.message}`);
 const history = historyResult.data || null;
+const activeSourceMissingOrders = Number(activeSourceMissingResult.data ?? 0);
+if (!Number.isFinite(activeSourceMissingOrders) || activeSourceMissingOrders < 0) {
+  throw new Error(`ecoflow_count_active_source_missing_orders returned an invalid count: ${activeSourceMissingResult.data}`);
+}
 
 const projectedOrderKeys = new Set();
 for (const row of projectedOrders) {
@@ -157,16 +164,17 @@ const detailComplete = catalogPresent.filter((row) => row.detail_status === 'COM
 const sourceMissingRecords = sourcePresence.filter((row) => row.source_status === 'SOURCE_MISSING').length;
 const sourceMissingOrders = sourcePresence.filter((row) => row.domain === 'ORDER' && row.source_status === 'SOURCE_MISSING');
 const sourceMissingOrderKeys = new Set(sourceMissingOrders.map((row) => text(row.external_id)).filter(Boolean));
-const currentCanonicalOrders = projectedOrders.filter(isOperationallyCurrent);
-const activeSourceMissingOrders = currentCanonicalOrders.filter((row) => (
-  sourceMissingOrderKeys.has(text(row.id)) || sourceMissingOrderKeys.has(text(row.order_number))
-)).length;
+const currentCanonicalOrders = projectedOrders.filter((row) => (
+  isOperationallyCurrent(row)
+  && !sourceMissingOrderKeys.has(text(row.id))
+  && !sourceMissingOrderKeys.has(text(row.order_number))
+));
 const unknownRecentStatuses = currentCanonicalOrders.filter((row) => !explicitCurrentStatuses.has(canonicalStatus(row))).length;
 const checkedAt = new Date().toISOString();
 
 const data = {
   overall_status: 'COMPLETE',
-  verification_mode: 'LIGHTWEIGHT_DIRECT_V2',
+  verification_mode: 'LIGHTWEIGHT_DIRECT_V3',
   checked_at: checkedAt,
   raw_order_count: rawOrderGroups.size,
   projected_order_count: sourceBackedProjectedOrders,
@@ -259,6 +267,7 @@ const snapshot = {
     canonical_order_table_rows: projectedOrders.length,
     canonical_invoice_table_rows: projectedInvoices.length,
     operationally_current_order_rows: currentCanonicalOrders.length,
+    active_source_missing_semantics: 'SOURCE_MISSING orders with a non-terminal EcoFlow internal workflow',
     count_semantics: 'source-backed distinct records',
   },
 };
@@ -267,7 +276,7 @@ if (snapshotResult.error) throw new Error(`ecoflow_ordermentum_mirror_status_sna
 
 console.log(JSON.stringify({
   generated_at: checkedAt,
-  health_source: 'lightweight_direct_v2',
+  health_source: 'lightweight_direct_v3',
   require_history: requireHistory,
   ordermentum_complete_mirror: data,
   blockers: snapshot.blockers,
