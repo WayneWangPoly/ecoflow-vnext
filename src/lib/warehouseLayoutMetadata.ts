@@ -7,6 +7,7 @@ export const WAREHOUSE_SKU_SLOT_CHANGED_EVENT = 'ecoflow:warehouse-sku-slot-chan
 export const WAREHOUSE_LAYOUT_PRESENTATION_EVENT = 'ecoflow:warehouse-layout-presentation';
 
 const SKU_SLOT_PREFIX = 'sku-slots:';
+const SKU_VISUAL_ORDER_PREFIX = 'sku-order:';
 
 function emptyBox(): WarehouseLayoutBox {
   return { left: '', top: '', width: '', height: '' };
@@ -32,12 +33,41 @@ export function skuSlotLayoutKey(locationCode: string) {
   return `${SKU_SLOT_PREFIX}${locationCode.trim().toLowerCase()}`;
 }
 
+export function skuVisualOrderLayoutKey(locationCode: string) {
+  return `${SKU_VISUAL_ORDER_PREFIX}${locationCode.trim().toLowerCase()}`;
+}
+
 export function skuSlotCountsFromLayout(layout: WarehouseLayoutState) {
   return Object.fromEntries(
     Object.entries(layout)
       .filter(([key, box]) => key.startsWith(SKU_SLOT_PREFIX) && Number.isFinite(Number(box.skuSlots)))
       .map(([key, box]) => [key.slice(SKU_SLOT_PREFIX.length).toUpperCase(), Math.max(1, Math.floor(Number(box.skuSlots)))])
   ) as Record<string, number>;
+}
+
+export function skuVisualOrdersFromLayout(layout: WarehouseLayoutState) {
+  return Object.fromEntries(
+    Object.entries(layout)
+      .filter(([key, box]) => key.startsWith(SKU_VISUAL_ORDER_PREFIX) && Array.isArray(box.skuOrder))
+      .map(([key, box]) => [
+        key.slice(SKU_VISUAL_ORDER_PREFIX.length).toUpperCase(),
+        (box.skuOrder || []).map((item) => String(item)).filter(Boolean),
+      ])
+  ) as Record<string, string[]>;
+}
+
+export function mergeSkuVisualOrders(layout: WarehouseLayoutState, orders: Record<string, string[]>) {
+  const merged = { ...layout };
+  Object.keys(merged).filter((key) => key.startsWith(SKU_VISUAL_ORDER_PREFIX)).forEach((key) => delete merged[key]);
+  Object.entries(orders).forEach(([locationCode, skuOrder]) => {
+    const normalised = skuOrder.map((item) => String(item)).filter(Boolean);
+    if (normalised.length < 2) return;
+    merged[skuVisualOrderLayoutKey(locationCode)] = {
+      ...emptyBox(),
+      skuOrder: normalised,
+    };
+  });
+  return merged as WarehouseLayoutState;
 }
 
 export function rackPresentationFromLayout(layout: WarehouseLayoutState, rackCode: string) {
@@ -61,6 +91,11 @@ export function mergeRackPresentation(layout: WarehouseLayoutState, rackCode: st
   };
 }
 
+/**
+ * Deprecated compatibility path. Existing layout JSON may still contain skuSlots,
+ * but no current Warehouse Map control calls this function. Physical cells accept
+ * any number of real SKU rows; visual ordering is stored through skuOrder instead.
+ */
 function layoutWithSkuSlotCount(layout: WarehouseLayoutState, code: string, slotCount: number) {
   const key = skuSlotLayoutKey(code);
   return {
@@ -87,8 +122,6 @@ export async function incrementWarehouseSkuSlot(locationCode: string, currentMin
   const code = locationCode.trim().toUpperCase();
   if (!code) throw new Error('Select a warehouse location first.');
 
-  // The floor worker must see the new slot immediately. Cloud persistence follows,
-  // but a transient network/RLS problem must not make the button appear dead.
   const optimistic = nextSkuSlotLayout(readLocalWarehouseLayout(), code, currentMinimum);
   publishSkuSlot(optimistic.layout, code, optimistic.slotCount, false);
 
@@ -116,7 +149,6 @@ export async function incrementWarehouseSkuSlot(locationCode: string, currentMin
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (attempt < 2 && /LAYOUT_VERSION_CONFLICT/i.test(errorMessage)) continue;
       publishSkuSlot(readLocalWarehouseLayout(), code, optimistic.slotCount, false, errorMessage);
-      // Keep the visible local slot. The next Save layout or retry can persist it.
       return optimistic.slotCount;
     }
   }

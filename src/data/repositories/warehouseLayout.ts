@@ -9,7 +9,10 @@ export type WarehouseLayoutBox = {
   displayName?: string;
   categories?: string[];
   binOrder?: string[];
+  /** Deprecated visual-capacity metadata retained only for backward-compatible layout reads. */
   skuSlots?: number;
+  /** Visual order only. It never changes SKU assignment, quantity or the stock ledger. */
+  skuOrder?: string[];
   floorFontScale?: number;
   rackFontScale?: number;
   locationFontScale?: number;
