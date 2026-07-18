@@ -9,6 +9,7 @@ import {
   writeLocalWarehouseLayout,
 } from '@/lib/warehouseLayoutMetadata';
 import { supabase } from '@/lib/supabaseClient';
+import './warehouseLayoutEditorCompact.css';
 
 const STORAGE_KEY = WAREHOUSE_LAYOUT_STORAGE_KEY;
 const SITE_CODE = WAREHOUSE_SITE_CODE;
@@ -46,16 +47,19 @@ function storedLayout(): WarehouseLayoutState {
   return readLocalWarehouseLayout();
 }
 
+function applyBox(element: HTMLElement, box: WarehouseLayoutBox | undefined) {
+  if (!box) return;
+  if (box.left !== undefined) element.style.left = box.left || '';
+  if (box.top !== undefined) element.style.top = box.top || '';
+  if (box.width !== undefined) element.style.width = box.width || '';
+  if (box.height !== undefined) element.style.height = box.height || '';
+}
+
 function applyLayout(layout: WarehouseLayoutState) {
   layoutElements().forEach((element, index) => {
     const key = element.dataset.layoutKey || elementKey(element, index);
     element.dataset.layoutKey = key;
-    const box = layout[key];
-    if (!box) return;
-    if (box.left) element.style.left = box.left;
-    if (box.top) element.style.top = box.top;
-    if (box.width) element.style.width = box.width;
-    if (box.height) element.style.height = box.height;
+    applyBox(element, layout[key]);
   });
 }
 
@@ -73,12 +77,20 @@ function percent(value: string) {
 }
 
 function syncLabel(state: LayoutSyncState, version: number | null) {
-  if (state === 'loading') return 'Loading cloud layout';
-  if (state === 'saving') return 'Saving layout…';
-  if (state === 'cloud') return `Cloud layout · v${version ?? 1}`;
-  if (state === 'conflict') return 'Cloud changed · reload required';
-  if (state === 'error') return 'Cloud save failed · local copy retained';
-  return 'Local layout fallback';
+  if (state === 'loading') return 'Loading cloud';
+  if (state === 'saving') return 'Saving…';
+  if (state === 'cloud') return `Cloud v${version ?? 1}`;
+  if (state === 'conflict') return 'Cloud changed';
+  if (state === 'error') return 'Save failed · local kept';
+  return 'Local layout';
+}
+
+function selectedLabel(key: string) {
+  if (!key) return 'Tap a rack or area';
+  return key
+    .replace(/^(rack|static):/, '')
+    .replace(/-/g, ' ')
+    .toUpperCase();
 }
 
 export function WarehouseMapOwnerEdit() {
@@ -88,11 +100,23 @@ export function WarehouseMapOwnerEdit() {
   const [selectedKey, setSelectedKey] = useState('');
   const [layoutVersion, setLayoutVersion] = useState<number | null>(null);
   const [syncState, setSyncState] = useState<LayoutSyncState>(supabase ? 'loading' : 'local');
+  const [historyDepth, setHistoryDepth] = useState(0);
   const snapshotRef = useRef<WarehouseLayoutState>({});
   const systemLayoutRef = useRef<WarehouseLayoutState>({});
   const cloudLayoutRef = useRef<WarehouseLayoutState>({});
+  const historyRef = useRef<WarehouseLayoutState[]>([]);
   const cloudLoadStartedRef = useRef(false);
   const editingRef = useRef(false);
+
+  function clearHistory() {
+    historyRef.current = [];
+    setHistoryDepth(0);
+  }
+
+  function pushHistory() {
+    historyRef.current = [...historyRef.current.slice(-19), currentLayout()];
+    setHistoryDepth(historyRef.current.length);
+  }
 
   useEffect(() => {
     editingRef.current = editing;
@@ -143,6 +167,7 @@ export function WarehouseMapOwnerEdit() {
     if (!editing) return;
 
     snapshotRef.current = currentLayout();
+    clearHistory();
     const floorplan = document.querySelector<HTMLElement>('.warehouse-floorplan');
     if (!floorplan) return;
     const floorplanElement = floorplan;
@@ -162,6 +187,7 @@ export function WarehouseMapOwnerEdit() {
       if (!element || !floorplanElement.contains(element)) return;
       event.preventDefault();
       select(element);
+      pushHistory();
       active = element;
       startX = event.clientX;
       startY = event.clientY;
@@ -202,10 +228,25 @@ export function WarehouseMapOwnerEdit() {
     if (!['left', 'top', 'width', 'height'].includes(property)) return;
     const element = selectedElement();
     if (!element) return;
+    pushHistory();
     const current = percent(String(element.style[property as 'left' | 'top' | 'width' | 'height']));
     const minimum = property === 'width' || property === 'height' ? 2 : 0;
     const maximum = property === 'width' || property === 'height' ? 96 : 98;
     element.style[property as 'left' | 'top' | 'width' | 'height'] = `${Math.max(minimum, Math.min(maximum, current + amount)).toFixed(2)}%`;
+  }
+
+  function undo() {
+    const previous = historyRef.current.pop();
+    if (!previous) return;
+    applyLayout(previous);
+    setHistoryDepth(historyRef.current.length);
+  }
+
+  function resetSelected() {
+    const element = selectedElement();
+    if (!element || !selectedKey) return;
+    pushHistory();
+    applyBox(element, systemLayoutRef.current[selectedKey]);
   }
 
   async function save() {
@@ -216,6 +257,7 @@ export function WarehouseMapOwnerEdit() {
       setSyncState('local');
       setEditing(false);
       setSelectedKey('');
+      clearHistory();
       return;
     }
 
@@ -228,6 +270,7 @@ export function WarehouseMapOwnerEdit() {
       setSyncState('cloud');
       setEditing(false);
       setSelectedKey('');
+      clearHistory();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setSyncState(/LAYOUT_VERSION_CONFLICT/i.test(message) ? 'conflict' : 'error');
@@ -239,9 +282,11 @@ export function WarehouseMapOwnerEdit() {
     applyLayout(snapshotRef.current);
     setEditing(false);
     setSelectedKey('');
+    clearHistory();
   }
 
-  function reset() {
+  function resetAll() {
+    pushHistory();
     window.localStorage.removeItem(STORAGE_KEY);
     applyLayout(systemLayoutRef.current);
     setSelectedKey('');
@@ -253,50 +298,92 @@ export function WarehouseMapOwnerEdit() {
     try {
       const row = await loadWarehouseLayout(SITE_CODE);
       const layout = row?.layout_json || systemLayoutRef.current;
+      pushHistory();
       cloudLayoutRef.current = layout;
       setLayoutVersion(row?.layout_version ?? null);
       writeLocalWarehouseLayout(layout);
       applyLayout(layout);
       setSyncState(row ? 'cloud' : 'local');
-      setEditing(false);
       setSelectedKey('');
     } catch {
       setSyncState('error');
     }
   }
 
+  function toggleEditing() {
+    if (editing) {
+      cancel();
+      return;
+    }
+    setEditing(true);
+  }
+
   if (!owner || !host) return null;
+  const hasSelection = Boolean(selectedKey && selectedElement());
+
   return (
     <>
       {createPortal(
-        <button className={`warehouse-owner-edit-button ${editing ? 'active' : ''}`} type="button" onClick={() => setEditing((value) => !value)} title={syncLabel(syncState, layoutVersion)}>
-          {editing ? 'Editing layout' : 'Edit layout'}
+        <button className={`warehouse-owner-edit-button ${editing ? 'active' : ''}`} type="button" onClick={toggleEditing} title={syncLabel(syncState, layoutVersion)}>
+          {editing ? 'Exit layout edit' : 'Edit layout'}
         </button>,
         host,
       )}
       {editing ? createPortal(
-        <aside className="warehouse-layout-editor" aria-label="Owner warehouse layout editor">
-          <div>
-            <span>OWNER LAYOUT CONTROL</span>
-            <strong>{selectedKey ? selectedKey.replace(':', ' · ') : 'Select a rack or area'}</strong>
-            <small>{syncLabel(syncState, layoutVersion)} · rack labels may change, but stock location codes remain fixed.</small>
+        <aside className="warehouse-layout-editor warehouse-layout-editor-compact" aria-label="Owner warehouse layout editor">
+          <header>
+            <div>
+              <span>Layout edit</span>
+              <strong>{selectedLabel(selectedKey)}</strong>
+            </div>
+            <button className="warehouse-layout-close" type="button" onClick={cancel} aria-label="Cancel layout editing">×</button>
+          </header>
+
+          <div className="warehouse-layout-status-row">
+            <span className="warehouse-layout-status-chip">{syncLabel(syncState, layoutVersion)}</span>
+            <span className="warehouse-layout-selection-tip">{hasSelection ? 'Drag it or use the buttons below' : 'Tap a rack on the map'}</span>
           </div>
-          <div className="warehouse-layout-nudge">
-            <button type="button" onClick={() => nudge('top', -0.5)}>↑</button>
-            <button type="button" onClick={() => nudge('left', -0.5)}>←</button>
-            <button type="button" onClick={() => nudge('top', 0.5)}>↓</button>
-            <button type="button" onClick={() => nudge('left', 0.5)}>→</button>
-            <button type="button" onClick={() => nudge('width', -0.5)}>Width −</button>
-            <button type="button" onClick={() => nudge('width', 0.5)}>Width +</button>
-            <button type="button" onClick={() => nudge('height', -0.5)}>Height −</button>
-            <button type="button" onClick={() => nudge('height', 0.5)}>Height +</button>
+
+          <div className="warehouse-layout-direct-tools">
+            <section className="warehouse-layout-tool">
+              <span>Move</span>
+              <div className="warehouse-layout-pad">
+                <button className="up" type="button" disabled={!hasSelection} onClick={() => nudge('top', -0.75)} aria-label="Move up">↑</button>
+                <button className="left" type="button" disabled={!hasSelection} onClick={() => nudge('left', -0.75)} aria-label="Move left">←</button>
+                <button className="centre" type="button" disabled>Move</button>
+                <button className="right" type="button" disabled={!hasSelection} onClick={() => nudge('left', 0.75)} aria-label="Move right">→</button>
+                <button className="down" type="button" disabled={!hasSelection} onClick={() => nudge('top', 0.75)} aria-label="Move down">↓</button>
+              </div>
+            </section>
+
+            <section className="warehouse-layout-tool">
+              <span>Size</span>
+              <div className="warehouse-layout-size-grid">
+                <button type="button" disabled={!hasSelection} onClick={() => nudge('width', -0.75)}>Width −</button>
+                <button type="button" disabled={!hasSelection} onClick={() => nudge('width', 0.75)}>Width +</button>
+                <button type="button" disabled={!hasSelection} onClick={() => nudge('height', -0.75)}>Height −</button>
+                <button type="button" disabled={!hasSelection} onClick={() => nudge('height', 0.75)}>Height +</button>
+              </div>
+            </section>
           </div>
-          <div className="warehouse-layout-actions">
-            <button type="button" onClick={() => void reloadCloud()} disabled={syncState === 'loading' || !supabase}>Reload cloud</button>
-            <button type="button" onClick={reset}>Reset to system</button>
+
+          <div className="warehouse-layout-secondary-actions">
+            <button type="button" onClick={undo} disabled={!historyDepth}>Undo</button>
+            <button type="button" onClick={resetSelected} disabled={!hasSelection}>Reset selected</button>
+          </div>
+
+          <details>
+            <summary>More layout actions</summary>
+            <div className="warehouse-layout-advanced">
+              <button type="button" onClick={() => void reloadCloud()} disabled={syncState === 'loading' || !supabase}>Reload cloud</button>
+              <button type="button" onClick={resetAll}>Reset all</button>
+            </div>
+          </details>
+
+          <footer>
             <button type="button" onClick={cancel}>Cancel</button>
             <button className="primary" type="button" onClick={() => void save()} disabled={syncState === 'saving'}>{syncState === 'saving' ? 'Saving…' : 'Save layout'}</button>
-          </div>
+          </footer>
         </aside>,
         document.body,
       ) : null}
