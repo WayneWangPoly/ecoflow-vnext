@@ -8,24 +8,27 @@ import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
 type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns' | 'barcode';
 
-const modeCopy: Record<WarehouseOpsMode, { label: string; helper: string }> = {
-  stocktake: { label: 'First stocktake', helper: 'Current preparation task: location, barcode, count and controlled opening stock' },
-  receive: { label: 'Daily receiving', helper: 'Inbound supplier deliveries after opening stock is established' },
-  returns: { label: 'Returns', helper: 'Inspect returned goods before stock release' },
-  barcode: { label: 'Barcode maintenance', helper: 'Advanced package rules, replacements and retired codes' },
-};
+const secondaryModes: Array<{ mode: Exclude<WarehouseOpsMode, 'stocktake'>; label: string }> = [
+  { mode: 'receive', label: 'Receiving' },
+  { mode: 'returns', label: 'Returns' },
+  { mode: 'barcode', label: 'Barcode' },
+];
 
 function requestedMode(): WarehouseOpsMode {
   const value = new URLSearchParams(window.location.search).get('mode')?.toLowerCase();
   if (value === 'receive' || value === 'returns' || value === 'barcode') return value;
-  if (value === 'stocktake') return 'stocktake';
   return 'stocktake';
+}
+
+function nativeTabLabel(button: HTMLButtonElement) {
+  return button.textContent?.trim().toLowerCase() || '';
 }
 
 export function WarehouseBarcodeSprintMount() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [mode, setMode] = useState<WarehouseOpsMode>(requestedMode);
   const initialTabApplied = useRef(false);
+  const activatingStocktake = useRef(false);
 
   useEffect(() => {
     function locate() {
@@ -34,15 +37,40 @@ export function WarehouseBarcodeSprintMount() {
       const tabs = content?.querySelector<HTMLElement>('.mobile-tabs');
       if (!content || !tabs) { setHost(null); return; }
 
-      const buttons = Array.from(tabs.querySelectorAll<HTMLButtonElement>('button'));
-      const activeTab = buttons.find((button) => button.classList.contains('active'))?.textContent?.trim();
-      if (!initialTabApplied.current && activeTab !== 'receive') {
+      const nativeButtons = Array.from(tabs.querySelectorAll<HTMLButtonElement>('button:not(.warehouse-first-stocktake-tab)'));
+      const receiveButton = nativeButtons.find((button) => nativeTabLabel(button) === 'receive');
+      if (receiveButton) receiveButton.classList.add('warehouse-native-receive-tab');
+
+      let stocktakeButton = tabs.querySelector<HTMLButtonElement>('.warehouse-first-stocktake-tab');
+      if (!stocktakeButton) {
+        stocktakeButton = document.createElement('button');
+        stocktakeButton.type = 'button';
+        stocktakeButton.className = 'warehouse-first-stocktake-tab';
+        stocktakeButton.textContent = 'First stocktake';
+        tabs.insertBefore(stocktakeButton, receiveButton || tabs.firstChild);
+      }
+      stocktakeButton.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        activatingStocktake.current = true;
+        setMode('stocktake');
+        receiveButton?.click();
+      };
+
+      const activeTab = nativeButtons.find((button) => button.classList.contains('active'));
+      const activeLabel = nativeTabLabel(activeTab || document.createElement('button'));
+      if (!initialTabApplied.current && activeLabel !== 'receive') {
         initialTabApplied.current = true;
-        buttons.find((button) => button.textContent?.trim() === 'receive')?.click();
+        activatingStocktake.current = mode === 'stocktake';
+        receiveButton?.click();
         return;
       }
       initialTabApplied.current = true;
-      const isReceive = activeTab === 'receive';
+
+      const isReceiveSurface = activeLabel === 'receive';
+      const stocktakeActive = isReceiveSurface && mode === 'stocktake';
+      tabs.classList.toggle('warehouse-stocktake-top-active', stocktakeActive);
+      stocktakeButton.classList.toggle('active', stocktakeActive);
 
       let mount = content.querySelector<HTMLElement>('.warehouse-barcode-sprint-mount');
       if (!mount) {
@@ -50,47 +78,47 @@ export function WarehouseBarcodeSprintMount() {
         mount.className = 'warehouse-barcode-sprint-mount warehouse-operations-mount';
         tabs.insertAdjacentElement('afterend', mount);
       }
-      mount.style.display = isReceive ? 'block' : 'none';
+      mount.style.display = isReceiveSurface ? 'block' : 'none';
 
       const nativeReceiveCard = Array.from(content.querySelectorAll<HTMLElement>('.mobile-card')).find((card) => card.querySelector('h2')?.textContent?.trim() === 'Inbound receiving');
-      if (nativeReceiveCard) nativeReceiveCard.classList.toggle('warehouse-native-receive-hide', isReceive);
+      if (nativeReceiveCard) nativeReceiveCard.classList.toggle('warehouse-native-receive-hide', isReceiveSurface);
       setHost(mount);
     }
 
+    function handleNativeTab(event: MouseEvent) {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.mobile-tabs button');
+      if (!button || button.classList.contains('warehouse-first-stocktake-tab')) return;
+      const label = nativeTabLabel(button);
+      if (label !== 'receive') return;
+      if (activatingStocktake.current) {
+        activatingStocktake.current = false;
+        return;
+      }
+      setMode('receive');
+    }
+
     const stopObserving = observeBody(locate);
-    return stopObserving;
-  }, []);
+    document.addEventListener('click', handleNativeTab);
+    return () => {
+      stopObserving();
+      document.removeEventListener('click', handleNativeTab);
+    };
+  }, [mode]);
 
   if (!host) return null;
   return createPortal(
     <>
-      <section className="warehouse-phase-banner">
-        <span>CURRENT RELEASE PHASE</span>
-        <strong>Prepare opening stock before daily receiving, picking and delivery.</strong>
-      </section>
-      <nav className="warehouse-ops-switcher" aria-label="Warehouse work areas">
-        {(Object.keys(modeCopy) as WarehouseOpsMode[]).map((item) => (
-          <button key={item} type="button" className={mode === item ? 'active' : ''} onClick={() => setMode(item)} title={modeCopy[item].helper}>{modeCopy[item].label}</button>
-        ))}
-      </nav>
-      <div className="warehouse-ops-context">
-        <a href="/warehouse-map">1 · Warehouse map</a>
-        <button type="button" className={mode === 'stocktake' ? 'active' : ''} onClick={() => setMode('stocktake')}>2 · First stocktake</button>
-        <a href="/?tab=inventory">3 · Review live stock</a>
-      </div>
+      {mode !== 'stocktake' ? (
+        <nav className="warehouse-ops-switcher warehouse-secondary-ops" aria-label="Warehouse receiving tools">
+          {secondaryModes.map((item) => (
+            <button key={item.mode} type="button" className={mode === item.mode ? 'active' : ''} onClick={() => setMode(item.mode)}>{item.label}</button>
+          ))}
+        </nav>
+      ) : null}
       {mode === 'stocktake' ? <FirstStocktakeFlow /> : null}
       {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
       {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
-      {mode === 'barcode' ? (
-        <>
-          <section className="warehouse-first-stocktake-guide warehouse-advanced-guide">
-            <span>ADVANCED BARCODE MAINTENANCE</span>
-            <strong>Use this only for package-rule corrections, replacement packaging and retired codes.</strong>
-            <small>Normal first-stocktake work belongs in the guided First stocktake screen.</small>
-          </section>
-          <WarehouseBarcodeSprint />
-        </>
-      ) : null}
+      {mode === 'barcode' ? <WarehouseBarcodeSprint /> : null}
     </>,
     host,
   );
