@@ -5,6 +5,7 @@ const DESIGN_WIDTH = 760;
 const DESIGN_HEIGHT = 620;
 const MIN_SCALE = 0.35;
 const MAX_SCALE = 1.6;
+const ZOOM_STEP = 0.05;
 
 function clampScale(value: number) {
   return Math.max(MIN_SCALE, Math.min(MAX_SCALE, value));
@@ -164,9 +165,9 @@ export function WarehouseFloorplanViewport() {
       const current = parseScale(card.dataset.floorplanScale);
 
       if (action === 'fit') applyScale(card, fitScale(card), 'fit');
-      else if (action === 'out') applyScale(card, current - 0.1, 'manual');
+      else if (action === 'out') applyScale(card, current - ZOOM_STEP, 'manual');
       else if (action === 'actual') applyScale(card, 1, 'manual');
-      else if (action === 'in') applyScale(card, current + 0.1, 'manual');
+      else if (action === 'in') applyScale(card, current + ZOOM_STEP, 'manual');
       else if (action === 'expand') {
         const expanded = card.classList.toggle('warehouse-overview-expanded');
         document.body.classList.toggle('warehouse-overview-modal-open', expanded);
