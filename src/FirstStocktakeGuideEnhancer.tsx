@@ -62,13 +62,13 @@ function actionFor(snapshot: GuideSnapshot): CurrentAction {
     return {
       step: '3',
       title: 'Scan the barcode on the package in front of you',
-      detail: 'Use Scan beside Package barcode. Then identify whether this barcode belongs to a carton, sleeve, inner pack or single unit.',
+      detail: 'Use Scan beside Package barcode. Then choose whether the barcode is for an unopened carton, a sleeve inside the carton, or one individual item.',
     };
   }
   return {
     step: '4',
     title: 'Confirm the conversion and physical count',
-    detail: 'Check Units per package and Packages counted, then press Add to first stocktake. Add only stages the line; it does not post stock.',
+    detail: 'For a sleeve the conversion is fixed at 1. For a carton, enter how many sleeves are inside, then enter how many cartons or sleeves you counted.',
   };
 }
 
@@ -165,7 +165,7 @@ export function FirstStocktakeGuideEnhancer() {
               <article>
                 <b>PHASE B</b>
                 <strong>Repeat for each SKU</strong>
-                <p>SKU → scan package barcode → choose package level → enter conversion and count → press Add. Move to the next SKU at the same location.</p>
+                <p>SKU → scan package barcode → choose carton or sleeve → enter the carton conversion and count → press Add. Move to the next SKU at the same location.</p>
               </article>
               <article>
                 <b>PHASE C</b>
@@ -175,15 +175,15 @@ export function FirstStocktakeGuideEnhancer() {
             </div>
 
             <div className="first-stocktake-field-guide">
-              <div><strong>Package rule</strong><span>Which packaging levels exist for this SKU, such as carton and sleeve.</span></div>
-              <div><strong>Package level</strong><span>The level of the barcode you are scanning right now.</span></div>
-              <div><strong>Units per package</strong><span>How many individual stock units are inside one scanned package.</span></div>
-              <div><strong>Packages counted</strong><span>How many identical packages are physically at this location.</span></div>
+              <div><strong>Carton</strong><span>An unopened outer box. Enter how many sleeves are packed inside one carton.</span></div>
+              <div><strong>Sleeve</strong><span>The countable pack found after opening a carton. Its Units per package value is fixed at 1.</span></div>
+              <div><strong>Units per package</strong><span>For cartons: sleeves inside one carton. For sleeves or single items: automatically 1.</span></div>
+              <div><strong>Packages counted</strong><span>The number of cartons, sleeves or individual items physically at this location.</span></div>
             </div>
 
             <div className="first-stocktake-guide-formula">
               <span>COUNT EXAMPLE</span>
-              <strong>Units per package × Packages counted = units staged for review</strong>
+              <strong>Sleeves per carton × Cartons counted = sleeve units staged for review</strong>
             </div>
           </div>
         ) : null}
