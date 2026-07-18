@@ -56,14 +56,17 @@ function applyPackagingRules() {
   const label = input?.closest('label');
   if (!input || !(label instanceof HTMLLabelElement)) return;
 
-  const locked = levelSelect.value === 'SLEEVE' || levelSelect.value === 'EACH';
+  const cartonOnly = modeSelect.value === 'CARTON_ONLY';
+  const locked = cartonOnly || levelSelect.value === 'SLEEVE' || levelSelect.value === 'EACH';
   if (locked && input.value !== '1') setReactInputValue(input, '1');
 
   if (input.disabled !== locked) input.disabled = locked;
   input.setAttribute('aria-disabled', String(locked));
   label.classList.toggle('first-stocktake-units-locked', locked);
 
-  if (levelSelect.value === 'SLEEVE') {
+  if (cartonOnly) {
+    ensureHelper(label, 'Carton is the lowest countable unit for this SKU. One carton is always recorded as 1.', true);
+  } else if (levelSelect.value === 'SLEEVE') {
     ensureHelper(label, 'Sleeve is the countable pack inside a carton. One sleeve is always recorded as 1.', true);
   } else if (levelSelect.value === 'EACH') {
     ensureHelper(label, 'A single item is always recorded as 1.', true);
