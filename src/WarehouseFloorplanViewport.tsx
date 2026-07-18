@@ -35,7 +35,7 @@ function existingViewport(floorplan: HTMLElement, card: HTMLElement) {
     if (ancestor.classList.contains('warehouse-floorplan-viewport')) viewports.push(ancestor);
     ancestor = ancestor.parentElement;
   }
-  return viewports.at(-1) ?? null;
+  return viewports.length ? viewports[viewports.length - 1] : null;
 }
 
 function ensureViewport() {
