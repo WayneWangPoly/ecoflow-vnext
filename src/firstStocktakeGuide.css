@@ -1,0 +1,267 @@
+.first-stocktake-guide-mount,
+.first-stocktake-guide,
+.first-stocktake-guide > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.first-stocktake-guide {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.first-stocktake-current-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.9rem 1rem;
+  border: 1px solid #d5a454;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #fff9ea, #fffdf6);
+  box-shadow: 0 8px 22px rgba(112, 73, 12, 0.08);
+}
+
+.first-stocktake-current-step {
+  display: grid;
+  place-items: center;
+  min-width: 4.7rem;
+  min-height: 2.2rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 9px;
+  color: #fff;
+  background: #bd7014;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.first-stocktake-current-action > div:last-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.first-stocktake-current-action strong {
+  color: #4d3108;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.first-stocktake-current-action p {
+  margin: 0;
+  color: #705420;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.first-stocktake-process-guide {
+  overflow: hidden;
+  border: 1px solid #cfded6;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(18, 62, 49, 0.055);
+}
+
+.first-stocktake-guide-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border: 0;
+  color: #163f32;
+  background: #f5faf7;
+  text-align: left;
+}
+
+.first-stocktake-guide-toggle > span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.first-stocktake-guide-toggle b {
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.first-stocktake-guide-toggle small {
+  color: #64776e;
+  font-size: 0.73rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.first-stocktake-guide-toggle > strong {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border: 1px solid #cadbd2;
+  border-radius: 8px;
+  color: #126846;
+  background: #fff;
+  font-size: 1.25rem;
+}
+
+.first-stocktake-guide-body {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.85rem;
+  border-top: 1px solid #e2ebe6;
+}
+
+.first-stocktake-guide-phases {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.first-stocktake-guide-phases article {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #dbe6e0;
+  border-radius: 12px;
+  background: #fbfdfc;
+}
+
+.first-stocktake-guide-phases article > b {
+  width: fit-content;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  color: #0f6947;
+  background: #e6f4ed;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.first-stocktake-guide-phases article > strong {
+  color: #173e32;
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.first-stocktake-guide-phases article p {
+  margin: 0;
+  color: #62736a;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.42;
+}
+
+.first-stocktake-field-guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.first-stocktake-field-guide > div {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+  border-left: 3px solid #8db7a5;
+  border-radius: 0 9px 9px 0;
+  background: #f4f8f6;
+}
+
+.first-stocktake-field-guide strong {
+  color: #294f42;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.first-stocktake-field-guide span {
+  color: #687970;
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.first-stocktake-guide-formula {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px dashed #a9c7b9;
+  border-radius: 10px;
+  background: #f2faf6;
+}
+
+.first-stocktake-guide-formula span {
+  color: #348063;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+}
+
+.first-stocktake-guide-formula strong {
+  color: #1a4c3b;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.first-stocktake-review-guidance {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #d7e2dc;
+  border-radius: 12px;
+  background: #f7faf8;
+}
+
+.first-stocktake-review-guidance strong {
+  color: #35584c;
+  font-size: 0.77rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.first-stocktake-review-guidance span {
+  color: #687970;
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.first-stocktake-review-guidance.ready {
+  border-color: #75b997;
+  background: #ecf8f1;
+}
+
+.first-stocktake-review-guidance.ready strong,
+.first-stocktake-review-guidance.ready span {
+  color: #176342;
+}
+
+@container ecoflow-mobile-surface (max-width: 520px) {
+  .first-stocktake-guide-phases,
+  .first-stocktake-field-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .first-stocktake-current-action {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .first-stocktake-current-step {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 520px) {
+  .first-stocktake-guide-phases,
+  .first-stocktake-field-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
