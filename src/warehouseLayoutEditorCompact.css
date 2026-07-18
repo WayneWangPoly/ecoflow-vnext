@@ -8,7 +8,11 @@
   top: auto !important;
   z-index: 2500 !important;
   display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-flow: row !important;
   gap: 10px !important;
+  align-items: stretch !important;
+  transform: none !important;
   width: min(360px, calc(100vw - 28px)) !important;
   max-height: min(720px, calc(100vh - 36px)) !important;
   overflow: auto !important;
@@ -19,6 +23,19 @@
   color: #102d24 !important;
   box-shadow: 0 24px 70px rgba(7, 31, 23, 0.28) !important;
   backdrop-filter: blur(14px);
+  box-sizing: border-box !important;
+  isolation: isolate;
+}
+
+.warehouse-layout-editor-compact,
+.warehouse-layout-editor-compact * {
+  box-sizing: border-box;
+}
+
+.warehouse-layout-editor-compact > * {
+  min-width: 0 !important;
+  width: auto !important;
+  grid-column: 1 !important;
 }
 
 .warehouse-layout-editor-compact header {
@@ -36,34 +53,36 @@
 
 .warehouse-layout-editor-compact header span,
 .warehouse-layout-editor-compact .warehouse-layout-tool > span {
-  color: #62736b;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  color: #62736b !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.12em !important;
+  line-height: 1.2 !important;
   text-transform: uppercase;
 }
 
 .warehouse-layout-editor-compact header strong {
   min-width: 0;
   overflow: hidden;
-  color: #102d24;
-  font-size: 17px;
-  font-weight: 850;
+  color: #102d24 !important;
+  font-size: 17px !important;
+  font-weight: 850 !important;
+  line-height: 1.25 !important;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-close {
-  width: 38px;
+  width: 38px !important;
   height: 38px;
-  min-height: 38px;
-  padding: 0;
-  border: 1px solid #c9d4ce;
-  border-radius: 9px;
-  background: #fff;
-  color: #3f5149;
-  font-size: 22px;
-  line-height: 1;
+  min-height: 38px !important;
+  padding: 0 !important;
+  border: 1px solid #c9d4ce !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: #3f5149 !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-status-row {
@@ -78,20 +97,22 @@
   min-width: 0;
   padding: 6px 9px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 750;
-  line-height: 1.2;
+  font-size: 11px !important;
+  font-weight: 750 !important;
+  line-height: 1.2 !important;
+  letter-spacing: normal !important;
+  white-space: normal !important;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-status-chip {
   border: 1px solid #bad3c6;
   background: #eaf5ef;
-  color: #1a654a;
+  color: #1a654a !important;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-selection-tip {
   flex: 1 1 150px;
-  color: #52645c;
+  color: #52645c !important;
   background: #edf1ef;
 }
 
@@ -135,24 +156,26 @@
 .warehouse-layout-editor-compact .warehouse-layout-advanced button,
 .warehouse-layout-editor-compact footer button {
   min-width: 0;
-  min-height: 42px;
-  padding: 0 10px;
-  border: 1px solid #c6d2cc;
-  border-radius: 9px;
-  background: #fff;
-  color: #26483d;
-  font-weight: 800;
+  min-height: 42px !important;
+  padding: 0 10px !important;
+  border: 1px solid #c6d2cc !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: #26483d !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-pad button {
-  padding: 0;
-  font-size: 20px;
+  padding: 0 !important;
+  font-size: 20px !important;
 }
 
 .warehouse-layout-editor-compact .warehouse-layout-pad .centre {
-  color: #708078;
-  background: #f1f4f2;
-  font-size: 10px;
+  color: #708078 !important;
+  background: #f1f4f2 !important;
+  font-size: 10px !important;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -175,9 +198,10 @@
 
 .warehouse-layout-editor-compact summary {
   cursor: pointer;
-  color: #506159;
-  font-size: 12px;
-  font-weight: 800;
+  color: #506159 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
   user-select: none;
 }
 
@@ -201,9 +225,9 @@
 }
 
 .warehouse-layout-editor-compact footer .primary {
-  border-color: #0f6849;
-  background: #0f6849;
-  color: #fff;
+  border-color: #0f6849 !important;
+  background: #0f6849 !important;
+  color: #fff !important;
 }
 
 .warehouse-layout-editing .warehouse-floorplan > .floor-rack,
