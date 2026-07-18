@@ -145,7 +145,7 @@ async function fetchPagedSource(
   const rows: unknown[] = [];
   let activeExceptionTimedOut = false;
   let offset = 0;
-  let pageSize = source.pageSize;
+  let pageSize: number = source.pageSize;
 
   while (offset < source.maxRows) {
     const response = await fetchWithNetworkRetry(nativeFetch, pageRequest(input, source, offset, pageSize), init);
