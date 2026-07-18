@@ -1,0 +1,160 @@
+/* Warehouse overview uses an overview/detail viewport instead of shrinking labels indefinitely. */
+.warehouse-map-overview-card .warehouse-map-card-head {
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.warehouse-floorplan-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.warehouse-floorplan-controls button {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(16, 47, 40, .16);
+  border-radius: 7px;
+  background: #f5f8f6;
+  color: #173c2e;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.warehouse-floorplan-controls button:hover,
+.warehouse-floorplan-controls button:focus-visible {
+  border-color: #0d6545;
+  background: #e8f5ed;
+  outline: none;
+}
+
+.warehouse-floorplan-controls [data-floorplan-action='expand'] {
+  color: #fff;
+  background: #0d6545;
+  border-color: #0d6545;
+}
+
+.warehouse-floorplan-viewport {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #bfcac4;
+  border-radius: 8px;
+  background: #eef3ef;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.warehouse-floorplan-viewport.is-pannable {
+  overflow: auto;
+  cursor: grab;
+}
+
+.warehouse-floorplan-viewport.is-pannable:active {
+  cursor: grabbing;
+}
+
+.warehouse-floorplan-stage {
+  position: relative;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+.warehouse-overview-ready .warehouse-floorplan {
+  width: 760px !important;
+  height: 620px !important;
+  min-height: 620px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  transform-origin: left top;
+  will-change: transform;
+}
+
+/* The compact card is a spatial overview. Side labels are repeated detail and are hidden here. */
+.warehouse-map-overview-card:not(.warehouse-overview-expanded)[data-floorplan-mode='fit'] .floor-rack small {
+  display: none !important;
+}
+
+.warehouse-map-overview-card:not(.warehouse-overview-expanded)[data-floorplan-mode='fit'] .warehouse-floorplan::before {
+  font-size: 11px !important;
+}
+
+body.warehouse-overview-modal-open {
+  overflow: hidden;
+}
+
+.warehouse-map-overview-card.warehouse-overview-expanded {
+  position: fixed !important;
+  inset: 12px !important;
+  z-index: 3000 !important;
+  display: grid !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  width: auto !important;
+  max-width: none !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 16px !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  border: 1px solid #aebcb4 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 30px 90px rgba(4, 25, 17, .38) !important;
+}
+
+.warehouse-map-overview-card.warehouse-overview-expanded .warehouse-map-card-head h2::after {
+  content: ' · detailed warehouse view';
+  color: #647169;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.warehouse-map-overview-card.warehouse-overview-expanded .warehouse-search-row {
+  margin-bottom: 10px !important;
+}
+
+.warehouse-map-overview-card.warehouse-overview-expanded .warehouse-floorplan-viewport {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: #e9efeb;
+}
+
+.warehouse-map-overview-card.warehouse-overview-expanded .floor-rack small {
+  display: block !important;
+}
+
+body.warehouse-overview-modal-open .warehouse-layout-editor {
+  z-index: 3300 !important;
+}
+
+@media (max-width: 640px) {
+  .warehouse-floorplan-controls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  .warehouse-floorplan-controls button {
+    flex: 1 1 auto;
+  }
+
+  .warehouse-map-overview-card.warehouse-overview-expanded {
+    inset: 0 !important;
+    border-radius: 0 !important;
+    padding: 10px !important;
+  }
+
+  .warehouse-map-overview-card.warehouse-overview-expanded .warehouse-map-card-head h2::after {
+    display: none;
+  }
+}
