@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 
+const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
+
 type Detector = {
   detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
 };
@@ -8,6 +10,10 @@ type Detector = {
 type DetectorConstructor = {
   new (options?: { formats?: string[] }): Detector;
   getSupportedFormats?: () => Promise<string[]>;
+};
+
+type CameraScanRequestDetail = {
+  inputId?: string;
 };
 
 function isVisible(element: HTMLElement) {
@@ -26,7 +32,7 @@ function barcodeInput() {
 
 function warehouseSurfaceVisible() {
   return window.location.pathname === '/warehouse-map'
-    || Boolean(Array.from(document.querySelectorAll<HTMLElement>('.warehouse-receive-screen, .barcode-sprint-screen, .mobile-title')).find(isVisible));
+    || Boolean(Array.from(document.querySelectorAll<HTMLElement>('.warehouse-receive-screen, .barcode-sprint-screen, .first-stocktake-screen, .mobile-title')).find(isVisible));
 }
 
 function setReactInputValue(input: HTMLInputElement, value: string) {
@@ -161,6 +167,20 @@ export function WarehouseCameraScanner() {
       stopCamera();
     }
   }
+
+  useEffect(() => {
+    function handleCameraRequest(event: Event) {
+      const detail = (event as CustomEvent<CameraScanRequestDetail>).detail;
+      const requested = detail?.inputId ? document.getElementById(detail.inputId) : null;
+      if (requested instanceof HTMLInputElement && isVisible(requested)) requested.focus();
+      void startCamera();
+    }
+
+    window.addEventListener(CAMERA_SCAN_EVENT, handleCameraRequest);
+    return () => window.removeEventListener(CAMERA_SCAN_EVENT, handleCameraRequest);
+    // The scanner is mounted once per Warehouse surface; refs hold the active camera state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function toggleTorch() {
     const track = streamRef.current?.getVideoTracks()[0];

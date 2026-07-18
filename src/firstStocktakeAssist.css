@@ -1,0 +1,174 @@
+/* First stocktake operator assistance: canonical locations, facing, SKU search and inline camera scan. */
+
+.first-stocktake-assist-field {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.first-stocktake-assist-field > label,
+.first-stocktake-facing-block > span {
+  color: #4e6259;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.first-stocktake-assist-field > input,
+.first-stocktake-barcode-control > input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.7rem 0.78rem;
+  border: 1px solid #cfdcd5;
+  border-radius: 12px;
+  color: #102f26;
+  background: #fbfdfc;
+  font: inherit;
+}
+
+.first-stocktake-location > input {
+  border-width: 2px;
+  border-color: #5ea88b;
+  background: #f2fbf6;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.first-stocktake-match-confirmed {
+  width: fit-content;
+  color: #0f6b43;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.first-stocktake-assist-warning {
+  color: #8a5b14;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.first-stocktake-suggestions {
+  z-index: 16;
+  display: grid;
+  gap: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  border: 1px solid #bfd2c8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 38px rgba(7, 45, 33, 0.16);
+}
+
+.first-stocktake-suggestions button {
+  display: grid;
+  gap: 0.12rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.72rem 0.78rem;
+  border: 0;
+  border-top: 1px solid #e4ebe7;
+  color: #123e31;
+  background: #fff;
+  text-align: left;
+}
+
+.first-stocktake-suggestions button:first-child {
+  border-top: 0;
+}
+
+.first-stocktake-suggestions button:hover,
+.first-stocktake-suggestions button:focus-visible {
+  background: #eff8f3;
+}
+
+.first-stocktake-suggestions strong {
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.first-stocktake-suggestions small {
+  color: #718078;
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.first-stocktake-facing-block {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #dce7e1;
+  border-radius: 13px;
+  background: #f7faf8;
+}
+
+.first-stocktake-facing-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.first-stocktake-facing-options button {
+  min-height: 46px;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #c9d8d1;
+  border-radius: 10px;
+  color: #315f50;
+  background: #fff;
+  font-weight: 800;
+}
+
+.first-stocktake-facing-options button.active {
+  border-color: #167652;
+  color: #fff;
+  background: #11694b;
+  box-shadow: 0 0 0 3px rgba(17, 105, 75, 0.1);
+}
+
+.first-stocktake-facing-block > small {
+  color: #718078;
+  line-height: 1.35;
+}
+
+.first-stocktake-barcode-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.first-stocktake-barcode-control > button {
+  min-width: 5.6rem;
+  min-height: 48px;
+  padding: 0 0.9rem;
+  border: 1px solid #11694b;
+  border-radius: 12px;
+  color: #fff;
+  background: #11694b;
+  font-weight: 900;
+}
+
+@container ecoflow-mobile-surface (max-width: 430px) {
+  .first-stocktake-facing-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .first-stocktake-barcode-control {
+    grid-template-columns: minmax(0, 1fr) 5.25rem;
+  }
+
+  .first-stocktake-barcode-control > button {
+    min-width: 0;
+    padding: 0 0.55rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .first-stocktake-facing-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
