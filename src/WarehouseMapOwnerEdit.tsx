@@ -304,6 +304,7 @@ export function WarehouseMapOwnerEdit() {
     clearHistory();
     const floorplan = document.querySelector<HTMLElement>('.warehouse-floorplan');
     if (!floorplan) return;
+    const floorplanElement = floorplan;
 
     let active: HTMLElement | null = null;
     let mode: InteractionMode = null;
@@ -329,7 +330,7 @@ export function WarehouseMapOwnerEdit() {
       const target = event.target as HTMLElement;
       const handle = target.closest<HTMLElement>('[data-layout-resize]');
       const element = target.closest<HTMLElement>('.floor-rack, .floor-static');
-      if (!element || !floorplan.contains(element)) return;
+      if (!element || !floorplanElement.contains(element)) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -350,7 +351,7 @@ export function WarehouseMapOwnerEdit() {
     function pointerMove(event: PointerEvent) {
       if (!active || !mode) return;
       event.preventDefault();
-      const rect = floorplan.getBoundingClientRect();
+      const rect = floorplanElement.getBoundingClientRect();
       const deltaX = ((event.clientX - startX) / rect.width) * 100;
       const deltaY = ((event.clientY - startY) / rect.height) * 100;
 
@@ -398,14 +399,14 @@ export function WarehouseMapOwnerEdit() {
       event.stopPropagation();
     }
 
-    floorplan.addEventListener('pointerdown', pointerDown);
-    floorplan.addEventListener('click', suppressMapClick, true);
+    floorplanElement.addEventListener('pointerdown', pointerDown);
+    floorplanElement.addEventListener('click', suppressMapClick, true);
     window.addEventListener('pointermove', pointerMove, { passive: false });
     window.addEventListener('pointerup', pointerUp);
 
     return () => {
-      floorplan.removeEventListener('pointerdown', pointerDown);
-      floorplan.removeEventListener('click', suppressMapClick, true);
+      floorplanElement.removeEventListener('pointerdown', pointerDown);
+      floorplanElement.removeEventListener('click', suppressMapClick, true);
       window.removeEventListener('pointermove', pointerMove);
       window.removeEventListener('pointerup', pointerUp);
       layoutElements().forEach((item) => item.classList.remove('layout-selected'));
