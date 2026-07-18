@@ -1,0 +1,238 @@
+/* Compact, direct controls for Owner/Admin warehouse layout editing. */
+
+.warehouse-layout-editor.warehouse-layout-editor-compact {
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 2500 !important;
+  display: grid !important;
+  gap: 10px !important;
+  width: min(360px, calc(100vw - 28px)) !important;
+  max-height: min(720px, calc(100vh - 36px)) !important;
+  overflow: auto !important;
+  padding: 12px !important;
+  border: 1px solid #b8c7bf !important;
+  border-radius: 14px !important;
+  background: rgba(248, 251, 249, 0.98) !important;
+  color: #102d24 !important;
+  box-shadow: 0 24px 70px rgba(7, 31, 23, 0.28) !important;
+  backdrop-filter: blur(14px);
+}
+
+.warehouse-layout-editor-compact header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.warehouse-layout-editor-compact header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.warehouse-layout-editor-compact header span,
+.warehouse-layout-editor-compact .warehouse-layout-tool > span {
+  color: #62736b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.warehouse-layout-editor-compact header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #102d24;
+  font-size: 17px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-close {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid #c9d4ce;
+  border-radius: 9px;
+  background: #fff;
+  color: #3f5149;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-status-chip,
+.warehouse-layout-editor-compact .warehouse-layout-selection-tip {
+  min-width: 0;
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-status-chip {
+  border: 1px solid #bad3c6;
+  background: #eaf5ef;
+  color: #1a654a;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-selection-tip {
+  flex: 1 1 150px;
+  color: #52645c;
+  background: #edf1ef;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-direct-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-tool {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #d6e0db;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-pad .up { grid-column: 2; }
+.warehouse-layout-editor-compact .warehouse-layout-pad .left { grid-column: 1; grid-row: 2; }
+.warehouse-layout-editor-compact .warehouse-layout-pad .centre { grid-column: 2; grid-row: 2; }
+.warehouse-layout-editor-compact .warehouse-layout-pad .right { grid-column: 3; grid-row: 2; }
+.warehouse-layout-editor-compact .warehouse-layout-pad .down { grid-column: 2; grid-row: 3; }
+
+.warehouse-layout-editor-compact .warehouse-layout-size-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-pad button,
+.warehouse-layout-editor-compact .warehouse-layout-size-grid button,
+.warehouse-layout-editor-compact .warehouse-layout-secondary-actions button,
+.warehouse-layout-editor-compact .warehouse-layout-advanced button,
+.warehouse-layout-editor-compact footer button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid #c6d2cc;
+  border-radius: 9px;
+  background: #fff;
+  color: #26483d;
+  font-weight: 800;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-pad button {
+  padding: 0;
+  font-size: 20px;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-pad .centre {
+  color: #708078;
+  background: #f1f4f2;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.warehouse-layout-editor-compact button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.warehouse-layout-editor-compact details {
+  border-top: 1px solid #d8e1dc;
+  padding-top: 8px;
+}
+
+.warehouse-layout-editor-compact summary {
+  cursor: pointer;
+  color: #506159;
+  font-size: 12px;
+  font-weight: 800;
+  user-select: none;
+}
+
+.warehouse-layout-editor-compact .warehouse-layout-advanced {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.warehouse-layout-editor-compact footer {
+  position: sticky;
+  bottom: -12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 8px;
+  margin: 0 -12px -12px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid #d3ddd8;
+  background: rgba(248, 251, 249, 0.98);
+}
+
+.warehouse-layout-editor-compact footer .primary {
+  border-color: #0f6849;
+  background: #0f6849;
+  color: #fff;
+}
+
+.warehouse-layout-editing .warehouse-floorplan > .floor-rack,
+.warehouse-layout-editing .warehouse-floorplan > .floor-static {
+  touch-action: none;
+  cursor: grab;
+}
+
+.warehouse-layout-editing .warehouse-floorplan > .floor-rack:active,
+.warehouse-layout-editing .warehouse-floorplan > .floor-static:active {
+  cursor: grabbing;
+}
+
+.warehouse-layout-editing .warehouse-floorplan > .layout-selected {
+  outline: 3px solid #17a46f !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 7px rgba(23, 164, 111, 0.12) !important;
+}
+
+@media (max-width: 700px) {
+  .warehouse-layout-editor.warehouse-layout-editor-compact {
+    right: 8px !important;
+    bottom: 8px !important;
+    width: calc(100vw - 16px) !important;
+    max-height: min(74vh, 680px) !important;
+    border-radius: 16px !important;
+  }
+
+  .warehouse-layout-editor-compact .warehouse-layout-direct-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
