@@ -1,0 +1,286 @@
+/*
+ * Container-aware overflow safety for Warehouse phone surfaces.
+ * These screens can be rendered inside a narrow mobile shell while the browser
+ * viewport itself is wide, so viewport-only media queries are not sufficient.
+ */
+
+.mobile-content {
+  container-name: ecoflow-mobile-surface;
+  container-type: inline-size;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.mobile-shell,
+.mobile-content,
+.mobile-content > *,
+.warehouse-operations-mount,
+.warehouse-operations-mount > *,
+.first-stocktake-screen,
+.first-stocktake-screen > *,
+.mobile-card,
+.warehouse-receive-panel,
+.barcode-master-screen,
+.field-stage-execution,
+.quick-ops-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mobile-content :where(
+  div,
+  section,
+  article,
+  header,
+  footer,
+  nav,
+  form,
+  label,
+  span,
+  strong,
+  small,
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  button,
+  a,
+  input,
+  select,
+  textarea
+) {
+  min-width: 0;
+}
+
+.mobile-content :where(h1, h2, h3, h4, p, strong, small, label, button, a, span) {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.mobile-content :where(button, a) {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.mobile-content :where(input, select, textarea) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.mobile-content input::placeholder,
+.mobile-content textarea::placeholder {
+  text-overflow: ellipsis;
+}
+
+/* Horizontal navigation remains horizontally scrollable instead of compressing. */
+.mobile-tabs,
+.warehouse-ops-context {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.mobile-tabs::-webkit-scrollbar,
+.warehouse-ops-context::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-tabs button,
+.warehouse-ops-context > * {
+  flex: 0 0 auto;
+  max-width: none;
+  white-space: nowrap;
+}
+
+/* First stocktake: intrinsic fallback before container-query overrides. */
+.first-stocktake-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 15.5rem);
+  overflow: hidden;
+}
+
+.first-stocktake-hero > div,
+.first-stocktake-hero-actions {
+  min-width: 0;
+}
+
+.first-stocktake-hero h2 {
+  max-width: 100%;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-size: clamp(2rem, 8cqi, 3rem);
+  line-height: 1.04;
+  overflow-wrap: normal;
+}
+
+.first-stocktake-hero-actions a,
+.first-stocktake-hero-actions button {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.first-stocktake-steps {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.first-stocktake-steps li {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.first-stocktake-steps li > span,
+.first-stocktake-steps strong,
+.first-stocktake-steps small {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.first-stocktake-steps strong,
+.first-stocktake-steps small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.first-stocktake-entry,
+.first-stocktake-review,
+.first-stocktake-package-rule,
+.first-stocktake-count-row,
+.first-stocktake-lines,
+.first-stocktake-lines > button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.first-stocktake-lines > button > span:not(.first-stocktake-check) {
+  min-width: 0;
+}
+
+/* Other Warehouse grids use available component width rather than viewport width. */
+.warehouse-batch-control,
+.warehouse-batch-actions,
+.warehouse-putaway-actions,
+.warehouse-layout-actions,
+.barcode-master-screen .barcode-actions,
+.warehouse-camera-actions,
+.warehouse-receive-grid,
+.barcode-package-buttons {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.warehouse-putaway-target,
+.warehouse-putaway-target-bridge,
+.field-stage-head,
+.quick-ops-row,
+.quick-ops-copy,
+.quick-ops-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.warehouse-putaway-target strong,
+.warehouse-putaway-target-bridge strong,
+.quick-ops-copy strong,
+.quick-ops-copy span,
+.quick-ops-copy small,
+.field-stage-sync {
+  overflow-wrap: anywhere;
+}
+
+@container ecoflow-mobile-surface (max-width: 700px) {
+  .first-stocktake-hero {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .first-stocktake-hero-actions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .first-stocktake-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .first-stocktake-package-rule,
+  .first-stocktake-count-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .first-stocktake-review header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .warehouse-batch-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .warehouse-batch-actions,
+  .warehouse-putaway-actions,
+  .warehouse-layout-actions,
+  .barcode-master-screen .barcode-actions,
+  .warehouse-camera-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: 100%;
+  }
+
+  .warehouse-putaway-target-bridge,
+  .field-stage-head,
+  .quick-ops-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: stretch !important;
+  }
+
+  .quick-ops-actions {
+    justify-items: stretch;
+  }
+}
+
+@container ecoflow-mobile-surface (max-width: 500px) {
+  .first-stocktake-hero {
+    padding: 1rem;
+  }
+
+  .first-stocktake-hero h2 {
+    font-size: clamp(2rem, 11cqi, 2.65rem);
+  }
+
+  .first-stocktake-hero-actions,
+  .warehouse-batch-actions,
+  .warehouse-putaway-actions,
+  .warehouse-layout-actions,
+  .barcode-master-screen .barcode-actions,
+  .warehouse-camera-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .first-stocktake-steps li {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 0.6rem;
+  }
+
+  .first-stocktake-review header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .first-stocktake-lines > button {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .first-stocktake-lines > button > span:nth-last-child(-n + 2) {
+    grid-column: 2;
+  }
+}
+
+@container ecoflow-mobile-surface (max-width: 340px) {
+  .first-stocktake-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
