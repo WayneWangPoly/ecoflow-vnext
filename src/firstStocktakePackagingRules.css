@@ -1,0 +1,36 @@
+/* EcoFlow packaging model: carton -> sleeve -> each. Inner is intentionally hidden. */
+
+.first-stocktake-count-row label {
+  align-content: start;
+}
+
+.first-stocktake-units-locked input:disabled {
+  border-color: #d3ddd8 !important;
+  color: #52645c !important;
+  background: #edf1ef !important;
+  cursor: not-allowed;
+  opacity: 1;
+  -webkit-text-fill-color: #52645c;
+}
+
+.first-stocktake-package-unit-help {
+  display: block;
+  margin-top: 0.42rem;
+  color: #687970;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.first-stocktake-package-unit-help.locked {
+  color: #376353;
+}
+
+.first-stocktake-units-locked > span::after {
+  content: ' · fixed';
+  color: #73827b;
+  font-weight: 700;
+  text-transform: none;
+}
