@@ -27,18 +27,6 @@
   display: none !important;
 }
 
-/* Keep live errors, confirmations, field labels and workflow states visible. */
-.sync-error-banner,
-.accounts-error,
-.accounts-notice,
-.first-stocktake-error,
-.first-stocktake-notice,
-.first-stocktake-entry label > span,
-.first-stocktake-review header,
-.table-like small {
-  display: initial;
-}
-
 /* The static Ordermentum explanation immediately before customer metrics is redundant. */
 .accounts-detail > .accounts-notice:has(+ .accounts-detail-metrics) {
   display: none !important;
