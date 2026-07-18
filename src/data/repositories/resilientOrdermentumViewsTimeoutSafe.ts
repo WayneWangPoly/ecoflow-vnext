@@ -7,6 +7,7 @@ import {
 export * from './resilientOrdermentumViews';
 
 const ACTIVE_EXCEPTION_PATH = '/rest/v1/v_ecoflow_ordermentum_ui_active_exceptions';
+const ACTIVE_ORDER_LINE_PATH = '/rest/v1/v_ecoflow_ordermentum_ui_active_order_lines';
 const ACTIVE_EXCEPTION_COLUMNS = [
   'raw_order_id',
   'external_order_id',
@@ -19,18 +20,42 @@ const ACTIVE_EXCEPTION_COLUMNS = [
   'status',
   'detected_at',
 ].join(',');
+const ACTIVE_ORDER_LINE_COLUMNS = [
+  'source_order_id',
+  'order_number',
+  'invoice_number',
+  'source_line_id',
+  'external_sku_code',
+  'external_product_name',
+  'quantity',
+  'unit',
+  'uom',
+  'packing_unit',
+  'price',
+  'rate_price',
+  'subtotal',
+  'gst',
+  'tax',
+  'total',
+  'source',
+].join(',');
 
 const PAGED_ACTIVE_SOURCES = [
-  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_inbox', pageSize: 500, maxRows: 10000 },
-  { path: ACTIVE_EXCEPTION_PATH, pageSize: 300, maxRows: 10000 },
-  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_order_lines', pageSize: 500, maxRows: 50000 },
-  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_drafts', pageSize: 500, maxRows: 10000 },
-  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_om_orders', pageSize: 500, maxRows: 10000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_inbox', pageSize: 400, minPageSize: 100, maxRows: 10000 },
+  { path: ACTIVE_EXCEPTION_PATH, pageSize: 200, minPageSize: 50, maxRows: 10000 },
+  { path: ACTIVE_ORDER_LINE_PATH, pageSize: 250, minPageSize: 50, maxRows: 50000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_drafts', pageSize: 300, minPageSize: 100, maxRows: 10000 },
+  { path: '/rest/v1/v_ecoflow_ordermentum_ui_active_om_orders', pageSize: 300, minPageSize: 100, maxRows: 10000 },
 ] as const;
 
+const SNAPSHOT_CACHE_MS = 12_000;
+const NETWORK_RETRY_DELAYS_MS = [250, 700] as const;
+
 type PagedSource = (typeof PAGED_ACTIVE_SOURCES)[number];
+type CachedSnapshot = { snapshot: ResilientOrdermentumViews | null; loadedAt: number };
 
 let inFlightSnapshot: Promise<ResilientOrdermentumViews | null> | null = null;
+let cachedSnapshot: CachedSnapshot | null = null;
 
 function requestUrl(input: RequestInfo | URL) {
   return typeof input === 'string'
@@ -45,9 +70,9 @@ function pagedSourceFor(input: RequestInfo | URL): PagedSource | null {
   return PAGED_ACTIVE_SOURCES.find((source) => url.includes(source.path)) ?? null;
 }
 
-function pageRequest(input: RequestInfo | URL, source: PagedSource, offset: number): RequestInfo | URL {
+function pageRequest(input: RequestInfo | URL, source: PagedSource, offset: number, pageSize: number): RequestInfo | URL {
   const url = new URL(requestUrl(input));
-  url.searchParams.set('limit', String(source.pageSize));
+  url.searchParams.set('limit', String(pageSize));
   url.searchParams.set('offset', String(offset));
 
   if (source.path === ACTIVE_EXCEPTION_PATH) {
@@ -55,9 +80,39 @@ function pageRequest(input: RequestInfo | URL, source: PagedSource, offset: numb
     url.searchParams.delete('order');
   }
 
+  if (source.path === ACTIVE_ORDER_LINE_PATH) {
+    url.searchParams.set('select', ACTIVE_ORDER_LINE_COLUMNS);
+  }
+
   if (typeof input === 'string') return url.toString();
   if (input instanceof URL) return url;
   return new Request(url.toString(), input);
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchWithNetworkRetry(
+  nativeFetch: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await nativeFetch(input, init);
+      if (response.status < 500 || attempt === NETWORK_RETRY_DELAYS_MS.length) return response;
+      await wait(NETWORK_RETRY_DELAYS_MS[attempt]);
+    } catch (error) {
+      lastError = error;
+      if (attempt === NETWORK_RETRY_DELAYS_MS.length) throw error;
+      await wait(NETWORK_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Operational snapshot request failed.');
 }
 
 async function responseText(response: Response) {
@@ -89,13 +144,24 @@ async function fetchPagedSource(
 ): Promise<{ response: Response; activeExceptionTimedOut: boolean }> {
   const rows: unknown[] = [];
   let activeExceptionTimedOut = false;
+  let offset = 0;
+  let pageSize = source.pageSize;
 
-  for (let offset = 0; offset < source.maxRows; offset += source.pageSize) {
-    const response = await nativeFetch(pageRequest(input, source, offset), init);
+  while (offset < source.maxRows) {
+    const response = await fetchWithNetworkRetry(nativeFetch, pageRequest(input, source, offset, pageSize), init);
 
-    if (source.path === ACTIVE_EXCEPTION_PATH && await isStatementTimeout(response)) {
-      activeExceptionTimedOut = true;
-      return { response: jsonResponse([]), activeExceptionTimedOut };
+    if (await isStatementTimeout(response)) {
+      if (pageSize > source.minPageSize) {
+        pageSize = Math.max(source.minPageSize, Math.floor(pageSize / 2));
+        continue;
+      }
+
+      if (source.path === ACTIVE_EXCEPTION_PATH) {
+        activeExceptionTimedOut = true;
+        return { response: jsonResponse([]), activeExceptionTimedOut };
+      }
+
+      return { response, activeExceptionTimedOut };
     }
 
     if (!response.ok) return { response, activeExceptionTimedOut };
@@ -120,7 +186,8 @@ async function fetchPagedSource(
     }
 
     rows.push(...page);
-    if (page.length < source.pageSize) return { response: jsonResponse(rows), activeExceptionTimedOut };
+    offset += page.length;
+    if (page.length < pageSize) return { response: jsonResponse(rows), activeExceptionTimedOut };
   }
 
   return {
@@ -181,9 +248,19 @@ export function applySupabaseOrdermentumViews(
 }
 
 export function loadSupabaseOrdermentumViews(): Promise<ResilientOrdermentumViews | null> {
+  const now = Date.now();
+  if (cachedSnapshot && now - cachedSnapshot.loadedAt < SNAPSHOT_CACHE_MS) {
+    return Promise.resolve(cachedSnapshot.snapshot);
+  }
   if (inFlightSnapshot) return inFlightSnapshot;
-  inFlightSnapshot = loadTimeoutSafeSnapshot().finally(() => {
-    inFlightSnapshot = null;
-  });
+
+  inFlightSnapshot = loadTimeoutSafeSnapshot()
+    .then((snapshot) => {
+      cachedSnapshot = { snapshot, loadedAt: Date.now() };
+      return snapshot;
+    })
+    .finally(() => {
+      inFlightSnapshot = null;
+    });
   return inFlightSnapshot;
 }
