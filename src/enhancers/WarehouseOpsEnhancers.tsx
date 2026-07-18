@@ -16,6 +16,7 @@ import '../pickTaskOwnership.css';
 import '../stageAndLoadExecution.css';
 import '../warehouseProductisation.css';
 import '../warehouseProductisationFixes.css';
+import '../mobileOverflowSafety.css';
 
 /** Warehouse phone modules: first stocktake, receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
