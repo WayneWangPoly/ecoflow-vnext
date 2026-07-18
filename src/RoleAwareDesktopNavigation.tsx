@@ -62,17 +62,7 @@ export function RoleAwareDesktopNavigation() {
         if (button.textContent !== label) button.textContent = label;
       });
 
-      let helper = nav.querySelector<HTMLElement>('.role-nav-helper');
-      if (!helper) {
-        helper = document.createElement('div');
-        helper.className = 'role-nav-helper';
-        nav.appendChild(helper);
-      }
-      helper.textContent = role === 'ACCOUNT'
-        ? 'Normal path: Today → Accounts → Customers. Source invoices and payments stay read-only.'
-        : role === 'ADMIN'
-          ? 'Current phase: Today → Warehouse preparation → First stocktake.'
-          : 'Current phase: Today → Warehouse preparation → First stocktake.';
+      nav.querySelector('.role-nav-helper')?.remove();
 
       if (role === 'ACCOUNT' && !accountDefaultApplied.current) {
         const accountsButton = buttons.find((button) => buttonBaseLabel(button) === 'Reconciliation');
