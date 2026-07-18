@@ -1,0 +1,93 @@
+/* Operational surfaces show actions and status first. Long teaching copy stays out of daily work. */
+.role-nav-helper,
+.mobile-title p,
+.field-readiness-hero p,
+.field-purpose-card p,
+.field-purpose-card small,
+.field-readiness-sequence article span,
+.field-system-footnote,
+.warehouse-phase-banner,
+.warehouse-ops-context,
+.first-stocktake-hero p,
+.first-stocktake-steps small,
+.first-stocktake-safety,
+.first-stocktake-review > p,
+.warehouse-first-stocktake-guide,
+.warehouse-advanced-guide,
+.warehouse-putaway-target p,
+.warehouse-sku-order-editor-hint,
+.accounts-hero p,
+.accounts-detail-hero p,
+.accounts-panel header p,
+.source-boundary-inline p,
+.source-boundary-inline small,
+.panel-head > div > span,
+.settings-panel label > div > small,
+.settings-panel + .panel-note {
+  display: none !important;
+}
+
+/* Keep live errors, confirmations, field labels and workflow states visible. */
+.sync-error-banner,
+.accounts-error,
+.accounts-notice,
+.first-stocktake-error,
+.first-stocktake-notice,
+.first-stocktake-entry label > span,
+.first-stocktake-review header,
+.table-like small {
+  display: initial;
+}
+
+/* The static Ordermentum explanation immediately before customer metrics is redundant. */
+.accounts-detail > .accounts-notice:has(+ .accounts-detail-metrics) {
+  display: none !important;
+}
+
+.field-readiness-hero {
+  min-height: 0 !important;
+  padding-block: 24px !important;
+}
+
+.field-readiness-hero h1 {
+  max-width: 780px;
+  margin-bottom: 10px !important;
+  font-size: clamp(30px, 4vw, 54px) !important;
+}
+
+.field-purpose-card,
+.first-stocktake-hero,
+.accounts-detail-hero {
+  min-height: 0 !important;
+}
+
+/* First stocktake is a primary Warehouse role tab. */
+.mobile-tabs .warehouse-first-stocktake-tab {
+  white-space: nowrap;
+}
+
+.mobile-tabs.warehouse-stocktake-top-active .warehouse-native-receive-tab.active {
+  background: transparent !important;
+  color: inherit !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.warehouse-secondary-ops {
+  margin: 0 0 10px !important;
+}
+
+@media (max-width: 640px) {
+  .mobile-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-tabs button {
+    flex: 0 0 auto;
+  }
+}
