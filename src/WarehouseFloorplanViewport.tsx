@@ -24,6 +24,20 @@ function addControl(host: HTMLElement, label: string, action: string, ariaLabel?
   host.appendChild(button);
 }
 
+function childWithClass(parent: HTMLElement, className: string) {
+  return Array.from(parent.children).find((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains(className)) ?? null;
+}
+
+function existingViewport(floorplan: HTMLElement, card: HTMLElement) {
+  const viewports: HTMLElement[] = [];
+  let ancestor = floorplan.parentElement;
+  while (ancestor && ancestor !== card) {
+    if (ancestor.classList.contains('warehouse-floorplan-viewport')) viewports.push(ancestor);
+    ancestor = ancestor.parentElement;
+  }
+  return viewports.length ? viewports[viewports.length - 1] : null;
+}
+
 function ensureViewport() {
   if (window.location.pathname !== '/warehouse-map') return;
   const floorplan = document.querySelector<HTMLElement>('.warehouse-floorplan');
@@ -31,17 +45,29 @@ function ensureViewport() {
   const header = card?.querySelector<HTMLElement>('.warehouse-map-card-head');
   if (!floorplan || !card || !header) return;
 
-  let viewport = floorplan.parentElement?.classList.contains('warehouse-floorplan-viewport')
-    ? floorplan.parentElement as HTMLElement
-    : null;
+  let viewport = existingViewport(floorplan, card);
+  let stage: HTMLElement | null = viewport ? childWithClass(viewport, 'warehouse-floorplan-stage') : null;
+
   if (!viewport) {
     viewport = document.createElement('div');
     viewport.className = 'warehouse-floorplan-viewport';
-    const stage = document.createElement('div');
+    stage = document.createElement('div');
     stage.className = 'warehouse-floorplan-stage';
     floorplan.replaceWith(viewport);
     viewport.appendChild(stage);
     stage.appendChild(floorplan);
+  } else {
+    if (!stage) {
+      stage = document.createElement('div');
+      stage.className = 'warehouse-floorplan-stage';
+      viewport.replaceChildren(stage);
+    }
+
+    // A previous observer pass could have created nested viewport/stage wrappers.
+    // Collapse them to one stable viewport and one stable stage.
+    if (floorplan.parentElement !== stage || stage.children.length !== 1) {
+      stage.replaceChildren(floorplan);
+    }
   }
 
   let controls = header.querySelector<HTMLElement>('.warehouse-floorplan-controls');
@@ -56,9 +82,12 @@ function ensureViewport() {
     header.appendChild(controls);
   }
 
-  floorplan.style.width = `${DESIGN_WIDTH}px`;
-  floorplan.style.height = `${DESIGN_HEIGHT}px`;
-  floorplan.style.minHeight = `${DESIGN_HEIGHT}px`;
+  if (floorplan.dataset.floorplanViewportReady !== 'true') {
+    floorplan.style.width = `${DESIGN_WIDTH}px`;
+    floorplan.style.height = `${DESIGN_HEIGHT}px`;
+    floorplan.style.minHeight = `${DESIGN_HEIGHT}px`;
+    floorplan.dataset.floorplanViewportReady = 'true';
+  }
   card.classList.add('warehouse-overview-ready');
 }
 
@@ -69,11 +98,18 @@ function applyScale(card: HTMLElement, scale: number, mode: 'fit' | 'manual') {
   if (!floorplan || !stage || !viewport) return;
 
   const nextScale = clampScale(scale);
-  floorplan.style.transform = `scale(${nextScale})`;
-  stage.style.width = `${DESIGN_WIDTH * nextScale}px`;
-  stage.style.height = `${DESIGN_HEIGHT * nextScale}px`;
-  card.dataset.floorplanScale = String(nextScale);
-  card.dataset.floorplanMode = mode;
+  const currentScale = Number.parseFloat(card.dataset.floorplanScale || '');
+  const scaleChanged = !Number.isFinite(currentScale) || Math.abs(currentScale - nextScale) > 0.0005;
+  const modeChanged = card.dataset.floorplanMode !== mode;
+
+  if (scaleChanged) {
+    floorplan.style.transform = `scale(${nextScale})`;
+    stage.style.width = `${DESIGN_WIDTH * nextScale}px`;
+    stage.style.height = `${DESIGN_HEIGHT * nextScale}px`;
+    card.dataset.floorplanScale = String(nextScale);
+  }
+  if (modeChanged) card.dataset.floorplanMode = mode;
+
   viewport.classList.toggle('is-pannable', mode === 'manual');
   const actualButton = card.querySelector<HTMLButtonElement>('[data-floorplan-action="actual"]');
   if (actualButton) actualButton.textContent = `${Math.round(nextScale * 100)}%`;
@@ -94,14 +130,23 @@ export function WarehouseFloorplanViewport() {
     if (window.location.pathname !== '/warehouse-map') return;
 
     const resizeObservers = new Map<HTMLElement, ResizeObserver>();
+    const pendingFrames = new Map<HTMLElement, number>();
+
+    function scheduleFit(card: HTMLElement) {
+      const pending = pendingFrames.get(card);
+      if (pending) window.cancelAnimationFrame(pending);
+      const frame = window.requestAnimationFrame(() => {
+        pendingFrames.delete(card);
+        if (card.dataset.floorplanMode !== 'manual') applyScale(card, fitScale(card), 'fit');
+      });
+      pendingFrames.set(card, frame);
+    }
 
     function sync() {
       ensureViewport();
       document.querySelectorAll<HTMLElement>('.warehouse-map-overview-card.warehouse-overview-ready').forEach((card) => {
         if (!resizeObservers.has(card) && typeof ResizeObserver !== 'undefined') {
-          const observer = new ResizeObserver(() => {
-            if (card.dataset.floorplanMode !== 'manual') applyScale(card, fitScale(card), 'fit');
-          });
+          const observer = new ResizeObserver(() => scheduleFit(card));
           const viewport = card.querySelector<HTMLElement>('.warehouse-floorplan-viewport');
           if (viewport) observer.observe(viewport);
           resizeObservers.set(card, observer);
@@ -152,6 +197,8 @@ export function WarehouseFloorplanViewport() {
       window.removeEventListener('keydown', keydown);
       resizeObservers.forEach((observer) => observer.disconnect());
       resizeObservers.clear();
+      pendingFrames.forEach((frame) => window.cancelAnimationFrame(frame));
+      pendingFrames.clear();
       document.body.classList.remove('warehouse-overview-modal-open');
     };
   }, []);
