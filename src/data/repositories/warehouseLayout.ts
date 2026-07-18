@@ -14,6 +14,7 @@ export type WarehouseLayoutBox = {
   /** Visual order only. It never changes SKU assignment, quantity or the stock ledger. */
   skuOrder?: string[];
   floorFontScale?: number;
+  floorTextColor?: string;
   rackFontScale?: number;
   locationFontScale?: number;
   skuFontScale?: number;
