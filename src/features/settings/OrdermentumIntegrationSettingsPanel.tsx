@@ -37,7 +37,7 @@ function tone(status?: string | null) {
 }
 
 const syncButtons: Array<{ mode: OrdermentumSyncMode; label: string; primary?: boolean }> = [
-  { mode: 'orders_invoices', label: 'Sync orders + invoices', primary: true },
+  { mode: 'orders_invoices', label: 'Sync orders + invoices now', primary: true },
   { mode: 'catchup', label: 'Recover last 7 days' },
   { mode: 'stores_only', label: 'Sync stores' },
   { mode: 'sku_only', label: 'Sync SKU' },
