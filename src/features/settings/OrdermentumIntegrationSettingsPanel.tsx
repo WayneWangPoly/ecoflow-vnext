@@ -181,7 +181,8 @@ export function OrdermentumIntegrationSettingsPanel({ supabase }: { supabase: Su
           <div><span>History</span><strong><b className={`pill pill-${tone(historyStatus)}`}>{historyStatus}</b></strong></div>
           <div><span>Pages saved</span><strong>{loaded ? numberValue(mirrorHealth?.history_pages_completed) : '—'}</strong></div>
           <div><span>Orders projected / raw</span><strong>{loaded ? `${numberValue(mirrorHealth?.projected_order_count)} / ${numberValue(mirrorHealth?.raw_order_count)}` : '—'}</strong></div>
-          <div><span>Source missing</span><strong>{loaded ? numberValue(mirrorHealth?.source_missing_records) : '—'}</strong></div>
+          <div><span>retained source-missing</span><strong>{loaded ? numberValue(mirrorHealth?.source_missing_records) : '—'}</strong></div>
+          <div><span>active source missing</span><strong>{loaded ? numberValue(mirrorHealth?.active_source_missing_orders) : '—'}</strong></div>
         </div>
 
         <div className="table-like">
