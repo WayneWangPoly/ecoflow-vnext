@@ -49,9 +49,12 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
   const [ownPassword, setOwnPassword] = useState('');
 
   const actorIsOwner = actor?.app_role === 'OWNER';
+  const hasActiveOwner = members.some((member) => member.app_role === 'OWNER' && member.is_active);
+  const canBootstrapOwner = actor?.app_role === 'ADMIN' && !hasActiveOwner;
+  const canCreateOwner = actorIsOwner || canBootstrapOwner;
   const createRoles = useMemo(
-    () => actorIsOwner ? roles : roles.filter((role) => role !== 'OWNER'),
-    [actorIsOwner],
+    () => canCreateOwner ? roles : roles.filter((role) => role !== 'OWNER'),
+    [canCreateOwner],
   );
 
   async function refresh() {
@@ -112,8 +115,8 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
       setError('Enter an email-shaped login, for example warehouse1@ecoflow.local.');
       return;
     }
-    if (password.length < 10) {
-      setError('Password must contain at least 10 characters.');
+    if (!password) {
+      setError('Enter a password.');
       return;
     }
 
@@ -186,8 +189,8 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
 
   async function handleResetPassword(member: TeamMember) {
     if (isProtectedOwner(member)) return;
-    if (resetPassword.length < 10) {
-      setError('Password must contain at least 10 characters.');
+    if (!resetPassword) {
+      setError('Enter a password.');
       return;
     }
     setBusyKey(`password:${member.user_id}`);
@@ -211,8 +214,8 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
   }
 
   async function handleOwnPassword() {
-    if (!actor || ownPassword.length < 10) {
-      setError('Password must contain at least 10 characters.');
+    if (!actor || !ownPassword) {
+      setError('Enter a password.');
       return;
     }
     setBusyKey('own-password');
@@ -256,7 +259,7 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
             </label>
             <label>
               <span>Password</span>
-              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="10+ characters" autoComplete="new-password" />
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" autoComplete="new-password" />
             </label>
             <label>
               <span>Role</span>
@@ -264,12 +267,16 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
                 {createRoles.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </label>
-            <button className="primary-button" type="submit" disabled={busyKey === 'create' || !email.trim() || password.length < 10}>
+            <button className="primary-button" type="submit" disabled={busyKey === 'create' || !email.trim() || !password}>
               {busyKey === 'create' ? 'Creating…' : 'Create account'}
             </button>
           </form>
 
-          <div className="team-login-note">The email is only a login name. It does not need a working inbox.</div>
+          <div className="team-login-note">
+            {canBootstrapOwner
+              ? 'No active Owner exists. You can create the first Owner account now.'
+              : 'The email is only a login name. It does not need a working inbox.'}
+          </div>
           {message ? <div className="success-message">{message}</div> : null}
           {error ? <div className="error-message">{error}</div> : null}
 
@@ -301,9 +308,9 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
                   {resetUserId === member.user_id ? (
                     <form className="team-password-row" onSubmit={(event) => { event.preventDefault(); void handleResetPassword(member); }}>
                       <strong>New password for {member.email}</strong>
-                      <input value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} type="password" placeholder="10+ characters" autoComplete="new-password" autoFocus />
+                      <input value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} type="password" placeholder="Enter password" autoComplete="new-password" autoFocus />
                       <button type="button" onClick={() => { setResetUserId(''); setResetPassword(''); }}>Cancel</button>
-                      <button className="primary-button" type="submit" disabled={busyKey === `password:${member.user_id}` || resetPassword.length < 10}>{busyKey === `password:${member.user_id}` ? 'Saving…' : 'Save password'}</button>
+                      <button className="primary-button" type="submit" disabled={busyKey === `password:${member.user_id}` || !resetPassword}>{busyKey === `password:${member.user_id}` ? 'Saving…' : 'Save password'}</button>
                     </form>
                   ) : null}
                 </div>
@@ -325,8 +332,8 @@ export function TeamInviteSettingsPanel({ supabase }: { supabase: SupabaseClient
             <div><span>Status</span><strong>{actor?.is_active ? 'ACTIVE' : actor?.team_status ?? '—'}</strong></div>
           </div>
           <form className="my-password-form" onSubmit={(event) => { event.preventDefault(); void handleOwnPassword(); }}>
-            <label><span>New password</span><input value={ownPassword} onChange={(event) => setOwnPassword(event.target.value)} type="password" placeholder="10+ characters" autoComplete="new-password" /></label>
-            <button className="primary-button" type="submit" disabled={busyKey === 'own-password' || ownPassword.length < 10}>{busyKey === 'own-password' ? 'Saving…' : 'Change my password'}</button>
+            <label><span>New password</span><input value={ownPassword} onChange={(event) => setOwnPassword(event.target.value)} type="password" placeholder="Enter password" autoComplete="new-password" /></label>
+            <button className="primary-button" type="submit" disabled={busyKey === 'own-password' || !ownPassword}>{busyKey === 'own-password' ? 'Saving…' : 'Change my password'}</button>
           </form>
           {message ? <div className="success-message">{message}</div> : null}
           {error ? <div className="error-message">{error}</div> : null}
