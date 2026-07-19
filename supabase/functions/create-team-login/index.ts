@@ -116,6 +116,19 @@ Deno.serve(async (req) => {
     let action: 'CREATED' | 'UPDATED';
 
     if (existing) {
+      const { data: targetProfile, error: targetProfileError } = await adminClient
+        .from('app_user_profiles')
+        .select('app_role')
+        .eq('user_id', existing.id)
+        .maybeSingle();
+
+      if (targetProfileError) {
+        return json(500, { error: 'TARGET_PROFILE_LOOKUP_FAILED', details: targetProfileError.message });
+      }
+      if (actorProfile.app_role === 'ADMIN' && targetProfile?.app_role === 'OWNER') {
+        return json(403, { error: 'OWNER_ACCOUNT_PROTECTED' });
+      }
+
       const { data, error } = await adminClient.auth.admin.updateUserById(existing.id, {
         password,
         email_confirm: true,
