@@ -104,9 +104,23 @@ Deno.serve(async (req) => {
 
   if (!email || !email.includes('@')) return json(400, { error: 'VALID_EMAIL_REQUIRED' });
   if (!isValidRole(appRole)) return json(400, { error: 'INVALID_ROLE' });
-  if (!password || password.length < 10) return json(400, { error: 'PASSWORD_TOO_SHORT', details: 'Use at least 10 characters.' });
+  if (!password) return json(400, { error: 'PASSWORD_REQUIRED' });
 
-  if (appRole === 'OWNER' && actorProfile.app_role !== 'OWNER') {
+  const { data: activeOwnerRows, error: activeOwnerError } = await adminClient
+    .from('app_user_profiles')
+    .select('user_id')
+    .eq('app_role', 'OWNER')
+    .eq('is_active', true)
+    .limit(1);
+
+  if (activeOwnerError) {
+    return json(500, { error: 'OWNER_BOOTSTRAP_CHECK_FAILED', details: activeOwnerError.message });
+  }
+
+  const hasActiveOwner = Boolean(activeOwnerRows?.length);
+  const bootstrappingFirstOwner = appRole === 'OWNER' && actorProfile.app_role === 'ADMIN' && !hasActiveOwner;
+
+  if (appRole === 'OWNER' && actorProfile.app_role !== 'OWNER' && !bootstrappingFirstOwner) {
     return json(403, { error: 'ONLY_OWNER_CAN_CREATE_OWNER' });
   }
 
@@ -118,14 +132,14 @@ Deno.serve(async (req) => {
     if (existing) {
       const { data: targetProfile, error: targetProfileError } = await adminClient
         .from('app_user_profiles')
-        .select('app_role')
+        .select('app_role,is_active')
         .eq('user_id', existing.id)
         .maybeSingle();
 
       if (targetProfileError) {
         return json(500, { error: 'TARGET_PROFILE_LOOKUP_FAILED', details: targetProfileError.message });
       }
-      if (actorProfile.app_role === 'ADMIN' && targetProfile?.app_role === 'OWNER') {
+      if (actorProfile.app_role === 'ADMIN' && targetProfile?.app_role === 'OWNER' && hasActiveOwner) {
         return json(403, { error: 'OWNER_ACCOUNT_PROTECTED' });
       }
 
@@ -179,7 +193,7 @@ Deno.serve(async (req) => {
       target_type: 'auth.users',
       target_id: authUser.id,
       target_email: email,
-      after_data: { email, displayName, appRole, noEmail: true },
+      after_data: { email, displayName, appRole, noEmail: true, bootstrappingFirstOwner },
       user_agent: req.headers.get('user-agent'),
     });
 
@@ -190,6 +204,7 @@ Deno.serve(async (req) => {
       email,
       appRole,
       status: 'ACTIVE',
+      bootstrappingFirstOwner,
     });
   } catch (error) {
     return json(400, {
