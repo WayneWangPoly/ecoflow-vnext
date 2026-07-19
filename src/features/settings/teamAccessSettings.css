@@ -1,0 +1,410 @@
+.system-direct-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.system-direct-shell > .system-summary-hidden {
+  display: none !important;
+}
+
+.system-direct-shell > .team-access-direct {
+  order: 1;
+}
+
+.system-direct-shell > .ordermentum-system-panel {
+  display: none !important;
+  order: 2;
+}
+
+.system-direct-shell.system-show-integration > .ordermentum-system-panel {
+  display: block !important;
+}
+
+.team-access-direct {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.system-workspace-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #d7e1dc;
+  background: #f7faf8;
+}
+
+.system-workspace-bar > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.system-workspace-bar h2 {
+  margin: 0;
+}
+
+.system-workspace-bar span {
+  overflow: hidden;
+  color: #607168;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-workspace-bar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.system-workspace-bar nav button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #c7d4ce;
+  border-radius: 9px;
+  background: #fff;
+  color: #28483d;
+  font-weight: 800;
+}
+
+.system-workspace-bar nav button.active {
+  border-color: #0d714f;
+  background: #0d714f;
+  color: #fff;
+}
+
+.team-users-workspace,
+.my-access-workspace {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 22px;
+}
+
+.team-create-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(190px, 1fr) minmax(140px, 0.7fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.team-create-row label,
+.my-password-form label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.team-create-row label > span,
+.my-password-form label > span {
+  color: #41564d;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.team-create-row input,
+.team-create-row select,
+.my-password-form input,
+.team-account-row select,
+.team-password-row input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #c9d7d0;
+  border-radius: 9px;
+  background: #fff;
+  color: #102d24;
+}
+
+.team-create-row > button,
+.my-password-form > button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.team-login-note,
+.system-section-placeholder {
+  padding: 10px 12px;
+  border: 1px solid #d5e2dc;
+  border-radius: 9px;
+  background: #f3f7f5;
+  color: #52655c;
+  font-size: 13px;
+}
+
+.system-section-placeholder {
+  margin: 18px 20px;
+}
+
+.team-account-table {
+  overflow: hidden;
+  border: 1px solid #d3ddd8;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.team-account-head,
+.team-account-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.45fr) minmax(130px, 0.7fr) minmax(110px, 0.55fr) minmax(180px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.team-account-head {
+  background: #edf3f0;
+  color: #566960;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.team-account-entry + .team-account-entry,
+.team-empty-row {
+  border-top: 1px solid #e0e7e3;
+}
+
+.team-account-row > span {
+  min-width: 0;
+}
+
+.team-account-row strong,
+.team-account-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-account-row small {
+  margin-top: 3px;
+  color: #6a7b73;
+  font-size: 12px;
+}
+
+.team-status-active,
+.team-status-off {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.team-status-active {
+  background: #e3f5ec;
+  color: #0a6847;
+}
+
+.team-status-off {
+  background: #f3e8e6;
+  color: #94483d;
+}
+
+.team-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.team-row-actions button,
+.team-password-row button {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #c8d4ce;
+  border-radius: 8px;
+  background: #fff;
+  color: #29483d;
+  font-weight: 800;
+}
+
+.team-row-actions button:disabled,
+.team-password-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.team-password-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(220px, 1.2fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  padding: 11px 14px 14px;
+  background: #f4f8f6;
+}
+
+.team-password-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-empty-row {
+  padding: 18px 14px;
+  color: #66786f;
+}
+
+.my-access-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.my-access-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid #d3ddd8;
+  border-radius: 10px;
+  background: #f7faf8;
+}
+
+.my-access-summary span {
+  color: #66776f;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.my-access-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.my-password-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 420px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.ordermentum-system-panel .system-sync-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.ordermentum-system-panel .system-sync-actions button {
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid #bfd1c8;
+  border-radius: 9px;
+  background: #fff;
+  color: #174c3a;
+  font-weight: 850;
+}
+
+.ordermentum-system-panel .system-sync-actions button.primary {
+  border-color: #0d714f;
+  background: #0d714f;
+  color: #fff;
+}
+
+.ordermentum-system-panel .system-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.ordermentum-system-panel .system-status-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #d6e0db;
+  border-radius: 9px;
+  background: #f7faf8;
+}
+
+.ordermentum-system-panel .system-status-grid span {
+  color: #65776e;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ordermentum-system-panel .system-diagnostics {
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px solid #d8e1dc;
+}
+
+.ordermentum-system-panel .system-diagnostics summary {
+  cursor: pointer;
+  color: #355448;
+  font-weight: 850;
+}
+
+@media (max-width: 1050px) {
+  .team-create-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-account-head {
+    display: none;
+  }
+
+  .team-account-row {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 0.55fr);
+  }
+
+  .team-account-row > span:nth-child(3),
+  .team-account-row > span:nth-child(4) {
+    grid-column: auto;
+  }
+
+  .ordermentum-system-panel .system-sync-actions,
+  .ordermentum-system-panel .system-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .system-workspace-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .system-workspace-bar nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .system-workspace-bar nav button {
+    padding: 0 7px;
+  }
+
+  .team-users-workspace,
+  .my-access-workspace {
+    padding: 14px;
+  }
+
+  .team-create-row,
+  .team-account-row,
+  .team-password-row,
+  .my-access-summary,
+  .my-password-form,
+  .ordermentum-system-panel .system-sync-actions,
+  .ordermentum-system-panel .system-status-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .team-account-row {
+    gap: 9px;
+  }
+
+  .team-password-row strong {
+    white-space: normal;
+  }
+}
