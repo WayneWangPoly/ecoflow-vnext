@@ -41,9 +41,13 @@ export async function loadCustomerOrderPodIndex(force = false) {
         .limit(5000),
     ]);
 
-    if (stateResult.status === 'rejected' || orderResult.status === 'rejected') {
+    if (stateResult.status === 'rejected') {
       if (stale) return stale;
-      throw stateResult.status === 'rejected' ? stateResult.reason : orderResult.reason;
+      throw stateResult.reason;
+    }
+    if (orderResult.status === 'rejected') {
+      if (stale) return stale;
+      throw orderResult.reason;
     }
     if (stateResult.value.error || orderResult.value.error) {
       if (stale) return stale;
