@@ -13,8 +13,8 @@ import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
-import { DesktopWarmWorkspace } from './DesktopWarmWorkspace';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
+import { PersistentDesktopWorkspaces } from './PersistentDesktopWorkspaces';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -29,12 +29,12 @@ import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
 
-/** Owner/Admin capabilities with a shared presentation-only industrial desktop. */
+/** Owner/Admin capabilities with one persistent industrial desktop workspace. */
 export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <DesktopWarmWorkspace />
+      <PersistentDesktopWorkspaces />
       <IndustrialDesktopWorkbench />
       <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
