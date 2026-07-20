@@ -7,8 +7,8 @@ import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
-import { DesktopWarmWorkspace } from './DesktopWarmWorkspace';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
+import { PersistentDesktopWorkspaces } from './PersistentDesktopWorkspaces';
 import '../authoritativeDashboard.css';
 import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
@@ -18,12 +18,12 @@ import '../deliveryRunHistory.css';
 import '../roleAwareNavigation.css';
 import '../commercialSourceBoundary.css';
 
-/** Accounts capabilities with the same dense industrial workspace and read/write boundaries unchanged. */
+/** Accounts capabilities with one persistent industrial desktop workspace. */
 export default function AccountEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <DesktopWarmWorkspace />
+      <PersistentDesktopWorkspaces />
       <IndustrialDesktopWorkbench />
       <CustomerOrderPodPreviewEnhancer />
       <AuthoritativeDashboard />
