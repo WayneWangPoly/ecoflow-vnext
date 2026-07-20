@@ -6,6 +6,7 @@ import {
   type CustomerContactChannel,
   type CustomerOperationalEventRow,
 } from '@/data/repositories/customerOperationalEvents';
+import '../industrialCustomerOperations.css';
 
 export type CustomerWorkContext = {
   storeName: string;
