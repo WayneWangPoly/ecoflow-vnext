@@ -15,6 +15,7 @@ import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopCopyCleanup } from './DesktopCopyCleanup';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
+import { IndustrialOperationalClarity } from './IndustrialOperationalClarity';
 import { PersistentDesktopWorkspaces } from './PersistentDesktopWorkspaces';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
@@ -38,6 +39,7 @@ export default function OwnerEnhancers() {
       <PersistentDesktopWorkspaces />
       <DesktopCopyCleanup />
       <IndustrialDesktopWorkbench />
+      <IndustrialOperationalClarity />
       <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
