@@ -6,6 +6,7 @@ import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
+import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopWarmWorkspace } from './DesktopWarmWorkspace';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
 import '../authoritativeDashboard.css';
@@ -24,6 +25,7 @@ export default function AccountEnhancers() {
       <RoleAwareDesktopNavigation />
       <DesktopWarmWorkspace />
       <IndustrialDesktopWorkbench />
+      <CustomerOrderPodPreviewEnhancer />
       <AuthoritativeDashboard />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
