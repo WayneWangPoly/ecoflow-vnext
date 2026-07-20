@@ -15,11 +15,12 @@ import {
 import { CustomerOperationalWorkspace, type CustomerWorkContext } from './CustomerOperationalWorkspace';
 import '../industrialDesktopV2.css';
 import '../industrialDesktopWorkbench.css';
+import '../industrialDesktopConsistency.css';
 
- type DesktopRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER';
- type SortMode = 'priority' | 'az' | 'value' | 'status';
- type WorkField = { label: string; value: string };
- type WorkItem = {
+type DesktopRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER';
+type SortMode = 'priority' | 'az' | 'value' | 'status';
+type WorkField = { label: string; value: string };
+type WorkItem = {
   id: string;
   title: string;
   subtitle: string;
@@ -28,10 +29,20 @@ import '../industrialDesktopWorkbench.css';
   entity?: 'customer' | 'generic';
   customerContext?: CustomerWorkContext;
 };
- type WorkItemDetail = WorkItem;
+type WorkItemDetail = WorkItem;
 
-const ROW_SELECTOR = '.desktop-content .table-row, .desktop-content .order-list-item, .desktop-content .stop-row, .desktop-content .store-card, .desktop-content .exception-card, .desktop-content .stock-watch-row, .desktop-content .ops-order-row:not(.head), .desktop-content .accounts-customer-row, .desktop-content .owner-store-row';
-const SORT_CONTAINER_SELECTOR = '.desktop-content .table-like, .desktop-content .list-stack, .desktop-content .store-grid, .desktop-content .stock-watch';
+const ROW_SELECTOR = [
+  '.desktop-content .table-row',
+  '.desktop-content .order-list-item',
+  '.desktop-content .stop-row',
+  '.desktop-content .store-card',
+  '.desktop-content .exception-card',
+  '.desktop-content .stock-watch-row',
+  '.desktop-content .ops-order-row:not(.head)',
+  '.desktop-content .accounts-invoice-row',
+  '.desktop-content .order-platform-table-row',
+].join(', ');
+const SORT_CONTAINER_SELECTOR = '.desktop-content .table-like, .desktop-content .list-stack, .desktop-content .store-grid, .desktop-content .stock-watch, .desktop-content .order-platform-table';
 
 function clean(value?: string | null) {
   return (value || '').replace(/\s+/g, ' ').trim();
@@ -49,29 +60,37 @@ function stableId(parts: string[]) {
   return parts.join('|').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
 }
 
-function rowToItem(row: HTMLElement): WorkItem | null {
-  if (row.matches('.owner-store-row')) {
-    const main = row.querySelector<HTMLElement>('.owner-store-main');
-    const storeName = clean(main?.querySelector<HTMLElement>('strong')?.textContent);
-    if (!storeName) return null;
-    const address = clean(main?.querySelector<HTMLElement>('span')?.textContent);
-    return {
-      id: stableId(['customer', storeName]),
-      title: storeName,
-      subtitle: address || 'Customer operations',
-      kind: 'Customer',
-      fields: [],
-      entity: 'customer',
-      customerContext: { storeName, address },
-    };
-  }
+function customerRowToItem(row: HTMLElement): WorkItem | null {
+  const main = row.querySelector<HTMLElement>('.owner-store-main');
+  const storeName = clean(row.dataset.storeName || main?.querySelector<HTMLElement>('strong')?.textContent);
+  if (!storeName) return null;
+  const address = clean(row.dataset.storeAddress || main?.querySelector<HTMLElement>('span')?.textContent);
+  const deliveryInstruction = clean(row.dataset.deliveryInstruction || main?.querySelector<HTMLElement>('small')?.textContent);
+  return {
+    id: stableId(['customer', row.dataset.storeId || storeName]),
+    title: storeName,
+    subtitle: address || 'Customer',
+    kind: 'Customer',
+    fields: [],
+    entity: 'customer',
+    customerContext: {
+      storeId: row.dataset.storeId,
+      storeName,
+      address,
+      deliveryInstruction: deliveryInstruction && !/^no delivery instructions/i.test(deliveryInstruction)
+        ? deliveryInstruction
+        : undefined,
+    },
+  };
+}
 
-  const panel = row.closest<HTMLElement>('.panel, .ops-home-panel, .accounts-panel, .owner-store-panel');
+function rowToItem(row: HTMLElement): WorkItem | null {
+  const panel = row.closest<HTMLElement>('.panel, .ops-home-panel, .accounts-panel, .owner-store-panel, .order-platform-compact-table-panel');
   const kind = clean(panel?.querySelector<HTMLElement>('.panel-head h2, header h2, header h3, h2, h3')?.textContent) || 'Work item';
   const cells = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
-  const table = row.closest<HTMLElement>('.table-like, .ops-order-table');
+  const table = row.closest<HTMLElement>('.table-like, .ops-order-table, .order-platform-table');
   const headings = table
-    ? Array.from(table.querySelectorAll<HTMLElement>(':scope > .table-head > span, :scope > .ops-order-row.head > span')).map((node) => clean(node.textContent))
+    ? Array.from(table.querySelectorAll<HTMLElement>(':scope > .table-head > span, :scope > .ops-order-row.head > span, :scope > .order-platform-table-header > span')).map((node) => clean(node.textContent))
     : [];
   const title = clean(row.querySelector<HTMLElement>('strong')?.textContent) || clean(cells[0]?.textContent) || kind;
   const subtitle = clean(cells[1]?.textContent) || clean(row.querySelector<HTMLElement>('small, p')?.textContent) || kind;
@@ -93,7 +112,7 @@ function numericValue(text: string) {
 
 function applyFilter(query: string) {
   const needle = clean(query).toLowerCase();
-  document.querySelectorAll<HTMLElement>(ROW_SELECTOR).forEach((row) => {
+  document.querySelectorAll<HTMLElement>(`${ROW_SELECTOR}, .desktop-content .owner-store-row, .desktop-content .accounts-customer-row`).forEach((row) => {
     row.classList.toggle('industrial-row-filtered', Boolean(needle) && !clean(row.textContent).toLowerCase().includes(needle));
   });
 }
@@ -102,6 +121,7 @@ function applySort(mode: SortMode) {
   document.querySelectorAll<HTMLElement>(SORT_CONTAINER_SELECTOR).forEach((container) => {
     const rows = Array.from(container.children).filter((child): child is HTMLElement => child instanceof HTMLElement
       && !child.classList.contains('table-head')
+      && !child.classList.contains('order-platform-table-header')
       && !child.classList.contains('empty-state'));
     rows.forEach((row, index) => {
       if (row.dataset.originalIndex === undefined) row.dataset.originalIndex = String(index);
@@ -220,6 +240,19 @@ export function IndustrialDesktopWorkbench() {
     });
     observer.observe(document.querySelector<HTMLElement>('.desktop-content') || desktop, { subtree: true, childList: true });
 
+    function onCustomerClickCapture(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const row = target.closest<HTMLElement>('.owner-store-row');
+      if (!row || target.closest('button, a, input, select, textarea, label, [role="button"]')) return;
+      const item = customerRowToItem(row);
+      if (!item) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      openItem(item);
+    }
+
     function onClick(event: MouseEvent) {
       const target = event.target;
       if (!(target instanceof HTMLElement) || target.closest('button, a, input, select, textarea, label, [role="button"]')) return;
@@ -233,17 +266,25 @@ export function IndustrialDesktopWorkbench() {
       if (item?.id && item?.title) openItem(item);
     }
 
+    document.addEventListener('click', onCustomerClickCapture, true);
     document.addEventListener('click', onClick);
     window.addEventListener('ecoflow:open-work-item', onCustom);
     return () => {
       observer.disconnect();
       window.cancelAnimationFrame(frame);
+      document.removeEventListener('click', onCustomerClickCapture, true);
       document.removeEventListener('click', onClick);
       window.removeEventListener('ecoflow:open-work-item', onCustom);
       topbarNode.remove();
       inspectorNode.remove();
       workbarNode.remove();
-      document.body.classList.remove('industrial-desktop-v2', 'industrial-v2-workbar-active', 'industrial-v2-compact', 'industrial-v2-inspector-open');
+      document.body.classList.remove(
+        'industrial-desktop-v2',
+        'industrial-v2-workbar-active',
+        'industrial-v2-compact',
+        'industrial-v2-inspector-open',
+        'industrial-v2-customer-inspector',
+      );
     };
   }, []);
 
@@ -300,14 +341,20 @@ export function IndustrialDesktopWorkbench() {
 
   const inspector = inspectorMount && activeItem && !inspectorHidden ? createPortal(
     <div className={`industrial-inspector ${activeIsCustomer ? 'customer' : ''}`}>
-      <header><div><span>{activeItem.kind}</span><strong>{activeItem.title}</strong><small>{activeItem.subtitle}</small></div><div><button type="button" onClick={() => setModal('expanded')} aria-label="Expand"><Maximize2 size={16} /></button><button type="button" onClick={() => setInspectorHidden(true)} aria-label="Close inspector"><PanelRightClose size={16} /></button></div></header>
+      <header>
+        <div><span>{activeItem.kind}</span><strong>{activeItem.title}</strong><small>{activeItem.subtitle}</small></div>
+        <div>
+          {!activeIsCustomer ? <button type="button" onClick={() => setModal('expanded')} aria-label="Expand"><Maximize2 size={16} /></button> : null}
+          <button type="button" onClick={() => setInspectorHidden(true)} aria-label="Close inspector"><PanelRightClose size={16} /></button>
+        </div>
+      </header>
       {activeIsCustomer && activeItem.customerContext ? (
         <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
       ) : (
         <>
           <nav>{(['overview', 'source', 'operations'] as const).map((view) => <button key={view} type="button" className={inspectorView === view ? 'active' : ''} onClick={() => setInspectorView(view)}>{view}</button>)}</nav>
           <div className="industrial-inspector-body"><Fields fields={inspectorFields} /></div>
-          <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button><span>{role === 'VIEWER' ? 'Read only' : 'Operational context'}</span></footer>
+          <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button></footer>
         </>
       )}
     </div>,
@@ -316,13 +363,11 @@ export function IndustrialDesktopWorkbench() {
 
   const modalView = modal && (activeItem || compareItems.length) ? createPortal(
     <div className="industrial-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}>
-      <section className={`industrial-work-modal ${modal === 'compare' ? 'compare' : ''} ${activeIsCustomer ? 'customer' : ''}`} role="dialog" aria-modal="true">
+      <section className={`industrial-work-modal ${modal === 'compare' ? 'compare' : ''}`} role="dialog" aria-modal="true">
         <header><div><span>{modal === 'compare' ? 'WORKSPACE COMPARISON' : activeItem?.kind}</span><strong>{modal === 'compare' ? `${compareItems.length} items side by side` : activeItem?.title}</strong></div><button type="button" onClick={() => setModal(null)}><X size={18} /></button></header>
         {modal === 'compare'
           ? <div className="industrial-compare-grid">{compareItems.map((item) => <article key={item.id}><div><span>{item.kind}</span><strong>{item.title}</strong><small>{item.subtitle}</small></div><Fields fields={item.fields} /></article>)}</div>
-          : activeIsCustomer && activeItem?.customerContext
-            ? <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
-            : activeItem ? <div className="industrial-expanded-item"><Fields fields={activeItem.fields} /></div> : null}
+          : activeItem && activeItem.entity !== 'customer' ? <div className="industrial-expanded-item"><Fields fields={activeItem.fields} /></div> : null}
       </section>
     </div>,
     document.body,
