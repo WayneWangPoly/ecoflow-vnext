@@ -17,14 +17,14 @@ function setStyle(element: HTMLElement, property: 'left' | 'top' | 'width' | 'he
   if (element.style[property] !== value) element.style[property] = value;
 }
 
-function applyContentRect(mount: HTMLElement) {
+function applyContentRect(slot: HTMLElement) {
   const content = document.querySelector<HTMLElement>('.desktop-content');
   if (!content) return;
   const rect = content.getBoundingClientRect();
-  setStyle(mount, 'left', `${Math.max(0, rect.left)}px`);
-  setStyle(mount, 'top', `${Math.max(0, rect.top)}px`);
-  setStyle(mount, 'width', `${Math.max(0, rect.width)}px`);
-  setStyle(mount, 'height', `${Math.max(0, rect.height)}px`);
+  setStyle(slot, 'left', `${Math.max(0, rect.left)}px`);
+  setStyle(slot, 'top', `${Math.max(0, rect.top)}px`);
+  setStyle(slot, 'width', `${Math.max(0, rect.width)}px`);
+  setStyle(slot, 'height', `${Math.max(0, rect.height)}px`);
 }
 
 /** Customer and Accounts stay mounted outside native tab teardown. */
@@ -49,25 +49,35 @@ export function PersistentDesktopWorkspaces() {
     }
 
     WORKSPACES.forEach((workspace) => {
+      let slot = root?.querySelector<HTMLElement>(`:scope > [data-persistent-workspace="${workspace.key}"]`);
+      if (!slot) {
+        slot = document.createElement('section');
+        slot.className = 'industrial-persistent-workspace-slot';
+        slot.dataset.persistentWorkspace = workspace.key;
+        slot.dataset.workspaceState = 'parked';
+        root?.appendChild(slot);
+      }
+
       let mount = document.querySelector<HTMLElement>(`.${workspace.mountClass}`);
       if (!mount) {
         mount = document.createElement('section');
         mount.className = workspace.mountClass;
       }
-      if (mount.parentElement !== root) root?.appendChild(mount);
-      if (mount.dataset.workspaceState !== 'parked') mount.dataset.workspaceState = 'parked';
+      mount.removeAttribute('data-workspace-state');
+      mount.removeAttribute('aria-hidden');
+      if (mount.parentElement !== slot) slot.appendChild(mount);
     });
 
     const sync = () => {
       if (!sentinels || !root) return;
       WORKSPACES.forEach((workspace) => {
-        const mount = root!.querySelector<HTMLElement>(`:scope > .${workspace.mountClass}`);
-        if (!mount) return;
+        const slot = root!.querySelector<HTMLElement>(`:scope > [data-persistent-workspace="${workspace.key}"]`);
+        if (!slot) return;
         const nextState = findRealPanel(workspace.heading, sentinels!) ? 'visible' : 'parked';
-        if (mount.dataset.workspaceState !== nextState) mount.dataset.workspaceState = nextState;
+        if (slot.dataset.workspaceState !== nextState) slot.dataset.workspaceState = nextState;
         const ariaHidden = nextState === 'visible' ? 'false' : 'true';
-        if (mount.getAttribute('aria-hidden') !== ariaHidden) mount.setAttribute('aria-hidden', ariaHidden);
-        if (nextState === 'visible') applyContentRect(mount);
+        if (slot.getAttribute('aria-hidden') !== ariaHidden) slot.setAttribute('aria-hidden', ariaHidden);
+        if (nextState === 'visible') applyContentRect(slot);
       });
     };
 
