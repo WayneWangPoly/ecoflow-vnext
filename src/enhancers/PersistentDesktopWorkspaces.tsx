@@ -1,42 +1,47 @@
 import { useLayoutEffect } from 'react';
 import { observeBody } from '@/lib/domObserver';
+import '../persistentDesktopWorkspaces.css';
 
 const WORKSPACES = [
-  {
-    key: 'customers',
-    heading: 'Store master',
-    mountClass: 'owner-store-intelligence-mount',
-  },
-  {
-    key: 'accounts',
-    heading: 'Reconciliation queue',
-    mountClass: 'accounts-statement-workbench-mount',
-  },
+  { key: 'customers', heading: 'Store master', mountClass: 'owner-store-intelligence-mount' },
+  { key: 'accounts', heading: 'Reconciliation queue', mountClass: 'accounts-statement-workbench-mount' },
 ] as const;
 
-function findRealPanel(headingText: string, parking: HTMLElement) {
+function findRealPanel(headingText: string, sentinels: HTMLElement) {
   const heading = Array.from(document.querySelectorAll<HTMLElement>('h2'))
-    .find((node) => node.textContent?.trim() === headingText && !parking.contains(node));
+    .find((node) => node.textContent?.trim() === headingText && !sentinels.contains(node));
   return heading?.closest<HTMLElement>('.panel') || null;
 }
 
-/**
- * The legacy portal hosts used to disappear whenever navigation replaced the
- * native page. Permanent fallback headings keep those portals mounted, while
- * this coordinator moves the live mount into the active page without remounting
- * React state or repeating database reads.
- */
+function applyContentRect(mount: HTMLElement) {
+  const content = document.querySelector<HTMLElement>('.desktop-content');
+  if (!content) return;
+  const rect = content.getBoundingClientRect();
+  mount.style.left = `${Math.max(0, rect.left)}px`;
+  mount.style.top = `${Math.max(0, rect.top)}px`;
+  mount.style.width = `${Math.max(0, rect.width)}px`;
+  mount.style.height = `${Math.max(0, rect.height)}px`;
+}
+
+/** Customer and Accounts stay mounted outside native tab teardown. */
 export function PersistentDesktopWorkspaces() {
   useLayoutEffect(() => {
-    let parking = document.querySelector<HTMLElement>('.industrial-workspace-parking');
-    if (!parking) {
-      parking = document.createElement('section');
-      parking.className = 'industrial-workspace-parking';
-      parking.setAttribute('aria-hidden', 'true');
-      parking.innerHTML = WORKSPACES.map((workspace) => (
-        `<section data-workspace-slot="${workspace.key}"><section class="panel"><h2>${workspace.heading}</h2></section></section>`
+    let sentinels = document.querySelector<HTMLElement>('.industrial-workspace-sentinels');
+    if (!sentinels) {
+      sentinels = document.createElement('section');
+      sentinels.className = 'industrial-workspace-sentinels';
+      sentinels.setAttribute('aria-hidden', 'true');
+      sentinels.innerHTML = WORKSPACES.map((workspace) => (
+        `<section class="panel" data-workspace-sentinel="${workspace.key}"><h2>${workspace.heading}</h2></section>`
       )).join('');
-      document.body.appendChild(parking);
+      document.body.appendChild(sentinels);
+    }
+
+    let root = document.querySelector<HTMLElement>('.industrial-persistent-workspace-root');
+    if (!root) {
+      root = document.createElement('section');
+      root.className = 'industrial-persistent-workspace-root';
+      document.body.appendChild(root);
     }
 
     WORKSPACES.forEach((workspace) => {
@@ -44,38 +49,36 @@ export function PersistentDesktopWorkspaces() {
       if (!mount) {
         mount = document.createElement('section');
         mount.className = workspace.mountClass;
-        parking?.querySelector<HTMLElement>(`[data-workspace-slot="${workspace.key}"]`)?.appendChild(mount);
       }
+      if (mount.parentElement !== root) root?.appendChild(mount);
       mount.dataset.workspaceState = 'parked';
     });
 
-    const place = () => {
-      if (!parking) return;
+    const sync = () => {
+      if (!sentinels || !root) return;
       WORKSPACES.forEach((workspace) => {
-        const mount = document.querySelector<HTMLElement>(`.${workspace.mountClass}`);
+        const mount = root!.querySelector<HTMLElement>(`:scope > .${workspace.mountClass}`);
         if (!mount) return;
-        const panel = findRealPanel(workspace.heading, parking!);
-        if (panel) {
-          if (mount.nextElementSibling !== panel || mount.parentElement !== panel.parentElement) {
-            panel.insertAdjacentElement('beforebegin', mount);
-          }
-          mount.dataset.workspaceState = 'visible';
-        } else {
-          const slot = parking!.querySelector<HTMLElement>(`[data-workspace-slot="${workspace.key}"]`);
-          if (slot && mount.parentElement !== slot) slot.appendChild(mount);
-          mount.dataset.workspaceState = 'parked';
-        }
+        const active = Boolean(findRealPanel(workspace.heading, sentinels!));
+        mount.dataset.workspaceState = active ? 'visible' : 'parked';
+        mount.setAttribute('aria-hidden', active ? 'false' : 'true');
+        if (active) applyContentRect(mount);
       });
     };
 
-    const stop = observeBody(place);
-    place();
+    const stop = observeBody(sync);
+    const content = document.querySelector<HTMLElement>('.desktop-content');
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null;
+    if (content) resizeObserver?.observe(content);
+    window.addEventListener('resize', sync);
+    sync();
+
     return () => {
       stop();
-      WORKSPACES.forEach((workspace) => {
-        document.querySelector<HTMLElement>(`.${workspace.mountClass}[data-workspace-state="parked"]`)?.remove();
-      });
-      parking?.remove();
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', sync);
+      root?.remove();
+      sentinels?.remove();
     };
   }, []);
 
