@@ -105,7 +105,7 @@ export function IndustrialDesktopUiV2() {
   function closeItem(id: string) {
     setItems((current) => {
       const next = current.filter((item) => item.id !== id);
-      if (activeId === id) setActiveId(next.at(-1)?.id || '');
+      if (activeId === id) setActiveId(next[next.length - 1]?.id || '');
       return next;
     });
     setCompareIds((current) => current.filter((candidate) => candidate !== id));
