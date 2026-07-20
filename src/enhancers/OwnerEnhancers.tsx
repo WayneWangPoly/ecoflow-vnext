@@ -12,7 +12,8 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
-import { IndustrialDesktopUiV2 } from './IndustrialDesktopUiV2';
+import { DesktopWarmWorkspace } from './DesktopWarmWorkspace';
+import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -32,7 +33,8 @@ export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <IndustrialDesktopUiV2 />
+      <DesktopWarmWorkspace />
+      <IndustrialDesktopWorkbench />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />
