@@ -12,7 +12,7 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
-import { AdvancedOwnerUiEnhancer } from './AdvancedOwnerUiEnhancer';
+import { IndustrialDesktopUiV2 } from './IndustrialDesktopUiV2';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -27,12 +27,12 @@ import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
 
-/** Owner/Admin desktop capabilities only. The Today dashboard is now native in App, not a DOM portal. */
+/** Owner/Admin capabilities with a shared presentation-only industrial desktop. */
 export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <AdvancedOwnerUiEnhancer />
+      <IndustrialDesktopUiV2 />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />
