@@ -54,32 +54,68 @@ export type OwnerStoreExperienceGapRow = {
 export type StoreOwnerAction = 'SET_PRICE_TIER' | 'SET_DELIVERY_INSTRUCTIONS' | 'SET_ADDRESS' | 'SET_CONTACT_PHONE' | 'MARK_VERIFIED' | 'ACK_STATEMENT_REVIEW';
 export type StoreOwnerActionResult = { action_id: string; store_id: string; action: StoreOwnerAction; execution_status: string; affected_rows: number | string | null; executed_at: string; error_message: string | null };
 
+const CACHE_TTL_MS = 45_000;
+type CacheEntry<T> = { at: number; value: T };
+const cache = new Map<string, CacheEntry<unknown>>();
+const inflight = new Map<string, Promise<unknown>>();
+
 function requireSupabase(client?: SupabaseClient | null) { const active = client ?? supabase; if (!active) throw new Error('Supabase is not configured.'); return active; }
 function errorMessage(error: unknown) { if (error instanceof Error) return error.message; if (error && typeof error === 'object') { const record = error as Record<string, unknown>; return [record.message, record.details, record.hint, record.code].filter(Boolean).map(String).join(' · ') || JSON.stringify(record); } return String(error); }
 
-export async function loadOwnerStoreKpis(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_kpis').select('*').maybeSingle();
-  if (error) throw new Error(errorMessage(error)); return (data ?? null) as OwnerStoreKpis | null;
+async function cachedQuery<T>(key: string, loader: () => Promise<T>, force = false): Promise<T> {
+  const existing = cache.get(key) as CacheEntry<T> | undefined;
+  if (!force && existing && Date.now() - existing.at < CACHE_TTL_MS) return existing.value;
+  const pending = inflight.get(key) as Promise<T> | undefined;
+  if (!force && pending) return pending;
+  const stale = existing?.value;
+  const request = loader()
+    .then((value) => { cache.set(key, { at: Date.now(), value }); return value; })
+    .catch((reason) => { if (stale !== undefined) return stale; throw reason; })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, request);
+  return request;
 }
-export async function loadOwnerStorePerformance(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_performance').select('*').order('revenue_rank_30d', { ascending: true }).limit(300);
-  if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStorePerformanceRow[];
+
+export async function loadOwnerStoreKpis(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('kpis', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_kpis').select('*').maybeSingle();
+    if (error) throw new Error(errorMessage(error)); return (data ?? null) as OwnerStoreKpis | null;
+  }, force);
 }
-export async function loadOwnerStoreSkuMix(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_sku_mix').select('*').limit(1000);
-  if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreSkuMixRow[];
+
+export async function loadOwnerStorePerformance(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('performance', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_performance').select('*').order('revenue_rank_30d', { ascending: true }).limit(300);
+    if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStorePerformanceRow[];
+  }, force);
 }
-export async function loadOwnerStoreStatementSummary(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_statement_summary').select('*').order('open_statement_value', { ascending: false }).limit(300);
-  if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreStatementSummaryRow[];
+
+export async function loadOwnerStoreSkuMix(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('sku-mix', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_sku_mix').select('*').limit(1000);
+    if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreSkuMixRow[];
+  }, force);
 }
-export async function loadOwnerStoreReorderWatch(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_reorder_watch').select('*').limit(500);
-  if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreReorderWatchRow[];
+
+export async function loadOwnerStoreStatementSummary(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('statement-summary', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_statement_summary').select('*').order('open_statement_value', { ascending: false }).limit(300);
+    if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreStatementSummaryRow[];
+  }, force);
 }
-export async function loadOwnerStoreExperienceGaps(client?: SupabaseClient | null) {
-  const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_experience_gaps').select('*').limit(300);
-  if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreExperienceGapRow[];
+
+export async function loadOwnerStoreReorderWatch(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('reorder-watch', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_reorder_watch').select('*').limit(500);
+    if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreReorderWatchRow[];
+  }, force);
+}
+
+export async function loadOwnerStoreExperienceGaps(client?: SupabaseClient | null, force = false) {
+  return cachedQuery('experience-gaps', async () => {
+    const { data, error } = await requireSupabase(client).from('v_ecoflow_owner_store_experience_gaps').select('*').limit(300);
+    if (error) throw new Error(errorMessage(error)); return (data ?? []) as OwnerStoreExperienceGapRow[];
+  }, force);
 }
 
 const SOURCE_OWNED_STORE_ACTIONS = new Set<StoreOwnerAction>([
@@ -97,5 +133,6 @@ export async function applyStoreOwnerAction(input: { storeId: string; action: St
     p_note: input.note ?? null,
   });
   if (error) throw new Error(errorMessage(error));
+  cache.clear();
   return (data ?? []) as StoreOwnerActionResult[];
 }
