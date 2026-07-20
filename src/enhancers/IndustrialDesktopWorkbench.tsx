@@ -160,7 +160,7 @@ export function IndustrialDesktopWorkbench() {
   const [activeId, setActiveId] = useState('');
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [inspectorView, setInspectorView] = useState<'overview' | 'source' | 'operations'>('overview');
-  const [inspectorHidden, setInspectorHidden] = useState(false);
+  const [detailHidden, setDetailHidden] = useState(false);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('priority');
   const [compact, setCompact] = useState(() => {
@@ -174,6 +174,8 @@ export function IndustrialDesktopWorkbench() {
   const activeItem = items.find((item) => item.id === activeId) || null;
   const compareItems = items.filter((item) => compareIds.includes(item.id) && item.entity !== 'customer');
   const activeIsCustomer = activeItem?.entity === 'customer' && Boolean(activeItem.customerContext);
+  const genericInspectorOpen = Boolean(activeItem && !activeIsCustomer && !detailHidden);
+  const customerWindowOpen = Boolean(activeIsCustomer && !detailHidden);
   const inspectorFields = activeItem
     ? inspectorView === 'source'
       ? activeItem.fields.filter(sourceField)
@@ -185,8 +187,13 @@ export function IndustrialDesktopWorkbench() {
   function openItem(item: WorkItemDetail) {
     setItems((current) => [...current.filter((existing) => existing.id !== item.id), item].slice(-8));
     setActiveId(item.id);
-    setInspectorHidden(false);
+    setDetailHidden(false);
     setInspectorView('overview');
+  }
+
+  function activateItem(id: string) {
+    setActiveId(id);
+    setDetailHidden(false);
   }
 
   function closeItem(id: string) {
@@ -284,6 +291,7 @@ export function IndustrialDesktopWorkbench() {
         'industrial-v2-compact',
         'industrial-v2-inspector-open',
         'industrial-v2-customer-inspector',
+        'industrial-v2-customer-window-open',
       );
     };
   }, []);
@@ -305,16 +313,17 @@ export function IndustrialDesktopWorkbench() {
   }, [compact]);
 
   useEffect(() => {
-    document.body.classList.toggle('industrial-v2-inspector-open', Boolean(activeItem) && !inspectorHidden);
-    document.body.classList.toggle('industrial-v2-customer-inspector', Boolean(activeIsCustomer) && !inspectorHidden);
-  }, [activeItem, activeIsCustomer, inspectorHidden]);
+    document.body.classList.toggle('industrial-v2-inspector-open', genericInspectorOpen);
+    document.body.classList.remove('industrial-v2-customer-inspector');
+    document.body.classList.toggle('industrial-v2-customer-window-open', customerWindowOpen);
+  }, [genericInspectorOpen, customerWindowOpen]);
 
   const topbar = topbarMount ? createPortal(
     <div className="industrial-v2-topbar">
       <label className="industrial-view-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in this view" />{query ? <button type="button" onClick={() => setQuery('')}><X size={13} /></button> : null}</label>
       <label className="industrial-sort-control"><SlidersHorizontal size={14} /><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="priority">Operational priority</option><option value="az">A–Z</option><option value="value">Highest value</option><option value="status">Status</option></select></label>
       <button type="button" className="industrial-density-button" onClick={() => setCompact((current) => !current)}><Rows3 size={15} />{compact ? 'Compact' : 'Comfort'}</button>
-      {activeItem && inspectorHidden ? <button type="button" onClick={() => setInspectorHidden(false)} aria-label="Open inspector"><PanelRightOpen size={16} /></button> : null}
+      {activeItem && detailHidden ? <button type="button" onClick={() => setDetailHidden(false)} aria-label={activeIsCustomer ? 'Open customer window' : 'Open inspector'}><PanelRightOpen size={16} /></button> : null}
     </div>,
     topbarMount,
   ) : null;
@@ -325,7 +334,7 @@ export function IndustrialDesktopWorkbench() {
       <div className="industrial-work-tabs">
         {items.map((item) => (
           <div key={item.id} className={`industrial-work-tab ${item.id === activeId ? 'active' : ''} ${compareIds.includes(item.id) ? 'compare' : ''}`}>
-            <button type="button" className="industrial-work-tab-main" onClick={() => { setActiveId(item.id); setInspectorHidden(false); }}><span>{item.kind}</span><strong>{item.title}</strong></button>
+            <button type="button" className="industrial-work-tab-main" onClick={() => activateItem(item.id)}><span>{item.kind}</span><strong>{item.title}</strong></button>
             {item.entity !== 'customer' ? <button type="button" onClick={() => toggleCompare(item.id)} aria-label={`Compare ${item.title}`}><GitCompareArrows size={12} /></button> : null}
             <button type="button" onClick={() => closeItem(item.id)} aria-label={`Close ${item.title}`}><X size={12} /></button>
           </div>
@@ -333,32 +342,51 @@ export function IndustrialDesktopWorkbench() {
       </div>
       <div className="industrial-workbar-actions">
         <button type="button" disabled={compareItems.length < 2} onClick={() => setModal('compare')}><GitCompareArrows size={14} />Compare {compareItems.length || ''}</button>
-        <button type="button" disabled={!activeItem} onClick={() => setInspectorHidden((current) => !current)} aria-label="Toggle inspector">{inspectorHidden ? <PanelRightOpen size={15} /> : <Minimize2 size={15} />}</button>
+        <button
+          type="button"
+          disabled={!activeItem}
+          onClick={() => setDetailHidden((current) => !current)}
+          aria-label={activeIsCustomer ? 'Toggle customer window' : 'Toggle inspector'}
+        >
+          {detailHidden ? <PanelRightOpen size={15} /> : <Minimize2 size={15} />}
+        </button>
       </div>
     </section>,
     workbarMount,
   ) : null;
 
-  const inspector = inspectorMount && activeItem && !inspectorHidden ? createPortal(
-    <div className={`industrial-inspector ${activeIsCustomer ? 'customer' : ''}`}>
+  const inspector = inspectorMount && activeItem && !activeIsCustomer && !detailHidden ? createPortal(
+    <div className="industrial-inspector">
       <header>
         <div><span>{activeItem.kind}</span><strong>{activeItem.title}</strong><small>{activeItem.subtitle}</small></div>
         <div>
-          {!activeIsCustomer ? <button type="button" onClick={() => setModal('expanded')} aria-label="Expand"><Maximize2 size={16} /></button> : null}
-          <button type="button" onClick={() => setInspectorHidden(true)} aria-label="Close inspector"><PanelRightClose size={16} /></button>
+          <button type="button" onClick={() => setModal('expanded')} aria-label="Expand"><Maximize2 size={16} /></button>
+          <button type="button" onClick={() => setDetailHidden(true)} aria-label="Close inspector"><PanelRightClose size={16} /></button>
         </div>
       </header>
-      {activeIsCustomer && activeItem.customerContext ? (
-        <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
-      ) : (
-        <>
-          <nav>{(['overview', 'source', 'operations'] as const).map((view) => <button key={view} type="button" className={inspectorView === view ? 'active' : ''} onClick={() => setInspectorView(view)}>{view}</button>)}</nav>
-          <div className="industrial-inspector-body"><Fields fields={inspectorFields} /></div>
-          <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button></footer>
-        </>
-      )}
+      <nav>{(['overview', 'source', 'operations'] as const).map((view) => <button key={view} type="button" className={inspectorView === view ? 'active' : ''} onClick={() => setInspectorView(view)}>{view}</button>)}</nav>
+      <div className="industrial-inspector-body"><Fields fields={inspectorFields} /></div>
+      <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button></footer>
     </div>,
     inspectorMount,
+  ) : null;
+
+  const customerWindow = activeItem && activeIsCustomer && activeItem.customerContext && !detailHidden ? createPortal(
+    <section
+      className="industrial-customer-work-window"
+      role="dialog"
+      aria-label={`Customer workspace: ${activeItem.title}`}
+    >
+      <header>
+        <div><span>CUSTOMER WORK ITEM</span><strong>{activeItem.title}</strong><small>{activeItem.subtitle}</small></div>
+        <div>
+          <button type="button" onClick={() => setDetailHidden(true)} aria-label="Minimise customer window"><Minimize2 size={16} /></button>
+          <button type="button" onClick={() => closeItem(activeItem.id)} aria-label={`Close ${activeItem.title}`}><X size={17} /></button>
+        </div>
+      </header>
+      <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
+    </section>,
+    document.body,
   ) : null;
 
   const modalView = modal && (activeItem || compareItems.length) ? createPortal(
@@ -373,5 +401,5 @@ export function IndustrialDesktopWorkbench() {
     document.body,
   ) : null;
 
-  return <>{topbar}{workbar}{inspector}{modalView}</>;
+  return <>{topbar}{workbar}{inspector}{customerWindow}{modalView}</>;
 }
