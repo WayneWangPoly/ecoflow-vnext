@@ -81,6 +81,7 @@ export function CustomerOperationalWorkspace({ context, editable }: { context: C
 
   useEffect(() => {
     const cached = peekCustomerOperationalEvents(context.storeName);
+    setPanel('delivery');
     setRows(cached);
     setDeliveryText(cached.find((row) => row.event_type === 'DELIVERY_INSTRUCTION')?.note_text || context.deliveryInstruction || '');
     setContactText('');
@@ -133,8 +134,8 @@ export function CustomerOperationalWorkspace({ context, editable }: { context: C
 
   return (
     <section className="customer-ops-workspace">
-      <nav className="customer-ops-tabs">
-        <button type="button" className={panel === 'delivery' ? 'active' : ''} onClick={() => setPanel('delivery')}><Navigation size={14} />Delivery</button>
+      <nav className="customer-ops-tabs" aria-label="Customer operational notes">
+        <button type="button" className={panel === 'delivery' ? 'active' : ''} onClick={() => setPanel('delivery')}><Navigation size={14} />Delivery instruction</button>
         <button type="button" className={panel === 'contact' ? 'active' : ''} onClick={() => setPanel('contact')}><MessageSquareText size={14} />Contact log <b>{contactRows.length}</b></button>
         <button type="button" className="customer-ops-refresh" onClick={() => void reload(true)} disabled={loading} aria-label="Refresh customer events"><RefreshCw size={14} /></button>
       </nav>
