@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import '../industrialOperationalClarity.css';
+import '../internalOrderWriteGuard.css';
 
 function ensureLabel(parent: HTMLElement, anchor: HTMLElement | null, key: string, text: string) {
   if (!anchor) return;
