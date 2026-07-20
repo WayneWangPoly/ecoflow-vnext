@@ -16,6 +16,7 @@ import { CustomerOperationalWorkspace, type CustomerWorkContext } from './Custom
 import '../industrialDesktopV2.css';
 import '../industrialDesktopWorkbench.css';
 import '../industrialDesktopConsistency.css';
+import '../industrialCustomerWindow.css';
 
 type DesktopRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER';
 type SortMode = 'priority' | 'az' | 'value' | 'status';
