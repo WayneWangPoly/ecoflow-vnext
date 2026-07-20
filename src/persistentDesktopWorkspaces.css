@@ -44,6 +44,13 @@ body.industrial-desktop-v2 .owner-store-shell[data-operational-view="customers"]
   display: none !important;
 }
 
+body.industrial-desktop-v2 .customer-ops-tabs > button:not(.customer-ops-refresh) {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding-inline: 6px;
+}
+
 @media (max-width: 980px) {
   .industrial-persistent-workspace-root > [data-workspace-state="visible"] {
     padding: 60px 10px 14px;
