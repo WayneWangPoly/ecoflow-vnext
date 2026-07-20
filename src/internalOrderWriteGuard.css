@@ -1,0 +1,5 @@
+/* Bulk internal-order writes remain unavailable until exact-order preview and confirmation exist. */
+body.industrial-desktop-v2 .internalise-row,
+.internalise-row {
+  display: none !important;
+}
