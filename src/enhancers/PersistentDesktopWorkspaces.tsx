@@ -13,14 +13,18 @@ function findRealPanel(headingText: string, sentinels: HTMLElement) {
   return heading?.closest<HTMLElement>('.panel') || null;
 }
 
+function setStyle(element: HTMLElement, property: 'left' | 'top' | 'width' | 'height', value: string) {
+  if (element.style[property] !== value) element.style[property] = value;
+}
+
 function applyContentRect(mount: HTMLElement) {
   const content = document.querySelector<HTMLElement>('.desktop-content');
   if (!content) return;
   const rect = content.getBoundingClientRect();
-  mount.style.left = `${Math.max(0, rect.left)}px`;
-  mount.style.top = `${Math.max(0, rect.top)}px`;
-  mount.style.width = `${Math.max(0, rect.width)}px`;
-  mount.style.height = `${Math.max(0, rect.height)}px`;
+  setStyle(mount, 'left', `${Math.max(0, rect.left)}px`);
+  setStyle(mount, 'top', `${Math.max(0, rect.top)}px`);
+  setStyle(mount, 'width', `${Math.max(0, rect.width)}px`);
+  setStyle(mount, 'height', `${Math.max(0, rect.height)}px`);
 }
 
 /** Customer and Accounts stay mounted outside native tab teardown. */
@@ -51,7 +55,7 @@ export function PersistentDesktopWorkspaces() {
         mount.className = workspace.mountClass;
       }
       if (mount.parentElement !== root) root?.appendChild(mount);
-      mount.dataset.workspaceState = 'parked';
+      if (mount.dataset.workspaceState !== 'parked') mount.dataset.workspaceState = 'parked';
     });
 
     const sync = () => {
@@ -59,10 +63,11 @@ export function PersistentDesktopWorkspaces() {
       WORKSPACES.forEach((workspace) => {
         const mount = root!.querySelector<HTMLElement>(`:scope > .${workspace.mountClass}`);
         if (!mount) return;
-        const active = Boolean(findRealPanel(workspace.heading, sentinels!));
-        mount.dataset.workspaceState = active ? 'visible' : 'parked';
-        mount.setAttribute('aria-hidden', active ? 'false' : 'true');
-        if (active) applyContentRect(mount);
+        const nextState = findRealPanel(workspace.heading, sentinels!) ? 'visible' : 'parked';
+        if (mount.dataset.workspaceState !== nextState) mount.dataset.workspaceState = nextState;
+        const ariaHidden = nextState === 'visible' ? 'false' : 'true';
+        if (mount.getAttribute('aria-hidden') !== ariaHidden) mount.setAttribute('aria-hidden', ariaHidden);
+        if (nextState === 'visible') applyContentRect(mount);
       });
     };
 
