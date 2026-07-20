@@ -12,6 +12,7 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
+import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopWarmWorkspace } from './DesktopWarmWorkspace';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
 import '../orderPlatformTable.css';
@@ -35,6 +36,7 @@ export default function OwnerEnhancers() {
       <RoleAwareDesktopNavigation />
       <DesktopWarmWorkspace />
       <IndustrialDesktopWorkbench />
+      <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />
