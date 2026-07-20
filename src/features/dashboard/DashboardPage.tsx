@@ -141,6 +141,7 @@ export function DashboardPage({
 
   const locationCount = useMemo(() => new Set(locations.map((row) => row.location_code).filter(Boolean)).size, [locations]);
   const liveLocationCount = useMemo(() => new Set(locations.filter((row) => row.item_id && n(row.quantity) > 0).map((row) => row.location_code).filter(Boolean)).size, [locations]);
+  const firstStocktakeNeeded = n(inventory?.live_on_hand_units) <= 0 && liveLocationCount === 0;
   const currentOrders = operations ? n(operations.current_orders) + n(operations.source_review_orders) : orders.length;
   const ready = orders.filter((order) => order.releaseGateStatus === 'READY_TO_RELEASE');
   const paymentReview = orders.filter((order) => order.releaseGateStatus === 'REVIEW_PAYMENT' || order.paymentStatus === 'CREDIT_HOLD' || order.paymentStatus === 'OVERDUE');
@@ -193,6 +194,7 @@ export function DashboardPage({
         </div>
         <div className="ops-home-actions">
           <button type="button" className="primary" onClick={onOpenOrders}>Review orders</button>
+          {(role === 'owner' || role === 'admin') && firstStocktakeNeeded ? <a href="/?workspace=warehouse&mode=stocktake">Start first stocktake</a> : null}
           {role === 'owner' || role === 'admin' ? <a href="/warehouse-map">Warehouse map</a> : null}
           {role === 'account' ? <button type="button" onClick={() => openSection('Reconciliation')}>Reconciliation</button> : null}
           <button type="button" onClick={() => void Promise.all([onReload(), reloadReadiness()])} disabled={loading || statusLoading}>{loading || statusLoading ? 'Refreshing…' : 'Refresh'}</button>
