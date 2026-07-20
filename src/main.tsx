@@ -21,6 +21,7 @@ const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthC
 
 pruneEcoflowStorage();
 
+// Surface modules remain role-scoped. Warehouse Map must be a feature, not a role.
 const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((m) => ({ default: m.FieldModeEnhancer })));
 const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
 const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
