@@ -9,6 +9,7 @@ import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopCopyCleanup } from './DesktopCopyCleanup';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
+import { IndustrialOperationalClarity } from './IndustrialOperationalClarity';
 import { PersistentDesktopWorkspaces } from './PersistentDesktopWorkspaces';
 import '../authoritativeDashboard.css';
 import '../ownerOrderIntelligence.css';
@@ -27,6 +28,7 @@ export default function AccountEnhancers() {
       <PersistentDesktopWorkspaces />
       <DesktopCopyCleanup />
       <IndustrialDesktopWorkbench />
+      <IndustrialOperationalClarity />
       <CustomerOrderPodPreviewEnhancer />
       <AuthoritativeDashboard />
       <CommercialSourceBoundary />
