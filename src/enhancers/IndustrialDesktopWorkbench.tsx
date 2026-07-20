@@ -12,15 +12,23 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react';
+import { CustomerOperationalWorkspace, type CustomerWorkContext } from './CustomerOperationalWorkspace';
 import '../industrialDesktopV2.css';
 import '../industrialDesktopWorkbench.css';
 
-type DesktopRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER';
-type SortMode = 'priority' | 'az' | 'value' | 'status';
-type WorkField = { label: string; value: string };
-type WorkItem = { id: string; title: string; subtitle: string; kind: string; fields: WorkField[] };
-
-type WorkItemDetail = WorkItem;
+ type DesktopRole = 'OWNER' | 'ADMIN' | 'ACCOUNT' | 'VIEWER';
+ type SortMode = 'priority' | 'az' | 'value' | 'status';
+ type WorkField = { label: string; value: string };
+ type WorkItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  kind: string;
+  fields: WorkField[];
+  entity?: 'customer' | 'generic';
+  customerContext?: CustomerWorkContext;
+};
+ type WorkItemDetail = WorkItem;
 
 const ROW_SELECTOR = '.desktop-content .table-row, .desktop-content .order-list-item, .desktop-content .stop-row, .desktop-content .store-card, .desktop-content .exception-card, .desktop-content .stock-watch-row, .desktop-content .ops-order-row:not(.head), .desktop-content .accounts-customer-row, .desktop-content .owner-store-row';
 const SORT_CONTAINER_SELECTOR = '.desktop-content .table-like, .desktop-content .list-stack, .desktop-content .store-grid, .desktop-content .stock-watch';
@@ -42,6 +50,22 @@ function stableId(parts: string[]) {
 }
 
 function rowToItem(row: HTMLElement): WorkItem | null {
+  if (row.matches('.owner-store-row')) {
+    const main = row.querySelector<HTMLElement>('.owner-store-main');
+    const storeName = clean(main?.querySelector<HTMLElement>('strong')?.textContent);
+    if (!storeName) return null;
+    const address = clean(main?.querySelector<HTMLElement>('span')?.textContent);
+    return {
+      id: stableId(['customer', storeName]),
+      title: storeName,
+      subtitle: address || 'Customer operations',
+      kind: 'Customer',
+      fields: [],
+      entity: 'customer',
+      customerContext: { storeName, address },
+    };
+  }
+
   const panel = row.closest<HTMLElement>('.panel, .ops-home-panel, .accounts-panel, .owner-store-panel');
   const kind = clean(panel?.querySelector<HTMLElement>('.panel-head h2, header h2, header h3, h2, h3')?.textContent) || 'Work item';
   const cells = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
@@ -55,7 +79,7 @@ function rowToItem(row: HTMLElement): WorkItem | null {
     .map((cell, index) => ({ label: headings[index] || `Field ${index + 1}`, value: clean(cell.textContent) || '—' }))
     .filter((field) => field.value !== '—');
   if (!fields.length) fields.push({ label: 'Summary', value: clean(row.textContent) || title });
-  return { id: stableId([kind, title, subtitle]), title, subtitle, kind, fields };
+  return { id: stableId([kind, title, subtitle]), title, subtitle, kind, fields, entity: 'generic' };
 }
 
 function sourceField(field: WorkField) {
@@ -128,7 +152,8 @@ export function IndustrialDesktopWorkbench() {
   const sortRef = useRef(sortMode);
 
   const activeItem = items.find((item) => item.id === activeId) || null;
-  const compareItems = items.filter((item) => compareIds.includes(item.id));
+  const compareItems = items.filter((item) => compareIds.includes(item.id) && item.entity !== 'customer');
+  const activeIsCustomer = activeItem?.entity === 'customer' && Boolean(activeItem.customerContext);
   const inspectorFields = activeItem
     ? inspectorView === 'source'
       ? activeItem.fields.filter(sourceField)
@@ -154,6 +179,8 @@ export function IndustrialDesktopWorkbench() {
   }
 
   function toggleCompare(id: string) {
+    const item = items.find((candidate) => candidate.id === id);
+    if (item?.entity === 'customer') return;
     setCompareIds((current) => current.includes(id)
       ? current.filter((candidate) => candidate !== id)
       : [...current, id].slice(-4));
@@ -238,7 +265,8 @@ export function IndustrialDesktopWorkbench() {
 
   useEffect(() => {
     document.body.classList.toggle('industrial-v2-inspector-open', Boolean(activeItem) && !inspectorHidden);
-  }, [activeItem, inspectorHidden]);
+    document.body.classList.toggle('industrial-v2-customer-inspector', Boolean(activeIsCustomer) && !inspectorHidden);
+  }, [activeItem, activeIsCustomer, inspectorHidden]);
 
   const topbar = topbarMount ? createPortal(
     <div className="industrial-v2-topbar">
@@ -252,16 +280,15 @@ export function IndustrialDesktopWorkbench() {
 
   const workbar = workbarMount ? createPortal(
     <section className="industrial-workbar" aria-label="Open work items">
-      <div className="industrial-workbar-identity"><FolderKanban size={16} /><div><strong>Work tabs</strong><span>{items.length ? `${items.length} open · keep context while changing pages` : 'Click any order, customer, invoice, stock row or exception to keep it here'}</span></div></div>
+      <div className="industrial-workbar-identity"><FolderKanban size={16} /><strong>Work tabs</strong><b>{items.length}</b></div>
       <div className="industrial-work-tabs">
         {items.map((item) => (
           <div key={item.id} className={`industrial-work-tab ${item.id === activeId ? 'active' : ''} ${compareIds.includes(item.id) ? 'compare' : ''}`}>
             <button type="button" className="industrial-work-tab-main" onClick={() => { setActiveId(item.id); setInspectorHidden(false); }}><span>{item.kind}</span><strong>{item.title}</strong></button>
-            <button type="button" onClick={() => toggleCompare(item.id)} aria-label={`Compare ${item.title}`}><GitCompareArrows size={12} /></button>
+            {item.entity !== 'customer' ? <button type="button" onClick={() => toggleCompare(item.id)} aria-label={`Compare ${item.title}`}><GitCompareArrows size={12} /></button> : null}
             <button type="button" onClick={() => closeItem(item.id)} aria-label={`Close ${item.title}`}><X size={12} /></button>
           </div>
         ))}
-        {!items.length ? <div className="industrial-workbar-empty">No open work items</div> : null}
       </div>
       <div className="industrial-workbar-actions">
         <button type="button" disabled={compareItems.length < 2} onClick={() => setModal('compare')}><GitCompareArrows size={14} />Compare {compareItems.length || ''}</button>
@@ -272,22 +299,30 @@ export function IndustrialDesktopWorkbench() {
   ) : null;
 
   const inspector = inspectorMount && activeItem && !inspectorHidden ? createPortal(
-    <div className="industrial-inspector">
+    <div className={`industrial-inspector ${activeIsCustomer ? 'customer' : ''}`}>
       <header><div><span>{activeItem.kind}</span><strong>{activeItem.title}</strong><small>{activeItem.subtitle}</small></div><div><button type="button" onClick={() => setModal('expanded')} aria-label="Expand"><Maximize2 size={16} /></button><button type="button" onClick={() => setInspectorHidden(true)} aria-label="Close inspector"><PanelRightClose size={16} /></button></div></header>
-      <nav>{(['overview', 'source', 'operations'] as const).map((view) => <button key={view} type="button" className={inspectorView === view ? 'active' : ''} onClick={() => setInspectorView(view)}>{view}</button>)}</nav>
-      <div className="industrial-inspector-body"><Fields fields={inspectorFields} /></div>
-      <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button><span>{role === 'VIEWER' ? 'Read only' : 'Operational context'}</span></footer>
+      {activeIsCustomer && activeItem.customerContext ? (
+        <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
+      ) : (
+        <>
+          <nav>{(['overview', 'source', 'operations'] as const).map((view) => <button key={view} type="button" className={inspectorView === view ? 'active' : ''} onClick={() => setInspectorView(view)}>{view}</button>)}</nav>
+          <div className="industrial-inspector-body"><Fields fields={inspectorFields} /></div>
+          <footer><button type="button" className={compareIds.includes(activeItem.id) ? 'active' : ''} onClick={() => toggleCompare(activeItem.id)}><GitCompareArrows size={14} />{compareIds.includes(activeItem.id) ? 'Selected' : 'Add to compare'}</button><span>{role === 'VIEWER' ? 'Read only' : 'Operational context'}</span></footer>
+        </>
+      )}
     </div>,
     inspectorMount,
   ) : null;
 
   const modalView = modal && (activeItem || compareItems.length) ? createPortal(
     <div className="industrial-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}>
-      <section className={`industrial-work-modal ${modal === 'compare' ? 'compare' : ''}`} role="dialog" aria-modal="true">
+      <section className={`industrial-work-modal ${modal === 'compare' ? 'compare' : ''} ${activeIsCustomer ? 'customer' : ''}`} role="dialog" aria-modal="true">
         <header><div><span>{modal === 'compare' ? 'WORKSPACE COMPARISON' : activeItem?.kind}</span><strong>{modal === 'compare' ? `${compareItems.length} items side by side` : activeItem?.title}</strong></div><button type="button" onClick={() => setModal(null)}><X size={18} /></button></header>
         {modal === 'compare'
           ? <div className="industrial-compare-grid">{compareItems.map((item) => <article key={item.id}><div><span>{item.kind}</span><strong>{item.title}</strong><small>{item.subtitle}</small></div><Fields fields={item.fields} /></article>)}</div>
-          : activeItem ? <div className="industrial-expanded-item"><Fields fields={activeItem.fields} /></div> : null}
+          : activeIsCustomer && activeItem?.customerContext
+            ? <CustomerOperationalWorkspace context={activeItem.customerContext} editable={role !== 'VIEWER'} />
+            : activeItem ? <div className="industrial-expanded-item"><Fields fields={activeItem.fields} /></div> : null}
       </section>
     </div>,
     document.body,
