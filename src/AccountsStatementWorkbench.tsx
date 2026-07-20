@@ -39,8 +39,7 @@ function tone(value?: string | null): 'good' | 'warn' | 'danger' | 'blue' | 'neu
 function priorityWeight(value?: string | null) { return value === 'ON_HOLD' ? 0 : value === 'URGENT_COLLECTION' ? 1 : value === 'COLLECTION' ? 2 : value === 'SEND_STATEMENT' ? 3 : 4; }
 function friendlyError(area: string, reason: unknown) {
   const detail = reason instanceof Error ? reason.message : String(reason);
-  if (/57014|statement timeout|canceling statement|cancelling statement/i.test(detail)) return `${area} timed out`;
-  return `${area}: ${detail}`;
+  return /57014|statement timeout|canceling statement|cancelling statement/i.test(detail) ? `${area} timed out` : `${area}: ${detail}`;
 }
 
 function Pill({ children, tone: pillTone = 'neutral' }: { children: ReactNode; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral' }) {
@@ -104,8 +103,7 @@ function deriveFollowups(customers: AccountsStatementCustomerRow[]): AccountsFol
       ...row,
       next_action: row.accounts_priority === 'ON_HOLD' ? 'CHECK_ACCOUNT_HOLD'
         : row.accounts_priority === 'URGENT_COLLECTION' ? 'CALL_AND_ESCALATE'
-          : row.accounts_priority === 'COLLECTION' ? 'SEND_REMINDER'
-            : 'SEND_STATEMENT',
+          : row.accounts_priority === 'COLLECTION' ? 'SEND_REMINDER' : 'SEND_STATEMENT',
     }))
     .sort((left, right) => priorityWeight(left.accounts_priority) - priorityWeight(right.accounts_priority)
       || num(right.overdue_statement_value) - num(left.overdue_statement_value));
@@ -233,8 +231,7 @@ function AccountsContent() {
   const [latest, setLatest] = useState('');
 
   const reloadSummary = useCallback(async (force = false) => {
-    if (!customers.length) setSummaryLoading(true);
-    setSummaryError('');
+    setSummaryLoading(true); setSummaryError('');
     try {
       const nextCustomers = await loadAccountsStatementCustomers(undefined, force);
       setCustomers(nextCustomers);
@@ -242,31 +239,26 @@ function AccountsContent() {
       setFollowups(deriveFollowups(nextCustomers));
       setSelectedStoreId((current) => nextCustomers.some((row) => row.store_id === current) ? current : nextCustomers[0]?.store_id || '');
       setLatest(new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }));
-    } catch (reason) {
-      setSummaryError(friendlyError('Accounts', reason));
-    } finally { setSummaryLoading(false); }
-  }, [customers.length]);
+    } catch (reason) { setSummaryError(friendlyError('Accounts', reason)); }
+    finally { setSummaryLoading(false); }
+  }, []);
 
   const selectedCustomer = customers.find((customer) => customer.store_id === selectedStoreId) || customers[0];
 
   const reloadDetail = useCallback(async (storeId: string, storeName?: string | null, force = false) => {
     if (!storeId) { setLines([]); setDocuments([]); setDetailError(''); return; }
-    if (!lines.length) setDetailLoading(true);
-    setDetailError('');
+    setDetailLoading(true); setDetailError('');
     const [lineResult, documentResult] = await Promise.allSettled([
       loadAccountsStatementLines(storeId, undefined, force, storeName),
       loadStatementDocuments(storeId, undefined, force),
     ]);
     const errors: string[] = [];
-    if (lineResult.status === 'fulfilled') setLines(lineResult.value);
-    else errors.push(friendlyError('Invoices', lineResult.reason));
-    if (documentResult.status === 'fulfilled') setDocuments(documentResult.value);
-    else errors.push(friendlyError('Statements', documentResult.reason));
-    setDetailError(errors.join(' · '));
-    setDetailLoading(false);
-  }, [lines.length]);
+    if (lineResult.status === 'fulfilled') setLines(lineResult.value); else errors.push(friendlyError('Invoices', lineResult.reason));
+    if (documentResult.status === 'fulfilled') setDocuments(documentResult.value); else errors.push(friendlyError('Statements', documentResult.reason));
+    setDetailError(errors.join(' · ')); setDetailLoading(false);
+  }, []);
 
-  useEffect(() => { if (!customers.length) void reloadSummary(); }, [customers.length, reloadSummary]);
+  useEffect(() => { void reloadSummary(); }, [reloadSummary]);
   useEffect(() => { if (selectedCustomer?.store_id) void reloadDetail(selectedCustomer.store_id, selectedCustomer.store_name); }, [selectedCustomer?.store_id, selectedCustomer?.store_name, reloadDetail]);
 
   const visibleCustomers = useMemo(() => {
@@ -304,7 +296,7 @@ function AccountsContent() {
 
   return (
     <section className="accounts-shell">
-      <section className="accounts-hero"><div><span>ACCOUNTS</span><h2>Invoices and statements</h2></div><div className="accounts-actions"><button type="button" disabled={summaryLoading} onClick={() => void reloadAll(true)}>{summaryLoading ? 'Refreshing…' : 'Refresh'}</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>
+      <section className="accounts-hero"><div><span>ACCOUNTS · VERIFIED ORDERMENTUM MIRROR</span><h2>Invoices and statements</h2></div><div className="accounts-actions"><button type="button" disabled={summaryLoading} onClick={() => void reloadAll(true)}>{summaryLoading ? 'Refreshing…' : 'Refresh'}</button><button type="button" onClick={() => void exportCsv()}>Export CSV</button><small>{latest}</small></div></section>
       {summaryError ? <div className="accounts-error">{summaryError}</div> : null}{notice ? <div className="accounts-notice">{notice}</div> : null}
       <section className="accounts-metrics"><Metric label="Open AR" value={money(kpis?.open_ar_value)} helper={`${units(kpis?.open_invoices)} open invoices`} tone="blue"/><Metric label="Overdue AR" value={money(kpis?.overdue_ar_value)} helper={`${units(kpis?.overdue_customers)} customers`} tone={num(kpis?.overdue_ar_value) ? 'warn' : 'good'}/><Metric label="Urgent" value={units(kpis?.urgent_customers)} helper={`worst ${units(kpis?.worst_overdue_days)} days`} tone={num(kpis?.urgent_customers) ? 'danger' : 'good'}/><Metric label="30d invoiced" value={money(kpis?.statement_value_30d)} helper={`latest ${dateText(kpis?.latest_invoice_at)}`} tone="good"/></section>
       <section className="accounts-controlbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer, phone, email or SKU"/><select value={filter} onChange={(event) => setFilter(event.target.value as PriorityFilter)}><option value="ALL">All priorities</option><option value="URGENT_COLLECTION">Urgent collection</option><option value="COLLECTION">Collection</option><option value="SEND_STATEMENT">Send statement</option><option value="ON_HOLD">On hold</option><option value="CLEAR">Clear</option></select><select value={sort} onChange={(event) => setSort(event.target.value as CustomerSort)}><option value="priority">Priority</option><option value="open">Open value</option><option value="overdue">Overdue</option><option value="recent">Recent invoice</option><option value="name">Customer name</option></select></section>
