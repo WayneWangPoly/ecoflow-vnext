@@ -52,18 +52,11 @@ export function DesktopWarmWorkspace() {
       });
     };
 
-    const idleWindow = window as Window & typeof globalThis & {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    const idleHandle = idleWindow.requestIdleCallback
-      ? idleWindow.requestIdleCallback(start, { timeout: 900 })
-      : window.setTimeout(start, 280);
+    const preloadTimer = window.setTimeout(start, 280);
 
     return () => {
       cancelled = true;
-      if (idleWindow.cancelIdleCallback && idleWindow.requestIdleCallback) idleWindow.cancelIdleCallback(idleHandle);
-      else window.clearTimeout(idleHandle);
+      window.clearTimeout(preloadTimer);
       stopObserving?.();
       SPECS.forEach((spec) => document.querySelector<HTMLElement>(`.${spec.mountClass}[data-warm-state="parked"]`)?.remove());
       parking?.remove();
