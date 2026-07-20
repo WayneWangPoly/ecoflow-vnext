@@ -1,11 +1,13 @@
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
+import { AuthoritativeDashboard } from '../AuthoritativeDashboard';
 import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { IndustrialDesktopUiV2 } from './IndustrialDesktopUiV2';
+import '../authoritativeDashboard.css';
 import '../ownerOrderIntelligence.css';
 import '../ownerStoreIntelligence.css';
 import '../storeStatementPressure.css';
@@ -20,6 +22,7 @@ export default function AccountEnhancers() {
     <>
       <RoleAwareDesktopNavigation />
       <IndustrialDesktopUiV2 />
+      <AuthoritativeDashboard />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <OwnerOrderIntelligence />
