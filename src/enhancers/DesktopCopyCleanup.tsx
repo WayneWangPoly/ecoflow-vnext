@@ -25,6 +25,23 @@ const TITLE_REPLACEMENTS = new Map([
   ['Invoice truth from Ordermentum. Workflow and statements in EcoFlow.', 'Invoices and statements'],
 ]);
 
+const CHECK_LABELS: Record<string, string> = {
+  orders: 'Order summary is using the loaded order list',
+  'barcode coverage': 'Barcode coverage count is temporarily unavailable; saved mappings are unchanged',
+  inventory: 'Inventory summary is temporarily unavailable',
+  'warehouse locations': 'Warehouse location summary is temporarily unavailable',
+  'source verification': 'Source verification status is temporarily unavailable',
+};
+
+function clarifyReadinessNotice(node: HTMLElement) {
+  const text = node.textContent?.trim() || '';
+  const prefix = 'Some checks are unavailable:';
+  if (!text.startsWith(prefix)) return;
+  const checks = text.slice(prefix.length).replace(/\.$/, '').split(',').map((value) => value.trim()).filter(Boolean);
+  const messages = checks.map((check) => CHECK_LABELS[check] || `${check} check is temporarily unavailable`);
+  node.textContent = `${messages.join(' · ')}. No source data was deleted.`;
+}
+
 function cleanDesktopCopy() {
   HIDE_SELECTORS.forEach((selector) => {
     document.querySelectorAll<HTMLElement>(selector).forEach((node) => {
@@ -37,6 +54,8 @@ function cleanDesktopCopy() {
     const replacement = TITLE_REPLACEMENTS.get(heading.textContent?.trim() || '');
     if (replacement && heading.textContent !== replacement) heading.textContent = replacement;
   });
+
+  document.querySelectorAll<HTMLElement>('.field-readiness-note').forEach(clarifyReadinessNotice);
 }
 
 export function DesktopCopyCleanup() {
