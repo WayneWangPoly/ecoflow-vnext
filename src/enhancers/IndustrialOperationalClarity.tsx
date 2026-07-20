@@ -33,17 +33,15 @@ function clarifyOrdermentumInbox() {
           runSection = document.createElement('div');
           runSection.className = 'industrial-run-state';
           runSection.innerHTML = '<span>TODAY\'S RUN</span>';
-          internaliseRow?.insertAdjacentElement('beforebegin', runSection);
+          releaseStrip.insertAdjacentElement('afterend', runSection);
         }
         if (runCard.parentElement !== runSection) runSection.appendChild(runCard);
       }
     }
 
-    const createButton = internaliseRow?.querySelector<HTMLButtonElement>('button');
-    if (createButton) {
-      const next = /internalising/i.test(createButton.textContent || '') ? 'Creating internal orders…' : 'Create internal orders';
-      if (createButton.textContent !== next) createButton.textContent = next;
-    }
+    // Internal-order creation is a database write. Do not expose a one-click
+    // bulk action until the UI can preview exact orders and require confirmation.
+    internaliseRow?.remove();
   }
 
   const inboxPanel = document.querySelector<HTMLElement>('.inbox-panel');
