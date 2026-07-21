@@ -27,20 +27,36 @@ revoke all on public.ecoflow_customer_operational_events from anon, authenticate
 grant select on public.ecoflow_customer_operational_events to authenticated;
 grant all on public.ecoflow_customer_operational_events to service_role;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies
-    where schemaname='public'
-      and tablename='ecoflow_customer_operational_events'
-      and policyname='customer_operational_events_authenticated_read'
-  ) then
-    create policy customer_operational_events_authenticated_read
-      on public.ecoflow_customer_operational_events
-      for select to authenticated
-      using (true);
-  end if;
-end $$;
+drop policy if exists customer_operational_events_authenticated_read
+  on public.ecoflow_customer_operational_events;
+drop policy if exists customer_operational_events_office_read
+  on public.ecoflow_customer_operational_events;
+drop policy if exists customer_operational_events_driver_instruction_read
+  on public.ecoflow_customer_operational_events;
+
+create policy customer_operational_events_office_read
+  on public.ecoflow_customer_operational_events
+  for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.v_ecoflow_current_user current_user_row
+      where upper(coalesce(current_user_row.app_role, ''))
+        in ('OWNER','ADMIN','ACCOUNT','VIEWER')
+    )
+  );
+
+create policy customer_operational_events_driver_instruction_read
+  on public.ecoflow_customer_operational_events
+  for select to authenticated
+  using (
+    event_type = 'DELIVERY_INSTRUCTION'
+    and exists (
+      select 1
+      from public.v_ecoflow_current_user current_user_row
+      where upper(coalesce(current_user_row.app_role, '')) = 'DRIVER'
+    )
+  );
 
 create or replace function public.ecoflow_record_customer_operational_event(
   p_store_key text,
@@ -121,7 +137,9 @@ $$;
 grant execute on function public.ecoflow_record_customer_operational_event(text,text,text,text,text,timestamptz) to authenticated;
 revoke execute on function public.ecoflow_record_customer_operational_event(text,text,text,text,text,timestamptz) from anon;
 
-create or replace view public.v_ecoflow_customer_operational_events as
+create or replace view public.v_ecoflow_customer_operational_events
+with (security_invoker = true)
+as
 select
   id, store_key, store_name, event_type, note_text, contact_channel,
   occurred_at, created_by, created_by_email, created_at
@@ -130,7 +148,9 @@ from public.ecoflow_customer_operational_events;
 grant select on public.v_ecoflow_customer_operational_events to authenticated;
 revoke all on public.v_ecoflow_customer_operational_events from anon;
 
-create or replace view public.v_ecoflow_latest_driver_delivery_instructions as
+create or replace view public.v_ecoflow_latest_driver_delivery_instructions
+with (security_invoker = true)
+as
 select distinct on (store_key)
   store_key, store_name, note_text, occurred_at, created_by_email, created_at
 from public.ecoflow_customer_operational_events
