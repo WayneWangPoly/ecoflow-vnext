@@ -1,0 +1,63 @@
+.driver-office-instruction-mount {
+  margin-top: 10px;
+}
+
+.driver-office-instruction {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid #e6b56d;
+  border-radius: 10px;
+  color: #5d3907;
+  background: #fff6e7;
+}
+
+.driver-office-instruction > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #a9670c;
+}
+
+.driver-office-instruction > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.driver-office-instruction span {
+  color: #9a650f;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.driver-office-instruction strong {
+  overflow-wrap: anywhere;
+  color: #4d3210;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.driver-office-instruction small {
+  color: #8a714e;
+  font-size: 10px;
+}
+
+.driver-office-note-badge {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #71470a;
+  background: #ffedc9;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: .06em;
+}
+
+.stop-card.has-office-instruction,
+.reorder-row.has-office-instruction {
+  box-shadow: inset 3px 0 #d89225;
+}

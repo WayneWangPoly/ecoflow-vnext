@@ -1,0 +1,401 @@
+/* Operational customer workspace: action and history only, never a repeat of the customer card. */
+body.industrial-desktop-v2 .source-boundary-inline {
+  display: none !important;
+}
+
+.industrial-workbar-identity {
+  min-width: 126px;
+  justify-content: flex-start;
+  padding-inline: 12px;
+}
+
+.industrial-workbar-identity > strong {
+  color: #183c30;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.industrial-workbar-identity > b {
+  min-width: 20px;
+  padding: 3px 6px;
+  border-radius: 10px;
+  color: #246047;
+  background: #e1eee7;
+  font-size: 9px;
+  text-align: center;
+}
+
+.industrial-inspector.customer {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.customer-ops-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+  color: #17382d;
+  background: #f4f7f5;
+}
+
+.customer-ops-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 9px 0;
+  border-bottom: 1px solid #d7dfda;
+  background: #fff;
+}
+
+.customer-ops-tabs button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #6a7972;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.customer-ops-tabs button.active {
+  color: #176244;
+  border-bottom-color: #2e8b67;
+}
+
+.customer-ops-tabs button b {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: 9px;
+  background: #e6eee9;
+  font-size: 8px;
+}
+
+.customer-ops-tabs .customer-ops-refresh {
+  margin-left: auto;
+  padding-inline: 7px;
+}
+
+.customer-ops-address {
+  padding: 7px 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #718078;
+  background: #f8faf9;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.customer-ops-error,
+.customer-ops-notice {
+  margin: 8px 10px 0;
+  padding: 8px 9px;
+  border-radius: 7px;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.customer-ops-error {
+  color: #8c3029;
+  border: 1px solid #e7b8b3;
+  background: #fff0ee;
+}
+
+.customer-ops-notice {
+  color: #215d45;
+  border: 1px solid #aed1bf;
+  background: #eaf5ef;
+}
+
+.customer-ops-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.customer-current-instruction {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid #e4b669;
+  border-radius: 9px;
+  background: #fff7e9;
+}
+
+.customer-current-instruction > span {
+  color: #99620d;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.customer-current-instruction > strong {
+  overflow-wrap: anywhere;
+  color: #513611;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.customer-current-instruction > small {
+  color: #8a7453;
+  font-size: 8px;
+}
+
+.customer-ops-compose,
+.customer-contact-compose {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #d7dfda;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.customer-ops-compose textarea,
+.customer-contact-compose textarea,
+.customer-contact-compose select,
+.customer-contact-compose input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #cbd6d0;
+  border-radius: 7px;
+  color: #19392e;
+  background: #fbfcfb;
+  font: inherit;
+  font-size: 10px;
+  outline: 0;
+}
+
+.customer-ops-compose textarea,
+.customer-contact-compose textarea {
+  resize: vertical;
+  padding: 9px;
+  line-height: 1.4;
+}
+
+.customer-contact-compose > div {
+  display: grid;
+  grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr);
+  gap: 7px;
+}
+
+.customer-contact-compose label {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.customer-contact-compose label span {
+  color: #718078;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.customer-contact-compose select,
+.customer-contact-compose input {
+  height: 34px;
+  padding: 0 8px;
+}
+
+.customer-ops-compose button,
+.customer-contact-compose button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  justify-self: end;
+  padding: 0 11px;
+  border: 1px solid #277b5b;
+  border-radius: 7px;
+  color: #fff;
+  background: #287d5c;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.customer-ops-compose button:disabled,
+.customer-contact-compose button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.customer-event-list {
+  display: grid;
+  gap: 5px;
+}
+
+.customer-event-list article {
+  display: grid;
+  grid-template-columns: 27px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid #dde4e0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.customer-event-list article > i {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #296d52;
+  background: #e8f2ed;
+}
+
+.customer-event-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.customer-event-list strong {
+  overflow-wrap: anywhere;
+  color: #1c3d32;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.customer-event-list span {
+  color: #3c725c;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.customer-event-list small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #7d8983;
+  font-size: 8px;
+}
+
+.customer-ops-empty {
+  padding: 18px 10px;
+  color: #85918b;
+  font-size: 9px;
+  text-align: center;
+}
+
+.industrial-work-modal.customer {
+  width: min(720px, 94vw);
+  height: min(760px, 88vh);
+}
+
+.industrial-work-modal.customer > .customer-ops-workspace {
+  min-height: 0;
+}
+
+/* Customer order POD thumbnails */
+.customer-order-pod-preview {
+  min-width: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.customer-order-pod-preview img {
+  width: 38px;
+  height: 30px;
+  object-fit: cover;
+  border: 1px solid #c8d3cd;
+  border-radius: 5px;
+  background: #edf1ef;
+  cursor: zoom-in;
+}
+
+.customer-order-pod-preview .pod-asset-loading,
+.customer-order-pod-empty {
+  color: #87938d;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.customer-order-history article.has-pod-preview {
+  grid-template-columns: minmax(150px, 1fr) minmax(90px, .45fr) minmax(85px, .45fr) minmax(85px, .45fr) auto;
+}
+
+/* Preserve usable centre space on notebook displays: inspector becomes a drawer. */
+@media (min-width: 1500px) {
+  body.industrial-v2-inspector-open .desktop-app {
+    grid-template-columns: 208px minmax(0, 1fr) 370px;
+  }
+  body.industrial-v2-customer-inspector .desktop-app {
+    grid-template-columns: 208px minmax(0, 1fr) 430px;
+  }
+  body.industrial-v2-inspector-open .industrial-v2-workbar-mount {
+    right: 370px;
+  }
+  body.industrial-v2-customer-inspector .industrial-v2-workbar-mount {
+    right: 430px;
+  }
+}
+
+@media (max-width: 1320px) {
+  body.industrial-v2-inspector-open .desktop-app,
+  body.industrial-v2-customer-inspector .desktop-app {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+
+  .industrial-v2-inspector-mount {
+    position: fixed;
+    top: 58px;
+    right: 0;
+    bottom: 0;
+    z-index: 95;
+    width: min(440px, 42vw);
+    height: auto;
+    border-left: 1px solid #b9c6bf;
+    box-shadow: -18px 0 45px rgba(13, 38, 29, .18);
+  }
+
+  body.industrial-v2-inspector-open .industrial-v2-workbar-mount,
+  body.industrial-v2-customer-inspector .industrial-v2-workbar-mount {
+    right: 0;
+  }
+}
+
+@media (max-width: 1050px) {
+  .industrial-v2-inspector-mount {
+    width: min(460px, 56vw);
+  }
+  .industrial-workbar-identity {
+    min-width: 44px;
+  }
+  .industrial-workbar-identity > strong,
+  .industrial-workbar-identity > b {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .industrial-v2-inspector-mount {
+    top: 52px;
+    width: 100vw;
+    max-width: none;
+  }
+  .customer-contact-compose > div {
+    grid-template-columns: 1fr;
+  }
+  .customer-order-history article.has-pod-preview {
+    grid-template-columns: 1fr;
+  }
+  .customer-order-pod-preview {
+    justify-content: flex-start;
+  }
+}

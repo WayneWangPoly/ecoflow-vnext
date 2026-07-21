@@ -12,7 +12,11 @@ import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
-import { AdvancedOwnerUiEnhancer } from './AdvancedOwnerUiEnhancer';
+import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
+import { DesktopCopyCleanup } from './DesktopCopyCleanup';
+import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
+import { IndustrialOperationalClarity } from './IndustrialOperationalClarity';
+import { PersistentDesktopWorkspaces } from './PersistentDesktopWorkspaces';
 import '../orderPlatformTable.css';
 import '../orderOperationsV2.css';
 import '../ownerOrderIntelligence.css';
@@ -27,12 +31,16 @@ import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
 
-/** Owner/Admin desktop capabilities only. The Today dashboard is now native in App, not a DOM portal. */
+/** Owner/Admin capabilities with one persistent industrial desktop workspace. */
 export default function OwnerEnhancers() {
   return (
     <>
       <RoleAwareDesktopNavigation />
-      <AdvancedOwnerUiEnhancer />
+      <PersistentDesktopWorkspaces />
+      <DesktopCopyCleanup />
+      <IndustrialDesktopWorkbench />
+      <IndustrialOperationalClarity />
+      <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
       <ActiveExceptionClarityEnhancer />

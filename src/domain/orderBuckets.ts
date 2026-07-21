@@ -2,24 +2,28 @@ import type { ImportedOrder, OrderBucketCount, OrderBucketKey } from './types';
 import { isActiveStatus } from './syncModel';
 
 export const orderBucketDefinitions: { key: OrderBucketKey; label: string }[] = [
-  { key: 'newToday', label: 'New today' },
-  { key: 'updatedToday', label: 'Updated today' },
-  { key: 'carryOver', label: 'Carry-over' },
+  { key: 'exceptions', label: 'Exceptions' },
+  { key: 'newToday', label: 'New clear' },
+  { key: 'updatedToday', label: 'Updated clear' },
   { key: 'dueToday', label: 'Due today' },
   { key: 'future', label: 'Future' },
-  { key: 'exceptions', label: 'Exceptions' },
-  { key: 'all', label: 'All' }
+  { key: 'carryOver', label: 'Carry-over' },
+  { key: 'all', label: 'All retained' },
 ];
+
+function primaryQueue(order: ImportedOrder, businessDay: string): Exclude<OrderBucketKey, 'all'> | null {
+  if (!isActiveStatus(order.status)) return null;
+  if (order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0) return 'exceptions';
+  if (order.syncStatus === 'NEW' && order.firstSeenBusinessDay === businessDay) return 'newToday';
+  if (order.syncStatus === 'UPDATED' && order.lastUpdatedBusinessDay === businessDay) return 'updatedToday';
+  if (order.requestedDeliveryBusinessDay === businessDay) return 'dueToday';
+  if (order.requestedDeliveryBusinessDay > businessDay) return 'future';
+  return 'carryOver';
+}
 
 export function orderMatchesBucket(order: ImportedOrder, bucket: OrderBucketKey, businessDay: string): boolean {
   if (bucket === 'all') return true;
-  if (bucket === 'newToday') return order.syncStatus === 'NEW' && order.firstSeenBusinessDay === businessDay;
-  if (bucket === 'updatedToday') return order.syncStatus === 'UPDATED' && order.lastUpdatedBusinessDay === businessDay;
-  if (bucket === 'carryOver') return order.firstSeenBusinessDay < businessDay && isActiveStatus(order.status);
-  if (bucket === 'dueToday') return order.requestedDeliveryBusinessDay === businessDay && isActiveStatus(order.status);
-  if (bucket === 'future') return order.requestedDeliveryBusinessDay > businessDay && isActiveStatus(order.status);
-  if (bucket === 'exceptions') return order.status === 'MAPPING_EXCEPTION' || order.openExceptionCount > 0;
-  return false;
+  return primaryQueue(order, businessDay) === bucket;
 }
 
 export function bucketOrders(orders: ImportedOrder[], bucket: OrderBucketKey, businessDay: string): ImportedOrder[] {
@@ -30,6 +34,6 @@ export function getOrderBucketCounts(orders: ImportedOrder[], businessDay: strin
   return orderBucketDefinitions.map((definition) => ({
     key: definition.key,
     label: definition.label,
-    count: bucketOrders(orders, definition.key, businessDay).length
+    count: bucketOrders(orders, definition.key, businessDay).length,
   }));
 }

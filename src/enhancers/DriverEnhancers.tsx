@@ -5,6 +5,7 @@ import { DriverReturnZoneCheckin } from '../DriverReturnZoneCheckin';
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
+import { DriverOperationalInstructionEnhancer } from './DriverOperationalInstructionEnhancer';
 import '../fieldOpsGuardRails.css';
 import '../pickTaskOwnership.css';
 import '../stageAndLoadExecution.css';
@@ -26,6 +27,7 @@ export default function DriverEnhancers() {
       <DriverReturnZoneCheckin />
       <DriverLocationTracker />
       <DriverDepartureControl />
+      <DriverOperationalInstructionEnhancer />
     </>
   );
 }

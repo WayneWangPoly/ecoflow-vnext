@@ -19,23 +19,19 @@ import './conciseOperationalUi.css';
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthClient();
 
-// Drop day-scoped storage older than the retention window before anything mounts,
-// so the localStorage quota never fills up from weeks of accumulated day states.
 pruneEcoflowStorage();
 
-// Surface modules are isolated so each device downloads only its operational UI.
 // Warehouse Map is a protected route feature, not an authentication role.
-// FieldModeEnhancer serves every surface but only after a shell exists, so it can
-// load async - this keeps its repositories out of the critical first paint chunk.
 const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((m) => ({ default: m.FieldModeEnhancer })));
 const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
 const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
+const ViewerEnhancers = lazy(() => import('./enhancers/ViewerEnhancers'));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
 const WarehouseMapRouteModules = lazy(() => import('./enhancers/WarehouseMapRouteModules'));
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
 
-type DesktopRole = 'owner' | 'account' | null;
+type DesktopRole = 'owner' | 'account' | 'viewer' | null;
 type SurfaceGroups = {
   desktopRole: DesktopRole;
   driver: boolean;
@@ -47,14 +43,11 @@ function detectDesktopRole(): DesktopRole {
   const desktop = document.querySelector<HTMLElement>('.desktop-app');
   if (!desktop) return null;
 
-  // Brand-lockup styling can legitimately replace the visible role subtitle with
-  // "PACKAGING". Role detection must therefore use durable capability markers,
-  // not depend on the presentation text of one branded span.
   const roleText = document.querySelector<HTMLElement>('.sidebar-brand span')?.textContent?.trim().toUpperCase() || '';
   if (roleText.includes('ACCOUNT')) return 'account';
+  if (roleText.includes('VIEWER')) return 'viewer';
   if (roleText.includes('OWNER') || roleText.includes('ADMIN')) return 'owner';
 
-  // Only Owner/Admin receives the workspace switcher.
   if (desktop.querySelector('select[aria-label="Open workspace"]')) return 'owner';
 
   const navLabels = new Set(
@@ -63,10 +56,12 @@ function detectDesktopRole(): DesktopRole {
       .filter(Boolean),
   );
   if (navLabels.has('ORDERMENTUM') && navLabels.has('INVENTORY') && navLabels.has('LOGS')) return 'owner';
-  if (navLabels.has('STORES') && navLabels.has('SETTINGS')) return 'account';
+  if (navLabels.has('STORES') && navLabels.has('SETTINGS') && !navLabels.has('INVENTORY')) return 'account';
+  if (navLabels.has('INVENTORY') && navLabels.has('LOGS') && !navLabels.has('SETTINGS')) return 'viewer';
 
   const stored = window.localStorage.getItem('ecoflow-role');
   if (stored === 'account') return 'account';
+  if (stored === 'viewer') return 'viewer';
   if (stored === 'owner' || stored === 'admin') return 'owner';
   return null;
 }
@@ -105,6 +100,7 @@ function SurfaceModuleGate() {
     <Suspense fallback={null}>
       {groups.desktopRole === 'owner' ? <OwnerEnhancers /> : null}
       {groups.desktopRole === 'account' ? <AccountEnhancers /> : null}
+      {groups.desktopRole === 'viewer' ? <ViewerEnhancers /> : null}
       {groups.driver ? <DriverEnhancers /> : null}
       {groups.warehouseOps ? <WarehouseOpsEnhancers /> : null}
       {groups.warehouseMapRoute ? <WarehouseMapRouteModules /> : null}

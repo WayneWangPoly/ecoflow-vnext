@@ -1,0 +1,214 @@
+/* Stable workbench refinements layered over Industrial Desktop V2. */
+body.industrial-desktop-v2 .desktop-mobile-nav {
+  display: none !important;
+}
+
+body.industrial-desktop-v2 .desktop-main {
+  grid-template-rows: 58px 1fr;
+}
+
+body.industrial-desktop-v2 .desktop-content {
+  padding-top: 60px;
+  padding-bottom: 18px;
+}
+
+.industrial-v2-workbar-mount {
+  position: fixed;
+  top: 58px;
+  left: 208px;
+  right: 0;
+  z-index: 44;
+  min-width: 0;
+}
+
+body.industrial-v2-inspector-open .industrial-v2-workbar-mount {
+  right: 334px;
+}
+
+.industrial-workbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-height: 46px;
+  border-bottom: 1px solid var(--idv2-line-strong);
+  background: rgba(246, 249, 247, .97);
+  box-shadow: 0 6px 17px rgba(20, 50, 40, .07);
+  backdrop-filter: blur(14px);
+}
+
+.industrial-workbar-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 176px;
+  padding: 6px 12px;
+  border-right: 1px solid var(--idv2-line);
+  color: #285143;
+}
+
+.industrial-workbar-identity > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.industrial-workbar-identity strong {
+  color: #183c30;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.industrial-workbar-identity span {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #718078;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.industrial-work-tabs {
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 6px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.industrial-work-tab {
+  display: grid;
+  grid-template-columns: minmax(96px, 164px) 25px 23px;
+  flex: 0 0 auto;
+  min-width: 0;
+  border: 1px solid #bdc8c2;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: #e8eeea;
+}
+
+.industrial-work-tab.active {
+  border-color: #72a98f;
+  background: #fff;
+  box-shadow: inset 0 3px var(--idv2-accent);
+}
+
+.industrial-work-tab.compare {
+  background: #dff0e8;
+}
+
+.industrial-work-tab button {
+  min-width: 0;
+  min-height: 35px;
+  border: 0;
+  color: #39564b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.industrial-work-tab-main {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.industrial-work-tab-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #7b8882;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.industrial-work-tab-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #244439;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.industrial-workbar-empty {
+  align-self: center;
+  padding: 0 10px;
+  color: #8a9690;
+  font-size: 9px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.industrial-workbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-left: 1px solid var(--idv2-line);
+}
+
+.industrial-workbar-actions button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid #b9c5bf;
+  border-radius: 7px;
+  color: #345449;
+  background: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.industrial-workbar-actions button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+/* Old bottom-dock styles remain unused; prevent stale mounts from showing during hot reload. */
+.industrial-v2-dock-mount {
+  display: none !important;
+}
+
+/* Hidden parking keeps Customer and Accounts workspaces mounted and warm between page changes. */
+.industrial-prefetch-parking {
+  position: fixed;
+  left: -12000px;
+  bottom: -12000px;
+  width: 2px;
+  height: 2px;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+@media (max-width: 1180px) {
+  .industrial-workbar-identity {
+    min-width: 44px;
+    padding-inline: 12px;
+  }
+  .industrial-workbar-identity > div {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .industrial-v2-workbar-mount {
+    left: 0;
+  }
+  body.industrial-v2-inspector-open .industrial-v2-workbar-mount {
+    right: 0;
+  }
+  .industrial-workbar-actions button:first-child {
+    font-size: 0;
+  }
+  .industrial-workbar-actions button:first-child svg {
+    margin: 0;
+  }
+}
