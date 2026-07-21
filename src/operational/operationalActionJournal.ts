@@ -16,6 +16,7 @@ export const OPERATIONAL_ACTIONS_CHANGED = 'ecoflow:operational-actions-changed'
 export const OPERATIONAL_SESSION_CLEARED = 'ecoflow:operational-session-cleared';
 
 const MAX_ACTIONS = 80;
+const CONFIRM_RESULT_WINDOW_MS = 2 * 60_000;
 let memoryRows: OperationalActionRecord[] = [];
 
 function actorLabel() {
@@ -61,6 +62,22 @@ function publish(rows: OperationalActionRecord[]) {
   }
 }
 
+function sameAction(left: OperationalActionRecord, action: string, entity: string) {
+  return left.action === action && left.entity === entity;
+}
+
+function updateExisting(
+  existing: OperationalActionRecord[],
+  index: number,
+  changes: Pick<OperationalActionRecord, 'at' | 'detail' | 'status'>,
+) {
+  const current = existing[index];
+  const updated: OperationalActionRecord = { ...current, ...changes };
+  const next = [updated, ...existing.filter((_, rowIndex) => rowIndex !== index)].slice(0, MAX_ACTIONS);
+  publish(next);
+  return updated;
+}
+
 export function recordOperationalAction(input: {
   action: string;
   entity?: string;
@@ -69,6 +86,7 @@ export function recordOperationalAction(input: {
   actor?: string;
 }) {
   const now = new Date().toISOString();
+  const nowMs = Date.now();
   const action = input.action.trim() || 'Operational action';
   const entity = input.entity?.trim() || 'EcoFlow';
   const detail = input.detail?.trim() || '';
@@ -80,12 +98,36 @@ export function recordOperationalAction(input: {
   // status more than once during one React render.
   if (
     latest
-    && latest.action === action
-    && latest.entity === entity
+    && sameAction(latest, action, entity)
     && latest.detail === detail
     && latest.status === status
-    && Date.now() - new Date(latest.at).getTime() < 1500
+    && nowMs - new Date(latest.at).getTime() < 1500
   ) return latest;
+
+  // Review, confirmation and cancellation are one user decision, so move the
+  // existing row through its lifecycle instead of creating multiple entries.
+  if (
+    latest
+    && sameAction(latest, action, entity)
+    && latest.status === 'REQUESTED'
+    && (status === 'CONFIRMED' || status === 'CANCELLED')
+  ) {
+    return updateExisting(existing, 0, { at: now, detail, status });
+  }
+
+  // Where the UI later emits a generic success/error banner, attach that result
+  // to the most recent confirmed action for the same object. Unrelated system
+  // messages remain independent INFO/SUCCEEDED/FAILED records.
+  if (status === 'SUCCEEDED' || status === 'FAILED') {
+    const confirmedIndex = existing.findIndex((row) => (
+      row.entity === entity
+      && row.status === 'CONFIRMED'
+      && nowMs - new Date(row.at).getTime() < CONFIRM_RESULT_WINDOW_MS
+    ));
+    if (confirmedIndex >= 0) {
+      return updateExisting(existing, confirmedIndex, { at: now, detail, status });
+    }
+  }
 
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
