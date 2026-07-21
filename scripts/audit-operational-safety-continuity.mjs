@@ -31,13 +31,18 @@ requireText('src/main.tsx', '<OperationalSafetyCenter />', 'Operational safety c
 requireText('src/main.tsx', '<OperationalSessionIdentityBinder />', 'Authenticated user boundary is globally mounted');
 requireText('src/OperationalSessionIdentityBinder.tsx', 'bindOperationalSessionUser(userId)', 'Authenticated user identity binds the operational session');
 requireText('src/operational/operationalActionJournal.ts', 'OPERATIONAL_SESSION_USER_KEY', 'Operational session stores the authenticated user identity');
+requireText('src/operational/operationalActionJournal.ts', 'hasUnboundSessionData', 'Unowned legacy session data is cleared on first authenticated bind');
 requireText('src/operational/operationalActionJournal.ts', 'previousUser !== nextUser', 'Changing authenticated users clears prior work continuity');
 requireText('src/OperationalSafetyCenter.tsx', 'guardedButtonSpec(button)', 'Safety center delegates to the guarded action catalogue');
+requireText(catalogue, "if (!button.closest('.desktop-app')) return null;", 'Guarded actions are restricted to the desktop application');
+requireText(catalogue, "Boolean(form.closest('.desktop-app'))", 'Guarded forms are restricted to the desktop application');
+forbidPattern(catalogue, /delete\|remove\|clear all\|reset layout/i, 'Broad label-only destructive interception is not allowed');
 requireText(catalogue, 'Release selected orders to today’s run', 'Batch release uses an affected-object review');
 requireText(catalogue, 'requireExactObjects: true', 'Bulk release and route approval fail closed when objects cannot be enumerated');
 requireText('src/OperationalSafetyCenter.tsx', 'The interface could not enumerate all', 'Incomplete affected-object previews are visible and blocked');
 requireText('src/app/App.tsx', 'Approve &amp; lock route', 'The real route approval control remains present');
 requireText(catalogue, 'if (/^(approve\\s*&\\s*)?lock route$/i.test(label))', 'Safety matcher recognises the real Approve & lock route label');
+requireText(catalogue, "!/^office route approval$/i.test(firstText(panel, '.panel-head h2'))", 'Route actions require the real route approval panel');
 requireText('src/app/App.tsx', 'Unlock before picking', 'The real route unlock control remains present');
 requireText(catalogue, 'unlock before picking', 'Safety matcher recognises the real route unlock label');
 requireText(catalogue, 'Generate and send customer statement', 'Statement email dispatch is guarded');
@@ -45,7 +50,7 @@ requireText(catalogue, 'Change team role', 'Role changes are guarded');
 requireText(catalogue, 'Create team login', 'Account creation is guarded');
 requireText(catalogue, 'Reset team account password', 'Password reset is guarded');
 requireText('src/OperationalSafetyCenter.tsx', 'I reviewed the affected object and impact.', 'Confirmation requires explicit acknowledgement');
-requireText(catalogue, 'confirmToken', 'Bulk and destructive actions support typed confirmation');
+requireText(catalogue, 'confirmToken', 'High-impact actions support typed confirmation where required');
 requireText('src/ProductionWriteSafety.tsx', 'permanentlyBlockedPattern', 'Bulk internal-order creation is hard-disabled');
 requireText('src/ProductionWriteSafety.tsx', "button.dataset.productionSafetyDisabled = 'permanent'", 'Internal-order guard cannot be re-enabled by live-data recovery');
 
