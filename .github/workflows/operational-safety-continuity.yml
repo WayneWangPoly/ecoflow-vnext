@@ -39,10 +39,22 @@ jobs:
         run: npm install
 
       - name: Audit operational safety and continuity
-        run: npm run audit:operational-safety 2>&1 | tee operational-safety-audit.log
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run audit:operational-safety 2>&1 | tee operational-safety-audit.log
 
-      - name: TypeScript and production bundle
-        run: npm run build 2>&1 | tee operational-safety-build.log
+      - name: TypeScript check
+        shell: bash
+        run: |
+          set -o pipefail
+          node ./node_modules/typescript/bin/tsc --noEmit 2>&1 | tee operational-safety-build.log
+
+      - name: Vite production bundle
+        shell: bash
+        run: |
+          set -o pipefail
+          node ./node_modules/vite/bin/vite.js build 2>&1 | tee -a operational-safety-build.log
 
       - name: Upload safety diagnostics
         if: failure()
