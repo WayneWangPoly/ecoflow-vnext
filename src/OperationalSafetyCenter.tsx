@@ -30,6 +30,7 @@ type GuardedAction = {
   impacts: string[];
   confirmToken?: string;
   suppressNativeConfirm?: boolean;
+  requireExactObjects?: boolean;
 };
 
 type PendingAction = {
@@ -53,10 +54,17 @@ function firstText(root: Element | null, selectors: string) {
   return clean(root?.querySelector<HTMLElement>(selectors)?.textContent);
 }
 
-function rowObjects(root: Element | null) {
+function selectedOrderObjects(root: Element | null) {
   if (!root) return [];
-  return unique(Array.from(root.querySelectorAll<HTMLElement>('.order-list-item input:checked, .table-row input:checked'))
-    .map((input) => firstText(input.closest('.order-list-item, .table-row'), 'strong')));
+  return unique(
+    Array.from(root.querySelectorAll<HTMLInputElement>('.order-list-item input[type="checkbox"]:checked'))
+      .map((input) => firstText(input.closest('.order-list-item'), '.order-main-copy strong')),
+  );
+}
+
+function routeStopObjects(root: Element | null) {
+  if (!root) return [];
+  return unique(Array.from(root.querySelectorAll<HTMLElement>('.stop-row strong')).map((node) => node.textContent || ''));
 }
 
 function guardedForm(form: HTMLFormElement) {
@@ -70,7 +78,7 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
 
   if (/^release to run$/i.test(label)) {
     const row = button.closest('.table-row');
-    const order = firstText(row, 'strong') || 'Selected order';
+    const order = firstText(row, 'span:first-child strong') || 'Selected order';
     const store = firstText(row, 'span:nth-child(2) strong');
     return {
       title: 'Release order to today’s run',
@@ -82,6 +90,7 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
         'The order becomes visible to warehouse picking and route planning.',
         'This does not deduct stock or start the driver route.',
       ],
+      requireExactObjects: true,
     };
   }
 
@@ -89,45 +98,47 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
   if (releaseMatch) {
     const count = Number(releaseMatch[1]);
     const panel = button.closest('.panel');
-    const objects = rowObjects(panel);
     return {
       title: 'Release selected orders to today’s run',
       actionLabel: label,
       entity: `${count} selected orders`,
       count,
-      objects,
+      objects: selectedOrderObjects(panel),
       impacts: [
-        'Every selected order enters the shared warehouse and delivery run.',
+        'Every listed order enters the shared warehouse and delivery run.',
         'Only orders already passing the release gate are included.',
       ],
       confirmToken: count > 1 ? `RELEASE ${count}` : undefined,
+      requireExactObjects: true,
     };
   }
 
-  if (/^lock route$/i.test(label)) {
-    const workspace = button.closest('.workspace-stack');
-    const countText = firstText(workspace, '.quick-stats .metric-card strong');
-    const count = Number(countText) || workspace?.querySelectorAll('.route-order-row, .route-stop-row').length || 0;
+  if (/^(approve\s*&\s*)?lock route$/i.test(label)) {
+    const panel = button.closest('.panel');
+    const objects = routeStopObjects(panel);
     return {
-      title: 'Lock the warehouse and driver route',
-      actionLabel: 'Lock route',
-      entity: count ? `${count} stops` : 'Current delivery run',
-      count,
-      objects: unique(Array.from(workspace?.querySelectorAll<HTMLElement>('.route-order-row strong, .route-stop-row strong') || []).map((node) => node.textContent || '')).slice(0, 12),
+      title: 'Approve and lock the warehouse route',
+      actionLabel: label,
+      entity: objects.length ? `${objects.length} stops` : 'Current delivery run',
+      count: objects.length,
+      objects,
       impacts: [
         'Stop order and box codes become the shared picking plan.',
         'Labels printed after this point depend on the locked order.',
       ],
+      requireExactObjects: true,
     };
   }
 
-  if (/^unlock(?: route)?$/i.test(label)) {
+  if (/^(unlock before picking|unlock(?: route)?)$/i.test(label)) {
+    const panel = button.closest('.panel');
+    const objects = routeStopObjects(panel);
     return {
       title: 'Unlock the current route',
       actionLabel: label,
-      entity: 'Current delivery run',
-      count: 1,
-      objects: [],
+      entity: objects.length ? `${objects.length} stops` : 'Current delivery run',
+      count: objects.length || 1,
+      objects,
       impacts: [
         'Printed labels become invalid and must be reprinted.',
         'Unlocking is blocked after picking, staging or route execution has started.',
@@ -158,7 +169,9 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
     const detail = button.closest('.accounts-detail');
     const customer = firstText(detail, '.accounts-detail-hero h3') || 'Selected customer';
     const email = (detail?.querySelector<HTMLInputElement>('input[type="email"]')?.value || '').trim();
-    const dates = Array.from(detail?.querySelectorAll<HTMLInputElement>('input[type="date"]') || []).map((input) => input.value).filter(Boolean);
+    const dates = Array.from(detail?.querySelectorAll<HTMLInputElement>('input[type="date"]') || [])
+      .map((input) => input.value)
+      .filter(Boolean);
     return {
       title: 'Generate and send customer statement',
       actionLabel: label,
@@ -182,7 +195,10 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
       entity: email.replace(/\s*·\s*YOU$/i, ''),
       count: 1,
       objects: [],
-      impacts: [suspend ? 'The user will lose application access.' : 'The user will regain application access.', 'The account record and audit history remain available.'],
+      impacts: [
+        suspend ? 'The user will lose application access.' : 'The user will regain application access.',
+        'The account record and audit history remain available.',
+      ],
       confirmToken: suspend ? 'SUSPEND' : undefined,
     };
   }
@@ -195,7 +211,10 @@ function buttonSpec(button: HTMLButtonElement): GuardedAction | null {
       entity,
       count: 1,
       objects: [],
-      impacts: ['This action may remove, reset or archive operational state.', 'Review the selected object before continuing.'],
+      impacts: [
+        'This action may remove, reset or archive operational state.',
+        'Review the selected object before continuing.',
+      ],
       confirmToken: 'CONFIRM',
     };
   }
@@ -213,7 +232,10 @@ function formSpec(form: HTMLFormElement): GuardedAction | null {
       entity: email,
       count: 1,
       objects: [role],
-      impacts: ['The login can access EcoFlow immediately with the selected role.', 'The email is an internal login identifier and does not need a working inbox.'],
+      impacts: [
+        'The login can access EcoFlow immediately with the selected role.',
+        'The email is an internal login identifier and does not need a working inbox.',
+      ],
     };
   }
   if (form.matches('.team-password-row')) {
@@ -224,7 +246,10 @@ function formSpec(form: HTMLFormElement): GuardedAction | null {
       entity: email,
       count: 1,
       objects: [],
-      impacts: ['The previous password stops working immediately.', 'Existing access role and account history are unchanged.'],
+      impacts: [
+        'The previous password stops working immediately.',
+        'Existing access role and account history are unchanged.',
+      ],
     };
   }
   return null;
@@ -239,7 +264,10 @@ function roleChangeSpec(select: HTMLSelectElement, previousRole: string, nextRol
     entity: email.replace(/\s*·\s*YOU$/i, ''),
     count: 1,
     objects: [`Current: ${previousRole}`, `New: ${nextRole}`],
-    impacts: ['Navigation, read access and write permissions change immediately.', 'The account remains active unless its status is changed separately.'],
+    impacts: [
+      'Navigation, read access and write permissions change immediately.',
+      'The account remains active unless its status is changed separately.',
+    ],
     confirmToken: nextRole === 'OWNER' ? 'OWNER' : undefined,
   };
 }
@@ -285,24 +313,50 @@ export function OperationalSafetyCenter() {
   const feedbackSeen = useRef(new WeakMap<HTMLElement, string>());
 
   const failedCount = useMemo(() => rows.filter((row) => row.status === 'FAILED').length, [rows]);
-  const canConfirm = Boolean(pending && acknowledged && (!pending.spec.confirmToken || token.trim().toUpperCase() === pending.spec.confirmToken));
+  const objectPreviewComplete = Boolean(
+    !pending?.spec.requireExactObjects
+    || (pending.spec.count > 0 && pending.spec.objects.length === pending.spec.count),
+  );
+  const canConfirm = Boolean(
+    pending
+    && objectPreviewComplete
+    && acknowledged
+    && (!pending.spec.confirmToken || token.trim().toUpperCase() === pending.spec.confirmToken),
+  );
 
   function ask(spec: GuardedAction, proceed: () => void) {
-    recordOperationalAction({ action: spec.actionLabel, entity: spec.entity, detail: `Review requested · ${spec.count} affected`, status: 'REQUESTED' });
+    recordOperationalAction({
+      action: spec.actionLabel,
+      entity: spec.entity,
+      detail: `Review requested · ${spec.count} affected`,
+      status: 'REQUESTED',
+    });
     setAcknowledged(false);
     setToken('');
     setPending({ spec, proceed });
   }
 
   function cancelPending() {
-    if (pending) recordOperationalAction({ action: pending.spec.actionLabel, entity: pending.spec.entity, detail: 'Cancelled before execution', status: 'CANCELLED' });
+    if (pending) {
+      recordOperationalAction({
+        action: pending.spec.actionLabel,
+        entity: pending.spec.entity,
+        detail: 'Cancelled before execution',
+        status: 'CANCELLED',
+      });
+    }
     setPending(null);
   }
 
   function confirmPending() {
     if (!pending || !canConfirm) return;
     const current = pending;
-    recordOperationalAction({ action: current.spec.actionLabel, entity: current.spec.entity, detail: `${current.spec.count} affected · user confirmed`, status: 'CONFIRMED' });
+    recordOperationalAction({
+      action: current.spec.actionLabel,
+      entity: current.spec.entity,
+      detail: `${current.spec.count} affected · user confirmed`,
+      status: 'CONFIRMED',
+    });
     setPending(null);
     current.proceed();
   }
@@ -330,7 +384,7 @@ export function OperationalSafetyCenter() {
   }, []);
 
   useEffect(() => {
-    function onFocus(event: FocusEvent) {
+    function capturePreviousRole(event: Event) {
       const target = event.target;
       if (target instanceof HTMLSelectElement && target.matches('.team-account-row select')) {
         target.dataset.operationalPreviousValue = target.value;
@@ -373,7 +427,9 @@ export function OperationalSafetyCenter() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      const submitter = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      const submitter = event.submitter instanceof HTMLButtonElement
+        ? event.submitter
+        : form.querySelector<HTMLButtonElement>('button[type="submit"]');
       ask(spec, () => {
         bypassForms.add(form);
         form.requestSubmit(submitter || undefined);
@@ -388,9 +444,12 @@ export function OperationalSafetyCenter() {
         select.dataset.operationalPreviousValue = select.value;
         return;
       }
-      const previous = select.dataset.operationalPreviousValue || select.defaultValue || select.value;
+      const previous = select.dataset.operationalPreviousValue;
       const next = select.value;
-      if (previous === next) return;
+      if (!previous || previous === next) {
+        select.dataset.operationalPreviousValue = next;
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -402,12 +461,14 @@ export function OperationalSafetyCenter() {
       });
     }
 
-    document.addEventListener('focusin', onFocus, true);
+    document.addEventListener('focusin', capturePreviousRole, true);
+    document.addEventListener('pointerdown', capturePreviousRole, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('submit', onSubmit, true);
     document.addEventListener('change', onChange, true);
     return () => {
-      document.removeEventListener('focusin', onFocus, true);
+      document.removeEventListener('focusin', capturePreviousRole, true);
+      document.removeEventListener('pointerdown', capturePreviousRole, true);
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('submit', onSubmit, true);
       document.removeEventListener('change', onChange, true);
@@ -450,6 +511,16 @@ export function OperationalSafetyCenter() {
   }, []);
 
   useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      if (pending) cancelPending();
+      else if (recentOpen) setRecentOpen(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [pending, recentOpen]);
+
+  useEffect(() => {
     if (!supabase) return;
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) clearOperationalSession();
@@ -458,7 +529,12 @@ export function OperationalSafetyCenter() {
   }, []);
 
   const topbar = mount ? createPortal(
-    <button type="button" className="operational-actions-button" onClick={() => setRecentOpen((value) => !value)} aria-expanded={recentOpen}>
+    <button
+      type="button"
+      className="operational-actions-button"
+      onClick={() => setRecentOpen((value) => !value)}
+      aria-expanded={recentOpen}
+    >
       <History size={15} />
       <span>Recent actions</span>
       {failedCount ? <b>{failedCount}</b> : rows.length ? <i>{Math.min(rows.length, 99)}</i> : null}
@@ -504,6 +580,11 @@ export function OperationalSafetyCenter() {
           <div className="operational-confirm-objects">
             {pending.spec.objects.slice(0, 12).map((item) => <span key={item}>{item}</span>)}
             {pending.spec.objects.length > 12 ? <span>+{pending.spec.objects.length - 12} more</span> : null}
+          </div>
+        ) : null}
+        {!objectPreviewComplete ? (
+          <div className="operational-confirm-preview-error" role="alert">
+            The interface could not enumerate all {pending.spec.count} affected records. Close this review, refresh the queue and select the records again.
           </div>
         ) : null}
         <div className="operational-confirm-impact">
