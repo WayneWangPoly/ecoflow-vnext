@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
+import { OperationalSessionIdentityBinder } from './OperationalSessionIdentityBinder';
 import { OperationalSafetyCenter } from './OperationalSafetyCenter';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { OperationalDensityEnhancer } from './OperationalDensityEnhancer';
@@ -132,6 +133,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       ) : (
         <>
           <ProductionWriteSafety />
+          <OperationalSessionIdentityBinder />
           <OperationalSafetyCenter />
           <OperationalDensityEnhancer />
           <RoleIdentityEnhancer />
