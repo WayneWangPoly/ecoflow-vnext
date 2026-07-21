@@ -25,22 +25,38 @@ function forbidPattern(file, pattern, label) {
   else passes.push(label);
 }
 
+const catalogue = 'src/operational/guardedActionSpecs.ts';
+
 requireText('src/main.tsx', '<OperationalSafetyCenter />', 'Operational safety center is globally mounted');
-requireText('src/OperationalSafetyCenter.tsx', 'Release selected orders to today’s run', 'Batch release uses an affected-object review');
-requireText('src/OperationalSafetyCenter.tsx', 'requireExactObjects: true', 'Bulk release and route approval fail closed when objects cannot be enumerated');
+requireText('src/OperationalSafetyCenter.tsx', 'guardedButtonSpec(button)', 'Safety center delegates to the guarded action catalogue');
+requireText(catalogue, 'Release selected orders to today’s run', 'Batch release uses an affected-object review');
+requireText(catalogue, 'requireExactObjects: true', 'Bulk release and route approval fail closed when objects cannot be enumerated');
 requireText('src/OperationalSafetyCenter.tsx', 'The interface could not enumerate all', 'Incomplete affected-object previews are visible and blocked');
 requireText('src/app/App.tsx', 'Approve &amp; lock route', 'The real route approval control remains present');
-requirePattern('src/OperationalSafetyCenter.tsx', /approve\\s\*\&\\s\*/, 'Safety matcher recognises the real Approve & lock route label');
+requirePattern(catalogue, /approve\s\*\&\s\*/, 'Safety matcher recognises the real Approve & lock route label');
 requireText('src/app/App.tsx', 'Unlock before picking', 'The real route unlock control remains present');
-requireText('src/OperationalSafetyCenter.tsx', 'unlock before picking', 'Safety matcher recognises the real route unlock label');
-requireText('src/OperationalSafetyCenter.tsx', 'Generate and send customer statement', 'Statement email dispatch is guarded');
-requireText('src/OperationalSafetyCenter.tsx', 'Change team role', 'Role changes are guarded');
-requireText('src/OperationalSafetyCenter.tsx', 'Create team login', 'Account creation is guarded');
-requireText('src/OperationalSafetyCenter.tsx', 'Reset team account password', 'Password reset is guarded');
+requireText(catalogue, 'unlock before picking', 'Safety matcher recognises the real route unlock label');
+requireText(catalogue, 'Generate and send customer statement', 'Statement email dispatch is guarded');
+requireText(catalogue, 'Change team role', 'Role changes are guarded');
+requireText(catalogue, 'Create team login', 'Account creation is guarded');
+requireText(catalogue, 'Reset team account password', 'Password reset is guarded');
 requireText('src/OperationalSafetyCenter.tsx', 'I reviewed the affected object and impact.', 'Confirmation requires explicit acknowledgement');
-requireText('src/OperationalSafetyCenter.tsx', 'confirmToken', 'Bulk and destructive actions support typed confirmation');
+requireText(catalogue, 'confirmToken', 'Bulk and destructive actions support typed confirmation');
 requireText('src/ProductionWriteSafety.tsx', 'permanentlyBlockedPattern', 'Bulk internal-order creation is hard-disabled');
 requireText('src/ProductionWriteSafety.tsx', "button.dataset.productionSafetyDisabled = 'permanent'", 'Internal-order guard cannot be re-enabled by live-data recovery');
+
+requireText('src/AccountsStatementWorkbench.tsx', '>Promise</button>', 'Accounts exposes the promise action');
+requireText('src/AccountsStatementWorkbench.tsx', '>Dispute</button>', 'Accounts exposes the dispute action');
+requireText('src/AccountsStatementWorkbench.tsx', '>Hold</button>', 'Accounts exposes the operational hold action');
+requireText('src/AccountsStatementWorkbench.tsx', '>Clear hold</button>', 'Accounts exposes the clear-hold action');
+requireText(catalogue, 'Record promise to pay', 'Promise action is reviewed before recording');
+requireText(catalogue, 'Record customer account dispute', 'Dispute action is reviewed before recording');
+requireText(catalogue, 'Place customer account on operational hold', 'Hold action is reviewed before recording');
+requireText(catalogue, "confirmToken: 'HOLD'", 'Hold requires typed confirmation');
+requireText(catalogue, 'Clear customer operational hold', 'Clear hold is reviewed before recording');
+requireText(catalogue, "confirmToken: 'CLEAR HOLD'", 'Clear hold requires typed confirmation');
+requireText('supabase/migrations/20260711190000_commercial_controls.sql', "when la.latest_action='HOLD_ACCOUNT' then 'ON_HOLD'", 'Accounts queue derives ON HOLD from the latest hold action');
+requireText('supabase/migrations/20260711190000_commercial_controls.sql', "when s.overdue_statement_value>0", 'Cleared holds return to invoice-derived priority');
 
 requireText('src/enhancers/IndustrialDesktopWorkbench.tsx', 'WORKBENCH_SESSION_KEY', 'Work tabs use the session continuity key');
 requireText('src/enhancers/IndustrialDesktopWorkbench.tsx', 'readWorkbenchSession()', 'Work tabs restore after refresh');
