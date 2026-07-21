@@ -34,7 +34,6 @@ export type CustomerOperationalWriteResult = {
 
 const EVENTS_TTL_MS = 5 * 60_000;
 const DRIVER_TTL_MS = 60_000;
-const LOCAL_PREFIX = 'ecoflow-customer-ops-v1:';
 const eventCache = new Map<string, { at: number; rows: CustomerOperationalEventRow[] }>();
 const eventInflight = new Map<string, Promise<CustomerOperationalEventRow[]>>();
 let driverCache: { at: number; rows: DriverDeliveryInstructionRow[] } | null = null;
@@ -60,46 +59,21 @@ function remoteObjectMissing(error: unknown) {
   return /PGRST20[245]|42P01|42883|schema cache|could not find the table|could not find the function/i.test(text);
 }
 
-function localStorageAvailable() {
-  return typeof window !== 'undefined' && Boolean(window.localStorage);
+function remoteUnavailableError(error?: unknown) {
+  const detail = error ? errorText(error) : '';
+  return new Error(
+    detail
+      ? `Customer operational records are unavailable and nothing was saved. ${detail}`
+      : 'Customer operational records are unavailable and nothing was saved.',
+  );
 }
 
-function localKey(storeKey: string) {
-  return `${LOCAL_PREFIX}${storeKey}`;
-}
-
-function readLocalRows(storeKey: string): CustomerOperationalEventRow[] {
-  if (!localStorageAvailable()) return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(localKey(storeKey)) || '[]') as CustomerOperationalEventRow[];
-    return Array.isArray(parsed)
-      ? parsed.map((row) => ({ ...row, persistence: 'LOCAL' as const }))
-        .sort((left, right) => String(right.occurred_at).localeCompare(String(left.occurred_at)))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalRows(storeKey: string, rows: CustomerOperationalEventRow[]) {
-  if (!localStorageAvailable()) return;
-  try {
-    window.localStorage.setItem(localKey(storeKey), JSON.stringify(rows.slice(0, 120)));
-  } catch {
-    // Local persistence is best effort; the visible editor keeps the new row in memory.
-  }
-}
-
-function localId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function mergeRows(remoteRows: CustomerOperationalEventRow[], localRows: CustomerOperationalEventRow[]) {
+function mergeRows(rows: CustomerOperationalEventRow[]) {
   const seen = new Set<string>();
-  return [...remoteRows.map((row) => ({ ...row, persistence: 'REMOTE' as const })), ...localRows]
+  return rows
+    .map((row) => ({ ...row, persistence: 'REMOTE' as const }))
     .filter((row) => {
-      const fingerprint = `${row.event_type}|${row.occurred_at}|${row.note_text}`;
+      const fingerprint = `${row.id}|${row.event_type}|${row.occurred_at}|${row.note_text}`;
       if (seen.has(fingerprint)) return false;
       seen.add(fingerprint);
       return true;
@@ -114,7 +88,7 @@ export function normaliseCustomerKey(value: string) {
 export function peekCustomerOperationalEvents(storeName: string) {
   const storeKey = normaliseCustomerKey(storeName);
   if (!storeKey) return [];
-  return eventCache.get(storeKey)?.rows ?? readLocalRows(storeKey);
+  return eventCache.get(storeKey)?.rows ?? [];
 }
 
 export async function loadCustomerOperationalEvents(storeName: string, force = false) {
@@ -124,11 +98,10 @@ export async function loadCustomerOperationalEvents(storeName: string, force = f
   if (!force && cached && Date.now() - cached.at < EVENTS_TTL_MS) return cached.rows;
   const pending = eventInflight.get(storeKey);
   if (!force && pending) return pending;
-  const localRows = readLocalRows(storeKey);
 
   if (remoteAvailable === false || !supabase) {
-    eventCache.set(storeKey, { at: Date.now(), rows: localRows });
-    return localRows;
+    if (cached?.rows.length) return cached.rows;
+    throw remoteUnavailableError();
   }
 
   const request = (async () => {
@@ -141,48 +114,18 @@ export async function loadCustomerOperationalEvents(storeName: string, force = f
 
     if (error) {
       if (remoteObjectMissing(error)) remoteAvailable = false;
-      const fallback = cached?.rows.length ? cached.rows : localRows;
-      eventCache.set(storeKey, { at: Date.now(), rows: fallback });
-      return fallback;
+      if (cached?.rows.length) return cached.rows;
+      throw remoteUnavailableError(error);
     }
 
     remoteAvailable = true;
-    const rows = mergeRows((data ?? []) as CustomerOperationalEventRow[], localRows);
+    const rows = mergeRows((data ?? []) as CustomerOperationalEventRow[]);
     eventCache.set(storeKey, { at: Date.now(), rows });
     return rows;
   })().finally(() => eventInflight.delete(storeKey));
 
   eventInflight.set(storeKey, request);
   return request;
-}
-
-function saveLocalEvent(input: {
-  storeKey: string;
-  storeName: string;
-  eventType: CustomerOperationalEventType;
-  noteText: string;
-  contactChannel?: CustomerContactChannel | null;
-  occurredAt?: string | null;
-}): CustomerOperationalWriteResult {
-  const now = new Date().toISOString();
-  const row: CustomerOperationalEventRow = {
-    id: localId(),
-    store_key: input.storeKey,
-    store_name: input.storeName.trim(),
-    event_type: input.eventType,
-    note_text: input.noteText.trim(),
-    contact_channel: input.contactChannel ?? null,
-    occurred_at: input.occurredAt || now,
-    created_by: 'local-browser',
-    created_by_email: null,
-    created_at: now,
-    persistence: 'LOCAL',
-  };
-  const rows = mergeRows([], [row, ...readLocalRows(input.storeKey)]);
-  writeLocalRows(input.storeKey, rows);
-  eventCache.set(input.storeKey, { at: Date.now(), rows });
-  if (input.eventType === 'DELIVERY_INSTRUCTION') driverCache = null;
-  return { rows, persistence: 'LOCAL' };
 }
 
 export async function recordCustomerOperationalEvent(input: {
@@ -194,9 +137,7 @@ export async function recordCustomerOperationalEvent(input: {
 }): Promise<CustomerOperationalWriteResult> {
   const storeKey = normaliseCustomerKey(input.storeName);
   if (!storeKey) throw new Error('Customer name is required.');
-  const payload = { ...input, storeKey };
-
-  if (remoteAvailable === false || !supabase) return saveLocalEvent(payload);
+  if (remoteAvailable === false || !supabase) throw remoteUnavailableError();
 
   const { data, error } = await client().rpc('ecoflow_record_customer_operational_event', {
     p_store_key: storeKey,
@@ -209,44 +150,24 @@ export async function recordCustomerOperationalEvent(input: {
 
   if (error) {
     if (remoteObjectMissing(error)) remoteAvailable = false;
-    return saveLocalEvent(payload);
+    throw remoteUnavailableError(error);
   }
 
   remoteAvailable = true;
   eventCache.delete(storeKey);
   if (input.eventType === 'DELIVERY_INSTRUCTION') driverCache = null;
-  const rows = (data ?? []) as CustomerOperationalEventRow[];
-  return { rows: rows.map((row) => ({ ...row, persistence: 'REMOTE' })), persistence: 'REMOTE' };
-}
-
-function localDriverInstructions() {
-  if (!localStorageAvailable()) return [];
-  const rows: DriverDeliveryInstructionRow[] = [];
-  for (let index = 0; index < window.localStorage.length; index += 1) {
-    const key = window.localStorage.key(index);
-    if (!key?.startsWith(LOCAL_PREFIX)) continue;
-    const latest = readLocalRows(key.slice(LOCAL_PREFIX.length))
-      .find((row) => row.event_type === 'DELIVERY_INSTRUCTION');
-    if (latest) rows.push({
-      store_key: latest.store_key,
-      store_name: latest.store_name,
-      note_text: latest.note_text,
-      occurred_at: latest.occurred_at,
-      created_by_email: latest.created_by_email,
-      created_at: latest.created_at,
-    });
-  }
-  return rows;
+  const rows = mergeRows((data ?? []) as CustomerOperationalEventRow[]);
+  eventCache.set(storeKey, { at: Date.now(), rows });
+  return { rows, persistence: 'REMOTE' };
 }
 
 export async function loadLatestDriverDeliveryInstructions(force = false) {
   if (!force && driverCache && Date.now() - driverCache.at < DRIVER_TTL_MS) return driverCache.rows;
   if (!force && driverInflight) return driverInflight;
-  const localRows = localDriverInstructions();
 
   if (remoteAvailable === false || !supabase) {
-    driverCache = { at: Date.now(), rows: localRows };
-    return localRows;
+    if (driverCache?.rows.length) return driverCache.rows;
+    throw remoteUnavailableError();
   }
 
   driverInflight = (async () => {
@@ -255,15 +176,16 @@ export async function loadLatestDriverDeliveryInstructions(force = false) {
       .select('store_key,store_name,note_text,occurred_at,created_by_email,created_at')
       .order('store_name', { ascending: true })
       .limit(1000);
+
     if (error) {
       if (remoteObjectMissing(error)) remoteAvailable = false;
-      return driverCache?.rows.length ? driverCache.rows : localRows;
+      if (driverCache?.rows.length) return driverCache.rows;
+      throw remoteUnavailableError(error);
     }
+
     remoteAvailable = true;
-    const remoteRows = (data ?? []) as DriverDeliveryInstructionRow[];
-    const byKey = new Map(remoteRows.map((row) => [row.store_key, row]));
-    localRows.forEach((row) => { if (!byKey.has(row.store_key)) byKey.set(row.store_key, row); });
-    const rows = [...byKey.values()].sort((left, right) => left.store_name.localeCompare(right.store_name));
+    const rows = ((data ?? []) as DriverDeliveryInstructionRow[])
+      .sort((left, right) => left.store_name.localeCompare(right.store_name));
     driverCache = { at: Date.now(), rows };
     return rows;
   })().finally(() => { driverInflight = null; });
