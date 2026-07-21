@@ -36,23 +36,28 @@ function routeStopObjects(root: Element | null) {
 }
 
 function accountsContext(button: HTMLButtonElement) {
-  const detail = button.closest('.accounts-detail');
+  const detail = button.closest<HTMLElement>('.accounts-detail');
+  const actionCard = button.closest<HTMLElement>('.accounts-action-card');
+  if (!detail || !actionCard) return null;
   const customer = firstText(detail, '.accounts-detail-hero h3') || 'Selected customer';
-  const note = detail?.querySelector<HTMLTextAreaElement>('.accounts-action-card textarea')?.value.trim() || '';
+  const note = actionCard.querySelector<HTMLTextAreaElement>('textarea')?.value.trim() || '';
   return { detail, customer, note };
 }
 
 export function guardedForm(form: HTMLFormElement) {
-  return form.matches('.team-create-row, .team-password-row');
+  return Boolean(form.closest('.desktop-app')) && form.matches('.team-create-row, .team-password-row');
 }
 
 export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | null {
+  if (!button.closest('.desktop-app')) return null;
+
   const label = cleanOperationalText(button.textContent || button.getAttribute('aria-label'));
   if (!label || button.disabled) return null;
   if (button.type === 'submit' && button.form && guardedForm(button.form)) return null;
 
   if (/^release to run$/i.test(label)) {
-    const row = button.closest('.table-row');
+    const row = button.closest<HTMLElement>('.table-row');
+    if (!row?.closest('.inbox-table-like')) return null;
     const order = firstText(row, 'span:first-child strong') || 'Selected order';
     const store = firstText(row, 'span:nth-child(2) strong');
     return {
@@ -71,8 +76,9 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
 
   const releaseMatch = label.match(/^release\s+(\d+)$/i);
   if (releaseMatch) {
+    const panel = button.closest<HTMLElement>('.panel');
+    if (!panel || !/^release queue$/i.test(firstText(panel, '.panel-head h2'))) return null;
     const count = Number(releaseMatch[1]);
-    const panel = button.closest('.panel');
     return {
       title: 'Release selected orders to today’s run',
       actionLabel: label,
@@ -89,7 +95,8 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^(approve\s*&\s*)?lock route$/i.test(label)) {
-    const panel = button.closest('.panel');
+    const panel = button.closest<HTMLElement>('.panel');
+    if (!panel || !/^office route approval$/i.test(firstText(panel, '.panel-head h2'))) return null;
     const objects = routeStopObjects(panel);
     return {
       title: 'Approve and lock the warehouse route',
@@ -106,7 +113,8 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^(unlock before picking|unlock(?: route)?)$/i.test(label)) {
-    const panel = button.closest('.panel');
+    const panel = button.closest<HTMLElement>('.panel');
+    if (!panel || !/^office route approval$/i.test(firstText(panel, '.panel-head h2'))) return null;
     const objects = routeStopObjects(panel);
     return {
       title: 'Unlock the current route',
@@ -124,7 +132,9 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^start next delivery run$/i.test(label)) {
-    const title = firstText(button.closest('.panel'), 'h2') || 'Completed run';
+    const panel = button.closest<HTMLElement>('.panel');
+    const title = firstText(panel, 'h2');
+    if (!panel || !/^run\s+.+\s+completed$/i.test(title)) return null;
     return {
       title: 'Start the next delivery run',
       actionLabel: label,
@@ -141,10 +151,11 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^generate\s*&\s*send$/i.test(label)) {
-    const detail = button.closest('.accounts-detail');
+    const detail = button.closest<HTMLElement>('.accounts-detail');
+    if (!detail) return null;
     const customer = firstText(detail, '.accounts-detail-hero h3') || 'Selected customer';
-    const email = (detail?.querySelector<HTMLInputElement>('input[type="email"]')?.value || '').trim();
-    const dates = Array.from(detail?.querySelectorAll<HTMLInputElement>('input[type="date"]') || [])
+    const email = (detail.querySelector<HTMLInputElement>('input[type="email"]')?.value || '').trim();
+    const dates = Array.from(detail.querySelectorAll<HTMLInputElement>('input[type="date"]'))
       .map((input) => input.value)
       .filter(Boolean);
     return {
@@ -164,7 +175,9 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^(promise|dispute|hold|clear hold)$/i.test(label)) {
-    const { customer, note } = accountsContext(button);
+    const context = accountsContext(button);
+    if (!context) return null;
+    const { customer, note } = context;
     if (/^promise$/i.test(label)) {
       return {
         title: 'Record promise to pay',
@@ -220,7 +233,8 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
   }
 
   if (/^(suspend|activate)$/i.test(label)) {
-    const entry = button.closest('.team-account-entry');
+    const entry = button.closest<HTMLElement>('.team-account-entry');
+    if (!entry) return null;
     const email = firstText(entry, '.team-account-row small') || firstText(entry, '.team-account-row strong') || 'Selected account';
     const suspend = /^suspend$/i.test(label);
     return {
@@ -237,26 +251,11 @@ export function guardedButtonSpec(button: HTMLButtonElement): GuardedAction | nu
     };
   }
 
-  if (/^(delete|remove|clear all|reset layout|reset warehouse layout|archive all)$/i.test(label)) {
-    const entity = firstText(button.closest('.panel, article, section'), 'h2, h3, strong') || 'Selected records';
-    return {
-      title: label,
-      actionLabel: label,
-      entity,
-      count: 1,
-      objects: [],
-      impacts: [
-        'This action may remove, reset or archive operational state.',
-        'Review the selected object before continuing.',
-      ],
-      confirmToken: 'CONFIRM',
-    };
-  }
-
   return null;
 }
 
 export function guardedFormSpec(form: HTMLFormElement): GuardedAction | null {
+  if (!guardedForm(form)) return null;
   if (form.matches('.team-create-row')) {
     const email = form.querySelector<HTMLInputElement>('input[type="email"]')?.value.trim() || 'New account';
     const role = form.querySelector<HTMLSelectElement>('select')?.value || 'Role pending';
