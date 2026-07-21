@@ -46,6 +46,8 @@ forbidPattern('src/enhancers/IndustrialDesktopWorkbench.tsx', /match\(\/-\?\\d\+
 
 requireText('src/operational/operationalActionJournal.ts', 'window.sessionStorage', 'Recent actions are session-scoped');
 requireText('src/operational/operationalActionJournal.ts', 'WORKBENCH_SESSION_KEY', 'Logout clears work tabs and action history together');
+requireText('src/operational/operationalActionJournal.ts', "latest.status === 'REQUESTED'", 'Review and confirmation update one action record');
+requireText('src/operational/operationalActionJournal.ts', 'CONFIRM_RESULT_WINDOW_MS', 'Visible completion can attach to a recent confirmed action');
 requireText('src/OperationalSafetyCenter.tsx', 'Recent actions', 'Recent actions are visible in the desktop top bar');
 requireText('src/OperationalSafetyCenter.tsx', "status: failed ? 'FAILED' : 'SUCCEEDED'", 'Visible success and failure feedback enters the journal');
 
