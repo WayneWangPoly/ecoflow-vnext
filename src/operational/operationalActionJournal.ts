@@ -12,6 +12,7 @@ export type OperationalActionRecord = {
 
 export const OPERATIONAL_ACTIONS_KEY = 'ecoflow:operational-actions:v1';
 export const WORKBENCH_SESSION_KEY = 'ecoflow:workbench-session:v1';
+export const OPERATIONAL_SESSION_USER_KEY = 'ecoflow:operational-session-user:v1';
 export const OPERATIONAL_ACTIONS_CHANGED = 'ecoflow:operational-actions-changed';
 export const OPERATIONAL_SESSION_CLEARED = 'ecoflow:operational-session-cleared';
 
@@ -60,6 +61,24 @@ function publish(rows: OperationalActionRecord[]) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(OPERATIONAL_ACTIONS_CHANGED, { detail: { rows } }));
   }
+}
+
+function publishSessionCleared() {
+  memoryRows = [];
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(OPERATIONAL_ACTIONS_CHANGED, { detail: { rows: [] } }));
+    window.dispatchEvent(new CustomEvent(OPERATIONAL_SESSION_CLEARED));
+  }
+}
+
+function clearSessionData(removeUserIdentity: boolean) {
+  const storage = safeSessionStorage();
+  try {
+    storage?.removeItem(OPERATIONAL_ACTIONS_KEY);
+    storage?.removeItem(WORKBENCH_SESSION_KEY);
+    if (removeUserIdentity) storage?.removeItem(OPERATIONAL_SESSION_USER_KEY);
+  } catch { /* best effort */ }
+  publishSessionCleared();
 }
 
 function sameAction(left: OperationalActionRecord, action: string, entity: string) {
@@ -149,17 +168,24 @@ export function clearOperationalActions() {
   publish([]);
 }
 
-export function clearOperationalSession() {
+export function bindOperationalSessionUser(userId: string) {
+  const nextUser = userId.trim();
+  if (!nextUser) return;
   const storage = safeSessionStorage();
-  try {
-    storage?.removeItem(OPERATIONAL_ACTIONS_KEY);
-    storage?.removeItem(WORKBENCH_SESSION_KEY);
-  } catch { /* best effort */ }
-  memoryRows = [];
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(OPERATIONAL_ACTIONS_CHANGED, { detail: { rows: [] } }));
-    window.dispatchEvent(new CustomEvent(OPERATIONAL_SESSION_CLEARED));
+  if (!storage) return;
+  let previousUser = '';
+  try { previousUser = storage.getItem(OPERATIONAL_SESSION_USER_KEY) || ''; }
+  catch { return; }
+
+  if (previousUser && previousUser !== nextUser) {
+    clearSessionData(false);
   }
+  try { storage.setItem(OPERATIONAL_SESSION_USER_KEY, nextUser); }
+  catch { /* identity binding is best effort when sessionStorage is unavailable */ }
+}
+
+export function clearOperationalSession() {
+  clearSessionData(true);
 }
 
 export function subscribeOperationalActions(listener: (rows: OperationalActionRecord[]) => void) {
