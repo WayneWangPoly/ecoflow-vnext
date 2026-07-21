@@ -173,11 +173,20 @@ export function bindOperationalSessionUser(userId: string) {
   if (!nextUser) return;
   const storage = safeSessionStorage();
   if (!storage) return;
-  let previousUser = '';
-  try { previousUser = storage.getItem(OPERATIONAL_SESSION_USER_KEY) || ''; }
-  catch { return; }
 
-  if (previousUser && previousUser !== nextUser) {
+  let previousUser = '';
+  let hasUnboundSessionData = false;
+  try {
+    previousUser = storage.getItem(OPERATIONAL_SESSION_USER_KEY) || '';
+    hasUnboundSessionData = !previousUser && Boolean(
+      storage.getItem(OPERATIONAL_ACTIONS_KEY)
+      || storage.getItem(WORKBENCH_SESSION_KEY),
+    );
+  } catch {
+    return;
+  }
+
+  if (hasUnboundSessionData || (previousUser && previousUser !== nextUser)) {
     clearSessionData(false);
   }
   try { storage.setItem(OPERATIONAL_SESSION_USER_KEY, nextUser); }
