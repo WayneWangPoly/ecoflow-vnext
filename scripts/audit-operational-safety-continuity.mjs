@@ -27,6 +27,12 @@ function forbidPattern(file, pattern, label) {
 
 requireText('src/main.tsx', '<OperationalSafetyCenter />', 'Operational safety center is globally mounted');
 requireText('src/OperationalSafetyCenter.tsx', 'Release selected orders to today’s run', 'Batch release uses an affected-object review');
+requireText('src/OperationalSafetyCenter.tsx', 'requireExactObjects: true', 'Bulk release and route approval fail closed when objects cannot be enumerated');
+requireText('src/OperationalSafetyCenter.tsx', 'The interface could not enumerate all', 'Incomplete affected-object previews are visible and blocked');
+requireText('src/app/App.tsx', 'Approve &amp; lock route', 'The real route approval control remains present');
+requirePattern('src/OperationalSafetyCenter.tsx', /approve\\s\*\&\\s\*/, 'Safety matcher recognises the real Approve & lock route label');
+requireText('src/app/App.tsx', 'Unlock before picking', 'The real route unlock control remains present');
+requireText('src/OperationalSafetyCenter.tsx', 'unlock before picking', 'Safety matcher recognises the real route unlock label');
 requireText('src/OperationalSafetyCenter.tsx', 'Generate and send customer statement', 'Statement email dispatch is guarded');
 requireText('src/OperationalSafetyCenter.tsx', 'Change team role', 'Role changes are guarded');
 requireText('src/OperationalSafetyCenter.tsx', 'Create team login', 'Account creation is guarded');
