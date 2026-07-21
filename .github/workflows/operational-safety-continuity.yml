@@ -36,10 +36,21 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Audit operational safety and continuity
-        run: npm run audit:operational-safety
+        run: npm run audit:operational-safety 2>&1 | tee operational-safety-audit.log
 
       - name: TypeScript and production bundle
-        run: npm run build
+        run: npm run build 2>&1 | tee operational-safety-build.log
+
+      - name: Upload safety diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operational-safety-diagnostics
+          path: |
+            operational-safety-audit.log
+            operational-safety-build.log
+          if-no-files-found: ignore
+          retention-days: 7
