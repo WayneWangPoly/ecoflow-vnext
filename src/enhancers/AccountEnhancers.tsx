@@ -19,6 +19,7 @@ import '../accountsStatementWorkbench.css';
 import '../deliveryRunHistory.css';
 import '../roleAwareNavigation.css';
 import '../commercialSourceBoundary.css';
+import '../industrialDesktopFoundation.css';
 
 /** Accounts capabilities with one persistent industrial desktop workspace. */
 export default function AccountEnhancers() {
