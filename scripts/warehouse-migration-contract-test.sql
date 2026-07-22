@@ -71,16 +71,26 @@ begin
   where m.reference_type='WAREHOUSE_RECEIVING_LINE' and m.reference_id=v_line::text;
   if v_count <> 1 then raise exception 'inventory ledger movement count %, expected 1',v_count; end if;
 
+  select m.quantity into v_quantity
+  from public.ecoflow_inventory_movements m
+  where m.reference_type='WAREHOUSE_RECEIVING_LINE' and m.reference_id=v_line::text;
+  if v_quantity <> 40 then raise exception 'base-unit inventory ledger %, expected 40',v_quantity; end if;
+
   select li.quantity into v_quantity
   from public.ecoflow_warehouse_location_items li
   join public.ecoflow_warehouse_locations wl on wl.id=li.location_id
   where wl.location_code='A1-L-01-01A' and li.sku='CUP-12W' and li.unit_level='carton';
-  if v_quantity <> 40 then raise exception 'warehouse location balance %, expected 40',v_quantity; end if;
+  if v_quantity <> 2 then raise exception 'carton location balance %, expected 2',v_quantity; end if;
 
-  select count(*) into v_count
+  select wm.quantity into v_quantity
   from public.ecoflow_warehouse_movements wm
   where wm.reference_type='WAREHOUSE_RECEIVING_LINE' and wm.reference_id=v_line::text;
-  if v_count <> 1 then raise exception 'warehouse movement count %, expected 1',v_count; end if;
+  if v_quantity <> 2 then raise exception 'carton warehouse movement %, expected 2',v_quantity; end if;
+
+  if not exists(
+    select 1 from public.v_ecoflow_stocktake_uom_integrity i
+    where i.receiving_line_id=v_line and i.integrity_status='MATCHED'
+  ) then raise exception 'receiving UOM integrity did not report MATCHED'; end if;
 
   perform * from public.ecoflow_complete_warehouse_receiving_batch(v_batch,'safe retry');
   select count(*) into v_count
