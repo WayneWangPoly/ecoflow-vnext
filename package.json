@@ -13,6 +13,7 @@
     "audit:import-control": "node scripts/audit-ordermentum-import-control.mjs",
     "audit:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs",
     "audit:operational-safety": "node scripts/audit-operational-safety-continuity.mjs",
+    "audit:release-receiving": "node scripts/audit-release-receiving-clarity.mjs",
     "test:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs",
     "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
     "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",
