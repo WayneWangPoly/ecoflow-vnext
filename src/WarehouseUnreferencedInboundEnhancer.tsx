@@ -34,8 +34,9 @@ function improveReceivingForm() {
 
   const heroTitle = screen.querySelector<HTMLElement>('.warehouse-receive-hero h2');
   const heroCopy = screen.querySelector<HTMLElement>('.warehouse-receive-hero p');
-  if (heroTitle) heroTitle.textContent = 'Receive one inbound delivery at a time.';
-  if (heroCopy) heroCopy.textContent = 'Supplier documents are optional. When none is available, EcoFlow creates an auditable inbound reference automatically; every scan still remains idempotent and requires verification before stock is posted.';
+  if (heroTitle && heroTitle.textContent !== 'Receive one inbound delivery at a time.') heroTitle.textContent = 'Receive one inbound delivery at a time.';
+  const heroText = 'Supplier documents are optional. When none is available, EcoFlow creates an auditable inbound reference automatically; every scan still remains idempotent and requires verification before stock is posted.';
+  if (heroCopy && heroCopy.textContent !== heroText) heroCopy.textContent = heroText;
 
   const labels = Array.from(grid.querySelectorAll<HTMLLabelElement>('label'));
   const docketLabel = labels.find((label) => /delivery docket|order ref/i.test(label.textContent || ''));
@@ -45,10 +46,10 @@ function improveReceivingForm() {
   const noteInput = noteLabel?.querySelector<HTMLInputElement>('input') || null;
 
   const docketCaption = docketLabel?.querySelector<HTMLElement>('span');
-  if (docketCaption) docketCaption.textContent = 'Delivery docket / order ref (optional)';
-  if (docketInput) docketInput.placeholder = 'Leave blank when no supplier document is available';
+  if (docketCaption && docketCaption.textContent !== 'Delivery docket / order ref (optional)') docketCaption.textContent = 'Delivery docket / order ref (optional)';
+  if (docketInput && docketInput.placeholder !== 'Leave blank when no supplier document is available') docketInput.placeholder = 'Leave blank when no supplier document is available';
 
-  let hint = grid.querySelector<HTMLElement>('.warehouse-unreferenced-hint');
+  let hint = screen.querySelector<HTMLElement>('.warehouse-unreferenced-hint');
   if (!hint) {
     hint = document.createElement('div');
     hint.className = 'warehouse-unreferenced-hint';
@@ -79,8 +80,13 @@ function improveReceivingForm() {
       setReactInputValue(noteInput, `No supplier document available at receipt. EcoFlow audit reference ${reference}.`);
     }
 
-    actionButton.dataset.unreferencedReplay = 'true';
-    window.setTimeout(() => actionButton.click(), 80);
+    window.setTimeout(() => {
+      const freshButton = Array.from(document.querySelectorAll<HTMLButtonElement>('.warehouse-receive-screen .warehouse-batch-row button'))
+        .find((button) => /start receiving/i.test(clean(button.textContent)));
+      if (!freshButton) return;
+      freshButton.dataset.unreferencedReplay = 'true';
+      freshButton.click();
+    }, 100);
   }, true);
 
   const batchSignal = batchRow.querySelector<HTMLElement>('span');
