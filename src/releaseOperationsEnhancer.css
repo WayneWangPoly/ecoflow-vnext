@@ -1,3 +1,11 @@
+body.industrial-desktop-v2 .release-operations-workspace > .release-operations-summary { order: 1; }
+body.industrial-desktop-v2 .release-operations-workspace > .release-action-split {
+  display: contents !important;
+}
+body.industrial-desktop-v2 .release-operations-workspace .release-blockers-panel { order: 2; }
+body.industrial-desktop-v2 .release-operations-workspace .release-ready-panel { order: 3; }
+body.industrial-desktop-v2 .release-operations-workspace > .release-audit-panel { order: 4; }
+
 body.industrial-desktop-v2 .release-operations-summary {
   display: grid;
   gap: 10px;
