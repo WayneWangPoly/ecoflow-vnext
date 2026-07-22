@@ -1,6 +1,7 @@
 import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
+import { DesktopReceivingHistory } from '../DesktopReceivingHistory';
 import { InventoryControlCenter } from '../InventoryControlCenter';
 import { InventoryMasterCatalog } from '../InventoryMasterCatalog';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
@@ -11,6 +12,7 @@ import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
 import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
+import { ReleaseOperationsEnhancer } from '../ReleaseOperationsEnhancer';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopCopyCleanup } from './DesktopCopyCleanup';
@@ -41,6 +43,8 @@ export default function OwnerEnhancers() {
       <DesktopCopyCleanup />
       <IndustrialDesktopWorkbench />
       <IndustrialOperationalClarity />
+      <ReleaseOperationsEnhancer />
+      <DesktopReceivingHistory />
       <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
