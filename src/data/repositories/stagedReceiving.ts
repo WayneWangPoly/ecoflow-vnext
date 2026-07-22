@@ -10,8 +10,18 @@ export type StagedReceivingBatch = {
   posted_count: number | string | null;
   total_units: number | string | null;
   receive_signal: string | null;
+  supplier_name?: string | null;
+  supplier_order_ref?: string | null;
+  invoice_ref?: string | null;
+  batch_note?: string | null;
 };
 
+export type StartStagedReceivingBatchInput = {
+  supplierName?: string | null;
+  supplierOrderRef?: string | null;
+  invoiceRef?: string | null;
+  note?: string | null;
+};
 
 export type UnknownBarcodeIntake = {
   id: string;
@@ -85,12 +95,12 @@ export async function loadStagedReceivingLines(batchId: string, client?: Supabas
   return (data ?? []) as StagedReceivingLine[];
 }
 
-export async function startStagedReceivingBatch(client?: SupabaseClient | null) {
+export async function startStagedReceivingBatch(input: StartStagedReceivingBatchInput = {}, client?: SupabaseClient | null) {
   const { data, error } = await activeClient(client).rpc('ecoflow_start_warehouse_receiving_batch', {
-    p_supplier_name: null,
-    p_supplier_order_ref: null,
-    p_invoice_ref: null,
-    p_note: 'Warehouse staged receiving',
+    p_supplier_name: input.supplierName?.trim() || null,
+    p_supplier_order_ref: input.supplierOrderRef?.trim() || null,
+    p_invoice_ref: input.invoiceRef?.trim() || null,
+    p_note: input.note?.trim() || 'Warehouse staged receiving',
   });
   if (error) throw new Error(message(error));
   return (data ?? []) as Array<{ batch_id: string; batch_no: string; batch_status: string; created_at: string }>;
@@ -145,7 +155,6 @@ export async function cancelStagedReceivingBatch(input: { batchId: string; reaso
   if (error) throw new Error(message(error));
   return (data ?? []) as Array<{ batch_id: string; batch_no: string; batch_status: string; cancelled_at: string }>;
 }
-
 
 export async function loadUnknownBarcodeIntakes(batchId: string, client?: SupabaseClient | null) {
   const { data, error } = await activeClient(client)
