@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ClipboardList, RefreshCw, X } from 'lucide-react';
 import { observeBody } from '@/lib/domObserver';
 import { supabase } from '@/lib/supabaseClient';
-import { loadWarehouseReceivingMovements, type WarehouseReceivingMovementRow } from '@/data/repositories/warehouseReceiving';
 import './desktopReceivingHistory.css';
 
 type ReceivingBatchHistoryRow = {
@@ -23,6 +22,23 @@ type ReceivingBatchHistoryRow = {
   cancelled_at?: string | null;
   created_by_name?: string | null;
   created_by_email?: string | null;
+};
+
+type DesktopReceivingMovementRow = {
+  id: string;
+  sku: string | null;
+  product_name: string | null;
+  movement_type: string | null;
+  quantity: number | string | null;
+  from_location: string | null;
+  to_location: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  action_note: string | null;
+  source: string | null;
+  moved_at: string | null;
+  moved_by_name?: string | null;
+  moved_by_email?: string | null;
 };
 
 function clean(value?: unknown) {
@@ -55,12 +71,25 @@ function actor(batch: ReceivingBatchHistoryRow) {
   return clean(batch.created_by_name) || clean(batch.created_by_email) || 'Warehouse user';
 }
 
+function movementActor(movement: DesktopReceivingMovementRow) {
+  return clean(movement.moved_by_name) || clean(movement.moved_by_email) || clean(movement.source) || 'EcoFlow warehouse';
+}
+
+function rpcError(value: unknown) {
+  if (value instanceof Error) return value.message;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return [record.message, record.details, record.hint, record.code].filter(Boolean).map(String).join(' · ') || JSON.stringify(record);
+  }
+  return String(value);
+}
+
 export function DesktopReceivingHistory() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'batches' | 'movements'>('batches');
   const [batches, setBatches] = useState<ReceivingBatchHistoryRow[]>([]);
-  const [movements, setMovements] = useState<WarehouseReceivingMovementRow[]>([]);
+  const [movements, setMovements] = useState<DesktopReceivingMovementRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -85,17 +114,14 @@ export function DesktopReceivingHistory() {
     setLoading(true);
     setError('');
     try {
-      const [batchResult, movementRows] = await Promise.all([
-        supabase
-          .from('v_ecoflow_warehouse_receiving_batches')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(80),
-        loadWarehouseReceivingMovements(),
+      const [batchResult, movementResult] = await Promise.all([
+        supabase.rpc('ecoflow_read_desktop_receiving_batches', { p_limit: 80 }),
+        supabase.rpc('ecoflow_read_desktop_receiving_movements', { p_limit: 120 }),
       ]);
-      if (batchResult.error) throw batchResult.error;
+      if (batchResult.error) throw new Error(rpcError(batchResult.error));
+      if (movementResult.error) throw new Error(rpcError(movementResult.error));
       setBatches((batchResult.data ?? []) as ReceivingBatchHistoryRow[]);
-      setMovements(movementRows);
+      setMovements((movementResult.data ?? []) as DesktopReceivingMovementRow[]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -165,14 +191,14 @@ export function DesktopReceivingHistory() {
             </div>
           ) : (
             <div className="desktop-receiving-movement-table">
-              <div className="head"><span>SKU</span><span>Quantity</span><span>Location</span><span>Reference</span><span>Note / source</span><span>Posted</span></div>
+              <div className="head"><span>SKU</span><span>Quantity</span><span>Location</span><span>Reference</span><span>Note / operator</span><span>Posted</span></div>
               {movements.map((movement) => (
                 <article key={movement.id}>
                   <span><strong>{movement.sku || 'Unknown SKU'}</strong><small>{movement.product_name || clean(movement.movement_type).replace(/_/g, ' ')}</small></span>
                   <span>{number(movement.quantity).toLocaleString('en-AU')}</span>
                   <span>{movement.from_location || '—'} → {movement.to_location || '—'}</span>
                   <span>{movement.reference_type || 'RECEIVING'}<small>{movement.reference_id || '—'}</small></span>
-                  <span>{movement.action_note || '—'}<small>{movement.source || 'EcoFlow warehouse'}</small></span>
+                  <span>{movement.action_note || '—'}<small>{movementActor(movement)}</small></span>
                   <span>{dateTime(movement.moved_at)}</span>
                 </article>
               ))}
