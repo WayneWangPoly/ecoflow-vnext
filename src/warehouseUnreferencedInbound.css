@@ -1,0 +1,20 @@
+.warehouse-unreferenced-hint {
+  display: grid;
+  gap: 3px;
+  margin: -2px 0 8px;
+  padding: 9px 10px;
+  border: 1px solid #ccd7d0;
+  border-radius: 7px;
+  color: #355146;
+  background: #f4f7f4;
+}
+
+.warehouse-unreferenced-hint strong {
+  font-size: 11px;
+}
+
+.warehouse-unreferenced-hint span {
+  color: #66776f;
+  font-size: 10px;
+  line-height: 1.4;
+}
