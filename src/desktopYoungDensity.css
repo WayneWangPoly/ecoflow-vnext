@@ -1,0 +1,237 @@
+/* Compact, younger desktop finish without turning the operations UI into a marketing site. */
+body.industrial-desktop-v2 .desktop-app {
+  grid-template-columns: 176px minmax(0, 1fr) !important;
+}
+
+body.industrial-desktop-v2 .sidebar {
+  position: relative;
+  overflow: visible;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(89, 210, 154, .11), transparent 23%),
+    linear-gradient(180deg, #12231c 0%, #101e18 58%, #0e1a15 100%) !important;
+}
+
+body.industrial-desktop-v2 .sidebar::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, #55d09a, rgba(85, 208, 154, .08) 72%, transparent);
+}
+
+body.industrial-desktop-v2 .sidebar-brand {
+  min-height: 58px;
+  padding: 10px 12px;
+  background: rgba(8, 18, 14, .24) !important;
+}
+
+body.industrial-desktop-v2 .sidebar-brand::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border: 1px solid rgba(145, 244, 194, .62);
+  border-radius: 3px;
+  background: rgba(77, 207, 147, .22);
+  box-shadow: 0 0 12px rgba(77, 207, 147, .34);
+  transform: rotate(45deg);
+}
+
+body.industrial-desktop-v2 .sidebar-brand strong {
+  font-size: 13px;
+  letter-spacing: -.02em;
+}
+
+body.industrial-desktop-v2 .sidebar-brand span {
+  font-size: 8px;
+  letter-spacing: .15em;
+}
+
+body.industrial-desktop-v2 .sidebar-nav {
+  gap: 3px;
+  padding: 12px 8px;
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button {
+  min-height: 38px;
+  padding: 7px 9px 7px 18px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(205, 225, 215, .34);
+  transform: translateY(-50%);
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button:hover {
+  transform: translateX(2px);
+  background: rgba(255, 255, 255, .052) !important;
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button.active {
+  border-color: rgba(115, 223, 169, .27);
+  background: linear-gradient(90deg, rgba(67, 156, 113, .28), rgba(255, 255, 255, .045)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button.active::before {
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: #65dda5;
+  box-shadow: 0 0 12px rgba(101, 221, 165, .42);
+}
+
+body.industrial-desktop-v2 .sidebar-nav > button.active::after {
+  background: #80e8b5;
+  box-shadow: 0 0 8px rgba(128, 232, 181, .7);
+  transform: translateY(-50%) scale(1.15);
+}
+
+/* Receiving belongs to Warehouse & Stock, not the global top bar. */
+body.industrial-desktop-v2 .sidebar-nav > .desktop-receiving-history-mount {
+  display: block;
+  margin: -1px 4px 5px 20px;
+}
+
+body.industrial-desktop-v2 .sidebar-nav .desktop-receiving-history-button {
+  width: 100%;
+  min-height: 29px;
+  justify-content: flex-start;
+  padding: 0 8px;
+  border: 1px solid rgba(139, 205, 171, .15);
+  border-radius: 6px;
+  color: rgba(216, 235, 225, .68);
+  background: rgba(255, 255, 255, .025);
+  box-shadow: none;
+  font-size: 9px;
+  font-weight: 680;
+}
+
+body.industrial-desktop-v2 .sidebar-nav .desktop-receiving-history-button:hover {
+  color: #effff6;
+  border-color: rgba(139, 224, 181, .28);
+  background: rgba(80, 183, 129, .11);
+}
+
+/* Real customer names, addresses and three-line identities must determine row height. */
+body.industrial-desktop-v2 .customer-directory-panel,
+body.industrial-desktop-v2 .accounts-panel {
+  container-type: inline-size;
+}
+
+body.industrial-desktop-v2 .owner-store-row {
+  min-height: 62px !important;
+  height: auto !important;
+  padding: 7px 10px !important;
+  line-height: 1.2;
+}
+
+body.industrial-desktop-v2 .owner-store-row > * {
+  min-width: 0;
+}
+
+body.industrial-desktop-v2 .owner-store-main strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+body.industrial-desktop-v2 .owner-store-main :is(span, small),
+body.industrial-desktop-v2 .owner-store-row > div:not(.owner-store-main) :is(strong, span, small) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.industrial-desktop-v2 .owner-store-row-signals {
+  overflow: hidden;
+}
+
+body.industrial-desktop-v2 .owner-store-row-signals .owner-store-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.industrial-desktop-v2 .accounts-customer-row {
+  min-height: 62px !important;
+  height: auto !important;
+  padding: 7px 10px !important;
+  line-height: 1.2;
+}
+
+body.industrial-desktop-v2 .accounts-customer-row > * {
+  min-width: 0;
+}
+
+body.industrial-desktop-v2 .accounts-customer-row > div:first-child strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+body.industrial-desktop-v2 .accounts-customer-row > div:first-child :is(span, small),
+body.industrial-desktop-v2 .accounts-customer-row > div:not(:first-child) :is(strong, span, small) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container (max-width: 650px) {
+  body.industrial-desktop-v2 .accounts-customer-row {
+    min-height: 78px !important;
+    grid-template-columns: minmax(150px, 1fr) minmax(74px, .52fr) minmax(74px, .52fr) 42px;
+    grid-template-areas:
+      "identity due overdue days"
+      "identity status status status";
+    column-gap: 8px;
+    row-gap: 5px;
+    align-items: center;
+  }
+
+  body.industrial-desktop-v2 .accounts-customer-row > div:nth-child(1) { grid-area: identity; }
+  body.industrial-desktop-v2 .accounts-customer-row > div:nth-child(2) { grid-area: due; }
+  body.industrial-desktop-v2 .accounts-customer-row > div:nth-child(3) { grid-area: overdue; }
+  body.industrial-desktop-v2 .accounts-customer-row > div:nth-child(4) { grid-area: days; }
+  body.industrial-desktop-v2 .accounts-customer-row > .accounts-pill {
+    grid-area: status;
+    justify-self: start;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@container (max-width: 430px) {
+  body.industrial-desktop-v2 .accounts-customer-row {
+    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-areas:
+      "identity status"
+      "due overdue"
+      "days days";
+  }
+}
+
+@media (max-width: 1180px) and (min-width: 761px) {
+  body.industrial-desktop-v2 .desktop-app {
+    grid-template-columns: 164px minmax(0, 1fr) !important;
+  }
+}
