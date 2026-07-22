@@ -11,6 +11,7 @@ import { WarehouseCameraScanner } from '../WarehouseCameraScanner';
 import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
 import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
 import '../warehouseReceivingFlow.css';
+import '../warehouseUnreferencedInbound.css';
 import '../warehouseBarcodeSprint.css';
 import '../warehouseFirstStocktake.css';
 import '../firstStocktakeFlow.css';
