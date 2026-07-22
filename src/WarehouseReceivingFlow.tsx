@@ -100,6 +100,7 @@ export function WarehouseReceivingFlow() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const scanRef = useRef<HTMLInputElement | null>(null);
+  const deliveryRef = useRef<HTMLInputElement | null>(null);
   const pendingScanRef = useRef<PendingScan | null>(null);
 
   function update(key: keyof typeof defaultForm, value: string) {
@@ -136,7 +137,7 @@ export function WarehouseReceivingFlow() {
   }
 
   useEffect(() => { void reload(null); }, []);
-  useEffect(() => { scanRef.current?.focus(); }, [batch?.id]);
+  useEffect(() => { if (batch?.id) scanRef.current?.focus(); }, [batch?.id]);
 
   async function createBatch() {
     return startStagedReceivingBatch({
@@ -171,6 +172,18 @@ export function WarehouseReceivingFlow() {
     return first.batch_id;
   }
 
+  function prepareNewDelivery() {
+    pendingScanRef.current = null;
+    setBatch(null);
+    setLines([]);
+    setUnknownIntakes([]);
+    setForm(defaultForm);
+    setDelivery(defaultDelivery);
+    setError('');
+    setNotice('Existing batches remain safely open. Enter the new delivery docket or invoice before starting the next delivery.');
+    window.setTimeout(() => deliveryRef.current?.focus(), 60);
+  }
+
   async function startNewBatch() {
     if (!delivery.supplierOrderRef.trim() && !delivery.invoiceRef.trim()) {
       setError('Enter the supplier delivery docket/order reference or invoice reference before starting this inbound batch.');
@@ -199,11 +212,12 @@ export function WarehouseReceivingFlow() {
   }
 
   async function resumeBatch(batchId: string) {
+    if (!batchId) return;
     setBusy('resume');
     setNotice('');
     pendingScanRef.current = null;
     try {
-      await reload(batchId || null);
+      await reload(batchId);
       window.setTimeout(() => scanRef.current?.focus(), 60);
     } finally {
       setBusy('');
@@ -374,17 +388,17 @@ export function WarehouseReceivingFlow() {
 
       <section className="warehouse-receive-form warehouse-stage-form">
         <div className="warehouse-delivery-reference-grid">
-          <label><span>Supplier</span><input value={batch?.supplier_name || delivery.supplierName} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierName', event.target.value)} placeholder="Supplier name" /></label>
-          <label><span>Delivery docket / order ref *</span><input value={batch?.supplier_order_ref || delivery.supplierOrderRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierOrderRef', event.target.value)} placeholder="Required unless invoice ref is entered" /></label>
-          <label><span>Invoice ref</span><input value={batch?.invoice_ref || delivery.invoiceRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('invoiceRef', event.target.value)} placeholder="Supplier invoice number" /></label>
-          <label><span>Delivery note</span><input value={batch?.batch_note || delivery.note} disabled={Boolean(batch)} onChange={(event) => updateDelivery('note', event.target.value)} placeholder="Damaged, partial or late delivery note" /></label>
+          <label><span>Supplier</span><input value={batch?.supplier_name ?? delivery.supplierName} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierName', event.target.value)} placeholder="Supplier name" /></label>
+          <label><span>Delivery docket / order ref *</span><input ref={deliveryRef} value={batch?.supplier_order_ref ?? delivery.supplierOrderRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierOrderRef', event.target.value)} placeholder="Required unless invoice ref is entered" /></label>
+          <label><span>Invoice ref</span><input value={batch?.invoice_ref ?? delivery.invoiceRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('invoiceRef', event.target.value)} placeholder="Supplier invoice number" /></label>
+          <label><span>Delivery note</span><input value={batch?.batch_note ?? delivery.note} disabled={Boolean(batch)} onChange={(event) => updateDelivery('note', event.target.value)} placeholder="Damaged, partial or late delivery note" /></label>
         </div>
 
         <div className="warehouse-batch-row">
-          <div><strong>{batch?.batch_no || 'No active receiving batch'}</strong><span>{activeReference ? `SOURCE ${activeReference}` : title(batch?.receive_signal || 'ENTER DELIVERY REFERENCE')}</span></div>
+          <div><strong>{batch?.batch_no || 'Preparing a new receiving batch'}</strong><span>{activeReference ? `SOURCE ${activeReference}` : title(batch?.receive_signal || 'ENTER DELIVERY REFERENCE')}</span></div>
           <div className="warehouse-batch-actions">
             {batch ? <button className="warehouse-cancel-batch" type="button" disabled={Boolean(busy)} onClick={() => void cancelBatch()}>Cancel batch</button> : null}
-            <button type="button" disabled={Boolean(busy)} onClick={() => void startNewBatch()}>{batch ? 'New delivery batch' : 'Start receiving'}</button>
+            <button type="button" disabled={Boolean(busy)} onClick={() => batch ? prepareNewDelivery() : void startNewBatch()}>{batch ? 'Prepare new delivery' : 'Start receiving'}</button>
           </div>
         </div>
 
@@ -392,6 +406,7 @@ export function WarehouseReceivingFlow() {
           <div className="warehouse-batch-control">
             <label>Open receiving work
               <select value={batch?.id || ''} disabled={Boolean(busy)} onChange={(event) => void resumeBatch(event.target.value)}>
+                {!batch ? <option value="">Choose an open batch…</option> : null}
                 {openBatches.map((item) => <option key={item.id} value={item.id}>{item.batch_no} · {item.supplier_order_ref || item.invoice_ref || 'NO REF'} · {title(item.batch_status)} · {num(item.confirmed_count)}/{num(item.line_count)} checked</option>)}
               </select>
             </label>
