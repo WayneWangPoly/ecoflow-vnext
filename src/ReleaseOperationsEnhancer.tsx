@@ -93,7 +93,7 @@ function decorateException(card: HTMLElement) {
   card.dataset.releaseActionReady = 'true';
   card.classList.add('release-blocker-card');
 
-  // A blocker card is now complete in place. Do not open the generic duplicate
+  // A blocker card is complete in place. Do not open the generic duplicate
   // inspector when its body is clicked; only the explicit next-action button acts.
   card.addEventListener('click', (event) => {
     if ((event.target as HTMLElement).closest('button, a')) return;
@@ -173,6 +173,14 @@ function restructureRelease() {
     || panels.find((panel) => /exception control|fix blockers/i.test(clean(panel.querySelector('.panel-head h2')?.textContent)))
     || null;
 
+  workspace.classList.add('release-operations-workspace');
+  syncPanel.classList.add('release-operations-summary');
+  inboxPanel.classList.add('release-audit-panel');
+
+  const actionSplit = exceptionPanel?.closest<HTMLElement>('.split-grid')
+    || releasePanel?.closest<HTMLElement>('.split-grid');
+  actionSplit?.classList.add('release-action-split');
+
   const eyebrow = syncPanel.querySelector<HTMLElement>('.section-eyebrow');
   const title = syncPanel.querySelector<HTMLElement>('.sync-header-block h2');
   if (eyebrow && eyebrow.textContent !== 'ORDER RELEASE') eyebrow.textContent = 'ORDER RELEASE';
@@ -184,7 +192,6 @@ function restructureRelease() {
     if (heading && heading.textContent !== '1 · Fix blockers') heading.textContent = '1 · Fix blockers';
     ensureSubtitle(exceptionPanel, 'These orders cannot be released. Each card shows the next operational action.');
     exceptionPanel.querySelectorAll<HTMLElement>('.exception-card').forEach(decorateException);
-    if (syncPanel.nextElementSibling !== exceptionPanel) syncPanel.insertAdjacentElement('afterend', exceptionPanel);
   }
 
   if (releasePanel) {
@@ -192,20 +199,13 @@ function restructureRelease() {
     const heading = releasePanel.querySelector<HTMLElement>('.panel-head h2');
     if (heading && heading.textContent !== '2 · Ready to release') heading.textContent = '2 · Ready to release';
     ensureSubtitle(releasePanel, 'Select the exact orders, review the count, then release them to today’s run.');
-    const anchor = exceptionPanel || syncPanel;
-    if (anchor.nextElementSibling !== releasePanel) anchor.insertAdjacentElement('afterend', releasePanel);
   }
-
-  Array.from(workspace.querySelectorAll<HTMLElement>('.split-grid')).forEach((grid) => {
-    if (!grid.children.length) grid.remove();
-  });
 
   const inboxHeading = inboxPanel.querySelector<HTMLElement>('.panel-head h2');
   if (inboxHeading && inboxHeading.textContent !== 'Order audit and primary queues') inboxHeading.textContent = 'Order audit and primary queues';
 
   addDecisionSummary(syncPanel, releasePanel, exceptionPanel);
   addDiagnosticsToggle(syncPanel);
-  syncPanel.classList.add('release-operations-summary');
 }
 
 export function ReleaseOperationsEnhancer() {
