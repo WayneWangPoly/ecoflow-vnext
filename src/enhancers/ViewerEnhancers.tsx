@@ -1,3 +1,4 @@
+import { DesktopReceivingHistory } from '../DesktopReceivingHistory';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { DesktopCopyCleanup } from './DesktopCopyCleanup';
@@ -14,6 +15,7 @@ export default function ViewerEnhancers() {
       <DesktopCopyCleanup />
       <IndustrialDesktopWorkbench />
       <IndustrialOperationalClarity />
+      <DesktopReceivingHistory />
       <OperationsClarityEnhancer />
     </>
   );

@@ -19,6 +19,13 @@ import {
 const defaultForm = { barcode: '', qty: '1', location: '', note: '' };
 const defaultDelivery = { supplierName: '', supplierOrderRef: '', invoiceRef: '', note: '' };
 type PendingScan = { fingerprint: string; idempotencyKey: string; clientScannedAt: string };
+type ResolvedDelivery = {
+  supplierName: string;
+  supplierOrderRef: string;
+  invoiceRef: string;
+  note: string;
+  generatedReference: boolean;
+};
 
 function num(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -34,6 +41,19 @@ function timeText(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function createUnreferencedInboundId() {
+  const now = new Date();
+  const date = now.toLocaleDateString('en-CA', { timeZone: 'Australia/Adelaide' }).replace(/-/g, '');
+  const time = now.toLocaleTimeString('en-AU', {
+    timeZone: 'Australia/Adelaide',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).replace(/:/g, '');
+  return `UNREFERENCED-${date}-${time}`;
 }
 
 function Pill({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
@@ -102,13 +122,37 @@ export function WarehouseReceivingFlow() {
   const scanRef = useRef<HTMLInputElement | null>(null);
   const deliveryRef = useRef<HTMLInputElement | null>(null);
   const pendingScanRef = useRef<PendingScan | null>(null);
+  const generatedReferenceRef = useRef('');
 
   function update(key: keyof typeof defaultForm, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   function updateDelivery(key: keyof typeof defaultDelivery, value: string) {
+    if (key === 'supplierOrderRef' || key === 'invoiceRef') generatedReferenceRef.current = '';
     setDelivery((current) => ({ ...current, [key]: value }));
+  }
+
+  function resolveDelivery(): ResolvedDelivery {
+    const supplierName = delivery.supplierName.trim();
+    let supplierOrderRef = delivery.supplierOrderRef.trim();
+    const invoiceRef = delivery.invoiceRef.trim();
+    let note = delivery.note.trim();
+    const generatedReference = !supplierOrderRef && !invoiceRef;
+
+    if (generatedReference) {
+      supplierOrderRef = generatedReferenceRef.current || createUnreferencedInboundId();
+      generatedReferenceRef.current = supplierOrderRef;
+      if (!note) note = `No supplier document was available at receipt. EcoFlow audit reference ${supplierOrderRef}.`;
+    }
+
+    return {
+      supplierName,
+      supplierOrderRef,
+      invoiceRef,
+      note: note || 'Warehouse staged receiving',
+      generatedReference,
+    };
   }
 
   async function reload(targetBatchId?: string | null) {
@@ -140,17 +184,19 @@ export function WarehouseReceivingFlow() {
   useEffect(() => { if (batch?.id) scanRef.current?.focus(); }, [batch?.id]);
 
   async function createBatch() {
-    return startStagedReceivingBatch({
-      supplierName: delivery.supplierName,
-      supplierOrderRef: delivery.supplierOrderRef,
-      invoiceRef: delivery.invoiceRef,
-      note: delivery.note || 'Warehouse staged receiving',
+    const resolved = resolveDelivery();
+    const rows = await startStagedReceivingBatch({
+      supplierName: resolved.supplierName,
+      supplierOrderRef: resolved.supplierOrderRef,
+      invoiceRef: resolved.invoiceRef,
+      note: resolved.note,
     });
+    return { rows, resolved };
   }
 
   async function ensureBatch() {
     if (batch?.id) return batch.id;
-    const rows = await createBatch();
+    const { rows, resolved } = await createBatch();
     const first = rows[0];
     if (!first?.batch_id) throw new Error('Could not start receiving batch.');
     const nextBatch: StagedReceivingBatch = {
@@ -162,11 +208,12 @@ export function WarehouseReceivingFlow() {
       posted_count: 0,
       total_units: 0,
       receive_signal: 'SCAN_FIRST_ITEM',
-      supplier_name: delivery.supplierName || null,
-      supplier_order_ref: delivery.supplierOrderRef || null,
-      invoice_ref: delivery.invoiceRef || null,
-      batch_note: delivery.note || null,
+      supplier_name: resolved.supplierName || null,
+      supplier_order_ref: resolved.supplierOrderRef || null,
+      invoice_ref: resolved.invoiceRef || null,
+      batch_note: resolved.note || null,
     };
+    generatedReferenceRef.current = '';
     setBatch(nextBatch);
     setOpenBatches((current) => [nextBatch, ...current.filter((item) => item.id !== nextBatch.id)]);
     return first.batch_id;
@@ -174,21 +221,18 @@ export function WarehouseReceivingFlow() {
 
   function prepareNewDelivery() {
     pendingScanRef.current = null;
+    generatedReferenceRef.current = '';
     setBatch(null);
     setLines([]);
     setUnknownIntakes([]);
     setForm(defaultForm);
     setDelivery(defaultDelivery);
     setError('');
-    setNotice('Existing batches remain safely open. Enter the new delivery docket or invoice before starting the next delivery.');
+    setNotice('Existing batches remain safely open. Supplier documents are optional; EcoFlow creates an audit reference when none is available.');
     window.setTimeout(() => deliveryRef.current?.focus(), 60);
   }
 
   async function startNewBatch() {
-    if (!delivery.supplierOrderRef.trim() && !delivery.invoiceRef.trim()) {
-      setError('Enter the supplier delivery docket/order reference or invoice reference before starting this inbound batch.');
-      return;
-    }
     if (openBatches.length > 0) {
       const confirmed = window.confirm(`There ${openBatches.length === 1 ? 'is' : 'are'} ${openBatches.length} open receiving batch${openBatches.length === 1 ? '' : 'es'}. Start another only when the existing work belongs to a separate delivery. Continue?`);
       if (!confirmed) return;
@@ -197,11 +241,12 @@ export function WarehouseReceivingFlow() {
     setNotice('');
     setError('');
     try {
-      const rows = await createBatch();
+      const { rows, resolved } = await createBatch();
       const first = rows[0];
       if (!first?.batch_id) throw new Error('Could not start receiving batch.');
       pendingScanRef.current = null;
-      setNotice(`Receiving batch ${first.batch_no || ''} started for ${delivery.supplierOrderRef || delivery.invoiceRef}.`);
+      generatedReferenceRef.current = '';
+      setNotice(`Receiving batch ${first.batch_no || ''} started for ${resolved.generatedReference ? `EcoFlow audit ${resolved.supplierOrderRef}` : resolved.supplierOrderRef || resolved.invoiceRef}.`);
       await reload(first.batch_id);
       window.setTimeout(() => scanRef.current?.focus(), 60);
     } catch (err) {
@@ -216,6 +261,7 @@ export function WarehouseReceivingFlow() {
     setBusy('resume');
     setNotice('');
     pendingScanRef.current = null;
+    generatedReferenceRef.current = '';
     try {
       await reload(batchId);
       window.setTimeout(() => scanRef.current?.focus(), 60);
@@ -229,10 +275,6 @@ export function WarehouseReceivingFlow() {
     const qty = Number(form.qty);
     if (!barcode) { setError('Scan barcode first.'); return; }
     if (!Number.isInteger(qty) || qty <= 0) { setError('Package quantity must be a whole number greater than zero.'); return; }
-    if (!batch?.id && !delivery.supplierOrderRef.trim() && !delivery.invoiceRef.trim()) {
-      setError('Enter the supplier delivery docket/order reference or invoice reference before the first scan.');
-      return;
-    }
     let targetBatchId: string | null = null;
     setBusy('scan');
     setError('');
@@ -332,6 +374,7 @@ export function WarehouseReceivingFlow() {
       const result = await finishStagedReceivingBatch({ batchId: batch.id, note: form.note || delivery.note || null });
       const first = result[0];
       pendingScanRef.current = null;
+      generatedReferenceRef.current = '';
       setNotice(`${first?.posted_lines || 0} lines posted once to stock and warehouse locations · ${num(first?.posted_units)} base units.`);
       setForm(defaultForm);
       setDelivery(defaultDelivery);
@@ -353,6 +396,7 @@ export function WarehouseReceivingFlow() {
     try {
       await cancelStagedReceivingBatch({ batchId: batch.id, reason });
       pendingScanRef.current = null;
+      generatedReferenceRef.current = '';
       setNotice(`${batch.batch_no} cancelled · ${reason}`);
       setForm(defaultForm);
       setDelivery(defaultDelivery);
@@ -371,14 +415,15 @@ export function WarehouseReceivingFlow() {
   const allChecked = totalLines > 0 && checkedLines === totalLines && postedLines < totalLines && unresolvedUnknowns.length === 0;
   const totalUnits = useMemo(() => lines.reduce((sum, line) => sum + num(line.units_received), 0), [lines]);
   const activeReference = batch?.supplier_order_ref || batch?.invoice_ref || '';
+  const unreferenced = activeReference.startsWith('UNREFERENCED-');
 
   return (
     <section className="warehouse-receive-screen">
       <section className="warehouse-receive-hero">
         <div>
           <span>DAILY RECEIVING</span>
-          <h2>Receive against one delivery document.</h2>
-          <p>Record the supplier docket or invoice first. Every scan is idempotent; verified lines post to the base-unit ledger and the matching carton, sleeve or each location balance.</p>
+          <h2>Receive one inbound delivery at a time.</h2>
+          <p>Supplier documents are optional. When none is available, EcoFlow creates an auditable inbound reference automatically. Every scan remains idempotent and requires verification before stock is posted.</p>
         </div>
         <button type="button" onClick={() => void reload(batch?.id)}>Refresh</button>
       </section>
@@ -388,14 +433,15 @@ export function WarehouseReceivingFlow() {
 
       <section className="warehouse-receive-form warehouse-stage-form">
         <div className="warehouse-delivery-reference-grid">
-          <label><span>Supplier</span><input value={batch?.supplier_name ?? delivery.supplierName} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierName', event.target.value)} placeholder="Supplier name" /></label>
-          <label><span>Delivery docket / order ref *</span><input ref={deliveryRef} value={batch?.supplier_order_ref ?? delivery.supplierOrderRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierOrderRef', event.target.value)} placeholder="Required unless invoice ref is entered" /></label>
-          <label><span>Invoice ref</span><input value={batch?.invoice_ref ?? delivery.invoiceRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('invoiceRef', event.target.value)} placeholder="Supplier invoice number" /></label>
-          <label><span>Delivery note</span><input value={batch?.batch_note ?? delivery.note} disabled={Boolean(batch)} onChange={(event) => updateDelivery('note', event.target.value)} placeholder="Damaged, partial or late delivery note" /></label>
+          <label><span>Supplier</span><input value={batch?.supplier_name ?? delivery.supplierName} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierName', event.target.value)} placeholder="Supplier or origin, when known" /></label>
+          <label><span>Delivery docket / order ref (optional)</span><input ref={deliveryRef} value={batch?.supplier_order_ref ?? delivery.supplierOrderRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('supplierOrderRef', event.target.value)} placeholder="Leave blank when no supplier document is available" /></label>
+          <label><span>Invoice ref (optional)</span><input value={batch?.invoice_ref ?? delivery.invoiceRef} disabled={Boolean(batch)} onChange={(event) => updateDelivery('invoiceRef', event.target.value)} placeholder="Supplier invoice number, when available" /></label>
+          <label><span>Delivery note</span><input value={batch?.batch_note ?? delivery.note} disabled={Boolean(batch)} onChange={(event) => updateDelivery('note', event.target.value)} placeholder="Origin, container, damage, partial or late delivery" /></label>
         </div>
+        {!batch ? <div className="warehouse-unreferenced-hint"><strong>No document?</strong><span>Start receiving normally. EcoFlow will create an UNREFERENCED audit ID and preserve the operator, time, supplier/origin and notes.</span></div> : null}
 
         <div className="warehouse-batch-row">
-          <div><strong>{batch?.batch_no || 'Preparing a new receiving batch'}</strong><span>{activeReference ? `SOURCE ${activeReference}` : title(batch?.receive_signal || 'ENTER DELIVERY REFERENCE')}</span></div>
+          <div><strong>{batch?.batch_no || 'Preparing a new receiving batch'}</strong><span>{activeReference ? `${unreferenced ? 'ECOFLOW AUDIT' : 'SOURCE'} ${activeReference}` : title(batch?.receive_signal || 'DOCUMENT OPTIONAL')}</span></div>
           <div className="warehouse-batch-actions">
             {batch ? <button className="warehouse-cancel-batch" type="button" disabled={Boolean(busy)} onClick={() => void cancelBatch()}>Cancel batch</button> : null}
             <button type="button" disabled={Boolean(busy)} onClick={() => batch ? prepareNewDelivery() : void startNewBatch()}>{batch ? 'Prepare new delivery' : 'Start receiving'}</button>
@@ -407,13 +453,13 @@ export function WarehouseReceivingFlow() {
             <label>Open receiving work
               <select value={batch?.id || ''} disabled={Boolean(busy)} onChange={(event) => void resumeBatch(event.target.value)}>
                 {!batch ? <option value="">Choose an open batch…</option> : null}
-                {openBatches.map((item) => <option key={item.id} value={item.id}>{item.batch_no} · {item.supplier_order_ref || item.invoice_ref || 'NO REF'} · {title(item.batch_status)} · {num(item.confirmed_count)}/{num(item.line_count)} checked</option>)}
+                {openBatches.map((item) => <option key={item.id} value={item.id}>{item.batch_no} · {item.supplier_order_ref || item.invoice_ref || 'UNREFERENCED'} · {title(item.batch_status)} · {num(item.confirmed_count)}/{num(item.line_count)} checked</option>)}
               </select>
             </label>
             <Pill kind={openBatches.length > 1 ? 'warn' : 'blue'}>{openBatches.length} OPEN</Pill>
           </div>
         ) : null}
-        {openBatches.length > 1 ? <div className="warehouse-open-batch-warning">Multiple deliveries are open. Resume the correct supplier reference before scanning so stock is not posted against the wrong inbound delivery.</div> : null}
+        {openBatches.length > 1 ? <div className="warehouse-open-batch-warning">Multiple deliveries are open. Resume the correct source or EcoFlow audit reference before scanning so stock is not posted against the wrong inbound delivery.</div> : null}
 
         <input ref={scanRef} value={form.barcode} onChange={(event) => update('barcode', event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void scanLine(); }} placeholder="Scan one carton or sleeve barcode, then Enter" autoComplete="off" />
         <div className="warehouse-receive-grid warehouse-stage-grid">
