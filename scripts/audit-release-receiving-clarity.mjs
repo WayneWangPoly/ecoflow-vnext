@@ -17,6 +17,7 @@ const checks = [
   ['release step 2 remains visible', files.release.includes('2 · READY SHOWN') && files.release.includes('2 · Ready to release')],
   ['release step 3 remains visible', files.release.includes("3 · TODAY'S RUN")],
   ['diagnostics remain collapsible', files.release.includes('Show sync and gate diagnostics') && files.releaseCss.includes('release-diagnostics-open')],
+  ['release layout uses CSS order without reparenting React panels', files.release.includes("classList.add('release-action-split')") && files.releaseCss.includes('display: contents !important') && !files.release.includes("syncPanel.insertAdjacentElement('afterend', exceptionPanel)")],
   ['blocker cards do not open duplicate work items', files.release.includes('event.stopPropagation()') && files.release.includes('release-blocker-card')],
   ['SKU mapping points to barcode setup', files.release.includes('/?workspace=warehouse&mode=barcode')],
   ['stock blockers point to Inventory', files.release.includes("destination: 'Inventory'")],
