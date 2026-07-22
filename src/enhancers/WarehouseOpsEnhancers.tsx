@@ -15,6 +15,7 @@ import '../warehouseUnreferencedInbound.css';
 import '../warehouseBarcodeSprint.css';
 import '../warehouseFirstStocktake.css';
 import '../firstStocktakeFlow.css';
+import '../firstStocktakeCoverage.css';
 import '../firstStocktakeFieldJournal.css';
 import '../firstStocktakeGoLiveCheck.css';
 import '../warehousePickHandoff.css';
