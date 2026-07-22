@@ -4,14 +4,13 @@
 --   qty_packages       = count of the scanned package level (cartons/sleeves/each)
 --   units_received     = base operational units after barcode conversion
 --
--- The inventory ledger remains in base units. Warehouse location balances and
--- warehouse movements are package-level facts and therefore must use
--- qty_packages. Otherwise five cartons containing twenty sleeves each become a
--- false location balance of one hundred cartons and Pick can overstate stock.
+-- The public completion function is already the unresolved-unknown-barcode gate.
+-- This migration replaces only its protected unchecked implementation, preserving
+-- that gate while correcting the quantities written after it passes.
 
 begin;
 
-create or replace function public.ecoflow_complete_warehouse_receiving_batch(
+create or replace function public.ecoflow_complete_warehouse_receiving_batch_unchecked_20260711(
   p_batch_id uuid,
   p_note text default null
 )
@@ -40,7 +39,7 @@ begin
     raise exception 'OWNER_ADMIN_OR_WAREHOUSE_REQUIRED';
   end if;
 
-  select * into v_batch
+  select b.* into v_batch
   from public.ecoflow_warehouse_receiving_batches b
   where b.id = p_batch_id
   for update;
@@ -100,7 +99,7 @@ begin
       raise exception 'receiving line % has an invalid converted unit quantity', v_line.id;
     end if;
 
-    select * into v_location
+    select wl.* into v_location
     from public.ecoflow_warehouse_locations wl
     where upper(wl.location_code) = upper(v_line.suggested_location)
       and wl.status = 'ACTIVE'
@@ -116,7 +115,7 @@ begin
       and m.reference_id = v_line.id::text
     limit 1;
 
-    -- The global inventory ledger remains in converted/base operational units.
+    -- Global inventory analysis remains in converted/base operational units.
     if v_inventory_movement_id is null then
       insert into public.ecoflow_inventory_movements(
         sku,product_name,movement_type,quantity,to_location,reference_type,reference_id,
@@ -203,8 +202,8 @@ begin
 end;
 $$;
 
-grant execute on function public.ecoflow_complete_warehouse_receiving_batch(uuid,text) to authenticated;
-revoke execute on function public.ecoflow_complete_warehouse_receiving_batch(uuid,text) from anon;
+revoke execute on function public.ecoflow_complete_warehouse_receiving_batch_unchecked_20260711(uuid,text)
+  from public,anon,authenticated;
 
 -- Read-only audit: old posted movements with converted units recorded as package
 -- quantities are surfaced for manual review. No historic balance is rewritten
