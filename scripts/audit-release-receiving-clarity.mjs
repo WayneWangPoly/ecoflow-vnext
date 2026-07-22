@@ -3,7 +3,6 @@ import fs from 'node:fs';
 const files = {
   release: fs.readFileSync('src/ReleaseOperationsEnhancer.tsx', 'utf8'),
   releaseCss: fs.readFileSync('src/releaseOperationsEnhancer.css', 'utf8'),
-  unreferenced: fs.readFileSync('src/WarehouseUnreferencedInboundEnhancer.tsx', 'utf8'),
   history: fs.readFileSync('src/DesktopReceivingHistory.tsx', 'utf8'),
   owner: fs.readFileSync('src/enhancers/OwnerEnhancers.tsx', 'utf8'),
   account: fs.readFileSync('src/enhancers/AccountEnhancers.tsx', 'utf8'),
@@ -22,17 +21,18 @@ const checks = [
   ['stock blockers point to Inventory', files.release.includes("destination: 'Inventory'")],
   ['payment blockers point to Accounts', files.release.includes("destination: 'Accounts'")],
   ['customer blockers point to Customers', files.release.includes("destination: 'Customers'")],
-  ['no-document inbound gets an auditable reference', files.unreferenced.includes('UNREFERENCED-${date}-${time}')],
-  ['docket is visibly optional', files.unreferenced.includes('Delivery docket / order ref (optional)')],
-  ['React input state receives generated reference', files.unreferenced.includes("dispatchEvent(new Event('input', { bubbles: true }))")],
+  ['no-document inbound gets an auditable reference', files.nativeReceiving.includes('UNREFERENCED-${date}-${time}')],
+  ['docket is visibly optional', files.nativeReceiving.includes('Delivery docket / order ref (optional)')],
+  ['unreferenced identity is generated before the controlled RPC', files.nativeReceiving.includes('resolveDelivery()') && files.nativeReceiving.includes('startStagedReceivingBatch({')],
+  ['first scan can natively create an unreferenced batch', !files.nativeReceiving.includes('before the first scan') && files.nativeReceiving.includes('const batchId = await ensureBatch()')],
   ['native receiving idempotency remains intact', files.nativeReceiving.includes('idempotencyKey: crypto.randomUUID()') && files.nativeReceiving.includes('Complete batch and post stock')],
   ['unknown barcode quarantine remains intact', files.nativeReceiving.includes('stageUnknownBarcodeIntake') && files.nativeReceiving.includes('stock remains unchanged')],
-  ['desktop log reads receiving batch view', files.history.includes("from('v_ecoflow_warehouse_receiving_batches')")],
-  ['desktop log reads posted movement view through repository', files.history.includes('loadWarehouseReceivingMovements')],
+  ['desktop log reads receiving batch source', files.history.includes("v_ecoflow_warehouse_receiving_batches")],
+  ['desktop log reads posted movement source', files.history.includes('loadWarehouseReceivingMovements')],
   ['Owner/Admin receives desktop receiving history', files.owner.includes('<DesktopReceivingHistory />')],
   ['Account receives desktop receiving history', files.account.includes('<DesktopReceivingHistory />')],
   ['Viewer receives read-only desktop receiving history', files.viewer.includes('<DesktopReceivingHistory />')],
-  ['Warehouse receives optional-document enhancer', files.warehouse.includes('<WarehouseUnreferencedInboundEnhancer />')],
+  ['Warehouse loads optional-document receiving presentation', files.warehouse.includes("import '../warehouseUnreferencedInbound.css'")],
 ];
 
 let failures = 0;
