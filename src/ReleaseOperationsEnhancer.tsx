@@ -85,7 +85,7 @@ function ensureSubtitle(panel: HTMLElement, text: string) {
     subtitle.className = 'release-panel-purpose';
     head.querySelector('h2')?.insertAdjacentElement('afterend', subtitle);
   }
-  subtitle.textContent = text;
+  if (subtitle.textContent !== text) subtitle.textContent = text;
 }
 
 function decorateException(card: HTMLElement) {
@@ -93,8 +93,8 @@ function decorateException(card: HTMLElement) {
   card.dataset.releaseActionReady = 'true';
   card.classList.add('release-blocker-card');
 
-  // The generic desktop workbench previously opened a duplicate inspector for
-  // these cards. The card is now a self-contained blocker/action surface.
+  // A blocker card is now complete in place. Do not open the generic duplicate
+  // inspector when its body is clicked; only the explicit next-action button acts.
   card.addEventListener('click', (event) => {
     if ((event.target as HTMLElement).closest('button, a')) return;
     event.stopPropagation();
@@ -126,14 +126,15 @@ function addDecisionSummary(syncPanel: HTMLElement, releasePanel: HTMLElement | 
     anchor?.insertAdjacentElement('afterend', summary);
   }
 
-  const ready = releasePanel?.querySelectorAll('.order-list-item').length || 0;
-  const blocked = exceptionPanel?.querySelectorAll('.exception-card').length || 0;
+  const readyShown = releasePanel?.querySelectorAll('.order-list-item').length || 0;
+  const blocked = numberFrom(exceptionPanel, '.panel-head .pill') || exceptionPanel?.querySelectorAll('.exception-card').length || 0;
   const inRun = numberFrom(syncPanel, '.industrial-run-state strong');
-  summary.innerHTML = `
+  const html = `
     <div><span>1 · FIX BLOCKERS</span><strong>${blocked}</strong><small>orders needing mapping, stock, account or customer work</small></div>
-    <div><span>2 · READY TO RELEASE</span><strong>${ready}</strong><small>select exact orders in the queue below</small></div>
+    <div><span>2 · READY SHOWN</span><strong>${readyShown}</strong><small>current release queue shows up to 12 exact orders</small></div>
     <div><span>3 · TODAY'S RUN</span><strong>${inRun}</strong><small>released orders available to route planning</small></div>
   `;
+  if (summary.innerHTML !== html) summary.innerHTML = html;
 }
 
 function addDiagnosticsToggle(syncPanel: HTMLElement) {
@@ -151,9 +152,10 @@ function addDiagnosticsToggle(syncPanel: HTMLElement) {
     const summary = syncPanel.querySelector('.release-decision-summary');
     summary?.insertAdjacentElement('afterend', button);
   }
-  button.textContent = syncPanel.classList.contains('release-diagnostics-open')
+  const nextText = syncPanel.classList.contains('release-diagnostics-open')
     ? 'Hide sync and gate diagnostics'
     : 'Show sync and gate diagnostics';
+  if (button.textContent !== nextText) button.textContent = nextText;
 }
 
 function restructureRelease() {
@@ -164,36 +166,42 @@ function restructureRelease() {
   const workspace = syncPanel.closest<HTMLElement>('.workspace-stack');
   if (!workspace) return;
   const panels = Array.from(workspace.querySelectorAll<HTMLElement>('.panel'));
-  const releasePanel = panels.find((panel) => clean(panel.querySelector('.panel-head h2')?.textContent).toLowerCase().includes('release queue')) || null;
-  const exceptionPanel = panels.find((panel) => clean(panel.querySelector('.panel-head h2')?.textContent).toLowerCase().includes('exception control')) || null;
+  const releasePanel = workspace.querySelector<HTMLElement>('.release-ready-panel')
+    || panels.find((panel) => /release queue|ready to release/i.test(clean(panel.querySelector('.panel-head h2')?.textContent)))
+    || null;
+  const exceptionPanel = workspace.querySelector<HTMLElement>('.release-blockers-panel')
+    || panels.find((panel) => /exception control|fix blockers/i.test(clean(panel.querySelector('.panel-head h2')?.textContent)))
+    || null;
 
   const eyebrow = syncPanel.querySelector<HTMLElement>('.section-eyebrow');
   const title = syncPanel.querySelector<HTMLElement>('.sync-header-block h2');
-  if (eyebrow) eyebrow.textContent = 'ORDER RELEASE';
-  if (title) title.textContent = 'Release orders to today’s run';
-
-  if (releasePanel) {
-    releasePanel.classList.add('release-ready-panel');
-    const heading = releasePanel.querySelector<HTMLElement>('.panel-head h2');
-    if (heading) heading.textContent = '2 · Ready to release';
-    ensureSubtitle(releasePanel, 'Select the exact orders, review the count, then release them to today’s run.');
-    syncPanel.insertAdjacentElement('afterend', releasePanel);
-  }
+  if (eyebrow && eyebrow.textContent !== 'ORDER RELEASE') eyebrow.textContent = 'ORDER RELEASE';
+  if (title && title.textContent !== 'Release orders to today’s run') title.textContent = 'Release orders to today’s run';
 
   if (exceptionPanel) {
     exceptionPanel.classList.add('release-blockers-panel');
     const heading = exceptionPanel.querySelector<HTMLElement>('.panel-head h2');
-    if (heading) heading.textContent = '1 · Fix blockers';
-    ensureSubtitle(exceptionPanel, 'These orders cannot be released. Each card now shows the next operational action.');
-    (releasePanel || syncPanel).insertAdjacentElement('afterend', exceptionPanel);
+    if (heading && heading.textContent !== '1 · Fix blockers') heading.textContent = '1 · Fix blockers';
+    ensureSubtitle(exceptionPanel, 'These orders cannot be released. Each card shows the next operational action.');
     exceptionPanel.querySelectorAll<HTMLElement>('.exception-card').forEach(decorateException);
+    if (syncPanel.nextElementSibling !== exceptionPanel) syncPanel.insertAdjacentElement('afterend', exceptionPanel);
   }
 
-  const oldSplit = Array.from(workspace.querySelectorAll<HTMLElement>('.split-grid')).find((grid) => !grid.children.length);
-  oldSplit?.remove();
+  if (releasePanel) {
+    releasePanel.classList.add('release-ready-panel');
+    const heading = releasePanel.querySelector<HTMLElement>('.panel-head h2');
+    if (heading && heading.textContent !== '2 · Ready to release') heading.textContent = '2 · Ready to release';
+    ensureSubtitle(releasePanel, 'Select the exact orders, review the count, then release them to today’s run.');
+    const anchor = exceptionPanel || syncPanel;
+    if (anchor.nextElementSibling !== releasePanel) anchor.insertAdjacentElement('afterend', releasePanel);
+  }
+
+  Array.from(workspace.querySelectorAll<HTMLElement>('.split-grid')).forEach((grid) => {
+    if (!grid.children.length) grid.remove();
+  });
 
   const inboxHeading = inboxPanel.querySelector<HTMLElement>('.panel-head h2');
-  if (inboxHeading) inboxHeading.textContent = 'Order audit and primary queues';
+  if (inboxHeading && inboxHeading.textContent !== 'Order audit and primary queues') inboxHeading.textContent = 'Order audit and primary queues';
 
   addDecisionSummary(syncPanel, releasePanel, exceptionPanel);
   addDiagnosticsToggle(syncPanel);
