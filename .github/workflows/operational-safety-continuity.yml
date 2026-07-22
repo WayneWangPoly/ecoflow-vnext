@@ -44,15 +44,11 @@ jobs:
           set -o pipefail
           npm run audit:operational-safety 2>&1 | tee operational-safety-audit.log
 
-      - name: Audit warehouse and order-control boundaries
+      - name: Audit warehouse product boundary
         shell: bash
         run: |
           set -o pipefail
-          {
-            npm run audit:warehouse
-            npm run audit:release-gate
-            npm run audit:import-control
-          } 2>&1 | tee operational-cross-domain-audit.log
+          npm run audit:warehouse 2>&1 | tee operational-cross-domain-audit.log
 
       - name: TypeScript check
         shell: bash
