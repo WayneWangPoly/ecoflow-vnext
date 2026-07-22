@@ -1,0 +1,709 @@
+/*
+ * Grounded commercial desktop foundation.
+ *
+ * This layer deliberately removes "website decoration" from the desktop app.
+ * Structure comes from repeatable dimensions, borders, states and typography;
+ * shadows are reserved for objects that are physically above the work surface.
+ */
+
+body.industrial-desktop-v2 {
+  --idv2-bg: #e9ebe8;
+  --idv2-panel: #fbfcfa;
+  --idv2-panel-raised: #ffffff;
+  --idv2-panel-subtle: #f2f4f1;
+  --idv2-ink: #19221e;
+  --idv2-ink-strong: #101713;
+  --idv2-muted: #68716c;
+  --idv2-muted-2: #858d88;
+  --idv2-line: #cdd2ce;
+  --idv2-line-strong: #aeb7b1;
+  --idv2-dark: #18241f;
+  --idv2-dark-2: #202e28;
+  --idv2-accent: #2e6d54;
+  --idv2-accent-strong: #245a45;
+  --idv2-accent-soft: #e4eee8;
+  --idv2-warn: #8c641f;
+  --idv2-danger: #943f37;
+  --idv2-radius-sm: 4px;
+  --idv2-radius-md: 6px;
+  --idv2-radius-lg: 8px;
+  --idv2-control-height: 36px;
+  --idv2-row-height: 46px;
+  --idv2-shadow: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--idv2-dark);
+  color: var(--idv2-ink);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.industrial-desktop-v2 *,
+body.industrial-desktop-v2 *::before,
+body.industrial-desktop-v2 *::after {
+  box-sizing: border-box;
+}
+
+body.industrial-desktop-v2 :is(
+  .metric-card strong,
+  .quick-stats strong,
+  .ops-metric strong,
+  .order-platform-metric strong,
+  .owner-store-metric strong,
+  .accounts-metric strong,
+  .inventory-control-metric strong,
+  .inventory-master-metric strong,
+  .accounts-invoice-row,
+  .order-platform-table-row,
+  .inventory-movement-row
+) {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Application chassis */
+body.industrial-desktop-v2 .desktop-app {
+  background: var(--idv2-bg);
+}
+
+body.industrial-desktop-v2 .sidebar {
+  border-right: 1px solid #0e1713;
+  background: var(--idv2-dark) !important;
+  box-shadow: none !important;
+}
+
+body.industrial-desktop-v2 .sidebar-brand {
+  min-height: 62px;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, .09);
+  background: #151f1b !important;
+}
+
+body.industrial-desktop-v2 .sidebar-brand strong {
+  color: #f5f7f5;
+  font-size: 14px;
+  font-weight: 690;
+  letter-spacing: -.012em;
+}
+
+body.industrial-desktop-v2 .sidebar-brand span {
+  color: rgba(227, 233, 229, .5);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .12em;
+}
+
+body.industrial-desktop-v2 .sidebar-nav {
+  gap: 2px;
+  padding: 12px 9px;
+}
+
+body.industrial-desktop-v2 .sidebar-nav button {
+  position: relative;
+  min-height: 38px;
+  padding: 7px 10px 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--idv2-radius-md);
+  color: rgba(236, 241, 238, .64);
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  font-weight: 590;
+  transition: color 90ms linear, background-color 90ms linear, border-color 90ms linear;
+}
+
+body.industrial-desktop-v2 .sidebar-nav button:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .045) !important;
+}
+
+body.industrial-desktop-v2 .sidebar-nav button.active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .11);
+  background: #293a32 !important;
+  box-shadow: none !important;
+}
+
+body.industrial-desktop-v2 .sidebar-nav button.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: #78b697;
+}
+
+body.industrial-desktop-v2 .desktop-main,
+body.industrial-desktop-v2 .desktop-content {
+  background: var(--idv2-bg) !important;
+}
+
+body.industrial-desktop-v2 .desktop-topbar {
+  min-height: 58px;
+  padding: 8px 15px;
+  border-bottom: 1px solid var(--idv2-line-strong);
+  background: #f7f8f6 !important;
+  box-shadow: 0 1px 0 rgba(16, 24, 20, .04) !important;
+  backdrop-filter: none !important;
+}
+
+body.industrial-desktop-v2 .topbar-title strong {
+  color: var(--idv2-ink-strong);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+body.industrial-desktop-v2 .topbar-title span {
+  color: var(--idv2-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .085em;
+}
+
+body.industrial-desktop-v2 .desktop-mobile-nav {
+  border-bottom: 1px solid var(--idv2-line-strong);
+  background: #f0f2ef !important;
+  backdrop-filter: none !important;
+}
+
+body.industrial-desktop-v2 .desktop-mobile-nav button {
+  border-radius: var(--idv2-radius-sm) var(--idv2-radius-sm) 0 0;
+  font-weight: 620;
+}
+
+body.industrial-desktop-v2 .desktop-mobile-nav button.active {
+  color: var(--idv2-accent-strong);
+  border-bottom-color: var(--idv2-accent);
+  background: var(--idv2-panel-raised);
+}
+
+body.industrial-desktop-v2 .desktop-content {
+  padding: 16px 18px 66px;
+}
+
+body.industrial-desktop-v2 .workspace-stack,
+body.industrial-desktop-v2 :is(
+  .order-platform-shell,
+  .owner-store-shell,
+  .accounts-shell,
+  .inventory-control-shell,
+  .inventory-master-shell,
+  .delivery-history-shell,
+  .owner-order-intelligence-shell
+) {
+  gap: 10px;
+}
+
+/* Surface hierarchy: substrate -> panel -> true overlay */
+body.industrial-desktop-v2 :is(
+  .panel,
+  .hero-card,
+  .field-purpose-card,
+  .field-readiness-hero,
+  .authoritative-dashboard-hero,
+  .authoritative-dashboard-metric,
+  .ops-home-header,
+  .ops-home-panel,
+  .order-platform-hero,
+  .owner-store-hero,
+  .accounts-hero,
+  .inventory-control-hero,
+  .inventory-master-hero,
+  .delivery-history-hero,
+  .owner-order-intelligence-hero,
+  .order-platform-compact-table-panel,
+  .owner-store-panel,
+  .accounts-panel,
+  .accounts-detail,
+  .customer-campaign-workbench,
+  .inventory-control-panel,
+  .inventory-master-panel,
+  .delivery-history-panel
+) {
+  border: 1px solid var(--idv2-line) !important;
+  border-radius: var(--idv2-radius-lg) !important;
+  background: var(--idv2-panel) !important;
+  box-shadow: 0 1px 1px rgba(17, 27, 22, .025) !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .order-platform-hero,
+  .owner-store-hero,
+  .accounts-hero,
+  .inventory-control-hero,
+  .inventory-master-hero,
+  .delivery-history-hero,
+  .owner-order-intelligence-hero,
+  .ops-home-header
+) {
+  min-height: 56px;
+  padding: 10px 13px;
+}
+
+body.industrial-desktop-v2 :is(
+  .order-platform-hero,
+  .owner-store-hero,
+  .accounts-hero,
+  .inventory-control-hero,
+  .inventory-master-hero,
+  .delivery-history-hero,
+  .owner-order-intelligence-hero,
+  .ops-home-header
+) :is(h1, h2) {
+  color: var(--idv2-ink-strong) !important;
+  font-size: clamp(17px, 1.35vw, 21px) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.018em !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .order-platform-hero,
+  .owner-store-hero,
+  .accounts-hero,
+  .inventory-control-hero,
+  .inventory-master-hero,
+  .delivery-history-hero,
+  .owner-order-intelligence-hero,
+  .ops-home-header
+) span:first-child {
+  color: var(--idv2-muted) !important;
+  font-size: 8px !important;
+  font-weight: 760 !important;
+  letter-spacing: .09em !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .panel-head,
+  .ops-home-panel > header,
+  .order-platform-compact-table-panel > header,
+  .owner-store-panel > header,
+  .accounts-panel > header,
+  .accounts-detail > header,
+  .customer-campaign-workbench > header
+) {
+  border-bottom-color: var(--idv2-line) !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .panel-head h2,
+  .sync-header-block h2,
+  .ops-home-panel > header h2,
+  .order-platform-compact-table-panel > header h2,
+  .owner-store-panel > header h2,
+  .accounts-panel > header h2,
+  .accounts-detail > header h2
+) {
+  color: var(--idv2-ink-strong) !important;
+  font-size: 13px !important;
+  font-weight: 690 !important;
+  letter-spacing: -.006em !important;
+}
+
+/* Metrics read as instrument panels, not floating cards. */
+body.industrial-desktop-v2 :is(
+  .metric-card,
+  .quick-stats > *,
+  .ops-metric,
+  .order-platform-metric,
+  .owner-store-metric,
+  .accounts-metric,
+  .inventory-control-metric,
+  .inventory-master-metric
+) {
+  min-height: 74px;
+  padding: 10px 11px;
+  border: 1px solid var(--idv2-line) !important;
+  border-radius: var(--idv2-radius-md) !important;
+  background: var(--idv2-panel-raised) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8) !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .metric-card strong,
+  .quick-stats strong,
+  .ops-metric strong,
+  .order-platform-metric strong,
+  .owner-store-metric strong,
+  .accounts-metric strong,
+  .inventory-control-metric strong,
+  .inventory-master-metric strong
+) {
+  color: var(--idv2-ink-strong) !important;
+  font-size: 19px !important;
+  font-weight: 680 !important;
+  letter-spacing: -.018em !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .metric-card span,
+  .quick-stats span,
+  .ops-metric span,
+  .order-platform-metric span,
+  .owner-store-metric span,
+  .accounts-metric span,
+  .inventory-control-metric span,
+  .inventory-master-metric span
+) {
+  color: var(--idv2-muted) !important;
+  font-size: 8px !important;
+  font-weight: 720 !important;
+  letter-spacing: .07em !important;
+}
+
+/* Controls have a physical resting, hover, focus and pressed state. */
+body.industrial-desktop-v2 :is(
+  .desktop-topbar,
+  .desktop-content,
+  .industrial-v2-topbar,
+  .industrial-inspector,
+  .industrial-work-dock
+) :is(button, input, select, textarea) {
+  font: inherit;
+}
+
+body.industrial-desktop-v2 :is(
+  .desktop-topbar,
+  .desktop-content,
+  .industrial-v2-topbar,
+  .industrial-inspector,
+  .industrial-work-dock
+) :is(button, select, input:not([type="checkbox"]):not([type="radio"]), textarea) {
+  border-color: var(--idv2-line-strong);
+  border-radius: var(--idv2-radius-md);
+}
+
+body.industrial-desktop-v2 :is(
+  .desktop-topbar,
+  .desktop-content,
+  .industrial-v2-topbar,
+  .industrial-inspector,
+  .industrial-work-dock
+) button:not(.sidebar-nav button) {
+  min-height: var(--idv2-control-height);
+  color: #2a3d34;
+  background: #fafbf9;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), 0 1px 1px rgba(18, 28, 23, .04);
+  font-weight: 640;
+  transition: background-color 80ms linear, border-color 80ms linear, color 80ms linear, transform 50ms linear;
+}
+
+body.industrial-desktop-v2 :is(
+  .desktop-topbar,
+  .desktop-content,
+  .industrial-v2-topbar,
+  .industrial-inspector,
+  .industrial-work-dock
+) button:not(:disabled):not(.active):hover {
+  border-color: #8e9992;
+  background: #f1f3f0;
+}
+
+body.industrial-desktop-v2 :is(
+  .desktop-topbar,
+  .desktop-content,
+  .industrial-v2-topbar,
+  .industrial-inspector,
+  .industrial-work-dock
+) button:not(:disabled):active {
+  transform: translateY(1px);
+  background: #e9ece8;
+  box-shadow: inset 0 1px 2px rgba(18, 28, 23, .1);
+}
+
+body.industrial-desktop-v2 :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid rgba(46, 109, 84, .34) !important;
+  outline-offset: 1px;
+  border-color: var(--idv2-accent) !important;
+}
+
+body.industrial-desktop-v2 :is(input, select, textarea) {
+  color: var(--idv2-ink);
+  background: #fff;
+  box-shadow: inset 0 1px 2px rgba(17, 27, 22, .045);
+}
+
+body.industrial-desktop-v2 :is(input, textarea)::placeholder {
+  color: #939b96;
+  opacity: 1;
+}
+
+body.industrial-desktop-v2 :is(button, input, select, textarea):disabled {
+  color: #8b928e !important;
+  border-color: #d7dbd8 !important;
+  background: #eceeeb !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 1 !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .ops-home-actions .primary,
+  button.primary,
+  button[data-variant="primary"]
+) {
+  color: #fff !important;
+  border-color: var(--idv2-accent-strong) !important;
+  background: var(--idv2-accent) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14) !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .ops-home-actions .primary,
+  button.primary,
+  button[data-variant="primary"]
+):not(:disabled):hover {
+  background: var(--idv2-accent-strong) !important;
+}
+
+/* Tables and lists form one continuous work surface. */
+body.industrial-desktop-v2 :is(
+  .table-like,
+  .order-platform-table,
+  .ops-order-table
+) {
+  border: 1px solid var(--idv2-line-strong) !important;
+  border-radius: var(--idv2-radius-md) !important;
+  background: var(--idv2-panel-raised) !important;
+  box-shadow: none !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .table-head,
+  .order-platform-table-header,
+  .ops-order-row.head
+) {
+  min-height: 34px;
+  color: #59635e !important;
+  border-bottom: 1px solid var(--idv2-line-strong) !important;
+  background: #ecefeb !important;
+  font-size: 9px !important;
+  font-weight: 730 !important;
+  letter-spacing: .055em !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .table-row,
+  .order-list-item,
+  .stop-row,
+  .store-card,
+  .exception-card,
+  .stock-watch-row,
+  .ops-action-row,
+  .ops-order-row:not(.head),
+  .order-platform-table-row,
+  .owner-store-row,
+  .accounts-customer-row,
+  .accounts-invoice-row,
+  .accounts-followup-row,
+  .owner-store-sku-row,
+  .owner-store-pressure-row,
+  .owner-store-gap-row,
+  .inventory-sku-row,
+  .inventory-movement-row,
+  .inventory-location-row
+) {
+  min-height: var(--idv2-row-height);
+  border-color: #dde1de !important;
+  border-radius: 0 !important;
+  background: var(--idv2-panel-raised) !important;
+  box-shadow: none !important;
+  transition: background-color 70ms linear, box-shadow 70ms linear;
+}
+
+body.industrial-desktop-v2 :is(
+  .table-row,
+  .order-list-item,
+  .stop-row,
+  .store-card,
+  .exception-card,
+  .stock-watch-row,
+  .ops-action-row,
+  .ops-order-row:not(.head),
+  .order-platform-table-row,
+  .owner-store-row,
+  .accounts-customer-row,
+  .accounts-invoice-row,
+  .inventory-sku-row,
+  .inventory-movement-row,
+  .inventory-location-row
+):hover {
+  background: #f2f5f2 !important;
+  box-shadow: inset 3px 0 var(--idv2-accent) !important;
+}
+
+body.industrial-desktop-v2 :is(
+  .table-row.selected,
+  .order-list-item.selected,
+  .stop-row.selected,
+  .store-card.selected,
+  .order-platform-table-row.selected,
+  .owner-store-row.selected,
+  .accounts-customer-row.selected,
+  .accounts-invoice-row.selected,
+  .inventory-sku-row.selected,
+  [aria-selected="true"]
+) {
+  color: var(--idv2-ink-strong) !important;
+  background: var(--idv2-accent-soft) !important;
+  box-shadow: inset 3px 0 var(--idv2-accent) !important;
+}
+
+body.industrial-desktop-v2.industrial-v2-compact :is(
+  .table-row,
+  .order-list-item,
+  .stop-row,
+  .order-platform-table-row,
+  .owner-store-row,
+  .accounts-customer-row,
+  .accounts-invoice-row
+) {
+  min-height: 38px;
+}
+
+/* Status is encoded by restrained labels, not candy pills. */
+body.industrial-desktop-v2 :is(
+  .status-pill,
+  .pill,
+  .owner-command-pill,
+  .owner-insight-pill,
+  .owner-store-pill,
+  .accounts-pill,
+  .inventory-pill,
+  .order-platform-pill,
+  .barcode-pill,
+  .warehouse-receive-pill,
+  .quick-ops-label-chip,
+  .lifecycle-inline-pill,
+  .industrial-work-chip
+) {
+  min-height: 22px;
+  padding: 2px 7px !important;
+  border-radius: var(--idv2-radius-sm) !important;
+  box-shadow: none !important;
+  font-size: 9px !important;
+  font-weight: 710 !important;
+  letter-spacing: .045em !important;
+}
+
+/* Inspector and dock are the only persistent elevated structures. */
+body.industrial-desktop-v2 .industrial-v2-inspector-mount {
+  border-left: 1px solid var(--idv2-line-strong);
+  background: #f1f3f0;
+  box-shadow: -8px 0 20px rgba(17, 27, 22, .035);
+}
+
+body.industrial-desktop-v2 .industrial-inspector > header {
+  padding: 14px 15px;
+  border-bottom: 1px solid #0f1a15;
+  background: var(--idv2-dark-2) !important;
+}
+
+body.industrial-desktop-v2 .industrial-inspector > header button {
+  min-height: 30px !important;
+  border-radius: var(--idv2-radius-sm);
+  box-shadow: none !important;
+}
+
+body.industrial-desktop-v2 .industrial-inspector > nav {
+  padding: 7px 9px 0;
+  border-bottom: 1px solid var(--idv2-line-strong);
+  background: #f8f9f7;
+}
+
+body.industrial-desktop-v2 .industrial-inspector > nav button {
+  min-height: 32px !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-weight: 700;
+}
+
+body.industrial-desktop-v2 .industrial-field-grid > div {
+  padding: 9px 10px;
+  border-color: var(--idv2-line);
+  border-radius: var(--idv2-radius-md);
+  background: var(--idv2-panel-raised);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+
+body.industrial-desktop-v2 .industrial-work-dock {
+  border-top: 1px solid #98a39d;
+  background: #dfe3df;
+  box-shadow: 0 -6px 18px rgba(17, 27, 22, .09);
+}
+
+body.industrial-desktop-v2 .industrial-work-tab {
+  border-color: #aeb8b2;
+  border-radius: var(--idv2-radius-md) var(--idv2-radius-md) 0 0;
+  background: #e9ece8;
+}
+
+body.industrial-desktop-v2 .industrial-work-tab.active {
+  border-color: #849a8f;
+  background: #fff;
+  box-shadow: inset 0 3px var(--idv2-accent);
+}
+
+body.industrial-desktop-v2 .industrial-modal-backdrop {
+  background: rgba(10, 16, 13, .58);
+  backdrop-filter: blur(2px);
+}
+
+body.industrial-desktop-v2 .industrial-work-modal {
+  border: 1px solid #78847d;
+  border-radius: var(--idv2-radius-lg);
+  background: #f4f6f3;
+  box-shadow: 0 26px 70px rgba(7, 13, 10, .32);
+}
+
+/* Scrollbars are quiet but visible, like a long-lived desktop tool. */
+body.industrial-desktop-v2 * {
+  scrollbar-width: thin;
+  scrollbar-color: #a8b0ab transparent;
+}
+
+body.industrial-desktop-v2 *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+body.industrial-desktop-v2 *::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: #9da6a0;
+  background-clip: padding-box;
+}
+
+body.industrial-desktop-v2 *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.industrial-desktop-v2 *,
+  body.industrial-desktop-v2 *::before,
+  body.industrial-desktop-v2 *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 920px) {
+  body.industrial-desktop-v2 .desktop-content {
+    padding-inline: 12px;
+  }
+
+  body.industrial-desktop-v2 :is(
+    .order-platform-hero,
+    .owner-store-hero,
+    .accounts-hero,
+    .inventory-control-hero,
+    .inventory-master-hero,
+    .delivery-history-hero,
+    .owner-order-intelligence-hero,
+    .ops-home-header
+  ) {
+    border-radius: var(--idv2-radius-md) !important;
+  }
+}
