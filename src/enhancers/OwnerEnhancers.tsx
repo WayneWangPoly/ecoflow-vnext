@@ -30,6 +30,7 @@ import '../inventoryMovementLedger.css';
 import '../ownerDriverTracking.css';
 import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
+import '../industrialDesktopFoundation.css';
 
 /** Owner/Admin capabilities with one persistent industrial desktop workspace. */
 export default function OwnerEnhancers() {
