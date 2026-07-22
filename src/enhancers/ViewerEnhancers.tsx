@@ -4,6 +4,7 @@ import { DesktopCopyCleanup } from './DesktopCopyCleanup';
 import { IndustrialDesktopWorkbench } from './IndustrialDesktopWorkbench';
 import { IndustrialOperationalClarity } from './IndustrialOperationalClarity';
 import '../roleAwareNavigation.css';
+import '../industrialDesktopFoundation.css';
 
 /** Viewer receives the same inspection, filtering and comparison UI with write controls unavailable. */
 export default function ViewerEnhancers() {
