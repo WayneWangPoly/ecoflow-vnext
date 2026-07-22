@@ -25,6 +25,13 @@ function forbidPattern(file, pattern, label) {
   else passes.push(label);
 }
 
+function requireCount(file, text, expected, label) {
+  const content = read(file);
+  const count = content.split(text).length - 1;
+  if (count !== expected) failures.push(`${label}: expected ${expected} occurrences of ${JSON.stringify(text)} in ${file}, found ${count}`);
+  else passes.push(label);
+}
+
 const catalogue = 'src/operational/guardedActionSpecs.ts';
 
 requireText('src/main.tsx', '<OperationalSafetyCenter />', 'Operational safety center is globally mounted');
@@ -66,6 +73,23 @@ requireText(catalogue, 'Clear customer operational hold', 'Clear hold is reviewe
 requireText(catalogue, "confirmToken: 'CLEAR HOLD'", 'Clear hold requires typed confirmation');
 requireText('supabase/migrations/20260711190000_commercial_controls.sql', "when la.latest_action='HOLD_ACCOUNT' then 'ON_HOLD'", 'Accounts queue derives ON HOLD from the latest hold action');
 requireText('supabase/migrations/20260711190000_commercial_controls.sql', 'when s.overdue_statement_value>0', 'Cleared holds return to invoice-derived priority');
+
+const inventory = 'src/InventoryControlCenter.tsx';
+requireText(inventory, 'Inventory decisions', 'Owner inventory has a decision-first heading');
+requireText(inventory, 'label="Negative stock"', 'Negative stock is a primary owner KPI');
+requireText(inventory, 'label="Below target"', 'Below-target stock is a primary owner KPI');
+requireText(inventory, 'label="Reorder pressure"', 'Reorder pressure is a primary owner KPI');
+requireText(inventory, 'label="Live stock coverage"', 'Live stock coverage is a primary owner KPI');
+requireText(inventory, 'className="inventory-owner-context"', 'Demand and control context is secondary');
+requireText(inventory, '>30d demand</span>', 'Thirty-day demand is secondary context');
+requireText(inventory, '>Top seller</span>', 'Top seller is secondary context');
+requireCount(inventory, 'href="/warehouse-map"', 1, 'Owner inventory has one warehouse-map entry');
+forbidPattern(inventory, /Quick pick/i, 'Owner inventory does not expose warehouse quick picking');
+forbidPattern(inventory, /className="inventory-hero"/, 'Owner inventory does not inherit the global dark engineering hero');
+forbidPattern(inventory, /const\s+attention\s*=\s*num\(kpis\?\.negative_stock_skus\)\s*\+\s*num\(kpis\?\.below_target_skus\)\s*\+\s*num\(kpis\?\.reorder_pressure_skus\)/, 'Owner metrics do not add overlapping alert groups into one total');
+requireText('src/ownerInventoryControl.css', '.inventory-map-action-row', 'Legacy dynamic inventory shortcuts are hidden');
+requireText('src/ownerInventoryControl.css', '[data-workspace-tabs="inventory"]', 'Single-view inventory workspace tab is hidden');
+requireText('src/ownerInventoryControl.css', 'background: #fbfcf8', 'Owner inventory uses a calm light control surface');
 
 requireText('src/enhancers/IndustrialDesktopWorkbench.tsx', 'WORKBENCH_SESSION_KEY', 'Work tabs use the session continuity key');
 requireText('src/enhancers/IndustrialDesktopWorkbench.tsx', 'readWorkbenchSession()', 'Work tabs restore after refresh');

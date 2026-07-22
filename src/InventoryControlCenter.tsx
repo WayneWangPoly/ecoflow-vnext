@@ -16,8 +16,10 @@ import {
   type InventorySkuAction,
   type InventorySkuControlRow,
 } from '@/data/repositories/inventoryControl';
+import './ownerInventoryControl.css';
 
 type SortMode = 'rank' | 'units' | 'revenue' | 'barcode' | 'reorder' | 'recent' | 'stock';
+type FocusMode = 'attention' | 'stock' | 'reorder' | 'gaps' | 'all';
 type Drafts = { shelf: string; barcode: string; reorder: string; onHand: string; note: string; status: string };
 type MovementDrafts = { movementType: InventoryMovementType; qty: string; from: string; to: string; reference: string; note: string };
 
@@ -47,6 +49,33 @@ function title(value: string | null | undefined) {
 
 function stockValue(row?: InventorySkuControlRow) {
   return row?.effective_on_hand ?? row?.on_hand_live ?? row?.on_hand_estimate;
+}
+
+function activeSku(row: InventorySkuControlRow) {
+  return String(row.control_status || 'ACTIVE').toUpperCase() !== 'DISCONTINUED';
+}
+
+function stockRisk(row: InventorySkuControlRow) {
+  const signal = String(row.inventory_signal || '').toUpperCase();
+  const stock = stockValue(row);
+  const target = num(row.reorder_target);
+  return signal === 'NEGATIVE_STOCK'
+    || signal === 'BELOW_TARGET'
+    || (stock != null && num(stock) < 0)
+    || (target > 0 && stock != null && num(stock) <= target);
+}
+
+function reorderPressure(row: InventorySkuControlRow) {
+  const signal = String(row.inventory_signal || '').toUpperCase();
+  return num(row.high_reorder_stores) > 0
+    || num(row.watch_reorder_stores) > 0
+    || signal.includes('REORDER');
+}
+
+function controlGap(row: InventorySkuControlRow) {
+  return !row.fixed_shelf
+    || !row.primary_barcode
+    || String(row.stock_source || '').toUpperCase() !== 'LIVE_LEDGER';
 }
 
 function tone(signal?: string | null): 'good' | 'warn' | 'danger' | 'blue' | 'neutral' {
@@ -149,7 +178,7 @@ function MovementPanel({ movementDrafts, setMovementDrafts, busyMovement, onMove
 function SkuDetail({ row, drafts, setDrafts, movementDrafts, setMovementDrafts, busyAction, busyMovement, onAction, onMovement, movements, balances }: { row?: InventorySkuControlRow; drafts: Drafts; setDrafts: (drafts: Drafts) => void; movementDrafts: MovementDrafts; setMovementDrafts: (drafts: MovementDrafts) => void; busyAction: string; busyMovement: string; onAction: (action: InventorySkuAction, value?: string, note?: string) => void; onMovement: (drafts: MovementDrafts) => void; movements: InventoryMovementRow[]; balances: InventoryLocationBalanceRow[] }) {
   const set = (key: keyof Drafts, value: string) => setDrafts({ ...drafts, [key]: value });
   const busy = (action: InventorySkuAction) => busyAction === action;
-  if (!row) return <section className="inventory-detail inventory-empty">Select a SKU to control shelf, barcode, reorder target and stock note.</section>;
+  if (!row) return <section className="inventory-detail inventory-empty">No SKU is available in this decision queue.</section>;
   const stock = stockValue(row);
   return (
     <section className="inventory-detail">
@@ -190,6 +219,7 @@ function InventoryContent() {
   const [balances, setBalances] = useState<InventoryLocationBalanceRow[]>([]);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('rank');
+  const [focus, setFocus] = useState<FocusMode>('attention');
   const [selectedSku, setSelectedSku] = useState('');
   const [drafts, setDrafts] = useState<Drafts>({ shelf: '', barcode: '', reorder: '', onHand: '', note: '', status: 'ACTIVE' });
   const [movementDrafts, setMovementDrafts] = useState<MovementDrafts>({ movementType: 'PUTAWAY', qty: '', from: '', to: 'RECEIVING', reference: '', note: '' });
@@ -216,9 +246,27 @@ function InventoryContent() {
 
   useEffect(() => { void reload(); }, []);
 
+  const queueCounts = useMemo(() => {
+    const active = rows.filter(activeSku);
+    const stock = active.filter(stockRisk);
+    const reorder = active.filter(reorderPressure);
+    const gaps = active.filter(controlGap);
+    const attention = active.filter((row) => stockRisk(row) || reorderPressure(row) || controlGap(row));
+    return { active, stock, reorder, gaps, attention };
+  }, [rows]);
+
   const visibleRows = useMemo(() => {
+    const source = focus === 'stock'
+      ? queueCounts.stock
+      : focus === 'reorder'
+        ? queueCounts.reorder
+        : focus === 'gaps'
+          ? queueCounts.gaps
+          : focus === 'all'
+            ? queueCounts.active
+            : queueCounts.attention;
     const needle = query.trim().toLowerCase();
-    const filtered = needle ? rows.filter((row) => [row.sku, row.product_name, row.fixed_shelf, row.primary_barcode, row.inventory_signal, row.owner_note, row.stock_source].filter(Boolean).join(' ').toLowerCase().includes(needle)) : rows;
+    const filtered = needle ? source.filter((row) => [row.sku, row.product_name, row.fixed_shelf, row.primary_barcode, row.inventory_signal, row.owner_note, row.stock_source].filter(Boolean).join(' ').toLowerCase().includes(needle)) : source;
     return [...filtered].sort((a, b) => {
       if (sort === 'units') return num(b.units_30d) - num(a.units_30d);
       if (sort === 'revenue') return num(b.revenue_30d) - num(a.revenue_30d);
@@ -228,9 +276,9 @@ function InventoryContent() {
       if (sort === 'recent') return new Date(b.latest_movement_at || b.last_sold_at || 0).getTime() - new Date(a.latest_movement_at || a.last_sold_at || 0).getTime();
       return num(a.inventory_rank) - num(b.inventory_rank);
     });
-  }, [query, rows, sort]);
+  }, [focus, query, queueCounts, sort]);
 
-  const selected = rows.find((row) => row.sku === selectedSku) || visibleRows[0];
+  const selected = visibleRows.find((row) => row.sku === selectedSku) || visibleRows[0];
   const selectedMovements = movements.filter((movement) => movement.sku === selected?.sku);
   const selectedBalances = balances.filter((balance) => balance.sku === selected?.sku);
 
@@ -274,17 +322,53 @@ function InventoryContent() {
     }
   }
 
-  const attention = num(kpis?.negative_stock_skus) + num(kpis?.below_target_skus) + num(kpis?.reorder_pressure_skus) + num(kpis?.barcode_cleanup_skus) + num(kpis?.needs_shelf_skus);
+  function reviewAttention() {
+    setFocus('attention');
+    setQuery('');
+    setSort('rank');
+    window.requestAnimationFrame(() => document.querySelector('.inventory-focus-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  const skuCount = num(kpis?.sku_count);
+  const liveSkuCount = num(kpis?.live_ledger_skus);
+  const coverage = skuCount > 0 ? Math.round((liveSkuCount / skuCount) * 100) : 0;
   const latest = loadedAt ? new Date(loadedAt).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'loading';
 
   return (
-    <section className="inventory-shell">
-      <section className="inventory-hero"><div><span>INVENTORY SKU CONTROL</span><h2>Live movement ledger, shelf, barcode and reorder pressure.</h2><p>Receiving, putaway, dispatch and adjustments now flow into live SKU stock balance while preserving the owner control layer.</p></div><div className="inventory-actions"><button type="button" onClick={() => void reload()}>Refresh inventory</button><small>{latest}</small></div></section>
-      {error ? <div className="inventory-error">{error}</div> : null}
+    <section className="inventory-shell owner-inventory-control" data-owner-inventory-control="true">
+      <section className="owner-inventory-header">
+        <div><span>WAREHOUSE &amp; STOCK</span><h2>Inventory decisions</h2><p>Stock risk, replenishment pressure and control coverage — before warehouse execution.</p></div>
+        <div className="owner-inventory-actions">
+          <button type="button" className="primary" onClick={reviewAttention}>Review attention</button>
+          <a href="/warehouse-map">Warehouse map</a>
+          <button type="button" onClick={() => void reload()}>Refresh</button>
+          <small>Updated {latest}</small>
+        </div>
+      </section>
+      {error ? <div className="inventory-error">Inventory data unavailable: {error}</div> : null}
       {notice ? <div className="inventory-notice">{notice}</div> : null}
-      <section className="inventory-metrics"><Metric label="Live ledger SKUs" value={units(kpis?.live_ledger_skus)} helper={`${units(kpis?.live_on_hand_units)} live on-hand units`} tone="blue" /><Metric label="30d movement" value={units(kpis?.units_30d)} helper={money(kpis?.revenue_30d)} tone="good" /><Metric label="Attention" value={units(attention)} helper="negative / target / reorder / barcode / shelf" tone={attention ? 'warn' : 'good'} /><Metric label="Top SKU" value={kpis?.top_sku_30d || '—'} helper={kpis?.top_product_30d || 'No product'} tone="neutral" /></section>
-      <section className="inventory-controlbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU, product, shelf, barcode, note…" /><select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}><option value="rank">Sort by control priority</option><option value="stock">Lowest effective stock</option><option value="units">Sort by units</option><option value="revenue">Sort by revenue</option><option value="barcode">Barcode cleanup first</option><option value="reorder">Reorder pressure first</option><option value="recent">Most recent activity</option></select></section>
-      <section className="inventory-grid"><section className="inventory-panel"><header><div><h3>SKU control queue</h3><p>Demand, shelf, barcode and live stock ledger signal.</p></div><Pill tone="blue">{visibleRows.length}</Pill></header><div className="inventory-sku-list">{visibleRows.slice(0, 30).map((row) => <SkuRow key={row.sku || Math.random()} row={row} selected={row.sku === selected?.sku} onSelect={() => setSelectedSku(row.sku || '')} />)}{!visibleRows.length ? <div className="inventory-empty">No SKU rows match this filter.</div> : null}</div></section><SkuDetail row={selected} drafts={drafts} setDrafts={setDrafts} movementDrafts={movementDrafts} setMovementDrafts={setMovementDrafts} busyAction={busyAction} busyMovement={busyMovement} onAction={runAction} onMovement={runMovement} movements={selectedMovements} balances={selectedBalances} /></section>
+      <section className="inventory-metrics owner-inventory-metrics">
+        <Metric label="Negative stock" value={units(kpis?.negative_stock_skus)} helper="requires reconciliation before release" tone={num(kpis?.negative_stock_skus) ? 'danger' : 'good'} />
+        <Metric label="Below target" value={units(kpis?.below_target_skus)} helper="stock position below the set target" tone={num(kpis?.below_target_skus) ? 'warn' : 'good'} />
+        <Metric label="Reorder pressure" value={units(kpis?.reorder_pressure_skus)} helper="customer demand signalling replenishment" tone={num(kpis?.reorder_pressure_skus) ? 'warn' : 'good'} />
+        <Metric label="Live stock coverage" value={`${coverage}%`} helper={`${units(liveSkuCount)} of ${units(skuCount)} SKUs · ${units(kpis?.live_on_hand_units)} live units`} tone={coverage >= 90 ? 'good' : coverage > 0 ? 'warn' : 'danger'} />
+      </section>
+      <section className="inventory-owner-context" aria-label="Inventory control coverage and demand context">
+        <div><span>No live ledger</span><strong>{units(kpis?.no_stock_ledger_skus)}</strong></div>
+        <div><span>Barcode gaps</span><strong>{units(kpis?.barcode_cleanup_skus)}</strong></div>
+        <div><span>Shelf gaps</span><strong>{units(kpis?.needs_shelf_skus)}</strong></div>
+        <div><span>30d demand</span><strong>{units(kpis?.units_30d)} units</strong><small>{money(kpis?.revenue_30d)}</small></div>
+        <div><span>Top seller</span><strong>{kpis?.top_sku_30d || '—'}</strong><small>{kpis?.top_product_30d || 'No product'}</small></div>
+      </section>
+      <nav className="inventory-focus-tabs" aria-label="Inventory decision queues">
+        <button type="button" className={focus === 'attention' ? 'active' : ''} onClick={() => setFocus('attention')}>Needs attention <b>{queueCounts.attention.length}</b></button>
+        <button type="button" className={focus === 'stock' ? 'active' : ''} onClick={() => setFocus('stock')}>Stock risk <b>{queueCounts.stock.length}</b></button>
+        <button type="button" className={focus === 'reorder' ? 'active' : ''} onClick={() => setFocus('reorder')}>Reorder <b>{queueCounts.reorder.length}</b></button>
+        <button type="button" className={focus === 'gaps' ? 'active' : ''} onClick={() => setFocus('gaps')}>Control gaps <b>{queueCounts.gaps.length}</b></button>
+        <button type="button" className={focus === 'all' ? 'active' : ''} onClick={() => setFocus('all')}>All loaded <b>{queueCounts.active.length}</b></button>
+      </nav>
+      <section className="inventory-controlbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU, product, shelf, barcode or note" /><select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}><option value="rank">Control priority</option><option value="stock">Lowest effective stock</option><option value="reorder">Reorder pressure</option><option value="barcode">Barcode gaps</option><option value="units">Highest 30d units</option><option value="revenue">Highest 30d revenue</option><option value="recent">Most recent activity</option></select></section>
+      <section className="inventory-grid"><section className="inventory-panel"><header><div><h3>Decision queue</h3><p>{visibleRows.length} matching SKUs from {queueCounts.active.length} loaded active records.</p></div><Pill tone="blue">{visibleRows.length}</Pill></header><div className="inventory-sku-list">{visibleRows.slice(0, 30).map((row, index) => <SkuRow key={`${row.sku || 'unknown'}-${index}`} row={row} selected={row.sku === selected?.sku} onSelect={() => setSelectedSku(row.sku || '')} />)}{!visibleRows.length ? <div className="inventory-empty">No SKU rows match this decision queue.</div> : null}</div></section><SkuDetail row={selected} drafts={drafts} setDrafts={setDrafts} movementDrafts={movementDrafts} setMovementDrafts={setMovementDrafts} busyAction={busyAction} busyMovement={busyMovement} onAction={runAction} onMovement={runMovement} movements={selectedMovements} balances={selectedBalances} /></section>
     </section>
   );
 }
