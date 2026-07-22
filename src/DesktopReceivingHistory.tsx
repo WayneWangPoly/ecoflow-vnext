@@ -94,15 +94,27 @@ export function DesktopReceivingHistory() {
   const [error, setError] = useState('');
 
   useEffect(() => observeBody(() => {
-    const topbar = document.querySelector<HTMLElement>('.industrial-v2-topbar-mount')
-      || document.querySelector<HTMLElement>('.topbar-actions');
-    if (!topbar) { setHost(null); return; }
-    let mount = topbar.querySelector<HTMLElement>(':scope > .desktop-receiving-history-mount');
+    const nav = document.querySelector<HTMLElement>('.sidebar-nav');
+    if (!nav) { setHost(null); return; }
+
+    const buttons = Array.from(nav.querySelectorAll<HTMLButtonElement>(':scope > button'));
+    const warehouseButton = buttons.find((button) => {
+      const label = clean(button.textContent).toUpperCase();
+      return label.includes('WAREHOUSE') || label.includes('INVENTORY') || label.includes('STOCK');
+    });
+    const fallbackButton = buttons.find((button) => /ACCOUNTS|AUDIT/i.test(clean(button.textContent)));
+    const anchor = warehouseButton || fallbackButton;
+    if (!anchor) { setHost(null); return; }
+
+    let mount = nav.querySelector<HTMLElement>(':scope > .desktop-receiving-history-mount');
     if (!mount) {
       mount = document.createElement('div');
       mount.className = 'desktop-receiving-history-mount';
-      topbar.appendChild(mount);
     }
+    if (anchor.nextElementSibling !== mount) anchor.insertAdjacentElement('afterend', mount);
+
+    document.querySelectorAll<HTMLElement>('.topbar-actions > .desktop-receiving-history-mount, .industrial-v2-topbar-mount > .desktop-receiving-history-mount')
+      .forEach((node) => { if (node !== mount) node.remove(); });
     setHost(mount);
   }), []);
 
@@ -141,7 +153,7 @@ export function DesktopReceivingHistory() {
 
   const button = host ? createPortal(
     <button type="button" className="desktop-receiving-history-button" onClick={() => setOpen(true)}>
-      <ClipboardList size={14} />Receiving log
+      <ClipboardList size={13} />Receiving log
     </button>,
     host,
   ) : null;

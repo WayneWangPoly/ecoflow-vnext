@@ -21,6 +21,7 @@ import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/dat
 
 const SESSION_KEY = 'ecoflow:first-stocktake-session';
 const BATCH_KEY = 'ecoflow:first-stocktake-batch';
+const COVERAGE_KEY_PREFIX = 'ecoflow:first-stocktake-coverage:';
 const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
 const BARCODE_INPUT_ID = 'first-stocktake-package-barcode';
 
@@ -41,6 +42,11 @@ type LocationOption = {
 type LocationChoice = {
   baseCode: string;
   options: LocationOption[];
+};
+
+type MissingSkuReview = StocktakeSkuOption & {
+  liveQuantity: number;
+  liveLocations: string[];
 };
 
 const packageModes: Array<{ value: SkuPackageMode; label: string; firstLevel: BarcodePackageLevel }> = [
@@ -120,6 +126,10 @@ function initialFacing(): WarehouseFacing {
   if (/-R-/.test(value)) return 'right';
   if (/-L-/.test(value)) return 'left';
   return 'left';
+}
+
+function coverageKey(batchId: string) {
+  return `${COVERAGE_KEY_PREFIX}${batchId}`;
 }
 
 function levenshtein(left: string, right: string) {
@@ -216,6 +226,7 @@ export function FirstStocktakeFlow() {
   const [batch, setBatch] = useState<StagedReceivingBatch | null>(null);
   const [openBatches, setOpenBatches] = useState<StagedReceivingBatch[]>([]);
   const [lines, setLines] = useState<StagedReceivingLine[]>([]);
+  const [coverageAcknowledged, setCoverageAcknowledged] = useState(false);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -277,6 +288,14 @@ export function FirstStocktakeFlow() {
   }, []);
 
   useEffect(() => {
+    if (!batch?.id) {
+      setCoverageAcknowledged(false);
+      return;
+    }
+    setCoverageAcknowledged(window.localStorage.getItem(coverageKey(batch.id)) === 'true');
+  }, [batch?.id]);
+
+  useEffect(() => {
     if (!resolvedLocation) return;
     if (availableFacings.includes(facing)) return;
     setFacing(availableFacings[0] ?? 'front');
@@ -320,6 +339,13 @@ export function FirstStocktakeFlow() {
     if (!sides.includes(facing)) setFacing(sides[0] ?? 'front');
     setLocationFocused(false);
     setError('');
+  }
+
+  function setCoverageConfirmation(next: boolean) {
+    setCoverageAcknowledged(next);
+    if (!batch?.id) return;
+    if (next) window.localStorage.setItem(coverageKey(batch.id), 'true');
+    else window.localStorage.removeItem(coverageKey(batch.id));
   }
 
   async function addStocktakeLine() {
@@ -384,6 +410,8 @@ export function FirstStocktakeFlow() {
         clientScannedAt: pending.clientScannedAt,
       });
       pendingRef.current = null;
+      window.localStorage.removeItem(coverageKey(batchId));
+      setCoverageAcknowledged(false);
       setNotice(`${cleanSku} added to ${cleanBaseLocation} · ${facingLabel[selectedFacing]}. Location and facing are kept for the next package.`);
       setSku('');
       setBarcode('');
@@ -412,14 +440,20 @@ export function FirstStocktakeFlow() {
 
   async function postOpeningStock() {
     if (!batch?.id) return;
+    if (!coverageAcknowledged) {
+      setError('Review SKU coverage and confirm that every physical location has been checked before posting opening stock.');
+      return;
+    }
     setBusy('post');
     setError('');
     setNotice('');
     try {
-      const result = await finishStagedReceivingBatch({ batchId: batch.id, note: 'FIRST STOCKTAKE · verified opening stock' });
+      const result = await finishStagedReceivingBatch({ batchId: batch.id, note: 'FIRST STOCKTAKE · verified opening stock · physical coverage confirmed' });
       const first = result[0];
       window.localStorage.removeItem(BATCH_KEY);
       window.localStorage.removeItem(SESSION_KEY);
+      window.localStorage.removeItem(coverageKey(batch.id));
+      setCoverageAcknowledged(false);
       setBatch(null);
       setLines([]);
       setNotice(`First stocktake posted once: ${n(first?.posted_lines)} SKU lines and ${n(first?.posted_units)} units are now in the stock ledger and warehouse locations.`);
@@ -434,6 +468,37 @@ export function FirstStocktakeFlow() {
   const checked = lines.filter((line) => line.confirmation_checked || line.line_status === 'POSTED').length;
   const allChecked = lines.length > 0 && checked === lines.length;
   const totalUnits = useMemo(() => lines.reduce((sum, line) => sum + n(line.units_received), 0), [lines]);
+  const countedSkus = useMemo(() => new Set(lines.map((line) => String(line.sku || '').trim().toUpperCase()).filter(Boolean)), [lines]);
+  const liveStockBySku = useMemo(() => {
+    const map = new Map<string, { quantity: number; locations: Set<string> }>();
+    locationRows.forEach((row) => {
+      const code = String(row.sku || '').trim().toUpperCase();
+      const quantity = n(row.quantity);
+      if (!code || quantity <= 0) return;
+      const current = map.get(code) ?? { quantity: 0, locations: new Set<string>() };
+      current.quantity += quantity;
+      if (row.location_code) current.locations.add(row.location_code);
+      map.set(code, current);
+    });
+    return map;
+  }, [locationRows]);
+  const missingSkuReview = useMemo<MissingSkuReview[]>(() => skuOptions
+    .filter((option) => !countedSkus.has(option.sku.trim().toUpperCase()))
+    .map((option) => {
+      const live = liveStockBySku.get(option.sku.trim().toUpperCase());
+      return {
+        ...option,
+        liveQuantity: live?.quantity ?? 0,
+        liveLocations: Array.from(live?.locations ?? []),
+      };
+    })
+    .sort((left, right) => Number(right.liveQuantity > 0) - Number(left.liveQuantity > 0)
+      || right.orderCount - left.orderCount
+      || left.sku.localeCompare(right.sku, undefined, { numeric: true })), [countedSkus, liveStockBySku, skuOptions]);
+  const missingLive = missingSkuReview.filter((option) => option.liveQuantity > 0);
+  const missingWithOrders = missingSkuReview.filter((option) => option.liveQuantity <= 0 && option.orderCount > 0);
+  const catalogOnlyMissing = missingSkuReview.filter((option) => option.liveQuantity <= 0 && option.orderCount <= 0);
+  const priorityMissing = [...missingLive, ...missingWithOrders].slice(0, 18);
 
   return (
     <section className="first-stocktake-screen">
@@ -578,8 +643,42 @@ export function FirstStocktakeFlow() {
           ))}
           {!lines.length ? <div className="first-stocktake-empty">Start with one rack and one SKU. Added lines remain saved if the phone closes or loses connection.</div> : null}
         </div>
-        <button className="first-stocktake-post" type="button" disabled={!allChecked || Boolean(busy)} onClick={() => void postOpeningStock()}>{busy === 'post' ? 'Posting once…' : 'Post verified opening stock'}</button>
-        <p>Posting is enabled only after every line is checked. The existing receiving transaction writes the stock ledger and the warehouse location balance together.</p>
+
+        <section className="first-stocktake-coverage-review">
+          <header>
+            <div><span>SKU COVERAGE REVIEW</span><h4>Check what the system knows but the warehouse count did not find</h4></div>
+            <strong>{countedSkus.size} unique SKUs counted</strong>
+          </header>
+          <div className="first-stocktake-coverage-metrics">
+            <div className="good"><strong>{countedSkus.size}</strong><span>counted</span></div>
+            <div className={missingLive.length ? 'danger' : 'good'}><strong>{missingLive.length}</strong><span>system stock not found</span></div>
+            <div className={missingWithOrders.length ? 'warn' : 'good'}><strong>{missingWithOrders.length}</strong><span>ordered SKU not found</span></div>
+            <div><strong>{catalogOnlyMissing.length}</strong><span>catalog only / possibly old</span></div>
+          </div>
+          <div className="first-stocktake-coverage-rule">
+            <strong>Missing does not mean zero or retired.</strong>
+            <span>EcoFlow posts only the lines physically counted above. An uncounted SKU is not automatically zeroed, deleted or marked inactive. Use this list for a second warehouse sweep; old catalog SKUs may remain uncounted.</span>
+          </div>
+          {priorityMissing.length ? (
+            <div className="first-stocktake-missing-list">
+              {priorityMissing.map((option) => (
+                <article key={option.sku} className={option.liveQuantity > 0 ? 'danger' : 'warn'}>
+                  <div><strong>{option.sku}</strong><span>{option.productName || 'Product name unavailable'}</span></div>
+                  <div><strong>{option.liveQuantity > 0 ? `${option.liveQuantity} system units` : `${option.orderCount} order references`}</strong><span>{option.liveQuantity > 0 ? option.liveLocations.join(', ') || 'location pending' : 'check whether this SKU is still stocked'}</span></div>
+                </article>
+              ))}
+              {missingLive.length + missingWithOrders.length > priorityMissing.length ? <small>Showing the first {priorityMissing.length} priority SKUs. Search the SKU field above to count any item found during the second sweep.</small> : null}
+            </div>
+          ) : lines.length ? <div className="first-stocktake-coverage-clear">No positive-stock or previously ordered catalog SKU remains unmatched in the loaded system data.</div> : null}
+          {skuAssistError ? <div className="first-stocktake-coverage-warning">Catalog comparison is unavailable: {skuAssistError}. Physical-location confirmation is still required.</div> : null}
+          <label className="first-stocktake-coverage-confirm">
+            <input type="checkbox" checked={coverageAcknowledged} disabled={!lines.length || Boolean(busy)} onChange={(event) => setCoverageConfirmation(event.target.checked)} />
+            <span><strong>I have checked every physical warehouse location.</strong><small>I understand that catalog SKUs not counted today will remain unchanged and are not being declared zero.</small></span>
+          </label>
+        </section>
+
+        <button className="first-stocktake-post" type="button" disabled={!allChecked || !coverageAcknowledged || Boolean(busy)} onClick={() => void postOpeningStock()}>{busy === 'post' ? 'Posting once…' : 'Post verified opening stock'}</button>
+        <p>Posting requires every counted line to be checked and the physical-location coverage declaration above. The transaction writes only counted lines to the stock ledger and warehouse locations.</p>
       </section>
     </section>
   );

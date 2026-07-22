@@ -1,0 +1,147 @@
+.first-stocktake-coverage-review {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #c8d4cd;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #fbfdfb, #f1f6f3);
+}
+
+.first-stocktake-coverage-review > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.first-stocktake-coverage-review > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.first-stocktake-coverage-review > header span {
+  color: #397258;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .1em;
+}
+
+.first-stocktake-coverage-review h4 {
+  margin: 0;
+  color: #17372b;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.first-stocktake-coverage-review > header > strong {
+  color: #244b3b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.first-stocktake-coverage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #d4dcd7;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.first-stocktake-coverage-metrics > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-right: 1px solid #d9e0dc;
+}
+
+.first-stocktake-coverage-metrics > div:last-child { border-right: 0; }
+.first-stocktake-coverage-metrics strong { color: #1c382d; font-size: 20px; line-height: 1; }
+.first-stocktake-coverage-metrics span { color: #6b7971; font-size: 8px; font-weight: 780; letter-spacing: .05em; text-transform: uppercase; }
+.first-stocktake-coverage-metrics .good { background: #eef8f2; }
+.first-stocktake-coverage-metrics .warn { background: #fff8e9; }
+.first-stocktake-coverage-metrics .danger { background: #fff0ed; }
+
+.first-stocktake-coverage-rule {
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+  border-left: 3px solid #4e9a72;
+  background: #edf5f0;
+}
+
+.first-stocktake-coverage-rule strong { color: #1d533d; font-size: 11px; }
+.first-stocktake-coverage-rule span { color: #52675d; font-size: 10px; line-height: 1.45; }
+
+.first-stocktake-missing-list {
+  display: grid;
+  gap: 5px;
+}
+
+.first-stocktake-missing-list article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #d6ddd8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.first-stocktake-missing-list article.warn { border-left: 3px solid #c4942f; }
+.first-stocktake-missing-list article.danger { border-left: 3px solid #b75a4d; background: #fff9f7; }
+.first-stocktake-missing-list article > div { min-width: 0; display: grid; gap: 2px; }
+.first-stocktake-missing-list strong { overflow: hidden; color: #203d31; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.first-stocktake-missing-list span { overflow: hidden; color: #6b7971; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.first-stocktake-missing-list > small { color: #718078; font-size: 9px; }
+
+.first-stocktake-coverage-clear,
+.first-stocktake-coverage-warning {
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.first-stocktake-coverage-clear { color: #276247; background: #eaf6ef; }
+.first-stocktake-coverage-warning { color: #79551d; background: #fff6e4; }
+
+.first-stocktake-coverage-confirm {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px !important;
+  align-items: start;
+  padding: 11px;
+  border: 1px solid #9fb9aa;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.first-stocktake-coverage-confirm input {
+  width: 20px !important;
+  height: 20px;
+  min-height: 20px !important;
+  margin: 1px 0 0;
+  accent-color: #16714c;
+}
+
+.first-stocktake-coverage-confirm > span {
+  display: grid;
+  gap: 3px;
+}
+
+.first-stocktake-coverage-confirm strong { color: #173b2c; font-size: 11px; }
+.first-stocktake-coverage-confirm small { color: #63736b; font-size: 9px; line-height: 1.4; }
+
+@media (max-width: 720px) {
+  .first-stocktake-coverage-review > header { display: grid; }
+  .first-stocktake-coverage-metrics { grid-template-columns: 1fr 1fr; }
+  .first-stocktake-coverage-metrics > div:nth-child(2) { border-right: 0; }
+  .first-stocktake-coverage-metrics > div:nth-child(-n+2) { border-bottom: 1px solid #d9e0dc; }
+  .first-stocktake-missing-list article { grid-template-columns: 1fr; }
+}
