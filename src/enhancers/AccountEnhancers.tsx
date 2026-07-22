@@ -2,6 +2,7 @@ import { DeliveryRunHistory } from '../DeliveryRunHistory';
 import { AccountsStatementWorkbench } from '../AccountsStatementWorkbench';
 import { AuthoritativeDashboard } from '../AuthoritativeDashboard';
 import { CommercialSourceBoundary } from '../CommercialSourceBoundary';
+import { DesktopReceivingHistory } from '../DesktopReceivingHistory';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
@@ -30,6 +31,7 @@ export default function AccountEnhancers() {
       <DesktopCopyCleanup />
       <IndustrialDesktopWorkbench />
       <IndustrialOperationalClarity />
+      <DesktopReceivingHistory />
       <CustomerOrderPodPreviewEnhancer />
       <AuthoritativeDashboard />
       <CommercialSourceBoundary />
