@@ -30,14 +30,14 @@ has(readiness, "from('v_ecoflow_stocktake_uom_integrity')", 'Readiness must quer
 has(readiness, 'loadReceivingBarcodeLookup()', 'Readiness must verify the active barcode registry.');
 has(readiness, 'loadWarehouseLocationItems()', 'Readiness must verify live location stock.');
 has(pickBoard, 'pickWarehouseStock', 'Pick must remain the controlled stock-deduction point.');
-has(pickBoard, 'PICK BLOCKED: insufficient live warehouse stock', 'Pick must fail closed on insufficient stock.');
+has(pickBoard, 'Live warehouse stock is not enough. Record shortage first.', 'Pick must fail closed on insufficient stock.');
 
 has(receivingRepo, 'supplierName?: string | null', 'Receiving repository must accept supplier identity.');
 has(receivingRepo, 'supplierOrderRef?: string | null', 'Receiving repository must accept a supplier delivery/order reference.');
 has(receivingRepo, 'invoiceRef?: string | null', 'Receiving repository must accept an invoice reference.');
 has(receivingRepo, 'p_supplier_order_ref: input.supplierOrderRef?.trim() || null', 'Receiving metadata must reach the controlled RPC.');
 has(receivingUi, 'Delivery docket / order ref *', 'Daily receiving must request the source delivery document.');
-has(receivingUi, "Enter the supplier delivery docket/order reference or invoice reference", 'Daily receiving must fail closed without a source reference.');
+has(receivingUi, 'Enter the supplier delivery docket/order reference or invoice reference', 'Daily receiving must fail closed without a source reference.');
 has(receivingUi, 'Complete batch and post stock', 'Daily receiving must retain one explicit posting gate.');
 
 console.log('Stocktake SKU → barcode → package UOM → location → live stock → controlled Pick audit passed.');
