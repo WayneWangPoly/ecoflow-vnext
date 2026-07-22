@@ -12,6 +12,10 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react';
+import {
+  OPERATIONAL_SESSION_CLEARED,
+  WORKBENCH_SESSION_KEY,
+} from '@/operational/operationalActionJournal';
 import { CustomerOperationalWorkspace, type CustomerWorkContext } from './CustomerOperationalWorkspace';
 import '../industrialDesktopV2.css';
 import '../industrialDesktopWorkbench.css';
@@ -31,6 +35,14 @@ type WorkItem = {
   customerContext?: CustomerWorkContext;
 };
 type WorkItemDetail = WorkItem;
+type WorkbenchSession = {
+  version: 1;
+  savedAt: string;
+  items: WorkItem[];
+  activeId: string;
+  compareIds: string[];
+  detailHidden: boolean;
+};
 
 const ROW_SELECTOR = [
   '.desktop-content .table-row',
@@ -44,6 +56,7 @@ const ROW_SELECTOR = [
   '.desktop-content .order-platform-table-row',
 ].join(', ');
 const SORT_CONTAINER_SELECTOR = '.desktop-content .table-like, .desktop-content .list-stack, .desktop-content .store-grid, .desktop-content .stock-watch, .desktop-content .order-platform-table';
+const WORKBENCH_MAX_AGE_MS = 12 * 60 * 60_000;
 
 function clean(value?: string | null) {
   return (value || '').replace(/\s+/g, ' ').trim();
@@ -59,6 +72,45 @@ function currentRole(): DesktopRole {
 
 function stableId(parts: string[]) {
   return parts.join('|').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
+}
+
+function validWorkItem(value: unknown): value is WorkItem {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as WorkItem;
+  if (!item.id || !item.title || !item.kind || !Array.isArray(item.fields)) return false;
+  if (item.entity === 'customer' && !item.customerContext?.storeName) return false;
+  return true;
+}
+
+function readWorkbenchSession(): WorkbenchSession {
+  const empty: WorkbenchSession = { version: 1, savedAt: new Date().toISOString(), items: [], activeId: '', compareIds: [], detailHidden: false };
+  try {
+    const raw = window.sessionStorage.getItem(WORKBENCH_SESSION_KEY);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<WorkbenchSession>;
+    const savedAt = new Date(String(parsed.savedAt || '')).getTime();
+    if (parsed.version !== 1 || !Number.isFinite(savedAt) || Date.now() - savedAt > WORKBENCH_MAX_AGE_MS) {
+      window.sessionStorage.removeItem(WORKBENCH_SESSION_KEY);
+      return empty;
+    }
+    const items = Array.isArray(parsed.items) ? parsed.items.filter(validWorkItem).slice(-8) : [];
+    const ids = new Set(items.map((item) => item.id));
+    const activeId = ids.has(String(parsed.activeId || '')) ? String(parsed.activeId) : items.at(-1)?.id || '';
+    const compareIds = Array.isArray(parsed.compareIds)
+      ? parsed.compareIds.filter((id): id is string => typeof id === 'string' && ids.has(id) && items.find((item) => item.id === id)?.entity !== 'customer').slice(-4)
+      : [];
+    return { version: 1, savedAt: new Date().toISOString(), items, activeId, compareIds, detailHidden: Boolean(parsed.detailHidden) };
+  } catch {
+    return empty;
+  }
+}
+
+function writeWorkbenchSession(session: Omit<WorkbenchSession, 'version' | 'savedAt'>) {
+  try {
+    window.sessionStorage.setItem(WORKBENCH_SESSION_KEY, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), ...session } satisfies WorkbenchSession));
+  } catch {
+    // Session continuity is best effort and never blocks operational work.
+  }
 }
 
 function customerRowToItem(row: HTMLElement): WorkItem | null {
@@ -106,9 +158,25 @@ function sourceField(field: WorkField) {
   return /(order|invoice|store|customer|account|payment|amount|value|tier|source|received|updated|due)/i.test(field.label);
 }
 
-function numericValue(text: string) {
-  const values = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/g);
-  return values?.length ? Number(values[values.length - 1]) : 0;
+function parseMoney(text: string) {
+  const currency = text.replace(/,/g, '').match(/(?:A\$|\$)\s*(-?\d+(?:\.\d+)?)/i);
+  return currency ? Number(currency[1]) : Number.NEGATIVE_INFINITY;
+}
+
+function rowValue(row: HTMLElement) {
+  const explicit = row.dataset.sortValue;
+  if (explicit && Number.isFinite(Number(explicit))) return Number(explicit);
+  const cells = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
+  const table = row.closest<HTMLElement>('.table-like, .ops-order-table, .order-platform-table');
+  const headings = table
+    ? Array.from(table.querySelectorAll<HTMLElement>(':scope > .table-head > span, :scope > .ops-order-row.head > span, :scope > .order-platform-table-header > span')).map((node) => clean(node.textContent))
+    : [];
+  const valueIndex = headings.findIndex((heading) => /(value|amount|total|revenue|balance|outstanding|overdue|due)/i.test(heading));
+  if (valueIndex >= 0 && cells[valueIndex]) {
+    const parsed = parseMoney(clean(cells[valueIndex].textContent));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return parseMoney(clean(row.textContent));
 }
 
 function applyFilter(query: string) {
@@ -131,7 +199,12 @@ function applySort(mode: SortMode) {
       if (mode === 'priority') return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
       const leftText = clean(left.textContent);
       const rightText = clean(right.textContent);
-      if (mode === 'value') return numericValue(rightText) - numericValue(leftText);
+      if (mode === 'value') {
+        const leftValue = rowValue(left);
+        const rightValue = rowValue(right);
+        if (leftValue !== rightValue) return rightValue - leftValue;
+        return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
+      }
       if (mode === 'status') {
         return clean(left.querySelector<HTMLElement>('.status-pill, .pill, b')?.textContent || leftText)
           .localeCompare(clean(right.querySelector<HTMLElement>('.status-pill, .pill, b')?.textContent || rightText));
@@ -153,15 +226,16 @@ function Fields({ fields }: { fields: WorkField[] }) {
 }
 
 export function IndustrialDesktopWorkbench() {
+  const restored = useRef(readWorkbenchSession()).current;
   const [role, setRole] = useState<DesktopRole>(currentRole);
   const [topbarMount, setTopbarMount] = useState<HTMLElement | null>(null);
   const [inspectorMount, setInspectorMount] = useState<HTMLElement | null>(null);
   const [workbarMount, setWorkbarMount] = useState<HTMLElement | null>(null);
-  const [items, setItems] = useState<WorkItem[]>([]);
-  const [activeId, setActiveId] = useState('');
-  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [items, setItems] = useState<WorkItem[]>(restored.items);
+  const [activeId, setActiveId] = useState(restored.activeId);
+  const [compareIds, setCompareIds] = useState<string[]>(restored.compareIds);
   const [inspectorView, setInspectorView] = useState<'overview' | 'source' | 'operations'>('overview');
-  const [detailHidden, setDetailHidden] = useState(false);
+  const [detailHidden, setDetailHidden] = useState(restored.detailHidden);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('priority');
   const [compact, setCompact] = useState(() => {
@@ -298,6 +372,22 @@ export function IndustrialDesktopWorkbench() {
   }, []);
 
   useEffect(() => {
+    writeWorkbenchSession({ items, activeId, compareIds, detailHidden });
+  }, [items, activeId, compareIds, detailHidden]);
+
+  useEffect(() => {
+    const reset = () => {
+      setItems([]);
+      setActiveId('');
+      setCompareIds([]);
+      setDetailHidden(false);
+      setModal(null);
+    };
+    window.addEventListener(OPERATIONAL_SESSION_CLEARED, reset);
+    return () => window.removeEventListener(OPERATIONAL_SESSION_CLEARED, reset);
+  }, []);
+
+  useEffect(() => {
     queryRef.current = query;
     applyFilter(query);
   }, [query]);
@@ -322,7 +412,8 @@ export function IndustrialDesktopWorkbench() {
   const topbar = topbarMount ? createPortal(
     <div className="industrial-v2-topbar">
       <label className="industrial-view-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in this view" />{query ? <button type="button" onClick={() => setQuery('')}><X size={13} /></button> : null}</label>
-      <label className="industrial-sort-control"><SlidersHorizontal size={14} /><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="priority">Operational priority</option><option value="az">A–Z</option><option value="value">Highest value</option><option value="status">Status</option></select></label>
+      <label className="industrial-sort-control"><SlidersHorizontal size={14} /><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="priority">Operational priority</option><option value="az">A–Z</option><option value="value">Highest loaded value</option><option value="status">Status</option></select></label>
+      <small className="industrial-loaded-scope">Loaded rows only</small>
       <button type="button" className="industrial-density-button" onClick={() => setCompact((current) => !current)}><Rows3 size={15} />{compact ? 'Compact' : 'Comfort'}</button>
       {activeItem && detailHidden ? <button type="button" onClick={() => setDetailHidden(false)} aria-label={activeIsCustomer ? 'Open customer window' : 'Open inspector'}><PanelRightOpen size={16} /></button> : null}
     </div>,

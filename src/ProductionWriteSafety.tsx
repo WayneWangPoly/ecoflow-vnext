@@ -4,15 +4,25 @@ import { hasSupabaseAuthClient } from '@/lib/supabaseClient';
 
 const writePattern = /receive|complete|post stock|save\s*\+|release|internalise|pick(ed)?|stage|loaded|delivered|confirm|start route|take on run|adjust|return to stock/i;
 const safePattern = /logout|reload|refresh|back|inventory|map|previous|next|search|find|close|cancel/i;
+const permanentlyBlockedPattern = /internalise eligible|create internal orders/i;
 /** Pure navigation containers - a "Pick" tab is not a write action even though the label matches. */
 const NAVIGATION_SCOPE = '.driver-nav, .mobile-tabs, .sidebar-nav, .pick-view-toggle, .view-toggle, .inbox-tabs, .order-platform-mode-tabs, .owner-window-toggle, .stops-toolbar';
+
+function buttonLabel(button: HTMLButtonElement) {
+  return button.textContent?.trim() || button.getAttribute('aria-label') || '';
+}
 
 function writeButtons() {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter((button) => {
     if (button.closest(NAVIGATION_SCOPE)) return false;
-    const label = button.textContent?.trim() || button.getAttribute('aria-label') || '';
+    const label = buttonLabel(button);
     return writePattern.test(label) && !safePattern.test(label);
   });
+}
+
+function blockedInternalOrderButtons() {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+    .filter((button) => permanentlyBlockedPattern.test(buttonLabel(button)));
 }
 
 function liveDataError() {
@@ -25,15 +35,23 @@ export function ProductionWriteSafety() {
   const [dataError, setDataError] = useState('');
 
   useEffect(() => {
-    if (!import.meta.env.PROD) return;
-
     function apply() {
+      blockedInternalOrderButtons().forEach((button) => {
+        button.disabled = true;
+        button.hidden = true;
+        button.setAttribute('aria-hidden', 'true');
+        button.title = 'Bulk internal-order creation is unavailable. Orders must be reviewed individually before any future write workflow is enabled.';
+        button.dataset.productionSafetyDisabled = 'permanent';
+      });
+
+      if (!import.meta.env.PROD) return;
       const error = hardLock ? 'Secure Supabase access is not configured for this production build.' : liveDataError();
       setDataError(error);
       const locked = Boolean(error);
       document.body.classList.toggle('ecoflow-production-write-locked', locked);
 
       writeButtons().forEach((button) => {
+        if (button.dataset.productionSafetyDisabled === 'permanent') return;
         if (locked) {
           if (!button.dataset.productionSafetyDisabled) {
             button.dataset.productionSafetyDisabled = button.disabled ? 'already' : 'safety';
