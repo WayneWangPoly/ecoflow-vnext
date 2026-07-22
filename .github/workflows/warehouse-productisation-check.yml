@@ -32,6 +32,7 @@ jobs:
         run: |
           set -o pipefail
           npm run audit:warehouse 2>&1 | tee operational-audit.log
+          node scripts/audit-stocktake-go-live-readiness.mjs 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -111,7 +112,8 @@ jobs:
             supabase/migrations/20260711170000_pick_task_ownership.sql \
             supabase/migrations/20260711180000_unknown_barcode_quarantine.sql \
             supabase/migrations/20260711181000_operational_state_auth_hardening.sql \
-            supabase/migrations/20260711182000_multi_run_day_state.sql
+            supabase/migrations/20260711182000_multi_run_day_state.sql \
+            supabase/migrations/20260722194500_stocktake_package_unit_integrity.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
