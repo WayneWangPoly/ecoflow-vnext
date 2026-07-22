@@ -44,6 +44,17 @@ jobs:
           set -o pipefail
           npm run audit:operational-safety 2>&1 | tee operational-safety-audit.log
 
+      - name: Audit warehouse and commercial boundaries
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm run audit:warehouse
+            npm run audit:ordermentum
+            npm run audit:release-gate
+            npm run audit:import-control
+          } 2>&1 | tee operational-cross-domain-audit.log
+
       - name: TypeScript check
         shell: bash
         run: |
@@ -63,6 +74,7 @@ jobs:
           name: operational-safety-diagnostics
           path: |
             operational-safety-audit.log
+            operational-cross-domain-audit.log
             operational-safety-build.log
           if-no-files-found: ignore
           retention-days: 7
