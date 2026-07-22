@@ -17,7 +17,7 @@ const pickBoard = read('src/app/PickBoard.tsx');
 has(migration, "'RECEIVE',v_line.units_received", 'Inventory ledger must retain converted/base units.');
 has(migration, "v_line.qty_packages,'ACTIVE'", 'Warehouse location balance must use package-level quantity.');
 has(migration, 'v_unit_level,v_line.qty_packages', 'Warehouse movement must use the quantity named by its unit level.');
-lacks(migration, "v_unit_level,v_line.units_received", 'Warehouse movement must not relabel base units as carton or sleeve counts.');
+lacks(migration, 'v_unit_level,v_line.units_received', 'Warehouse movement must not relabel base units as carton or sleeve counts.');
 has(migration, 'v_ecoflow_stocktake_uom_integrity', 'Posted receiving UOM integrity must remain auditable.');
 has(migration, "when wm.quantity <> l.qty_packages then 'PACKAGE_QUANTITY_MISMATCH'", 'Historic package mismatch detection must be explicit.');
 
@@ -36,8 +36,11 @@ has(receivingRepo, 'supplierName?: string | null', 'Receiving repository must ac
 has(receivingRepo, 'supplierOrderRef?: string | null', 'Receiving repository must accept a supplier delivery/order reference.');
 has(receivingRepo, 'invoiceRef?: string | null', 'Receiving repository must accept an invoice reference.');
 has(receivingRepo, 'p_supplier_order_ref: input.supplierOrderRef?.trim() || null', 'Receiving metadata must reach the controlled RPC.');
-has(receivingUi, 'Delivery docket / order ref *', 'Daily receiving must request the source delivery document.');
-has(receivingUi, 'Enter the supplier delivery docket/order reference or invoice reference', 'Daily receiving must fail closed without a source reference.');
+has(receivingUi, 'Delivery docket / order ref (optional)', 'Daily receiving must accept overseas or undocumented inbound deliveries.');
+has(receivingUi, 'UNREFERENCED-${date}-${time}', 'A delivery without supplier paperwork must receive a stable EcoFlow audit reference.');
+has(receivingUi, 'resolveDelivery()', 'The source identity must be resolved before the controlled batch RPC.');
+has(receivingUi, 'startStagedReceivingBatch({', 'Unreferenced inbound must still use the controlled receiving batch RPC.');
+lacks(receivingUi, 'before the first scan', 'The first scan must not be blocked merely because supplier paperwork is unavailable.');
 has(receivingUi, 'Complete batch and post stock', 'Daily receiving must retain one explicit posting gate.');
 
 console.log('Stocktake SKU → barcode → package UOM → location → live stock → controlled Pick audit passed.');
