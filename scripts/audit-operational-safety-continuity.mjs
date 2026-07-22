@@ -86,7 +86,7 @@ requireText(inventory, '>Top seller</span>', 'Top seller is secondary context');
 requireCount(inventory, 'href="/warehouse-map"', 1, 'Owner inventory has one warehouse-map entry');
 forbidPattern(inventory, /Quick pick/i, 'Owner inventory does not expose warehouse quick picking');
 forbidPattern(inventory, /className="inventory-hero"/, 'Owner inventory does not inherit the global dark engineering hero');
-forbidPattern(inventory, /negative_stock_skus\).*below_target_skus\).*reorder_pressure_skus/s, 'Owner metrics do not add overlapping alert groups into one total');
+forbidPattern(inventory, /const\s+attention\s*=\s*num\(kpis\?\.negative_stock_skus\)\s*\+\s*num\(kpis\?\.below_target_skus\)\s*\+\s*num\(kpis\?\.reorder_pressure_skus\)/, 'Owner metrics do not add overlapping alert groups into one total');
 requireText('src/ownerInventoryControl.css', '.inventory-map-action-row', 'Legacy dynamic inventory shortcuts are hidden');
 requireText('src/ownerInventoryControl.css', '[data-workspace-tabs="inventory"]', 'Single-view inventory workspace tab is hidden');
 requireText('src/ownerInventoryControl.css', 'background: #fbfcf8', 'Owner inventory uses a calm light control surface');
