@@ -63,16 +63,7 @@ function applyPackagingRules() {
   if (input.disabled !== locked) input.disabled = locked;
   input.setAttribute('aria-disabled', String(locked));
   label.classList.toggle('first-stocktake-units-locked', locked);
-
-  if (cartonOnly) {
-    ensureHelper(label, 'Carton is the lowest countable unit for this SKU. One carton is always recorded as 1.', true);
-  } else if (levelSelect.value === 'SLEEVE') {
-    ensureHelper(label, 'Sleeve is the countable pack inside a carton. One sleeve is always recorded as 1.', true);
-  } else if (levelSelect.value === 'EACH') {
-    ensureHelper(label, 'A single item is always recorded as 1.', true);
-  } else {
-    ensureHelper(label, 'For a carton, enter how many sleeves are inside one carton.', false);
-  }
+  ensureHelper(label, locked ? 'Fixed at 1' : 'Sleeves per carton', locked);
 }
 
 export function FirstStocktakePackagingRulesEnhancer() {
