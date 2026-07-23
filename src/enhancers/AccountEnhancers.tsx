@@ -6,6 +6,7 @@ import { DesktopReceivingHistory } from '../DesktopReceivingHistory';
 import { OperationsClarityEnhancer } from '../OperationsClarityEnhancer';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
+import { PurchaseOrderReconciliation } from '../PurchaseOrderReconciliation';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
 import { DesktopCopyCleanup } from './DesktopCopyCleanup';
@@ -22,6 +23,7 @@ import '../roleAwareNavigation.css';
 import '../commercialSourceBoundary.css';
 import '../industrialDesktopFoundation.css';
 import '../desktopYoungDensity.css';
+import '../purchaseOrderReconciliation.css';
 
 /** Accounts capabilities with one persistent industrial desktop workspace. */
 export default function AccountEnhancers() {
@@ -33,6 +35,7 @@ export default function AccountEnhancers() {
       <IndustrialDesktopWorkbench />
       <IndustrialOperationalClarity />
       <DesktopReceivingHistory />
+      <PurchaseOrderReconciliation />
       <CustomerOrderPodPreviewEnhancer />
       <AuthoritativeDashboard />
       <CommercialSourceBoundary />
