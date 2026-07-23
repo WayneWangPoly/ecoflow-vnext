@@ -1,0 +1,41 @@
+.warehouse-camera-view {
+  aspect-ratio: 16 / 9;
+}
+
+.warehouse-camera-view video {
+  object-fit: contain;
+  background: #000;
+}
+
+.warehouse-camera-reticle {
+  left: 4%;
+  right: 4%;
+  top: 29%;
+  height: 42%;
+}
+
+.warehouse-camera-actions {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+
+.warehouse-camera-actions button:disabled {
+  opacity: .42;
+}
+
+@media (max-width: 480px) {
+  .warehouse-camera-overlay {
+    padding: 8px;
+  }
+
+  .warehouse-camera-sheet {
+    max-height: calc(100vh - 16px);
+  }
+
+  .warehouse-camera-sheet header {
+    padding: 12px;
+  }
+
+  .warehouse-camera-actions {
+    padding: 0 12px 12px;
+  }
+}

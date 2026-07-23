@@ -27,6 +27,7 @@ import '../mobileOverflowSafety.css';
 import '../firstStocktakeAssist.css';
 import '../firstStocktakeGuide.css';
 import '../firstStocktakeCompact.css';
+import '../warehouseCameraPerformance.css';
 
 /** Warehouse phone modules: first stocktake, receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
