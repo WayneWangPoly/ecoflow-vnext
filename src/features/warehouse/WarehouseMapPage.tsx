@@ -7,19 +7,31 @@ import {
 import './WarehouseMapPage.css';
 import './WarehouseMapInteractions.css';
 
-type RackSide = 'left' | 'right' | 'front';
-type RackMode = 'double' | 'single' | 'area';
-type LevelCode = '01' | '02' | '03';
-type HalfCode = 'A' | 'B';
+type RackMode = 'grid' | 'shelf' | 'area';
+type GridLevelCode = '01' | '02' | '03';
 type StockHealth = 'full' | 'normal' | 'low' | 'critical' | 'empty';
 type LoadState = 'loading' | 'live' | 'empty' | 'offline';
+
+type ShelfSegment = {
+  code: string;
+  category: string;
+};
+
+type ShelfLevel = {
+  code: string;
+  label: string;
+  category: string;
+  segments?: ShelfSegment[];
+};
 
 type RackDefinition = {
   id: string;
   title: string;
   mode: RackMode;
   bins?: number;
-  categories?: string[];
+  category?: string;
+  floorLabel: string;
+  shelfLevels?: ShelfLevel[];
   map: { x: number; y: number; w: number; h: number };
 };
 
@@ -45,54 +57,128 @@ type LocationSlot = {
   key: string;
   rackId: string;
   rackTitle: string;
-  side: RackSide;
   code: string;
   displayLevel: string;
   bin?: string;
-  level?: LevelCode;
-  half?: HalfCode;
+  level?: string;
+  segment?: string;
   category?: string;
   confidence: 'empty' | 'live';
   items: StockItem[];
 };
 
+const GRID_LEVELS: Array<{ code: GridLevelCode; label: string }> = [
+  { code: '03', label: 'Top' },
+  { code: '02', label: 'Middle' },
+  { code: '01', label: 'Bottom' },
+];
+
 const RACKS: RackDefinition[] = [
-  { id: 'A4', title: 'A4', mode: 'double', bins: 4, categories: [], map: { x: 27, y: 7, w: 10.5, h: 52 } },
-  { id: 'A3', title: 'A3', mode: 'double', bins: 4, categories: ['Single Wall Cup (ART)', 'SO5 Bags / Paper Bags'], map: { x: 47, y: 7, w: 10.5, h: 52 } },
-  { id: 'A2', title: 'A2', mode: 'double', bins: 4, categories: ['Single Wall Cup (White)', 'Salad / Soup Bowl'], map: { x: 56, y: 7, w: 10.5, h: 52 } },
-  { id: 'A1', title: 'A1', mode: 'double', bins: 4, categories: [], map: { x: 73, y: 7, w: 10.5, h: 52 } },
-  { id: 'C2', title: 'C2', mode: 'double', bins: 4, categories: [], map: { x: 80, y: 7, w: 9.5, h: 52 } },
-  { id: 'C1', title: 'C1', mode: 'single', bins: 4, categories: [], map: { x: 93, y: 7, w: 5.5, h: 52 } },
-  { id: 'B3', title: 'B3', mode: 'single', categories: ['Top: Cutlery', 'Middle: Grease Paperproof', 'Bottom: Glove'], map: { x: 69, y: 66, w: 29.5, h: 7.5 } },
-  { id: 'TEMP', title: 'TEMP', mode: 'area', categories: ['Temporary holding area'], map: { x: 4, y: 68, w: 24, h: 23 } }
+  { id: 'C1', title: 'C1', mode: 'grid', bins: 6, floorLabel: 'wall rack', map: { x: 91.5, y: 7, w: 5.5, h: 49 } },
+  { id: 'C2', title: 'C2', mode: 'grid', bins: 6, category: 'Napkins / Snack Box', floorLabel: 'right face', map: { x: 70.5, y: 7, w: 5.3, h: 49 } },
+  { id: 'A1', title: 'A1', mode: 'grid', bins: 6, category: 'Double Wall Cups', floorLabel: 'left face', map: { x: 65, y: 7, w: 5.3, h: 49 } },
+  { id: 'A2', title: 'A2', mode: 'grid', bins: 6, category: 'Single Wall Cups / Salad & Soup Bowls', floorLabel: 'right face', map: { x: 53.5, y: 7, w: 5.3, h: 49 } },
+  { id: 'A3', title: 'A3', mode: 'grid', bins: 6, category: 'SOS Bags / Paper Bags / Single Wall Cups', floorLabel: 'left face', map: { x: 48, y: 7, w: 5.3, h: 49 } },
+  { id: 'A4', title: 'A4', mode: 'grid', bins: 6, category: 'Cold Cups & Lids', floorLabel: 'right face', map: { x: 36.5, y: 7, w: 5.3, h: 49 } },
+  { id: 'A5', title: 'A5', mode: 'grid', bins: 6, category: 'PLA Coffee Lids', floorLabel: 'left face', map: { x: 31, y: 7, w: 5.3, h: 49 } },
+  { id: 'A6', title: 'A6', mode: 'grid', bins: 6, category: 'Single Wall Cups (Black & Kraft)', floorLabel: 'right face only', map: { x: 18, y: 7, w: 5.5, h: 49 } },
+  {
+    id: 'D1', title: 'D1', mode: 'shelf', floorLabel: 'TEMP north', map: { x: 22.6, y: 57.5, w: 5.4, h: 7 },
+    shelfLevels: [
+      { code: '02', label: 'Upper', category: 'Egg Trays 2 & 4' },
+      { code: '01', label: 'Lower', category: 'Open Trays' },
+    ],
+  },
+  {
+    id: 'D2', title: 'D2', mode: 'shelf', floorLabel: 'TEMP north', map: { x: 16.4, y: 57.5, w: 5.4, h: 7 },
+    shelfLevels: [
+      { code: '02', label: 'Upper', category: 'Double Rolls / Star Seals / Single Bags' },
+      { code: '01', label: 'Lower', category: 'Double Rolls / Star Seals / Single Bags' },
+    ],
+  },
+  {
+    id: 'D3', title: 'D3', mode: 'shelf', floorLabel: 'TEMP north', map: { x: 10.2, y: 57.5, w: 5.4, h: 7 },
+    shelfLevels: [
+      { code: '02', label: 'Upper', category: 'Thermal Rolls' },
+      { code: '01', label: 'Lower', category: 'Thermal Rolls' },
+    ],
+  },
+  {
+    id: 'D4', title: 'D4', mode: 'shelf', floorLabel: 'TEMP north', map: { x: 4, y: 57.5, w: 5.4, h: 7 },
+    shelfLevels: [
+      { code: '02', label: 'Upper', category: 'Others' },
+      { code: '01', label: 'Lower', category: 'Others' },
+    ],
+  },
+  {
+    id: 'B1', title: 'B1', mode: 'shelf', floorLabel: 'TEMP west', map: { x: 4, y: 67, w: 5, h: 16.5 },
+    shelfLevels: [
+      { code: '04', label: 'Top', category: 'Toilet / Jumbo Rolls' },
+      { code: '03', label: 'Second', category: 'Hand Towel' },
+      {
+        code: '02', label: 'Third', category: 'Split shelf', segments: [
+          { code: 'A', category: 'Slim Hand Towel' },
+          { code: 'B', category: 'Lemon Fresh Surface Sanitiser' },
+          { code: 'C', category: 'Chemicals' },
+        ],
+      },
+      {
+        code: '01', label: 'Bottom', category: 'Split shelf', segments: [
+          { code: 'A', category: 'Chemicals' },
+          { code: 'B', category: 'Dishwashing Liquid' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'B2', title: 'B2', mode: 'shelf', floorLabel: 'TEMP south', map: { x: 9.8, y: 84.3, w: 18.2, h: 5.8 },
+    shelfLevels: [
+      { code: '03', label: 'Top', category: 'Clam Shell' },
+      { code: '02', label: 'Middle', category: 'Aluminium Foil / Cling Wrap / Baking Paper' },
+      {
+        code: '01', label: 'Bottom', category: 'Split shelf', segments: [
+          { code: 'A', category: 'Bin Bags' },
+          { code: 'B', category: 'Wipes' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'B3', title: 'B3', mode: 'shelf', floorLabel: 'office north', map: { x: 61, y: 65, w: 11.5, h: 7.4 },
+    shelfLevels: [
+      { code: '04', label: 'Top', category: 'Cutlery' },
+      { code: '03', label: 'Second', category: 'Grease' },
+      { code: '02', label: 'Third', category: 'Paperproof' },
+      { code: '01', label: 'Bottom', category: 'Gloves' },
+    ],
+  },
+  {
+    id: 'B4', title: 'B4', mode: 'shelf', floorLabel: 'office north', map: { x: 73.5, y: 65, w: 11.5, h: 7.4 },
+    shelfLevels: [
+      { code: '04', label: 'Top', category: 'Buffer Area' },
+      { code: '03', label: 'Second', category: 'Sauce Containers' },
+      { code: '02', label: 'Third', category: 'Paper Bags' },
+      { code: '01', label: 'Bottom', category: 'Straws' },
+    ],
+  },
+  {
+    id: 'B5', title: 'B5', mode: 'shelf', floorLabel: 'office north', map: { x: 86, y: 65, w: 11.5, h: 7.4 },
+    shelfLevels: [
+      { code: '02', label: 'Upper', category: 'Buffer Area' },
+      { code: '01', label: 'Lower', category: 'Buffer Area' },
+    ],
+  },
+  { id: 'TEMP', title: 'TEMP', mode: 'area', category: 'Temporary holding area', floorLabel: 'holding', map: { x: 9.8, y: 67, w: 18.2, h: 16.5 } },
 ];
 
 const MAP_ONLY_ELEMENTS: MapOnlyElement[] = [
   { id: 'office', title: 'office', className: 'office', map: { x: 61, y: 73.5, w: 37.5, h: 17.5 } },
-  { id: 'side-door', title: 'Side rollerdoor', className: 'door', map: { x: 5, y: 88, w: 26, h: 6 } },
-  { id: 'main-door', title: 'Rollerdoor', className: 'door', map: { x: 33, y: 88, w: 28, h: 6 } }
+  { id: 'side-door', title: 'Side rollerdoor', className: 'door', map: { x: 4, y: 92, w: 25, h: 5 } },
+  { id: 'main-door', title: 'Rollerdoor', className: 'door', map: { x: 33, y: 92, w: 28, h: 5 } },
 ];
 
-const SIDE_LABEL: Record<RackSide, string> = {
-  left: 'Left view',
-  right: 'Right view',
-  front: 'Front view'
-};
-
-const LEVEL_LABEL: Record<LevelCode, string> = {
-  '01': 'Bottom',
-  '02': 'Middle',
-  '03': 'Top'
-};
-
-const B3_LEVEL_LABEL: Record<LevelCode, string> = {
-  '01': 'Bottom · Glove',
-  '02': 'Middle · Grease Paperproof',
-  '03': 'Top · Cutlery'
-};
-
-function slotKey(rackId: string, side: RackSide, bin?: string, level?: string, half?: string) {
-  return [rackId, side, bin ?? '', level ?? '', half ?? ''].join(':');
+function slotKey(rackId: string, bin?: string, level?: string, segment?: string) {
+  return [rackId, bin ?? '', level ?? '', segment ?? ''].join(':');
 }
 
 function numberValue(value: unknown, fallback = 0) {
@@ -100,9 +186,12 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function locationCodeFor(rack: RackDefinition, side: RackSide, bin: string, level: LevelCode, half: HalfCode) {
-  if (rack.mode === 'double') return `${rack.id}-${side === 'left' ? 'L' : 'R'}-${bin}-${level}${half}`;
-  return `${rack.id}-${bin}-${level}${half}`;
+function gridLocationCode(rackId: string, bin: string, level: GridLevelCode, half: 'A' | 'B') {
+  return `${rackId}-${bin}-${level}${half}`;
+}
+
+function shelfLocationCode(rackId: string, level: ShelfLevel, segment?: ShelfSegment) {
+  return `${rackId}-${level.code}${segment?.code ?? ''}`;
 }
 
 function inventoryUrlForSku(sku: string) {
@@ -112,48 +201,51 @@ function inventoryUrlForSku(sku: string) {
 function scaffoldLocations() {
   const rows: LocationSlot[] = [];
   RACKS.forEach((rack) => {
-    if (rack.id === 'TEMP') {
-      rows.push({ key: slotKey('TEMP', 'front'), rackId: rack.id, rackTitle: rack.title, side: 'front', code: 'TEMP', displayLevel: 'Temporary holding area', confidence: 'empty', items: [] });
+    if (rack.mode === 'area') {
+      rows.push({
+        key: slotKey(rack.id), rackId: rack.id, rackTitle: rack.title, code: rack.id,
+        displayLevel: rack.category || rack.title, category: rack.category, confidence: 'empty', items: [],
+      });
       return;
     }
 
-    if (rack.id === 'B3') {
-      (['03', '02', '01'] as LevelCode[]).forEach((level) => {
-        rows.push({
-          key: slotKey(rack.id, 'front', undefined, level),
-          rackId: rack.id,
-          rackTitle: rack.title,
-          side: 'front',
-          code: `${rack.id}-${level}`,
-          level,
-          displayLevel: B3_LEVEL_LABEL[level],
-          category: B3_LEVEL_LABEL[level].split('·')[1]?.trim(),
-          confidence: 'empty',
-          items: []
+    if (rack.mode === 'shelf') {
+      (rack.shelfLevels ?? []).forEach((level) => {
+        const segments = level.segments?.length ? level.segments : [undefined];
+        segments.forEach((segment) => {
+          const code = shelfLocationCode(rack.id, level, segment);
+          rows.push({
+            key: slotKey(rack.id, undefined, level.code, segment?.code),
+            rackId: rack.id,
+            rackTitle: rack.title,
+            code,
+            level: level.code,
+            segment: segment?.code,
+            displayLevel: `${level.label}${segment ? ` · ${segment.category}` : ''}`,
+            category: segment?.category || level.category,
+            confidence: 'empty',
+            items: [],
+          });
         });
       });
       return;
     }
 
-    const sides: RackSide[] = rack.mode === 'double' ? ['left', 'right'] : ['front'];
-    sides.forEach((side) => {
-      Array.from({ length: rack.bins ?? 4 }, (_, index) => String(index + 1).padStart(2, '0')).forEach((bin) => {
-        (['03', '02', '01'] as LevelCode[]).forEach((level) => {
-          (['A', 'B'] as HalfCode[]).forEach((half) => {
-            rows.push({
-              key: slotKey(rack.id, side, bin, level, half),
-              rackId: rack.id,
-              rackTitle: rack.title,
-              side,
-              code: locationCodeFor(rack, side, bin, level, half),
-              bin,
-              level,
-              half,
-              displayLevel: LEVEL_LABEL[level],
-              category: rack.categories?.join(' / '),
-              confidence: 'empty',
-              items: []
-            });
+    Array.from({ length: rack.bins ?? 6 }, (_, index) => String(index + 1).padStart(2, '0')).forEach((bin) => {
+      GRID_LEVELS.forEach((level) => {
+        (['A', 'B'] as const).forEach((half) => {
+          rows.push({
+            key: slotKey(rack.id, bin, level.code, half),
+            rackId: rack.id,
+            rackTitle: rack.title,
+            code: gridLocationCode(rack.id, bin, level.code, half),
+            bin,
+            level: level.code,
+            segment: half,
+            displayLevel: level.label,
+            category: rack.category,
+            confidence: 'empty',
+            items: [],
           });
         });
       });
@@ -163,52 +255,57 @@ function scaffoldLocations() {
 }
 
 function rowKey(row: WarehouseLocationItemRow) {
-  if (row.rack_id === 'TEMP') return slotKey('TEMP', 'front');
-  if (row.rack_id === 'B3') return slotKey('B3', 'front', undefined, row.level_code ?? undefined);
-  return slotKey(row.rack_id, row.side, row.bin_code ?? undefined, row.level_code ?? undefined, row.half_code ?? undefined);
+  const rack = RACKS.find((item) => item.id === row.rack_id);
+  if (!rack) return '';
+  if (rack.mode === 'area') return slotKey(rack.id);
+  if (rack.mode === 'shelf') return slotKey(rack.id, undefined, row.level_code ?? undefined, row.half_code ?? undefined);
+  return slotKey(rack.id, row.bin_code ?? undefined, row.level_code ?? undefined, row.half_code ?? undefined);
 }
 
 function buildLocations(liveRows: WarehouseLocationItemRow[]) {
   const scaffold = scaffoldLocations();
   const byKey = new Map(scaffold.map((slot) => [slot.key, { ...slot, items: [...slot.items] }]));
 
-  liveRows.forEach((row) => {
-    const key = rowKey(row);
-    const existing = byKey.get(key) ?? {
-      key,
-      rackId: row.rack_id,
-      rackTitle: row.rack_title,
-      side: row.side,
-      code: row.location_code,
-      bin: row.bin_code ?? undefined,
-      level: row.level_code as LevelCode | undefined,
-      half: row.half_code as HalfCode | undefined,
-      displayLevel: row.display_level,
-      category: row.location_category ?? undefined,
-      confidence: 'empty' as const,
-      items: []
-    };
+  liveRows
+    .filter((row) => row.location_status !== 'INACTIVE' && RACKS.some((rack) => rack.id === row.rack_id))
+    .forEach((row) => {
+      const key = rowKey(row);
+      if (!key) return;
+      const existing = byKey.get(key) ?? {
+        key,
+        rackId: row.rack_id,
+        rackTitle: row.rack_title,
+        code: row.location_code,
+        bin: row.bin_code ?? undefined,
+        level: row.level_code ?? undefined,
+        segment: row.half_code ?? undefined,
+        displayLevel: row.display_level,
+        category: row.location_category ?? undefined,
+        confidence: 'empty' as const,
+        items: [],
+      };
 
-    existing.code = row.location_code;
-    existing.displayLevel = row.display_level || existing.displayLevel;
-    existing.category = row.location_category ?? existing.category;
+      existing.code = row.location_code;
+      existing.displayLevel = row.display_level || existing.displayLevel;
+      existing.category = row.location_category ?? existing.category;
 
-    if (row.item_id && row.sku) {
-      existing.confidence = 'live';
-      existing.items.push({
-        sku: row.sku,
-        name: row.product_name || row.sku,
-        barcode: row.source_barcode || '',
-        qty: numberValue(row.quantity, 0),
-        totalQty: numberValue(row.sku_total_quantity, numberValue(row.quantity, 0)),
-        unitLevel: row.unit_level || 'carton',
-        category: row.location_category || '',
-        recent: row.last_movement_at ? `Last movement ${new Date(row.last_movement_at).toLocaleString('en-AU')}` : row.last_note || 'Live warehouse stock'
-      });
-    }
-
-    byKey.set(key, existing);
-  });
+      if (row.item_id && row.sku) {
+        existing.confidence = 'live';
+        existing.items.push({
+          sku: row.sku,
+          name: row.product_name || row.sku,
+          barcode: row.source_barcode || '',
+          qty: numberValue(row.quantity, 0),
+          totalQty: numberValue(row.sku_total_quantity, numberValue(row.quantity, 0)),
+          unitLevel: row.unit_level || 'carton',
+          category: row.location_category || '',
+          recent: row.last_movement_at
+            ? `Last movement ${new Date(row.last_movement_at).toLocaleString('en-AU')}`
+            : row.last_note || 'Live warehouse stock',
+        });
+      }
+      byKey.set(key, existing);
+    });
 
   return Array.from(byKey.values());
 }
@@ -234,7 +331,7 @@ function locationText(slot: LocationSlot) {
 }
 
 function initialLocationKey() {
-  return slotKey('A2', 'left', '01', '02', 'A');
+  return slotKey('C1', '01', '03', 'A');
 }
 
 export function WarehouseMapPage() {
@@ -242,23 +339,19 @@ export function WarehouseMapPage() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [loadError, setLoadError] = useState('');
   const locations = useMemo(() => buildLocations(liveRows), [liveRows]);
-  const [activeRackId, setActiveRackId] = useState('A2');
-  const [activeSide, setActiveSide] = useState<RackSide>('left');
+  const [activeRackId, setActiveRackId] = useState('C1');
   const [selectedKey, setSelectedKey] = useState(initialLocationKey());
   const [query, setQuery] = useState('');
   const [tapFeedback, setTapFeedback] = useState('');
   const [initialTargetApplied, setInitialTargetApplied] = useState(false);
 
   const activeRack = RACKS.find((rack) => rack.id === activeRackId) ?? RACKS[0];
-  const detailSide: RackSide = activeRack.mode === 'double' ? activeSide : 'front';
   const selectedLocation = locations.find((slot) => slot.key === selectedKey) ?? locations[0];
   const skuTotals = useMemo(() => {
     const totals: Record<string, number> = {};
-    locations.forEach((slot) => {
-      slot.items.forEach((item) => {
-        totals[item.sku] = Math.max(totals[item.sku] ?? 0, item.totalQty || item.qty);
-      });
-    });
+    locations.forEach((slot) => slot.items.forEach((item) => {
+      totals[item.sku] = Math.max(totals[item.sku] ?? 0, item.totalQty || item.qty);
+    }));
     return totals;
   }, [locations]);
 
@@ -274,7 +367,7 @@ export function WarehouseMapPage() {
     try {
       const rows = await loadWarehouseLocationItems();
       setLiveRows(rows);
-      const liveItemCount = rows.filter((row) => row.item_id).length;
+      const liveItemCount = rows.filter((row) => row.item_id && row.location_status !== 'INACTIVE').length;
       setLoadState(liveItemCount ? 'live' : 'empty');
     } catch (error) {
       setLiveRows([]);
@@ -283,9 +376,7 @@ export function WarehouseMapPage() {
     }
   }
 
-  useEffect(() => {
-    void reloadWarehouseData();
-  }, []);
+  useEffect(() => { void reloadWarehouseData(); }, []);
 
   useEffect(() => {
     if (query.trim().length < 2 || !searchResults[0]) return;
@@ -313,141 +404,137 @@ export function WarehouseMapPage() {
     window.setTimeout(() => setTapFeedback(''), 900);
   }
 
-  function openRack(rack: RackDefinition, side: RackSide = 'front') {
-    const nextSide = rack.mode === 'double' ? side : 'front';
+  function openRack(rack: RackDefinition) {
     setActiveRackId(rack.id);
-    setActiveSide(nextSide);
-    flash(`${rack.id} ${SIDE_LABEL[nextSide]}`);
-    const firstSlot = locations.find((slot) => slot.rackId === rack.id && slot.side === nextSide);
-    if (firstSlot) {
-      setSelectedKey(firstSlot.key);
-    }
+    flash(`${rack.id} · ${rack.floorLabel}`);
+    const firstSlot = locations.find((slot) => slot.rackId === rack.id);
+    if (firstSlot) setSelectedKey(firstSlot.key);
   }
 
   function openLocation(slot: LocationSlot) {
     const rack = RACKS.find((item) => item.id === slot.rackId);
     if (!rack) return;
     setActiveRackId(slot.rackId);
-    setActiveSide(rack.mode === 'double' ? slot.side : 'front');
     setSelectedKey(slot.key);
     flash(`Selected ${slot.code}`);
   }
 
-  const liveItemCount = liveRows.filter((row) => row.item_id).length;
+  const liveItemCount = liveRows.filter((row) => row.item_id && row.location_status !== 'INACTIVE').length;
 
   return (
     <main className="warehouse-map-page">
       {tapFeedback ? <div className="tap-feedback" aria-live="polite">{tapFeedback}</div> : null}
       <header className="warehouse-map-header compact">
-        <div>
-          <span className="warehouse-map-eyebrow">ECOFLOW WAREHOUSE MAP</span>
-          <h1>Warehouse map</h1>
-        </div>
+        <div><span className="warehouse-map-eyebrow">ECOFLOW WAREHOUSE MAP</span><h1>Warehouse map</h1></div>
         <div className="warehouse-header-actions">
-          <span className={`warehouse-live-chip state-${loadState}`}>{loadState === 'live' ? `${liveItemCount} live items` : loadState === 'empty' ? 'Live locations · empty stock' : loadState === 'loading' ? 'Loading live stock' : 'Schema pending'}</span>
+          <span className={`warehouse-live-chip state-${loadState}`}>{loadState === 'live' ? `${liveItemCount} live items` : loadState === 'empty' ? 'Physical layout ready · no live stock' : loadState === 'loading' ? 'Loading live stock' : 'Schema pending'}</span>
           <button className="warehouse-map-back tactile" type="button" onClick={() => void reloadWarehouseData()}>Reload</button>
           <a className="warehouse-map-back tactile" href="/?tab=inventory">Inventory</a>
           <a className="warehouse-map-back tactile" href="/">Back</a>
         </div>
       </header>
 
-      {loadError ? <div className="warehouse-map-card warehouse-error-strip">Warehouse data not available yet. Apply the warehouse location migration in Supabase. Detail: {loadError}</div> : null}
+      {loadError ? <div className="warehouse-map-card warehouse-error-strip">Warehouse data is unavailable. Detail: {loadError}</div> : null}
 
       <section className="warehouse-map-grid">
         <section className="warehouse-map-card warehouse-map-overview-card">
-          <div className="warehouse-map-card-head compact-head">
-            <h2>Overview</h2>
-            <strong>{activeRack.title} · {SIDE_LABEL[detailSide]}</strong>
-          </div>
+          <div className="warehouse-map-card-head compact-head"><h2>Overview</h2><strong>{activeRack.title} · {activeRack.floorLabel}</strong></div>
           <div className="warehouse-search-row">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search SKU / barcode / location" />
             <button className="tactile" type="button" onClick={() => searchResults[0] && openLocation(searchResults[0])}>Find</button>
           </div>
-          <div className="warehouse-floorplan" aria-label="Warehouse live floorplan">
+          <div className="warehouse-floorplan" aria-label="Warehouse physical floorplan">
             {RACKS.map((rack) => {
               const active = rack.id === activeRackId;
               const style = { left: `${rack.map.x}%`, top: `${rack.map.y}%`, width: `${rack.map.w}%`, height: `${rack.map.h}%` };
-              if (rack.mode === 'double') {
-                return (
-                  <div key={rack.id} className={`floor-rack floor-rack-double ${active ? 'active' : ''}`} style={style}>
-                    <button className="tactile" type="button" onClick={() => openRack(rack, 'left')} aria-label={`${rack.id} left view`}><span>{rack.id}</span><small>left</small></button>
-                    <button className="tactile" type="button" onClick={() => openRack(rack, 'right')} aria-label={`${rack.id} right view`}><span>{rack.id}</span><small>right</small></button>
-                  </div>
-                );
-              }
               return (
-                <button key={rack.id} type="button" className={`floor-rack floor-rack-${rack.mode} tactile ${active ? 'active' : ''}`} style={style} onClick={() => openRack(rack)}>
-                  <span>{rack.id}</span>
-                  <small>{rack.title === 'TEMP' ? 'TEMP' : 'front'}</small>
+                <button
+                  key={rack.id}
+                  type="button"
+                  className={`floor-rack floor-rack-${rack.mode === 'area' ? 'area' : 'single'} tactile ${active ? 'active' : ''}`}
+                  style={style}
+                  data-rack-code={rack.id}
+                  data-layout-key={`physical-v2:rack-${rack.id.toLowerCase()}`}
+                  onClick={() => openRack(rack)}
+                >
+                  <span data-rack-code={rack.id}>{rack.id}</span><small>{rack.floorLabel}</small>
                 </button>
               );
             })}
             {MAP_ONLY_ELEMENTS.map((element) => (
-              <div key={element.id} className={`floor-static floor-static-${element.className}`} style={{ left: `${element.map.x}%`, top: `${element.map.y}%`, width: `${element.map.w}%`, height: `${element.map.h}%` }}>{element.title}</div>
+              <div
+                key={element.id}
+                className={`floor-static floor-static-${element.className}`}
+                data-layout-key={`physical-v2:static-${element.id}`}
+                style={{ left: `${element.map.x}%`, top: `${element.map.y}%`, width: `${element.map.w}%`, height: `${element.map.h}%` }}
+              >{element.title}</div>
             ))}
           </div>
           {searchResults.length ? (
             <div className="warehouse-search-results">
               {searchResults.slice(0, 8).map((slot) => (
                 <button key={slot.key} type="button" className={`tactile ${slot.key === selectedKey ? 'active' : ''}`} onClick={() => openLocation(slot)}>
-                  <strong>{slot.code}</strong>
-                  <span>{slot.rackTitle} · {SIDE_LABEL[slot.side]}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ' · empty'}</span>
+                  <strong>{slot.code}</strong><span>{slot.rackTitle} · {slot.displayLevel}{slot.items[0] ? ` · ${slot.items.map((item) => item.sku).join(' / ')}` : ' · empty'}</span>
                 </button>
               ))}
             </div>
           ) : null}
         </section>
 
-        <section className="warehouse-map-card warehouse-rack-card">
-          <div className="warehouse-map-card-head compact-head">
-            <h2>{activeRack.title}</h2>
-            <div className="rack-side-buttons">
-              {activeRack.mode === 'double' ? (
-                <>
-                  <button type="button" className={`tactile ${detailSide === 'left' ? 'active' : ''}`} onClick={() => openRack(activeRack, 'left')}>Left</button>
-                  <button type="button" className={`tactile ${detailSide === 'right' ? 'active' : ''}`} onClick={() => openRack(activeRack, 'right')}>Right</button>
-                </>
-              ) : <span>{SIDE_LABEL[detailSide]}</span>}
-            </div>
-          </div>
-          {activeRack.categories?.length ? <div className="rack-category-note">{activeRack.categories.join(' · ')}</div> : null}
-          <RackView locations={locations.filter((slot) => slot.rackId === activeRack.id && slot.side === detailSide)} activeRack={activeRack} selectedKey={selectedKey} skuTotals={skuTotals} onSelect={openLocation} />
+        <section className="warehouse-map-card warehouse-rack-card" data-rack-id={activeRack.id}>
+          <div className="warehouse-map-card-head compact-head"><h2 data-rack-code={activeRack.id}>{activeRack.title}</h2><div className="rack-side-buttons"><span>{activeRack.floorLabel}</span></div></div>
+          {activeRack.category ? <div className="rack-category-note">{activeRack.category}</div> : null}
+          <RackView locations={locations.filter((slot) => slot.rackId === activeRack.id)} activeRack={activeRack} selectedKey={selectedKey} skuTotals={skuTotals} onSelect={openLocation} />
         </section>
       </section>
 
       <section className="warehouse-map-grid warehouse-bottom-grid">
         <section className="warehouse-map-card">
-          <div className="warehouse-map-card-head compact-head"><h2>Location</h2><span>{selectedLocation.confidence}</span></div>
-          <div className="location-detail-block">
-            <strong>{selectedLocation.code}</strong>
-            <span>{selectedLocation.rackTitle} · {SIDE_LABEL[selectedLocation.side]} · {selectedLocation.displayLevel}</span>
-            {selectedLocation.items.length ? selectedLocation.items.map((item) => (
-              <article key={`${selectedLocation.key}-${item.sku}-${item.unitLevel}`} className="location-item-card">
-                <div><a className="location-sku-link" href={inventoryUrlForSku(item.sku)}><strong>{item.sku}</strong></a><span>{item.name}</span></div>
-                <div><span>Here</span><b>{item.qty}</b></div>
-                <div><span>Total</span><b>{skuTotals[item.sku] ?? item.totalQty ?? item.qty}</b></div>
-                <div><span>Barcode</span><b>{item.barcode || '—'}</b></div>
-                <small>{item.recent}</small>
-              </article>
-            )) : <p className="empty-location-note">Empty slot · available for controlled receiving or putaway.</p>}
-          </div>
+          <div className="warehouse-map-card-head compact-head"><h2>Location</h2><span>{selectedLocation?.confidence || 'empty'}</span></div>
+          {selectedLocation ? (
+            <div className="location-detail-block">
+              <strong>{selectedLocation.code}</strong>
+              <span>{selectedLocation.rackTitle} · {selectedLocation.displayLevel}</span>
+              {selectedLocation.items.length ? selectedLocation.items.map((item) => (
+                <article key={`${selectedLocation.key}-${item.sku}-${item.unitLevel}`} className="location-item-card">
+                  <div><a className="location-sku-link" href={inventoryUrlForSku(item.sku)}><strong>{item.sku}</strong></a><span>{item.name}</span></div>
+                  <div><span>Here</span><b>{item.qty}</b></div>
+                  <div><span>Total</span><b>{skuTotals[item.sku] ?? item.totalQty ?? item.qty}</b></div>
+                  <div><span>Barcode</span><b>{item.barcode || '—'}</b></div>
+                  <small>{item.recent}</small>
+                </article>
+              )) : <p className="empty-location-note">Empty slot · available for controlled stocktake or receiving.</p>}
+            </div>
+          ) : <p className="empty-location-note">Choose a rack location.</p>}
         </section>
-
       </section>
     </main>
   );
 }
 
 function RackView({ locations, activeRack, selectedKey, skuTotals, onSelect }: { locations: LocationSlot[]; activeRack: RackDefinition; selectedKey: string; skuTotals: Record<string, number>; onSelect: (slot: LocationSlot) => void }) {
-  if (activeRack.id === 'TEMP') {
-    const temp = locations[0];
-    return <div className="temp-location-view">{temp ? <LocationCell slot={temp} selected={temp.key === selectedKey} skuTotals={skuTotals} onSelect={onSelect} large /> : null}</div>;
+  if (activeRack.mode === 'area') {
+    const area = locations[0];
+    return <div className="temp-location-view">{area ? <LocationCell slot={area} selected={area.key === selectedKey} skuTotals={skuTotals} onSelect={onSelect} large /> : null}</div>;
   }
 
-  if (activeRack.id === 'B3') {
+  if (activeRack.mode === 'shelf') {
     return (
-      <div className="b3-shelf-stack">
-        {locations.map((slot) => <LocationCell key={slot.key} slot={slot} selected={slot.key === selectedKey} skuTotals={skuTotals} onSelect={onSelect} large />)}
+      <div className="warehouse-shelf-stack">
+        {(activeRack.shelfLevels ?? []).map((level) => {
+          const segments = level.segments?.length ? level.segments : [undefined];
+          return (
+            <section className="warehouse-shelf-level" key={`${activeRack.id}-${level.code}`}>
+              <header><strong>{level.label}</strong><span>{level.category}</span></header>
+              <div className="warehouse-shelf-segments" style={{ '--segment-count': segments.length } as CSSProperties}>
+                {segments.map((segment) => {
+                  const slot = locations.find((item) => item.level === level.code && item.segment === segment?.code);
+                  return slot ? <LocationCell key={slot.key} slot={slot} selected={slot.key === selectedKey} skuTotals={skuTotals} onSelect={onSelect} large /> : null;
+                })}
+              </div>
+            </section>
+          );
+        })}
       </div>
     );
   }
@@ -460,12 +547,12 @@ function RackView({ locations, activeRack, selectedKey, skuTotals, onSelect }: {
         return (
           <div className="rack-bin-column" key={bin}>
             <h3>{activeRack.id}-{bin}</h3>
-            {(['03', '02', '01'] as LevelCode[]).map((level) => (
-              <div key={`${bin}-${level}`} className="rack-level-row">
-                <span className="rack-level-label">{LEVEL_LABEL[level]}</span>
+            {GRID_LEVELS.map((level) => (
+              <div key={`${bin}-${level.code}`} className="rack-level-row">
+                <span className="rack-level-label">{level.label}</span>
                 <div className="rack-half-row">
-                  {(['A', 'B'] as HalfCode[]).map((half) => {
-                    const slot = binSlots.find((item) => item.level === level && item.half === half);
+                  {(['A', 'B'] as const).map((half) => {
+                    const slot = binSlots.find((item) => item.level === level.code && item.segment === half);
                     return slot ? <LocationCell key={slot.key} slot={slot} selected={slot.key === selectedKey} skuTotals={skuTotals} onSelect={onSelect} /> : null;
                   })}
                 </div>
@@ -486,9 +573,11 @@ function LocationCell({ slot, selected, skuTotals, onSelect, large }: { slot: Lo
   return (
     <button type="button" className={`location-cell tactile ${large ? 'large' : ''} ${selected ? 'selected' : ''} stock-${health}`} style={style} onClick={() => onSelect(slot)}>
       <span className="location-code">{slot.code}</span>
+      {slot.category ? <span className="slot-category-label">{slot.category}</span> : null}
       {slot.items.length ? (
         <span className={`slot-item-wrap ${slot.items.length > 1 ? 'split' : ''}`}>
-          {slot.items.slice(0, 2).map((item) => <span key={`${item.sku}-${item.unitLevel}`} className="slot-mini"><b>{item.sku}</b><small>{item.qty} here · {skuTotals[item.sku] ?? item.totalQty ?? item.qty} total</small></span>)}
+          {slot.items.slice(0, 3).map((item) => <span key={`${item.sku}-${item.unitLevel}`} className="slot-mini"><b>{item.sku}</b><small>{item.qty} here · {skuTotals[item.sku] ?? item.totalQty ?? item.qty} total</small></span>)}
+          {slot.items.length > 3 ? <span className="slot-mini"><b>+{slot.items.length - 3} more</b></span> : null}
         </span>
       ) : <span className="slot-empty">+</span>}
       <span className="stock-waterline" aria-hidden="true" />
