@@ -12,6 +12,7 @@ import { OwnerDeliveryGovernance } from '../OwnerDeliveryGovernance';
 import { OwnerDriverTrackingMap } from '../OwnerDriverTrackingMap';
 import { OwnerOrderIntelligence } from '../OwnerOrderIntelligence';
 import { OwnerStoreIntelligence } from '../OwnerStoreIntelligence';
+import { PurchaseOrderReconciliation } from '../PurchaseOrderReconciliation';
 import { ReleaseOperationsEnhancer } from '../ReleaseOperationsEnhancer';
 import { RoleAwareDesktopNavigation } from '../RoleAwareDesktopNavigation';
 import { CustomerOrderPodPreviewEnhancer } from './CustomerOrderPodPreviewEnhancer';
@@ -34,6 +35,7 @@ import '../deliveryOperations.css';
 import '../commercialSourceBoundary.css';
 import '../industrialDesktopFoundation.css';
 import '../desktopYoungDensity.css';
+import '../purchaseOrderReconciliation.css';
 
 /** Owner/Admin capabilities with one persistent industrial desktop workspace. */
 export default function OwnerEnhancers() {
@@ -46,6 +48,7 @@ export default function OwnerEnhancers() {
       <IndustrialOperationalClarity />
       <ReleaseOperationsEnhancer />
       <DesktopReceivingHistory />
+      <PurchaseOrderReconciliation />
       <CustomerOrderPodPreviewEnhancer />
       <CommercialSourceBoundary />
       <OperationsClarityEnhancer />
