@@ -1,7 +1,5 @@
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
 import { FirstStocktakeFieldJournal } from '../FirstStocktakeFieldJournal';
-import { FirstStocktakeGoLiveCheck } from '../FirstStocktakeGoLiveCheck';
-import { FirstStocktakeGuideEnhancer } from '../FirstStocktakeGuideEnhancer';
 import { FirstStocktakePackagingRulesEnhancer } from '../FirstStocktakePackagingRulesEnhancer';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
@@ -27,6 +25,7 @@ import '../warehouseProductisationFixes.css';
 import '../mobileOverflowSafety.css';
 import '../firstStocktakeAssist.css';
 import '../firstStocktakeGuide.css';
+import '../firstStocktakeCompact.css';
 
 /** Warehouse phone modules: first stocktake, receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
@@ -34,8 +33,6 @@ export default function WarehouseOpsEnhancers() {
     <>
       <FieldOpsGuardRails />
       <FirstStocktakeFieldJournal />
-      <FirstStocktakeGoLiveCheck />
-      <FirstStocktakeGuideEnhancer />
       <FirstStocktakePackagingRulesEnhancer />
       <PickTaskOwnership />
       <StageAndLoadExecution />
