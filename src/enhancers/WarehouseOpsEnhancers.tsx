@@ -9,6 +9,7 @@ import { WarehouseBarcodeTargetBridge } from '../WarehouseBarcodeTargetBridge';
 import { WarehouseCameraScanner } from '../WarehouseCameraScanner';
 import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
 import { WarehousePutawayTargetBridge } from '../WarehousePutawayTargetBridge';
+import { WarehouseScannerGalleryEnhancer } from '../WarehouseScannerGalleryEnhancer';
 import '../warehouseReceivingFlow.css';
 import '../warehouseUnreferencedInbound.css';
 import '../warehouseBarcodeSprint.css';
@@ -44,6 +45,7 @@ export default function WarehouseOpsEnhancers() {
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <WarehouseCameraScanner />
+      <WarehouseScannerGalleryEnhancer />
     </>
   );
 }
