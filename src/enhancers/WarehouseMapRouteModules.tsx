@@ -13,6 +13,7 @@ import '../warehouseMapRowActionFix.css';
 import '../warehouseRackMetadata.css';
 import '../warehouseFloorplanViewport.css';
 import '../warehouseTypographyEditor.css';
+import '../warehousePhysicalLayout.css';
 
 /** Route modules for the protected Warehouse Map feature. */
 export default function WarehouseMapRouteModules() {
