@@ -1,0 +1,142 @@
+/* Verified physical layout captured in the warehouse on 23 July 2026. */
+
+.warehouse-floorplan .floor-rack {
+  z-index: 3;
+  min-width: 0;
+}
+
+.warehouse-floorplan .floor-rack span {
+  max-width: 100%;
+  font-size: clamp(9px, 1vw, 16px) !important;
+  line-height: 1 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.warehouse-floorplan .floor-rack small {
+  max-width: calc(100% - 4px);
+  font-size: 6px !important;
+  line-height: 1.05;
+  letter-spacing: .04em !important;
+  text-align: center;
+  white-space: normal;
+}
+
+.warehouse-floorplan .floor-rack[data-rack-code="A1"],
+.warehouse-floorplan .floor-rack[data-rack-code="A3"],
+.warehouse-floorplan .floor-rack[data-rack-code="A5"] {
+  border-radius: 7px 2px 2px 7px;
+}
+
+.warehouse-floorplan .floor-rack[data-rack-code="C2"],
+.warehouse-floorplan .floor-rack[data-rack-code="A2"],
+.warehouse-floorplan .floor-rack[data-rack-code="A4"] {
+  border-radius: 2px 7px 7px 2px;
+}
+
+.warehouse-floorplan .floor-rack[data-rack-code^="D"],
+.warehouse-floorplan .floor-rack[data-rack-code^="B"] {
+  background: linear-gradient(180deg, #fffdf8, #e6e1d7);
+}
+
+.warehouse-floorplan .floor-rack[data-rack-code="TEMP"] {
+  z-index: 1;
+  border-style: dashed;
+  background: rgba(215, 222, 216, .52);
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,.35);
+}
+
+.warehouse-floorplan .floor-static {
+  z-index: 0;
+}
+
+.warehouse-shelf-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.warehouse-shelf-level {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid rgba(16, 47, 40, .18);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fafbf8, #eef1ec);
+}
+
+.warehouse-shelf-level > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.warehouse-shelf-level > header strong {
+  color: #17372d;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.warehouse-shelf-level > header span {
+  min-width: 0;
+  color: #65746d;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: right;
+}
+
+.warehouse-shelf-segments {
+  --segment-count: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--segment-count), minmax(0, 1fr));
+  gap: 8px;
+}
+
+.warehouse-shelf-segments .location-cell {
+  min-height: 104px !important;
+  background: #fff !important;
+}
+
+.warehouse-shelf-segments .slot-category-label {
+  position: relative;
+  z-index: 1;
+  color: #506159;
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.warehouse-shelf-segments .slot-item-wrap,
+.warehouse-shelf-segments .slot-item-wrap.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.warehouse-shelf-segments .slot-mini {
+  padding-top: 5px;
+  border-top: 1px solid rgba(16, 47, 40, .1);
+}
+
+.rack-category-note {
+  line-height: 1.35;
+}
+
+@media (max-width: 980px) {
+  .warehouse-shelf-segments {
+    grid-template-columns: repeat(var(--segment-count), minmax(145px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .warehouse-shelf-level > header {
+    display: grid;
+  }
+
+  .warehouse-shelf-level > header span {
+    text-align: left;
+  }
+}
