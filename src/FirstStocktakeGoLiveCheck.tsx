@@ -51,6 +51,7 @@ function clock(value: string) {
 export function FirstStocktakeGoLiveCheck() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [state, setState] = useState<ReadinessState>(INITIAL);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => observeBody(() => {
     const screen = document.querySelector<HTMLElement>('.first-stocktake-screen');
@@ -88,6 +89,7 @@ export function FirstStocktakeGoLiveCheck() {
         checkedAt,
         busy: false,
       });
+      setExpanded(true);
       return;
     }
 
@@ -174,6 +176,7 @@ export function FirstStocktakeGoLiveCheck() {
       }
 
       setState({ phase, summary, checks, checkedAt, busy: false });
+      setExpanded(true);
     } catch (error) {
       setState({
         phase: 'CHECK FAILED',
@@ -182,6 +185,7 @@ export function FirstStocktakeGoLiveCheck() {
         checkedAt,
         busy: false,
       });
+      setExpanded(true);
     }
   }
 
@@ -203,24 +207,31 @@ export function FirstStocktakeGoLiveCheck() {
   return createPortal(
     <section className={`first-stocktake-go-live ${state.phase.includes('READY') ? 'ready' : ''}`} aria-label="Stocktake go-live readiness">
       <header>
-        <div><span>GO-LIVE SELF-CHECK</span><h3>{state.phase}</h3></div>
-        <button type="button" disabled={state.busy} onClick={() => void runCheck()}>{state.busy ? 'Checking…' : 'Run check'}</button>
-      </header>
-      <p>{state.summary}</p>
-      {state.checks.length ? (
-        <div className="first-stocktake-go-live-grid">
-          {state.checks.map((check) => (
-            <article key={check.key} className={check.tone}>
-              <strong>{check.tone === 'ready' ? '✓' : check.tone === 'wait' ? '…' : '!'}</strong>
-              <div><b>{check.label}</b><small>{check.detail}</small></div>
-            </article>
-          ))}
+        <div><span>READINESS</span><h3>{state.phase}</h3></div>
+        <div className="first-stocktake-go-live-actions">
+          {state.checkedAt ? <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide' : 'Details'}</button> : null}
+          <button type="button" disabled={state.busy} onClick={() => void runCheck()}>{state.busy ? 'Checking…' : 'Check'}</button>
         </div>
+      </header>
+      {expanded ? (
+        <>
+          <p>{state.summary}</p>
+          {state.checks.length ? (
+            <div className="first-stocktake-go-live-grid">
+              {state.checks.map((check) => (
+                <article key={check.key} className={check.tone}>
+                  <strong>{check.tone === 'ready' ? '✓' : check.tone === 'wait' ? '…' : '!'}</strong>
+                  <div><b>{check.label}</b><small>{check.detail}</small></div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <footer>
+            <span>{state.checkedAt ? `Checked ${clock(state.checkedAt)}` : 'Not checked yet'}</span>
+            <b>Ordermentum order ≠ stock deduction. Pick scan is the controlled deduction point.</b>
+          </footer>
+        </>
       ) : null}
-      <footer>
-        <span>{state.checkedAt ? `Checked ${clock(state.checkedAt)}` : 'Not checked yet'}</span>
-        <b>Ordermentum order ≠ stock deduction. Pick scan is the controlled deduction point.</b>
-      </footer>
     </section>,
     host,
   );
