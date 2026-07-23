@@ -1,0 +1,85 @@
+.first-stocktake-screen .first-stocktake-hero > div:first-child > span,
+.first-stocktake-screen .first-stocktake-hero p,
+.first-stocktake-screen .first-stocktake-steps,
+.first-stocktake-screen .first-stocktake-facing-block > small,
+.first-stocktake-screen .first-stocktake-safety,
+.first-stocktake-screen .first-stocktake-coverage-rule,
+.first-stocktake-screen .first-stocktake-coverage-confirm small,
+.first-stocktake-screen .first-stocktake-review > p,
+.first-stocktake-screen .stocktake-journal-rule,
+.first-stocktake-screen .stocktake-journal-empty {
+  display: none !important;
+}
+
+.first-stocktake-screen .first-stocktake-hero {
+  align-items: center;
+  min-height: 0;
+  padding-block: 12px;
+}
+
+.first-stocktake-screen .first-stocktake-hero h2 {
+  margin: 0;
+}
+
+.first-stocktake-screen .first-stocktake-hero-actions {
+  align-items: center;
+}
+
+.first-stocktake-screen .first-stocktake-entry,
+.first-stocktake-screen .stocktake-field-journal,
+.first-stocktake-screen .first-stocktake-review {
+  margin-top: 10px;
+}
+
+.first-stocktake-screen .first-stocktake-entry {
+  gap: 10px;
+}
+
+.first-stocktake-screen .first-stocktake-facing-block,
+.first-stocktake-screen .first-stocktake-package-rule,
+.first-stocktake-screen .first-stocktake-count-row {
+  gap: 6px;
+}
+
+.first-stocktake-screen .stocktake-field-journal header > div:first-child span {
+  display: none;
+}
+
+.first-stocktake-screen .stocktake-field-journal header > div:first-child h3 {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.first-stocktake-screen .stocktake-journal-actions {
+  gap: 6px;
+}
+
+.first-stocktake-screen .first-stocktake-coverage-review header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.first-stocktake-screen .first-stocktake-coverage-review header span {
+  display: none;
+}
+
+.first-stocktake-screen .first-stocktake-coverage-metrics {
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .first-stocktake-screen .first-stocktake-hero {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .first-stocktake-screen .first-stocktake-hero-actions a {
+    display: none;
+  }
+
+  .first-stocktake-screen .stocktake-journal-actions button {
+    min-height: 42px;
+  }
+}
