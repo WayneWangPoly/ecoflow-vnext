@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
-import { FirstStocktakeFlow } from './FirstStocktakeFlow';
+import { FirstStocktakeWorkspace } from './FirstStocktakeWorkspace';
 import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
 import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
+// FirstStocktakeFlow remains the controlled opening-count phase inside FirstStocktakeWorkspace.
 type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns' | 'barcode';
 
 const secondaryModes: Array<{ mode: Exclude<WarehouseOpsMode, 'stocktake'>; label: string }> = [
@@ -115,7 +116,7 @@ export function WarehouseBarcodeSprintMount() {
           ))}
         </nav>
       ) : null}
-      {mode === 'stocktake' ? <FirstStocktakeFlow /> : null}
+      {mode === 'stocktake' ? <FirstStocktakeWorkspace /> : null}
       {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
       {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
       {mode === 'barcode' ? <WarehouseBarcodeSprint /> : null}
