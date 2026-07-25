@@ -41,6 +41,22 @@ const packageLevels: Array<{ value: BarcodePackageLevel; label: string }> = [
   { value: 'EACH', label: 'Single unit' },
 ];
 
+function defaultUnits(mode: SkuPackageMode, level: BarcodePackageLevel) {
+  return mode === 'CARTON_AND_SLEEVE' && level === 'CARTON' ? '' : '1';
+}
+
+function unitsLabel(mode: SkuPackageMode, level: BarcodePackageLevel) {
+  if (mode === 'CARTON_AND_SLEEVE' && level === 'CARTON') return 'Sleeves per carton';
+  if (level === 'SLEEVE') return '1 sleeve = 1 stock unit';
+  if (level === 'INNER') return '1 inner pack = 1 stock unit';
+  if (level === 'EACH') return '1 item = 1 stock unit';
+  return '1 carton = 1 stock unit';
+}
+
+function unitsLocked(mode: SkuPackageMode, level: BarcodePackageLevel) {
+  return !(mode === 'CARTON_AND_SLEEVE' && level === 'CARTON');
+}
+
 function initialForm(): FormState {
   return {
     area: window.localStorage.getItem(AREA_KEY) || '',
@@ -49,7 +65,7 @@ function initialForm(): FormState {
     barcode: '',
     packageMode: 'CARTON_AND_SLEEVE',
     packageLevel: 'CARTON',
-    unitsPerBarcode: '1',
+    unitsPerBarcode: '',
     note: '',
   };
 }
@@ -66,6 +82,19 @@ function allowedLevel(mode: SkuPackageMode, level: BarcodePackageLevel) {
 function nextLevel(mode: SkuPackageMode, level: BarcodePackageLevel) {
   if (mode === 'CARTON_AND_SLEEVE' && level === 'CARTON') return 'SLEEVE' as BarcodePackageLevel;
   return packageModes.find((item) => item.value === mode)?.firstLevel || 'CARTON';
+}
+
+function modeForRecentLevel(level: BarcodePackageLevel, currentMode: SkuPackageMode) {
+  if (allowedLevel(currentMode, level)) return currentMode;
+  if (level === 'SLEEVE') return 'SLEEVE_ONLY' as SkuPackageMode;
+  if (level === 'INNER') return 'INNER_ONLY' as SkuPackageMode;
+  if (level === 'EACH') return 'EACH_ONLY' as SkuPackageMode;
+  return 'CARTON_ONLY' as SkuPackageMode;
+}
+
+function recentLevel(value?: string | null) {
+  const level = String(value || '').toUpperCase() as BarcodePackageLevel;
+  return packageLevels.some((item) => item.value === level) ? level : 'CARTON';
 }
 
 function dateText(value?: string | null) {
@@ -91,6 +120,7 @@ export function FirstStocktakeMappingFlow() {
   const [recent, setRecent] = useState<BarcodeRecentScanRow[]>([]);
   const [skuFocused, setSkuFocused] = useState(false);
   const [keepSku, setKeepSku] = useState(true);
+  const [editingBarcode, setEditingBarcode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -99,6 +129,7 @@ export function FirstStocktakeMappingFlow() {
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     if (key === 'area') window.localStorage.setItem(AREA_KEY, String(value));
+    if (key === 'barcode' && editingBarcode && String(value).trim() !== editingBarcode) setEditingBarcode(null);
   }
 
   async function reloadRecent() {
@@ -143,7 +174,28 @@ export function FirstStocktakeMappingFlow() {
 
   function selectSku(option: StocktakeSkuOption) {
     setForm((current) => ({ ...current, sku: option.sku, productName: option.productName || '' }));
+    setEditingBarcode(null);
     setSkuFocused(false);
+    window.setTimeout(() => barcodeRef.current?.focus(), 0);
+  }
+
+  function editRecent(row: BarcodeRecentScanRow) {
+    const level = recentLevel(String(row.package_level || ''));
+    const mode = modeForRecentLevel(level, form.packageMode);
+    const barcode = String(row.barcode || '').trim();
+    setForm((current) => ({
+      ...current,
+      sku: String(row.sku || '').toUpperCase(),
+      productName: String(row.product_name || ''),
+      barcode,
+      packageMode: mode,
+      packageLevel: level,
+      unitsPerBarcode: String(row.units_per_barcode || defaultUnits(mode, level) || 1),
+      note: '',
+    }));
+    setEditingBarcode(barcode || null);
+    setError('');
+    setNotice('Saved mapping loaded. Change the value, then tap Update mapping.');
     window.setTimeout(() => barcodeRef.current?.focus(), 0);
   }
 
@@ -158,6 +210,7 @@ export function FirstStocktakeMappingFlow() {
       setError('Enter the physical SKU first.');
       return;
     }
+    setEditingBarcode(null);
     setError('');
     setForm((current) => ({ ...current, barcode: internalBarcode(sku, current.packageLevel) }));
     setNotice('Internal Code 128 value generated.');
@@ -170,7 +223,12 @@ export function FirstStocktakeMappingFlow() {
     if (!sku) { setError('Physical SKU is required.'); return; }
     if (!barcode) { setError('Scan or generate a barcode.'); return; }
     if (!allowedLevel(form.packageMode, form.packageLevel)) { setError('Package level does not match the package rule.'); return; }
-    if (!Number.isInteger(units) || units <= 0) { setError('Units per barcode must be a whole number greater than zero.'); return; }
+    if (!Number.isInteger(units) || units <= 0) {
+      setError(form.packageMode === 'CARTON_AND_SLEEVE' && form.packageLevel === 'CARTON'
+        ? 'Enter the number of sleeves inside one carton.'
+        : 'Package value must be a whole number greater than zero.');
+      return;
+    }
 
     setBusy(true);
     setError('');
@@ -197,15 +255,21 @@ export function FirstStocktakeMappingFlow() {
       });
 
       const savedLevel = form.packageLevel;
-      setNotice(`${sku} · ${title(savedLevel)} mapped. Stock unchanged.`);
-      setForm((current) => ({
-        ...current,
-        sku: keepSku ? sku : '',
-        productName: keepSku ? current.productName : '',
-        barcode: '',
-        note: '',
-        packageLevel: nextLevel(current.packageMode, current.packageLevel),
-      }));
+      const wasEditing = editingBarcode === barcode;
+      setNotice(`${sku} · ${title(savedLevel)} ${wasEditing ? 'updated' : 'mapped'}. Stock unchanged.`);
+      setEditingBarcode(null);
+      setForm((current) => {
+        const followingLevel = nextLevel(current.packageMode, current.packageLevel);
+        return {
+          ...current,
+          sku: keepSku ? sku : '',
+          productName: keepSku ? current.productName : '',
+          barcode: '',
+          note: '',
+          packageLevel: followingLevel,
+          unitsPerBarcode: defaultUnits(current.packageMode, followingLevel),
+        };
+      });
       await reloadRecent();
       window.setTimeout(() => barcodeRef.current?.focus(), 60);
     } catch (reason) {
@@ -245,17 +309,23 @@ export function FirstStocktakeMappingFlow() {
         <div className="first-stocktake-map-package-grid">
           <label><span>Package rule</span><select value={form.packageMode} onChange={(event) => {
             const next = event.target.value as SkuPackageMode;
-            setForm((current) => ({ ...current, packageMode: next, packageLevel: packageModes.find((item) => item.value === next)?.firstLevel || 'CARTON' }));
+            const firstLevel = packageModes.find((item) => item.value === next)?.firstLevel || 'CARTON';
+            setEditingBarcode(null);
+            setForm((current) => ({ ...current, packageMode: next, packageLevel: firstLevel, unitsPerBarcode: defaultUnits(next, firstLevel) }));
           }}>{packageModes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label><span>Barcode level</span><select value={form.packageLevel} onChange={(event) => update('packageLevel', event.target.value as BarcodePackageLevel)}>{packageLevels.filter((item) => allowedLevel(form.packageMode, item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label><span>Units per barcode</span><input type="number" min="1" step="1" inputMode="numeric" value={form.unitsPerBarcode} onChange={(event) => update('unitsPerBarcode', event.target.value)} /></label>
+          <label><span>Barcode level</span><select value={form.packageLevel} onChange={(event) => {
+            const next = event.target.value as BarcodePackageLevel;
+            setEditingBarcode(null);
+            setForm((current) => ({ ...current, packageLevel: next, unitsPerBarcode: defaultUnits(current.packageMode, next) }));
+          }}>{packageLevels.filter((item) => allowedLevel(form.packageMode, item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label><span>{unitsLabel(form.packageMode, form.packageLevel)}</span><input type="number" min="1" step="1" inputMode="numeric" disabled={unitsLocked(form.packageMode, form.packageLevel)} value={form.unitsPerBarcode} onChange={(event) => update('unitsPerBarcode', event.target.value)} placeholder={form.packageMode === 'CARTON_AND_SLEEVE' && form.packageLevel === 'CARTON' ? 'e.g. 20' : '1'} /></label>
         </div>
 
         <label><span>Note <small>optional</small></span><input value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Supplier, packaging version or restriction" /></label>
 
         <div className="first-stocktake-map-actions">
           <label className="first-stocktake-map-keep"><input type="checkbox" checked={keepSku} onChange={(event) => setKeepSku(event.target.checked)} /><span>Keep SKU for next barcode</span></label>
-          <button type="button" className="first-stocktake-map-primary" disabled={busy} onClick={() => void saveMapping()}>{busy ? 'Saving…' : 'Save mapping'}</button>
+          <button type="button" className="first-stocktake-map-primary" disabled={busy} onClick={() => void saveMapping()}>{busy ? (editingBarcode ? 'Updating…' : 'Saving…') : (editingBarcode ? 'Update mapping' : 'Save mapping')}</button>
         </div>
       </section>
 
@@ -265,8 +335,9 @@ export function FirstStocktakeMappingFlow() {
           {recent.map((row) => (
             <article key={row.id}>
               <span><strong>{row.sku || 'Unknown SKU'}</strong><small>{row.product_name || row.scan_note || '—'}</small></span>
-              <span><strong>{row.barcode}</strong><small>{title(String(row.package_level))} · {row.units_per_barcode || 1} units</small></span>
+              <span><strong>{row.barcode}</strong><small>{title(String(row.package_level))} · {row.package_level === 'CARTON' ? `${row.units_per_barcode || 1} sleeves / carton` : '1 stock unit'}</small></span>
               <time>{dateText(row.scanned_at)}</time>
+              <button type="button" className="first-stocktake-map-edit" disabled={busy} onClick={() => editRecent(row)}>Edit</button>
             </article>
           ))}
           {!recent.length ? <div className="first-stocktake-map-empty">No mappings yet.</div> : null}
