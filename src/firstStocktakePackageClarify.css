@@ -1,1 +1,78 @@
-.first-stocktake-map-form input:disabled{background:#eef2f4;color:#53616a;border-color:#d7dfe4;opacity:1}.first-stocktake-map-recent article{grid-template-columns:1fr 1.1fr auto auto}.first-stocktake-map-edit{min-height:32px;border:0;border-radius:9px;background:#e5ecef;color:#24353f;font:800 11px/1 inherit;padding:0 11px}.first-stocktake-map-edit:disabled{opacity:.55}@media(max-width:760px){.first-stocktake-map-recent article{grid-template-columns:1fr auto auto}.first-stocktake-map-recent article span:nth-child(2){grid-column:1/-1;grid-row:2}.first-stocktake-map-recent article time{grid-column:2;grid-row:1}.first-stocktake-map-edit{grid-column:3;grid-row:1}}
+.first-stocktake-map-form input:disabled {
+  background: #eef2f4;
+  color: #53616a;
+  border-color: #d7dfe4;
+  opacity: 1;
+}
+
+.first-stocktake-map-package-grid label.is-fixed-unit input {
+  display: none;
+}
+
+.first-stocktake-fixed-unit {
+  display: none;
+  min-height: 44px;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid #d7dfe4;
+  border-radius: 10px;
+  background: #eef2f4;
+  color: #263842;
+  font: 800 14px/1 inherit;
+}
+
+.first-stocktake-map-package-grid label.is-fixed-unit .first-stocktake-fixed-unit {
+  display: flex;
+}
+
+.first-stocktake-unit-clarity,
+.first-stocktake-map-save-state {
+  display: block;
+  min-height: 15px;
+  margin-top: 5px;
+  color: #66757d;
+  font: 700 11px/1.3 inherit;
+}
+
+.first-stocktake-map-save-state:not(:empty) {
+  color: #9b5d00;
+}
+
+.first-stocktake-map-recent article {
+  grid-template-columns: 1fr 1.1fr auto auto;
+}
+
+.first-stocktake-map-edit {
+  min-height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: #e5ecef;
+  color: #24353f;
+  font: 800 11px/1 inherit;
+  padding: 0 11px;
+}
+
+.first-stocktake-map-edit:disabled {
+  opacity: .55;
+}
+
+@media(max-width:760px) {
+  .first-stocktake-map-recent article {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .first-stocktake-map-recent article span:nth-child(2) {
+    grid-column: 1/-1;
+    grid-row: 2;
+  }
+
+  .first-stocktake-map-recent article time {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .first-stocktake-map-edit {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
