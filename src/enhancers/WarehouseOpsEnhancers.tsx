@@ -20,6 +20,7 @@ import '../firstStocktakeCoverage.css';
 import '../firstStocktakeFieldJournal.css';
 import '../firstStocktakeGoLiveCheck.css';
 import '../firstStocktakeWorkspace.css';
+import '../firstStocktakePackageClarify.css';
 import '../warehousePickHandoff.css';
 import '../fieldOpsGuardRails.css';
 import '../pickTaskOwnership.css';
