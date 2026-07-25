@@ -267,6 +267,49 @@ $$;
 grant execute on function public.ecoflow_record_barcode_scan(uuid, text, text, text, numeric, text, text, numeric, text, text) to authenticated;
 revoke execute on function public.ecoflow_record_barcode_scan(uuid, text, text, text, numeric, text, text, numeric, text, text) from anon;
 
+-- Execute both functions inside the migration so shadow verification catches
+-- runtime PL/pgSQL ambiguity, not only CREATE FUNCTION syntax.
+do $barcode_rpc_smoke$
+declare
+  v_test_sku constant text := '__BARCODE_RPC_MIGRATION_SMOKE__';
+  v_test_barcode constant text := '__BARCODE_RPC_MIGRATION_SMOKE__';
+begin
+  perform 1
+  from public.ecoflow_set_sku_package_policy(
+    v_test_sku,
+    'CARTON_ONLY',
+    null,
+    'migration smoke test'
+  );
+
+  perform 1
+  from public.ecoflow_record_barcode_scan(
+    null,
+    v_test_sku,
+    v_test_barcode,
+    'CARTON',
+    1,
+    'Migration smoke product',
+    null,
+    1,
+    'MAP_ONLY',
+    'migration smoke test'
+  );
+
+  delete from public.ecoflow_barcode_scan_events as event
+  where event.barcode = v_test_barcode;
+
+  delete from public.ecoflow_sku_barcode_registry as registry
+  where registry.barcode = v_test_barcode;
+
+  delete from public.ecoflow_inventory_sku_controls as control
+  where control.sku = v_test_sku;
+
+  delete from public.ecoflow_sku_package_policies as policy
+  where policy.sku = v_test_sku;
+end;
+$barcode_rpc_smoke$;
+
 notify pgrst, 'reload schema';
 
 commit;
