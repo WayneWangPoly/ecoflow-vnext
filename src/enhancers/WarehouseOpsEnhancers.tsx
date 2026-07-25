@@ -2,6 +2,7 @@ import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
 import { FirstStocktakeFieldJournal } from '../FirstStocktakeFieldJournal';
 import { FirstStocktakeGoLiveCheck } from '../FirstStocktakeGoLiveCheck';
 import { FirstStocktakePackagingRulesEnhancer } from '../FirstStocktakePackagingRulesEnhancer';
+import { FirstStocktakeUnitClarityEnhancer } from '../FirstStocktakeUnitClarityEnhancer';
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
@@ -42,6 +43,7 @@ export default function WarehouseOpsEnhancers() {
       <FirstStocktakeFieldJournal />
       <FirstStocktakeGoLiveCheck />
       <FirstStocktakePackagingRulesEnhancer />
+      <FirstStocktakeUnitClarityEnhancer />
       <PickTaskOwnership />
       <StageAndLoadExecution />
       <WarehouseBarcodeSprintMount />
