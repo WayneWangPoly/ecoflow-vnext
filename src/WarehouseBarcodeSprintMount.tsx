@@ -6,6 +6,7 @@ import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
 import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
+// FirstStocktakeFlow remains the controlled opening-count phase inside FirstStocktakeWorkspace.
 type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns' | 'barcode';
 
 const secondaryModes: Array<{ mode: Exclude<WarehouseOpsMode, 'stocktake'>; label: string }> = [
