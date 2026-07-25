@@ -19,6 +19,7 @@ import './dashboardLayoutStability.css';
 import './conciseOperationalUi.css';
 import './operationalContinuity.css';
 import './industrialDesktopFoundation.css';
+import './mobileViewportLock.css';
 
 const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthClient();

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  loadBarcodeRecentScans,
   recordBarcodeScan,
   setSkuPackagePolicy,
   startBarcodeScanSession,
   type BarcodePackageLevel,
-  type BarcodeRecentScanRow,
   type SkuPackageMode,
 } from '@/data/repositories/inventoryControl';
+import {
+  loadBarcodeMappingsForSession,
+  loadLatestOpenProductMappingSession,
+  type BarcodeRegistryMappingRow,
+} from '@/data/repositories/barcodeMappingSession';
 import { loadStocktakeSkuOptions, type StocktakeSkuOption } from '@/data/repositories/stocktakeAssist';
 
 const SESSION_KEY = 'ecoflow:first-stocktake-mapping-session';
@@ -46,11 +49,19 @@ function defaultUnits(mode: SkuPackageMode, level: BarcodePackageLevel) {
 }
 
 function unitsLabel(mode: SkuPackageMode, level: BarcodePackageLevel) {
-  if (mode === 'CARTON_AND_SLEEVE' && level === 'CARTON') return 'Sleeves per carton';
-  if (level === 'SLEEVE') return '1 sleeve = 1 stock unit';
-  if (level === 'INNER') return '1 inner pack = 1 stock unit';
-  if (level === 'EACH') return '1 item = 1 stock unit';
-  return '1 carton = 1 stock unit';
+  if (mode === 'CARTON_AND_SLEEVE' && level === 'CARTON') return 'Sleeves inside 1 carton';
+  if (level === 'SLEEVE') return 'This barcode represents';
+  if (level === 'INNER') return 'This barcode represents';
+  if (level === 'EACH') return 'This barcode represents';
+  return 'This barcode represents';
+}
+
+function unitSummary(mode: SkuPackageMode, level: BarcodePackageLevel, units: unknown) {
+  if (mode === 'CARTON_AND_SLEEVE' && level === 'CARTON') return `${Number(units) || 1} sleeves / carton`;
+  if (level === 'SLEEVE') return '1 sleeve';
+  if (level === 'INNER') return '1 inner pack';
+  if (level === 'EACH') return '1 item';
+  return '1 carton';
 }
 
 function unitsLocked(mode: SkuPackageMode, level: BarcodePackageLevel) {
@@ -84,9 +95,11 @@ function nextLevel(mode: SkuPackageMode, level: BarcodePackageLevel) {
   return packageModes.find((item) => item.value === mode)?.firstLevel || 'CARTON';
 }
 
-function modeForRecentLevel(level: BarcodePackageLevel, currentMode: SkuPackageMode) {
+function modeForMapping(row: BarcodeRegistryMappingRow, currentMode: SkuPackageMode) {
+  const level = recentLevel(row.package_level);
+  if (level === 'CARTON' && Number(row.units_per_barcode) > 1) return 'CARTON_AND_SLEEVE' as SkuPackageMode;
+  if (level === 'SLEEVE') return 'CARTON_AND_SLEEVE' as SkuPackageMode;
   if (allowedLevel(currentMode, level)) return currentMode;
-  if (level === 'SLEEVE') return 'SLEEVE_ONLY' as SkuPackageMode;
   if (level === 'INNER') return 'INNER_ONLY' as SkuPackageMode;
   if (level === 'EACH') return 'EACH_ONLY' as SkuPackageMode;
   return 'CARTON_ONLY' as SkuPackageMode;
@@ -117,7 +130,8 @@ function internalBarcode(sku: string, level: BarcodePackageLevel) {
 export function FirstStocktakeMappingFlow() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [skuOptions, setSkuOptions] = useState<StocktakeSkuOption[]>([]);
-  const [recent, setRecent] = useState<BarcodeRecentScanRow[]>([]);
+  const [mappings, setMappings] = useState<BarcodeRegistryMappingRow[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(() => window.localStorage.getItem(SESSION_KEY));
   const [skuFocused, setSkuFocused] = useState(false);
   const [keepSku, setKeepSku] = useState(true);
   const [editingBarcode, setEditingBarcode] = useState<string | null>(null);
@@ -129,21 +143,39 @@ export function FirstStocktakeMappingFlow() {
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     if (key === 'area') window.localStorage.setItem(AREA_KEY, String(value));
-    if (key === 'barcode' && editingBarcode && String(value).trim() !== editingBarcode) setEditingBarcode(null);
   }
 
-  async function reloadRecent() {
-    const rows = await loadBarcodeRecentScans();
-    setRecent(rows.filter((row) => row.action_mode === 'MAP_ONLY' || row.action_mode === 'MAP_AND_COUNT').slice(0, 16));
+  async function reloadMappings(targetSessionId = sessionId) {
+    if (!targetSessionId) {
+      setMappings([]);
+      return;
+    }
+    const rows = await loadBarcodeMappingsForSession(targetSessionId);
+    setMappings(rows);
   }
 
   useEffect(() => {
-    void Promise.all([loadStocktakeSkuOptions(), loadBarcodeRecentScans()])
-      .then(([options, scans]) => {
+    void (async () => {
+      try {
+        const options = await loadStocktakeSkuOptions();
         setSkuOptions(options);
-        setRecent(scans.filter((row) => row.action_mode === 'MAP_ONLY' || row.action_mode === 'MAP_AND_COUNT').slice(0, 16));
-      })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+        let activeSession = window.localStorage.getItem(SESSION_KEY);
+        if (!activeSession) {
+          const recovered = await loadLatestOpenProductMappingSession();
+          activeSession = recovered?.id || null;
+          if (activeSession) {
+            window.localStorage.setItem(SESSION_KEY, activeSession);
+            setSessionId(activeSession);
+            setNotice('Open product-mapping session resumed.');
+          }
+        }
+        if (activeSession) await reloadMappings(activeSession);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    })();
+    // Initial recovery runs once; subsequent refreshes use reloadMappings.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const skuSuggestions = useMemo(() => {
@@ -160,8 +192,11 @@ export function FirstStocktakeMappingFlow() {
   }, [form.sku, skuFocused, skuOptions]);
 
   async function ensureSession() {
-    const stored = window.localStorage.getItem(SESSION_KEY);
-    if (stored) return stored;
+    const stored = sessionId || window.localStorage.getItem(SESSION_KEY);
+    if (stored) {
+      if (!sessionId) setSessionId(stored);
+      return stored;
+    }
     const rows = await startBarcodeScanSession({
       sessionName: `Product mapping ${new Date().toLocaleDateString('en-AU')}`,
       targetArea: form.area.trim() || 'Warehouse',
@@ -169,6 +204,7 @@ export function FirstStocktakeMappingFlow() {
     const id = rows[0]?.session_id;
     if (!id) throw new Error('Could not start product mapping.');
     window.localStorage.setItem(SESSION_KEY, id);
+    setSessionId(id);
     return id;
   }
 
@@ -179,9 +215,9 @@ export function FirstStocktakeMappingFlow() {
     window.setTimeout(() => barcodeRef.current?.focus(), 0);
   }
 
-  function editRecent(row: BarcodeRecentScanRow) {
-    const level = recentLevel(String(row.package_level || ''));
-    const mode = modeForRecentLevel(level, form.packageMode);
+  function editMapping(row: BarcodeRegistryMappingRow) {
+    const level = recentLevel(row.package_level);
+    const mode = modeForMapping(row, form.packageMode);
     const barcode = String(row.barcode || '').trim();
     setForm((current) => ({
       ...current,
@@ -191,11 +227,17 @@ export function FirstStocktakeMappingFlow() {
       packageMode: mode,
       packageLevel: level,
       unitsPerBarcode: String(row.units_per_barcode || defaultUnits(mode, level) || 1),
-      note: '',
+      note: String(row.note || ''),
     }));
     setEditingBarcode(barcode || null);
     setError('');
-    setNotice('Saved mapping loaded. Change the value, then tap Update mapping.');
+    setNotice('Active mapping loaded. Update changes the existing barcode; audit history is retained.');
+  }
+
+  function cancelEdit() {
+    setEditingBarcode(null);
+    setForm((current) => ({ ...current, barcode: '', note: '' }));
+    setNotice('Edit cancelled.');
     window.setTimeout(() => barcodeRef.current?.focus(), 0);
   }
 
@@ -213,7 +255,24 @@ export function FirstStocktakeMappingFlow() {
     setEditingBarcode(null);
     setError('');
     setForm((current) => ({ ...current, barcode: internalBarcode(sku, current.packageLevel) }));
-    setNotice('Internal Code 128 value generated.');
+    setNotice('Internal Code 128 value generated. Tap Save mapping.');
+  }
+
+  function skipSleeve() {
+    const sku = form.sku.trim().toUpperCase();
+    setEditingBarcode(null);
+    setForm((current) => ({
+      ...current,
+      sku: '',
+      productName: '',
+      barcode: '',
+      note: '',
+      packageLevel: 'CARTON',
+      unitsPerBarcode: '',
+    }));
+    setError('');
+    setNotice(`${sku || 'SKU'} sleeve code left pending. It stays in the follow-up queue and can be added when a carton is first opened.`);
+    window.setTimeout(() => barcodeRef.current?.focus(), 0);
   }
 
   async function saveMapping() {
@@ -234,16 +293,12 @@ export function FirstStocktakeMappingFlow() {
     setError('');
     setNotice('');
     try {
-      const sessionId = await ensureSession();
+      const activeSession = await ensureSession();
       const area = form.area.trim().toUpperCase();
       const notes = [area ? `OBSERVED AREA ${area}` : '', form.note.trim()].filter(Boolean).join(' · ');
-      await setSkuPackagePolicy({
-        sku,
-        packageMode: form.packageMode,
-        note: notes || 'Product mapping',
-      });
+      await setSkuPackagePolicy({ sku, packageMode: form.packageMode, note: notes || 'Product mapping' });
       await recordBarcodeScan({
-        sessionId,
+        sessionId: activeSession,
         sku,
         barcode,
         packageLevel: form.packageLevel,
@@ -256,21 +311,21 @@ export function FirstStocktakeMappingFlow() {
 
       const savedLevel = form.packageLevel;
       const wasEditing = editingBarcode === barcode;
-      setNotice(`${sku} · ${title(savedLevel)} ${wasEditing ? 'updated' : 'mapped'}. Stock unchanged.`);
+      setNotice(`${sku} · ${title(savedLevel)} ${wasEditing ? 'updated' : 'saved'}. ${wasEditing ? 'The active mapping was replaced; the audit event remains.' : 'Continue scanning in the same session.'}`);
       setEditingBarcode(null);
       setForm((current) => {
         const followingLevel = nextLevel(current.packageMode, current.packageLevel);
         return {
           ...current,
-          sku: keepSku ? sku : '',
-          productName: keepSku ? current.productName : '',
+          sku: keepSku && !wasEditing ? sku : '',
+          productName: keepSku && !wasEditing ? current.productName : '',
           barcode: '',
           note: '',
-          packageLevel: followingLevel,
-          unitsPerBarcode: defaultUnits(current.packageMode, followingLevel),
+          packageLevel: wasEditing ? 'CARTON' : followingLevel,
+          unitsPerBarcode: wasEditing ? '' : defaultUnits(current.packageMode, followingLevel),
         };
       });
-      await reloadRecent();
+      await reloadMappings(activeSession);
       window.setTimeout(() => barcodeRef.current?.focus(), 60);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -279,12 +334,19 @@ export function FirstStocktakeMappingFlow() {
     }
   }
 
+  const sleeveCanWait = form.packageMode === 'CARTON_AND_SLEEVE' && form.packageLevel === 'SLEEVE' && !editingBarcode;
+
   return (
     <section className="first-stocktake-map-screen">
       <header className="first-stocktake-map-header">
         <div><span>PRODUCT SETUP</span><h2>Map SKU and barcode</h2></div>
         <strong>Stock unchanged</strong>
       </header>
+
+      <div className="first-stocktake-session-status">
+        <div><strong>{sessionId ? 'Session active' : 'Starts on first save'}</strong><span>{sessionId ? `ID ${sessionId.slice(0, 8)} · resumes on this device` : 'No barcode has been saved in this session yet'}</span></div>
+        <b>{mappings.length} saved</b>
+      </div>
 
       {error ? <div className="first-stocktake-map-error">{error}</div> : null}
       {notice ? <div className="first-stocktake-map-notice">{notice}</div> : null}
@@ -304,7 +366,8 @@ export function FirstStocktakeMappingFlow() {
           <label><span>Product name <small>optional</small></span><input value={form.productName} onChange={(event) => update('productName', event.target.value)} placeholder="Brand, size or customer logo" /></label>
         </div>
 
-        <label><span>Barcode</span><div className="first-stocktake-map-barcode"><input id={BARCODE_INPUT_ID} ref={barcodeRef} value={form.barcode} onChange={(event) => update('barcode', event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveMapping(); }} placeholder="Scan package barcode" autoComplete="off" /><button type="button" onClick={openCamera}>Scan</button><button type="button" onClick={generateInternalCode}>Internal code</button></div></label>
+        <label><span>Barcode</span><div className="first-stocktake-map-barcode"><input id={BARCODE_INPUT_ID} ref={barcodeRef} value={form.barcode} readOnly={Boolean(editingBarcode)} onChange={(event) => update('barcode', event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveMapping(); }} placeholder="Scan package barcode" autoComplete="off" /><button type="button" disabled={Boolean(editingBarcode)} onClick={openCamera}>Scan</button><button type="button" disabled={Boolean(editingBarcode)} onClick={generateInternalCode}>Internal code</button></div></label>
+        <div className={`first-stocktake-save-state ${form.barcode ? 'ready' : ''}`}>{editingBarcode ? 'Editing saved mapping' : form.barcode ? 'Pending — tap Save mapping' : 'Waiting for barcode'}</div>
 
         <div className="first-stocktake-map-package-grid">
           <label><span>Package rule</span><select value={form.packageMode} onChange={(event) => {
@@ -318,29 +381,37 @@ export function FirstStocktakeMappingFlow() {
             setEditingBarcode(null);
             setForm((current) => ({ ...current, packageLevel: next, unitsPerBarcode: defaultUnits(current.packageMode, next) }));
           }}>{packageLevels.filter((item) => allowedLevel(form.packageMode, item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label><span>{unitsLabel(form.packageMode, form.packageLevel)}</span><input type="number" min="1" step="1" inputMode="numeric" disabled={unitsLocked(form.packageMode, form.packageLevel)} value={form.unitsPerBarcode} onChange={(event) => update('unitsPerBarcode', event.target.value)} placeholder={form.packageMode === 'CARTON_AND_SLEEVE' && form.packageLevel === 'CARTON' ? 'e.g. 20' : '1'} /></label>
+          <label><span>{unitsLabel(form.packageMode, form.packageLevel)}</span>{unitsLocked(form.packageMode, form.packageLevel)
+            ? <div className="first-stocktake-unit-fixed">{unitSummary(form.packageMode, form.packageLevel, form.unitsPerBarcode)}</div>
+            : <input type="number" min="1" step="1" inputMode="numeric" value={form.unitsPerBarcode} onChange={(event) => update('unitsPerBarcode', event.target.value)} placeholder="e.g. 20" />}
+            <small className="first-stocktake-pack-size-note">Pack size only — not total stock</small>
+          </label>
         </div>
 
         <label><span>Note <small>optional</small></span><input value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Supplier, packaging version or restriction" /></label>
 
         <div className="first-stocktake-map-actions">
           <label className="first-stocktake-map-keep"><input type="checkbox" checked={keepSku} onChange={(event) => setKeepSku(event.target.checked)} /><span>Keep SKU for next barcode</span></label>
-          <button type="button" className="first-stocktake-map-primary" disabled={busy} onClick={() => void saveMapping()}>{busy ? (editingBarcode ? 'Updating…' : 'Saving…') : (editingBarcode ? 'Update mapping' : 'Save mapping')}</button>
+          <div className="first-stocktake-map-action-buttons">
+            {editingBarcode ? <button type="button" className="first-stocktake-map-secondary" disabled={busy} onClick={cancelEdit}>Cancel edit</button> : null}
+            {sleeveCanWait ? <button type="button" className="first-stocktake-map-secondary" disabled={busy} onClick={skipSleeve}>Sleeve unopened — add later</button> : null}
+            <button type="button" className="first-stocktake-map-primary" disabled={busy} onClick={() => void saveMapping()}>{busy ? (editingBarcode ? 'Updating…' : 'Saving…') : (editingBarcode ? 'Update mapping' : 'Save mapping')}</button>
+          </div>
         </div>
       </section>
 
       <section className="first-stocktake-map-recent">
-        <header><h3>Recent mappings</h3><button type="button" disabled={busy} onClick={() => void reloadRecent()}>Refresh</button></header>
+        <header><div><h3>Saved mappings</h3><span>One row per active barcode</span></div><button type="button" disabled={busy || !sessionId} onClick={() => void reloadMappings()}>Refresh</button></header>
         <div>
-          {recent.map((row) => (
+          {mappings.slice(0, 80).map((row) => (
             <article key={row.id}>
-              <span><strong>{row.sku || 'Unknown SKU'}</strong><small>{row.product_name || row.scan_note || '—'}</small></span>
-              <span><strong>{row.barcode}</strong><small>{title(String(row.package_level))} · {row.package_level === 'CARTON' ? `${row.units_per_barcode || 1} sleeves / carton` : '1 stock unit'}</small></span>
-              <time>{dateText(row.scanned_at)}</time>
-              <button type="button" className="first-stocktake-map-edit" disabled={busy} onClick={() => editRecent(row)}>Edit</button>
+              <span><strong>{row.sku || 'Unknown SKU'}</strong><small>{row.product_name || row.note || '—'}</small></span>
+              <span><strong>{row.barcode}</strong><small>{title(String(row.package_level))} · {unitSummary(modeForMapping(row, form.packageMode), recentLevel(row.package_level), row.units_per_barcode)}</small></span>
+              <time>{dateText(row.last_scanned_at)}</time>
+              <button type="button" className="first-stocktake-map-edit" disabled={busy} onClick={() => editMapping(row)}>Edit mapping</button>
             </article>
           ))}
-          {!recent.length ? <div className="first-stocktake-map-empty">No mappings yet.</div> : null}
+          {!mappings.length ? <div className="first-stocktake-map-empty">No saved mappings in this session.</div> : null}
         </div>
       </section>
     </section>
