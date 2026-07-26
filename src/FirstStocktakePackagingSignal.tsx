@@ -96,7 +96,7 @@ export function FirstStocktakePackagingSignal() {
 
     const grid = screen.querySelector<HTMLElement>('.first-stocktake-map-grid');
     if (!grid) return;
-    let mount = screen.querySelector<HTMLElement>(':scope > .first-stocktake-packaging-signal-mount');
+    let mount = screen.querySelector<HTMLElement>('.first-stocktake-packaging-signal-mount');
     if (!mount) {
       mount = document.createElement('div');
       mount.className = 'first-stocktake-packaging-signal-mount';
