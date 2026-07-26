@@ -1,4 +1,5 @@
 import { FieldOpsGuardRails } from '../FieldOpsGuardRails';
+import { FirstStocktakeBackendVerifier } from '../FirstStocktakeBackendVerifier';
 import { FirstStocktakeFieldJournal } from '../FirstStocktakeFieldJournal';
 import { FirstStocktakeGoLiveCheck } from '../FirstStocktakeGoLiveCheck';
 import { FirstStocktakePackagingRulesEnhancer } from '../FirstStocktakePackagingRulesEnhancer';
@@ -23,6 +24,7 @@ import '../firstStocktakeFieldJournal.css';
 import '../firstStocktakeGoLiveCheck.css';
 import '../firstStocktakeWorkspace.css';
 import '../firstStocktakePackageClarify.css';
+import '../firstStocktakeBackendVerifier.css';
 import '../warehousePickHandoff.css';
 import '../fieldOpsGuardRails.css';
 import '../pickTaskOwnership.css';
@@ -45,6 +47,7 @@ export default function WarehouseOpsEnhancers() {
       <FirstStocktakeFieldJournal />
       <FirstStocktakeGoLiveCheck />
       <FirstStocktakePackagingRulesEnhancer />
+      <FirstStocktakeBackendVerifier />
       <PickTaskOwnership />
       <StageAndLoadExecution />
       <WarehouseBarcodeSprintMount />
