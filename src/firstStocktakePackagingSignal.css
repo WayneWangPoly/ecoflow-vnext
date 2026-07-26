@@ -1,0 +1,127 @@
+.first-stocktake-packaging-signal-mount {
+  margin-top: 10px;
+}
+
+.first-stocktake-packaging-signal {
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid #d8e1e6;
+  border-radius: 10px;
+  background: #f6f8f9;
+}
+
+.first-stocktake-packaging-signal header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.first-stocktake-packaging-signal header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.first-stocktake-packaging-signal header span {
+  color: #6d7c84;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .075em;
+}
+
+.first-stocktake-packaging-signal header strong {
+  color: #243640;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.first-stocktake-packaging-signal header b {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #66757d;
+  font-size: 9px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.first-stocktake-packaging-signal p,
+.first-stocktake-packaging-signal footer,
+.first-stocktake-packaging-signal small {
+  margin: 0;
+  color: #66757d;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.first-stocktake-packaging-signal .instruction {
+  border-top: 1px solid rgba(45, 65, 75, .11);
+  padding-top: 7px;
+  color: #263b46;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.4;
+}
+
+.first-stocktake-packaging-signal footer {
+  color: #78868d;
+  font-size: 9.5px;
+}
+
+.first-stocktake-packaging-signal p.error {
+  color: #a3342b;
+}
+
+.first-stocktake-packaging-signal.carton {
+  border-color: #b8dec9;
+  background: #eef8f2;
+}
+
+.first-stocktake-packaging-signal.carton header b,
+.first-stocktake-packaging-signal.carton header strong {
+  color: #1d6b46;
+}
+
+.first-stocktake-packaging-signal.mixed {
+  border-color: #efd79e;
+  background: #fff9e9;
+}
+
+.first-stocktake-packaging-signal.mixed header b,
+.first-stocktake-packaging-signal.mixed header strong {
+  color: #8a5b00;
+}
+
+.first-stocktake-packaging-signal.loose {
+  border-color: #b9d7e9;
+  background: #eef7fb;
+}
+
+.first-stocktake-packaging-signal.loose header b,
+.first-stocktake-packaging-signal.loose header strong {
+  color: #245f7a;
+}
+
+.first-stocktake-packaging-signal.unknown {
+  border-color: #e2c9c3;
+  background: #fff4f1;
+}
+
+.first-stocktake-packaging-signal.unknown header strong {
+  color: #8b4034;
+}
+
+@media (max-width: 760px) {
+  .first-stocktake-packaging-signal header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .first-stocktake-packaging-signal header b {
+    align-self: flex-start;
+  }
+}
