@@ -38,7 +38,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --no-audit --no-fund
 
       - name: Audit operational safety and continuity
         shell: bash

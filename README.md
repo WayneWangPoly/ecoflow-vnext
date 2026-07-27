@@ -17,7 +17,7 @@ and statements — across Owner/Admin, Account, Warehouse and Driver surfaces.
 ## Quick start (development)
 
 ```bash
-npm install
+npm ci                 # Node 22.x, npm 10.9.4
 npm run dev            # requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local
 ```
 
