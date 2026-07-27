@@ -1,0 +1,21 @@
+# Default review owner. Role-level ownership is documented in
+# docs/engineering/FILE-OWNERSHIP.md.
+* @WayneWangPoly
+
+# Architecture and release control
+/AGENTS.md @WayneWangPoly
+/.github/ @WayneWangPoly
+/docs/adr/ @WayneWangPoly
+/docs/engineering/ @WayneWangPoly
+
+# Protected application boundaries
+/src/app/App.tsx @WayneWangPoly
+/src/main.tsx @WayneWangPoly
+/src/app/usePickSync.ts @WayneWangPoly
+/src/data/repositories/pickSync.ts @WayneWangPoly
+/src/domain/driverRun.ts @WayneWangPoly
+/src/lib/supabaseClient.ts @WayneWangPoly
+
+# Production data and services
+/supabase/migrations/ @WayneWangPoly
+/supabase/functions/ @WayneWangPoly
