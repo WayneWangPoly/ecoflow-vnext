@@ -33,14 +33,7 @@ function asNumber(value: unknown, fallback = 0) {
 }
 
 const sourceFiles = [
-  'ordermentum-recent-orders.csv',
-  'ordermentum-order-detail.json',
-  'ordermentum-invoice-detail.json',
-  'ordermentum-products-page1.json',
-  'ordermentum-variants-page1.json',
-  'ordermentum-price-groups.json',
-  'ordermentum-purchaser-detail.json',
-  'ordermentum-stock-locations.json'
+  'synthetic-ordermentum-fixture'
 ];
 
 export function createSampleOrdermentumRepository(snapshot: OrdermentumSnapshot = ordermentumSnapshot): OrdermentumRepository {

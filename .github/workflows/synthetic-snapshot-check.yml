@@ -1,0 +1,48 @@
+name: Synthetic snapshot check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/data/ordermentumSnapshot.ts
+      - src/data/repositories/ordermentumRepository.ts
+      - src/domain/ecoflowData.ts
+      - scripts/audit-synthetic-ordermentum-snapshot.mjs
+      - package.json
+      - .github/workflows/synthetic-snapshot-check.yml
+  push:
+    branches:
+      - main
+      - 'agent/security/DATA-001-*'
+    paths:
+      - src/data/ordermentumSnapshot.ts
+      - src/data/repositories/ordermentumRepository.ts
+      - src/domain/ecoflowData.ts
+      - scripts/audit-synthetic-ordermentum-snapshot.mjs
+      - package.json
+      - .github/workflows/synthetic-snapshot-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Reject real data in the fallback fixture
+        run: npm run audit:synthetic-snapshot
+
+      - name: Build with the synthetic fixture
+        run: npm run build

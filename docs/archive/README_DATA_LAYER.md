@@ -1,12 +1,13 @@
 # EcoFlow Ordermentum data layer patch
 
-This patch adds the first careful data-integration layer without calling the live Ordermentum API.
+This historical note describes the first data-integration layer without calling
+the live Ordermentum API. The committed fallback is now fully synthetic.
 
 ## What changed
 
 - `src/data/ordermentumSnapshot.ts`
-  - Normalized static snapshot generated from the current real Ordermentum sample files.
-  - Includes recent order headers, one detailed order, invoice summary, purchaser summary, products, variants, price groups and stock locations.
+  - Deterministic synthetic fixture with no copied customer or provider data.
+  - Includes demo order headers, one detailed order, invoice summary, purchaser summary, products, variants, price groups and stock locations.
 
 - `src/domain/types.ts`
   - Shared EcoFlow UI/domain types.
@@ -47,7 +48,7 @@ npm run build
 
 ## Next layer
 
-The next logical layer is to replace the static `ordermentumSnapshot.ts` with either:
+The next logical layer is to replace the synthetic `ordermentumSnapshot.ts` fallback with either:
 
 1. a file-upload importer for refreshed CSV/JSON exports, or
 2. a repository interface that can later read the same shape from Supabase / live Ordermentum API.

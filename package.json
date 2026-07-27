@@ -16,6 +16,7 @@
     "audit:release-receiving": "node scripts/audit-release-receiving-clarity.mjs",
     "audit:desktop-stocktake": "node scripts/audit-desktop-density-stocktake-coverage.mjs",
     "audit:warehouse-layout": "node scripts/audit-warehouse-physical-layout.mjs",
+    "audit:synthetic-snapshot": "node --experimental-strip-types scripts/audit-synthetic-ordermentum-snapshot.mjs",
     "test:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs && node scripts/audit-desktop-density-stocktake-coverage.mjs && node scripts/audit-warehouse-physical-layout.mjs",
     "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
     "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",

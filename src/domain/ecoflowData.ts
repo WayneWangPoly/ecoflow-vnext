@@ -574,16 +574,7 @@ export function buildEcoFlowData(repository: OrdermentumRepository = activeOrder
     variantCatalogTotal: asNumber(ordermentumSnapshot.variantsMeta.totalResults, ordermentumSnapshot.variants.length),
     priceGroupCount: ordermentumSnapshot.priceGroups.length,
     stockLocationCount: ordermentumSnapshot.stockLocations.length,
-    sourceFiles: [
-      'ordermentum-recent-orders.csv',
-      'ordermentum-order-detail.json',
-      'ordermentum-invoice-detail.json',
-      'ordermentum-products-page1.json',
-      'ordermentum-variants-page1.json',
-      'ordermentum-price-groups.json',
-      'ordermentum-purchaser-detail.json',
-      'ordermentum-stock-locations.json'
-    ]
+    sourceFiles: repositoryStatus.sourceFiles
   };
 
   const dataQuality = buildDataQuality(catalog, stores, priceGroups);
