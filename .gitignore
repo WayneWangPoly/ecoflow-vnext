@@ -19,6 +19,11 @@ logs/
 exports/
 *.log
 *.csv
+ordermentum-*.json
+
+# Local provider credentials, API snapshots, and generated Supabase link state
+.cache/
+supabase/.temp/
 
 # Build caches
 tsconfig.tsbuildinfo
