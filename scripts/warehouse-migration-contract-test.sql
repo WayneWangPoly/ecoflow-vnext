@@ -20,7 +20,7 @@ values
   ('A1-L-01-01A','A1','A1','left','Bottom',10)
 on conflict (location_code) do nothing;
 
-insert into public.ecoflow_sku_package_policies(sku,package_mode,default_shelf,note,updated_by)
+insert into public.ecoflow_sku_package_policies(sku,package_mode,default_shelf,policy_note,updated_by)
 values ('CUP-12W','CARTON_AND_SLEEVE','A1-L-01-01A','CI contract','11111111-1111-1111-1111-111111111111')
 on conflict (sku) do update set package_mode=excluded.package_mode,default_shelf=excluded.default_shelf;
 
