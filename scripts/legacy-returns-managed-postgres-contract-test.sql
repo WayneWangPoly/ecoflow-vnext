@@ -6,7 +6,7 @@ do $managed_postgres_contract$
 declare
   v_signature text;
   v_oid oid;
-  v_source text;
+  v_definition text;
   v_config text[];
 begin
   foreach v_signature in array array[
@@ -23,14 +23,13 @@ begin
       raise exception 'managed PostgreSQL implementation is missing: %', v_signature;
     end if;
 
-    select prosrc, proconfig
-    into v_source, v_config
+    select pg_get_functiondef(oid), proconfig
+    into v_definition, v_config
     from pg_proc
     where oid = v_oid;
 
-    if left(ltrim(v_source), length('#variable_conflict use_column'))
-       <> '#variable_conflict use_column' then
-      raise exception 'implementation is missing the per-function compiler directive: %', v_signature;
+    if position('#variable_conflict use_column' in v_definition) = 0 then
+      raise exception 'canonical implementation definition is missing the per-function compiler directive: %', v_signature;
     end if;
 
     if exists (
