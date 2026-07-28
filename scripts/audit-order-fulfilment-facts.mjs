@@ -6,7 +6,9 @@ const migrationFile =
 const migration = fs.readFileSync(migrationFile, 'utf8');
 
 // This audit protects boundaries the runtime contract cannot prove by row data:
-// no browser command grants, no automatic refresh, and no inferred fulfilment.
+// no browser command grants, no automatic refresh, no inferred fulfilment,
+// no direct service writes to derived facts, and no observation timestamp in
+// the business-version hash.
 const checks = [
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
   ['preflight', /ORDER_FULFILMENT_FACT_PREREQUISITES_MISSING/],
