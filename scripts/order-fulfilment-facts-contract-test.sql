@@ -160,7 +160,6 @@ begin
 end;
 $structure$;
 
--- The migration must not perform an automatic production-style backfill.
 do $empty_before_refresh$
 begin
   if exists(select 1 from analytics.fact_order_line)
@@ -227,9 +226,20 @@ values
     'BRAND-B-GLOVE-M-BLK','Brand B Medium Black Gloves'
   );
 
+create temporary table pg_temp.ecoflow_fulfilment_test_results(
+  result_name text primary key,
+  allocation_id uuid not null,
+  replayed boolean not null,
+  allocation_status text not null,
+  revision bigint not null
+) on commit drop;
+
+grant select,insert on pg_temp.ecoflow_fulfilment_test_results to service_role;
+
 set role service_role;
 
-select *
+insert into pg_temp.ecoflow_fulfilment_test_results
+select 'primary',r.*
 from public.ecoflow_record_order_fulfilment_allocation(
   'pick:OM-1001:GLOVE-M-BLK:brand-a',
   '20000000-0000-0000-0000-000000000001',
@@ -238,10 +248,10 @@ from public.ecoflow_record_order_fulfilment_allocation(
   6,'carton','PRIMARY',6.50,null,'{}'::jsonb,'A1',
   '2026-07-29 08:00:00+09:30',
   '60000000-0000-0000-0000-000000000001','Warehouse Test'
-)
-\gset primary_
+) as r;
 
-select *
+insert into pg_temp.ecoflow_fulfilment_test_results
+select 'replay',r.*
 from public.ecoflow_record_order_fulfilment_allocation(
   'pick:OM-1001:GLOVE-M-BLK:brand-a',
   '20000000-0000-0000-0000-000000000001',
@@ -250,16 +260,26 @@ from public.ecoflow_record_order_fulfilment_allocation(
   6,'CARTON','PRIMARY',6.50,null,'{}'::jsonb,'A1',
   '2026-07-29 08:00:00+09:30',
   '60000000-0000-0000-0000-000000000001','Warehouse Test'
-)
-\gset replay_
+) as r;
 
 reset role;
 
 do $idempotency$
+declare
+  v_primary pg_temp.ecoflow_fulfilment_test_results%rowtype;
+  v_replay pg_temp.ecoflow_fulfilment_test_results%rowtype;
 begin
-  if :'primary_allocation_id'::uuid<>:'replay_allocation_id'::uuid
-     or :'primary_replayed'::boolean
-     or not :'replay_replayed'::boolean then
+  select * into v_primary
+  from pg_temp.ecoflow_fulfilment_test_results
+  where result_name='primary';
+
+  select * into v_replay
+  from pg_temp.ecoflow_fulfilment_test_results
+  where result_name='replay';
+
+  if v_primary.allocation_id<>v_replay.allocation_id
+     or v_primary.replayed
+     or not v_replay.replayed then
     raise exception 'fulfilment event replay contract failed';
   end if;
 end;
@@ -268,15 +288,13 @@ $idempotency$;
 set role service_role;
 
 select public.ecoflow_facts_test_expect_error(
-  format(
-    $sql$select * from public.ecoflow_record_order_fulfilment_allocation(
-      'pick:OM-1001:GLOVE-M-BLK:no-reason',
-      '20000000-0000-0000-0000-000000000001',
-      '30000000-0000-0000-0000-000000000001',
-      '50000000-0000-0000-0000-000000000002',
-      1,'CARTON','APPROVED_SUBSTITUTE',6.25,null
-    )$sql$
-  ),
+  $sql$select * from public.ecoflow_record_order_fulfilment_allocation(
+    'pick:OM-1001:GLOVE-M-BLK:no-reason',
+    '20000000-0000-0000-0000-000000000001',
+    '30000000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000002',
+    1,'CARTON','APPROVED_SUBSTITUTE',6.25,null
+  )$sql$,
   'FULFILMENT_SUBSTITUTION_REASON_REQUIRED'
 );
 
@@ -291,7 +309,8 @@ select public.ecoflow_facts_test_expect_error(
   'FULFILMENT_UNIT_CONVERSION_REQUIRED'
 );
 
-select *
+insert into pg_temp.ecoflow_fulfilment_test_results
+select 'substitute',r.*
 from public.ecoflow_record_order_fulfilment_allocation(
   'pick:OM-1001:GLOVE-M-BLK:brand-b',
   '20000000-0000-0000-0000-000000000001',
@@ -302,8 +321,7 @@ from public.ecoflow_record_order_fulfilment_allocation(
   '{"approval":"warehouse-equivalence-test"}'::jsonb,'A2',
   '2026-07-29 08:05:00+09:30',
   '60000000-0000-0000-0000-000000000001','Warehouse Test'
-)
-\gset substitute_
+) as r;
 
 select public.ecoflow_facts_test_expect_error(
   $sql$select * from public.ecoflow_record_order_fulfilment_allocation(
@@ -361,7 +379,11 @@ begin
   if not exists(
     select 1
     from analytics.fact_fulfilment_line
-    where allocation_id=:'substitute_allocation_id'::uuid
+    where allocation_id=(
+      select allocation_id
+      from pg_temp.ecoflow_fulfilment_test_results
+      where result_name='substitute'
+    )
       and commercial_sku_code='GLOVE-M-BLK'
       and physical_sku_code='BRAND-B-GLOVE-M-BLK'
       and substitution_flag
@@ -385,7 +407,6 @@ begin
 end;
 $first_refresh$;
 
--- A source-line price change must create a new fact version, not rewrite history.
 update public.om_order_items
 set price=11,subtotal=110,gst=11,total=121
 where id='30000000-0000-0000-0000-000000000001';
@@ -443,7 +464,11 @@ $version_history$;
 set role service_role;
 select *
 from public.ecoflow_void_order_fulfilment_allocation(
-  :'substitute_allocation_id'::uuid,
+  (
+    select allocation_id
+    from pg_temp.ecoflow_fulfilment_test_results
+    where result_name='substitute'
+  ),
   'Test correction: substituted cartons returned to allocation pool',
   '60000000-0000-0000-0000-000000000001'
 );
@@ -474,7 +499,11 @@ begin
   if not exists(
     select 1
     from analytics.fact_fulfilment_line
-    where allocation_id=:'substitute_allocation_id'::uuid
+    where allocation_id=(
+      select allocation_id
+      from pg_temp.ecoflow_fulfilment_test_results
+      where result_name='substitute'
+    )
       and allocation_status='VOIDED'
       and source_revision=2
   ) then
