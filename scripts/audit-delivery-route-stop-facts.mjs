@@ -14,6 +14,8 @@ const required = [
   ['stop current uniqueness', /create unique index delivery_stop_one_current/],
   ['route dimension', /references analytics\.dim_route/],
   ['driver dimension', /references analytics\.dim_driver/],
+  ['observed driver count', /\bobserved_driver_count\b/],
+  ['combined driver evidence', /select da\.driver_user_id[\s\S]{0,500}union all[\s\S]{0,300}select dl\.driver_user_id/],
   ['two typed POD rules', /POD1_DROP_POINT[\s\S]*POD2_GOODS_PLACED/],
   ['durable exception authority', /DURABLE_EXCEPTION/],
   ['notification communication disclaimer', /Notifications are communication evidence and never prove delivery/i],
@@ -53,6 +55,7 @@ assert.ok(routeTable, 'Delivery fact audit could not isolate route fact DDL.');
 assert.ok(stopTable, 'Delivery fact audit could not isolate stop fact DDL.');
 
 for (const [name, pattern, source = migration] of [
+  ['legacy departure-only driver field', /\bdeparture_driver_count\b/],
   ['route browser grant', /grant select on table analytics\.fact_delivery_route_observation to (?:anon|authenticated)/],
   ['stop browser grant', /grant select on table analytics\.fact_delivery_stop_observation to (?:anon|authenticated)/],
   ['service route direct writes', /grant all on table analytics\.fact_delivery_route_observation to service_role/],
@@ -74,5 +77,5 @@ for (const [name, pattern, source = migration] of [
   assert.doesNotMatch(source, pattern, `Delivery fact audit found ${name}`);
 }
 
-assert.equal(required.length, 30);
+assert.equal(required.length, 32);
 console.log(`Delivery route/stop fact audit passed (${required.length}/${required.length}).`);
