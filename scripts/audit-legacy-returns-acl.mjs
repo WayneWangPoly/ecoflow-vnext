@@ -20,7 +20,7 @@ const checks = [
   ['managed compatibility captures full body marker', /v_body_marker := v_marker_match\[1\]/, managedCompatSource],
   ['managed compatibility compiler directive', /#variable_conflict use_column/, managedCompatSource],
   ['managed compatibility recompiles definitions', /execute v_recompiled;/, managedCompatSource],
-  ['compact production body fixture', /compact-body fixture[\s\S]{0,1400}regexp_replace\([\s\S]{0,400}did not reproduce production formatting/, compactFixtureSource],
+  ['compact production body fixture', /v_compact_definition := regexp_replace\([\s\S]*compact-body fixture did not reproduce production formatting/, compactFixtureSource],
   ['compact fixture runs before managed role', /\\ir legacy-returns-compact-function-body-fixture\.sql[\s\S]{0,500}create role ecoflow_managed_migration/, managedRoleFixtureSource],
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
   ['preflight marker', /RETURNS_ACL_PREREQUISITES_MISSING/],
