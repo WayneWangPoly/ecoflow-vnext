@@ -4,184 +4,23 @@ on:
   pull_request:
   push:
     branches:
-      - agent/data/INTEL-DATA-004-delivery-route-execution-facts
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  version-delivery-driver-dimensions:
-    if: >-
-      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) &&
-      (github.ref_name == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts' ||
-       github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts')
+  tracked-local-data:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out target branch
+      - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          ref: agent/data/INTEL-DATA-004-delivery-route-execution-facts
-          fetch-depth: 0
+          node-version: 22
 
-      - name: Apply anchored driver SCD repair and contract
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
-          contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
-          migration = migration_path.read_text()
-          contract = contract_path.read_text()
-
-          driver_pattern = re.compile(
-              r"(?ms)^    insert into analytics\.dim_driver\(\n"
-              r".*?^      and d\.is_current and d\.display_name is distinct from s\.display_name;\n\n"
-              r"(?=^    insert into analytics\.dim_route\()"
-          )
-          driver_replacement = """    update analytics.dim_driver d
-    set display_name=s.display_name,
-        source_updated_at=s.source_updated_at,
-        updated_at=v_as_of
-    from pg_temp.delivery_driver_source s
-    where d.source_system='ECOFLOW'
-      and d.source_driver_key=s.source_driver_key
-      and d.is_current
-      and d.display_name is distinct from s.display_name
-      and v_as_of<=d.effective_from;
-
-    update analytics.dim_driver d
-    set effective_to=v_as_of,
-        is_current=false,
-        updated_at=v_as_of
-    from pg_temp.delivery_driver_source s
-    where d.source_system='ECOFLOW'
-      and d.source_driver_key=s.source_driver_key
-      and d.is_current
-      and d.display_name is distinct from s.display_name
-      and v_as_of>d.effective_from;
-
-    insert into analytics.dim_driver(
-      source_system,source_driver_key,display_name,active,effective_from,is_current,
-      source_updated_at,recorded_by
-    )
-    select 'ECOFLOW',s.source_driver_key,s.display_name,true,v_as_of,true,
-      s.source_updated_at,'analytics.refresh_delivery_route_stop_facts'
-    from pg_temp.delivery_driver_source s
-    where not exists(
-      select 1 from analytics.dim_driver d
-      where d.source_system='ECOFLOW'
-        and d.source_driver_key=s.source_driver_key
-        and d.is_current
-    );
-
-"""
-          migration, count = driver_pattern.subn(driver_replacement, migration)
-          if count != 1:
-              raise SystemExit(f'Expected one anchored driver block, found {count}')
-
-          contract_pattern = re.compile(
-              r"\$first_refresh\$;\n\n"
-              r"-- A transport-only timestamp update with identical payload must not create history\."
-          )
-          contract_replacement = """$first_refresh$;
-
--- Driver labels are SCD attributes. A later display-name change creates a new
--- dimension row without rewriting prior route observations.
-update public.app_user_profiles
-set display_name='Route Driver One Renamed',
-    updated_at='2026-07-29 12:31:00+09:30'
-where user_id='81000000-0000-0000-0000-000000000001';
-
-set role service_role;
-select * from analytics.refresh_delivery_route_stop_facts(
-  '2026-07-29 12:32:00+09:30'
-);
-reset role;
-
-do $driver_scd$
-begin
-  if (select count(*) from analytics.dim_driver
-      where source_system='ECOFLOW'
-        and source_driver_key='81000000-0000-0000-0000-000000000001')<>2 then
-    raise exception 'driver display-name change did not create an SCD version';
-  end if;
-  if not exists(
-    select 1 from analytics.dim_driver
-    where source_system='ECOFLOW'
-      and source_driver_key='81000000-0000-0000-0000-000000000001'
-      and display_name='Route Driver One'
-      and not is_current
-      and effective_to='2026-07-29 12:32:00+09:30'
-  ) then
-    raise exception 'prior driver dimension was not closed';
-  end if;
-  if not exists(
-    select 1 from analytics.dim_driver
-    where source_system='ECOFLOW'
-      and source_driver_key='81000000-0000-0000-0000-000000000001'
-      and display_name='Route Driver One Renamed'
-      and is_current
-      and effective_from='2026-07-29 12:32:00+09:30'
-  ) then
-    raise exception 'current driver dimension was not inserted';
-  end if;
-  if (select count(*) from analytics.fact_delivery_route_observation
-      where source_route_key='2026-07-29:RUN:A')<>1 then
-    raise exception 'driver label change created a false route observation version';
-  end if;
-end;
-$driver_scd$;
-
--- A transport-only timestamp update with identical payload must not create history."""
-          contract, count = contract_pattern.subn(contract_replacement, contract)
-          if count != 1:
-              raise SystemExit(f'Expected one driver SCD contract insertion point, found {count}')
-
-          migration_path.write_text(migration)
-          contract_path.write_text(contract)
-          PY
-
-      - name: Restore read-only hygiene workflow
-        shell: bash
-        run: |
-          cat > .github/workflows/repository-hygiene.yml <<'YAML'
-          name: Repository hygiene
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            tracked-local-data:
-              runs-on: ubuntu-latest
-              timeout-minutes: 5
-              steps:
-                - name: Check out repository
-                  uses: actions/checkout@v4
-
-                - name: Set up Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-
-                - name: Reject tracked credentials and local API data
-                  run: node scripts/audit-repository-hygiene.mjs
-          YAML
-
-      - name: Commit scoped repair and self-clean
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/repository-hygiene.yml
-          git diff --cached --exit-code && exit 0
-          git commit -m 'fix(data): version delivery driver dimensions'
-          git push origin HEAD:agent/data/INTEL-DATA-004-delivery-route-execution-facts
+      - name: Reject tracked credentials and local API data
+        run: node scripts/audit-repository-hygiene.mjs
