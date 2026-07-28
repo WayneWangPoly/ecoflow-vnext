@@ -12,6 +12,18 @@ values(
   'PICK_FACE','ACTIVE',1101,'2026-07-29 08:00:00+09:30'
 );
 
+insert into public.ecoflow_warehouse_location_items(
+  id,location_id,sku,product_name,source_barcode,unit_level,quantity,status,
+  last_movement_at,last_note,created_at,updated_at
+)
+values(
+  '78000000-0000-0000-0000-000000000001',
+  '76000000-0000-0000-0000-000000000001',
+  'INV-DIM-SKU','Inventory Dimension SKU',null,'each',5,'ACTIVE',
+  '2026-07-29 09:00:00+09:30','dimension snapshot contract',
+  '2026-07-29 09:00:00+09:30','2026-07-29 09:00:00+09:30'
+);
+
 insert into public.ecoflow_warehouse_movements(
   id,movement_type,location_id,to_location_id,sku,product_name,barcode,
   unit_level,quantity,note,actor_user_id,created_at,reference_type,reference_id
@@ -35,6 +47,7 @@ reset role;
 do $first_resolution$
 declare
   v_fact record;
+  v_snapshot record;
   v_dim record;
 begin
   select * into v_fact
@@ -46,6 +59,17 @@ begin
      or v_fact.to_location_dimension_id is null
      or v_fact.from_location_dimension_id<>v_fact.to_location_dimension_id then
     raise exception 'first refresh did not resolve movement location dimensions';
+  end if;
+
+  select * into v_snapshot
+  from analytics.fact_daily_inventory_snapshot
+  where snapshot_date='2026-07-29'
+    and source_item_id='78000000-0000-0000-0000-000000000001';
+
+  if v_snapshot.warehouse_location_dimension_id is null
+     or v_snapshot.warehouse_location_dimension_id<>
+        v_fact.from_location_dimension_id then
+    raise exception 'first daily snapshot did not resolve the initial location dimension';
   end if;
 
   select * into v_dim
@@ -70,6 +94,12 @@ set rack_id='INV-DIM-RACK-B',
     location_category='OVERFLOW',
     updated_at='2026-07-30 07:00:00+09:30'
 where id='76000000-0000-0000-0000-000000000001';
+
+update public.ecoflow_warehouse_location_items
+set quantity=7,
+    last_movement_at='2026-07-30 08:00:00+09:30',
+    updated_at='2026-07-30 08:00:00+09:30'
+where id='78000000-0000-0000-0000-000000000001';
 
 insert into public.ecoflow_warehouse_movements(
   id,movement_type,location_id,to_location_id,sku,product_name,barcode,
@@ -119,6 +149,7 @@ begin
     select 1 from analytics.fact_inventory_movement
     where source_movement_id='77000000-0000-0000-0000-000000000001'
       and from_location_dimension_id=v_old_id
+      and to_location_dimension_id=v_old_id
   ) then
     raise exception 'historic movement lost its original location dimension';
   end if;
@@ -130,6 +161,26 @@ begin
       and to_location_dimension_id=v_new_id
   ) then
     raise exception 'new movement did not use the current location dimension';
+  end if;
+
+  if not exists(
+    select 1 from analytics.fact_daily_inventory_snapshot
+    where snapshot_date='2026-07-29'
+      and source_item_id='78000000-0000-0000-0000-000000000001'
+      and warehouse_location_dimension_id=v_old_id
+      and native_quantity=5
+  ) then
+    raise exception 'historic daily snapshot lost its original location dimension';
+  end if;
+
+  if not exists(
+    select 1 from analytics.fact_daily_inventory_snapshot
+    where snapshot_date='2026-07-30'
+      and source_item_id='78000000-0000-0000-0000-000000000001'
+      and warehouse_location_dimension_id=v_new_id
+      and native_quantity=7
+  ) then
+    raise exception 'new daily snapshot did not use the current location dimension';
   end if;
 end;
 $scd_resolution$;
