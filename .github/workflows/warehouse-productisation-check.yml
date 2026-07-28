@@ -34,6 +34,7 @@ jobs:
           npm run audit:warehouse 2>&1 | tee operational-audit.log
           node scripts/audit-stocktake-go-live-readiness.mjs 2>&1 | tee -a operational-audit.log
           npm run audit:returns-acl 2>&1 | tee -a operational-audit.log
+          npm run audit:analytics 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -124,7 +125,8 @@ jobs:
             supabase/migrations/20260727110000_restore_warehouse_write_guards.sql \
             supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql \
             supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql \
-            supabase/migrations/20260727130000_day_state_change_sequence.sql
+            supabase/migrations/20260727130000_day_state_change_sequence.sql \
+            supabase/migrations/20260728221500_analytics_semantic_foundation.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
@@ -144,6 +146,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/legacy-returns-acl-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute analytics semantic foundation tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/analytics-semantic-foundation-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute pick ownership concurrency tests
         shell: bash
         run: |
