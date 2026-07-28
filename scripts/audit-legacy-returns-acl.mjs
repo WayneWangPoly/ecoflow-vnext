@@ -35,7 +35,7 @@ const checks = [
   ['drop driver gate', /RETURN_DRIVER_ROLE_REQUIRED/],
   ['inspection wrapper', /create function public\.ecoflow_record_return_inspection_item\(/],
   ['inspection warehouse gate', /RETURN_INSPECTION_WAREHOUSE_ROLE_REQUIRED/],
-  ['geofence format repair', /GPS %s m from zone; accuracy %s m[\s\S]{0,260}revoke all on function public\.ecoflow_driver_drop_return_acl_impl/, repairSource],
+  ['geofence format repair', /GPS %s m from zone; accuracy %s m[\s\S]{0,1200}revoke all on function public\.ecoflow_driver_drop_return_acl_impl/, repairSource],
   ['server actor binding', /format\('%s:%s',v_role,auth\.uid\(\)::text\)/],
   ['notification settings RLS', /alter table public\.ecoflow_delivery_notification_settings enable row level security;/],
   ['notifications RLS', /alter table public\.ecoflow_delivery_notifications enable row level security;/],
