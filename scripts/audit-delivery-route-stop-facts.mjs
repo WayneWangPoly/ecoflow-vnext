@@ -20,6 +20,9 @@ const required = [
   ['combined driver evidence', /select da\.driver_user_id[\s\S]{0,500}union all[\s\S]{0,300}select dl\.driver_user_id/],
   ['parsed durable dates', /\bparsed_business_day\b/],
   ['qualified assignment join', /on a\.business_day=c\.business_day\s+and a\.source_order_id=c\.source_order_id/],
+  ['driver same-instant correction', /update analytics\.dim_driver d[\s\S]{0,500}v_as_of<=d\.effective_from/],
+  ['driver SCD history close', /update analytics\.dim_driver d[\s\S]{0,500}set effective_to=v_as_of,[\s\S]{0,160}is_current=false/],
+  ['driver SCD contract', /driver display-name change did not create an SCD version/],
   ['two typed POD rules', /POD1_DROP_POINT[\s\S]*POD2_GOODS_PLACED/],
   ['durable exception authority', /DURABLE_EXCEPTION/],
   ['notification communication disclaimer', /Notifications are communication evidence and never prove delivery/i],
@@ -45,7 +48,8 @@ const required = [
 ];
 
 for (const [name, pattern] of required) {
-  assert.match(migration, pattern, `Delivery fact audit failed: ${name}`);
+  const source = name === 'driver SCD contract' ? contract : migration;
+  assert.match(source, pattern, `Delivery fact audit failed: ${name}`);
 }
 
 assert.match(
@@ -91,5 +95,5 @@ for (const [name, pattern, source = migration] of [
   assert.doesNotMatch(source, pattern, `Delivery fact audit found ${name}`);
 }
 
-assert.equal(required.length, 34);
+assert.equal(required.length, 37);
 console.log(`Delivery route/stop fact audit passed (${required.length}/${required.length}).`);
