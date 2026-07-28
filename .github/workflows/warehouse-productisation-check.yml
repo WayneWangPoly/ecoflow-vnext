@@ -122,7 +122,8 @@ jobs:
             supabase/migrations/20260722194600_verify_stocktake_pick_readiness.sql \
             supabase/migrations/20260725100000_fix_barcode_rpc_ambiguous_sku.sql \
             supabase/migrations/20260727110000_restore_warehouse_write_guards.sql \
-            supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql
+            supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql \
+            supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
