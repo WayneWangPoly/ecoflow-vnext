@@ -1,5 +1,5 @@
-import { activeOrdermentumRepository } from '@/data/repositories/ordermentumRepository';
 import type { OrdermentumRepository } from '@/data/repositories/ordermentumRepository';
+import type { OrdermentumSnapshot } from '@/data/ordermentumTypes';
 import { getOrderBucketCounts } from './orderBuckets';
 import {
   addDays,
@@ -40,7 +40,7 @@ type SyncPlan = {
   changeSummary: string;
 };
 
-let ordermentumSnapshot = activeOrdermentumRepository.getSnapshot();
+let ordermentumSnapshot: OrdermentumSnapshot;
 
 function asNumber(value: unknown, fallback = 0) {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -384,8 +384,8 @@ function buildPriceGroups(): PriceGroupRow[] {
     id: group.id,
     name: group.name,
     default: group.default,
-    retailersTotal: group.retailersTotal,
-    productsTotal: group.productsTotal
+    retailersTotal: asNumber(group.retailersTotal),
+    productsTotal: asNumber(group.productsTotal)
   }));
 }
 
@@ -536,7 +536,7 @@ function buildLogs(summary: OrdermentumImportSummary, dataQuality: DataQualityIt
   ];
 }
 
-export function buildEcoFlowData(repository: OrdermentumRepository = activeOrdermentumRepository): EcoFlowDataSet {
+export function buildEcoFlowData(repository: OrdermentumRepository): EcoFlowDataSet {
   ordermentumSnapshot = repository.getSnapshot();
   const repositoryStatus = repository.getStatus();
   const anchorIso = buildOperationalAnchor();

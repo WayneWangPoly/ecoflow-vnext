@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Clock3, LocateFixed, MapPin, RefreshCw, Store, Truck, Warehouse } from 'lucide-react';
-import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { fetchPickRows, mergeRowsIntoDay } from '@/data/repositories/pickSync';
 import { loadDriverIdentity, loadOwnerDriverLocationTimeline, type DriverLocationSample } from '@/data/repositories/driverLocation';
 import { buildDriverRun, emptyDriverDayState, WAREHOUSE, type DriverDayState, type MapPoint, type RunStop } from '@/domain/driverRun';
+import { buildProductionEmptyData } from '@/domain/productionData';
+import { resolveTrustedLiveSnapshot, type TrustedLiveSnapshot } from '@/domain/trustedLiveSnapshot';
+import type { EcoFlowDataSet } from '@/domain/types';
 
 const MAP_W = 900;
 const MAP_H = 520;
@@ -112,7 +114,7 @@ function representativeSamples(samples: DriverLocationSample[], maximum = 24) {
   return [...keep.values()].sort((a, b) => a.captured_at.localeCompare(b.captured_at)).slice(-maximum);
 }
 
-type ViewsCache = { data: ReturnType<typeof buildEcoFlowData>; loadedTick: number };
+type ViewsCache = TrustedLiveSnapshot<EcoFlowDataSet>;
 /** Reload the heavy Ordermentum views only every Nth poll; pick rows use an incremental cursor. */
 const VIEWS_REFRESH_TICKS = 5;
 const EPOCH_CURSOR = '1970-01-01T00:00:00.000Z';
@@ -164,12 +166,29 @@ export function OwnerDriverTrackingMap() {
       const tick = tickRef.current;
       tickRef.current += 1;
       let base = viewsCacheRef.current;
-      if (!base || tick - base.loadedTick >= VIEWS_REFRESH_TICKS) {
-        const views = await loadSupabaseOrdermentumViews();
-        const initial = buildEcoFlowData();
-        base = { data: views ? applySupabaseOrdermentumViews(initial, views) : initial, loadedTick: tick };
+      let liveWarning = '';
+      if (!base || tick - base.acceptedSequence >= VIEWS_REFRESH_TICKS) {
+        let candidate: EcoFlowDataSet | null = null;
+        try {
+          const views = await loadSupabaseOrdermentumViews();
+          candidate = views
+            ? applySupabaseOrdermentumViews(buildProductionEmptyData(), views)
+            : null;
+          if (!views) liveWarning = 'Supabase live views are unavailable.';
+        } catch (reason) {
+          liveWarning = reason instanceof Error ? reason.message : String(reason);
+        }
+        const resolution = resolveTrustedLiveSnapshot(base, candidate, tick);
+        if (!resolution.snapshot) {
+          throw new Error(liveWarning || 'No trusted live delivery snapshot is available.');
+        }
+        base = resolution.snapshot;
         viewsCacheRef.current = base;
+        if (resolution.source === 'last-trusted') {
+          liveWarning = liveWarning || 'Live refresh failed; retaining the last trusted delivery snapshot.';
+        }
       }
+      if (!base) throw new Error('No trusted live delivery snapshot is available.');
       const businessDay = base.data.businessDay.date;
       if (!dayRef.current || dayRef.current.businessDay !== businessDay) {
         dayRef.current = emptyDriverDayState(businessDay);
@@ -192,7 +211,7 @@ export function OwnerDriverTrackingMap() {
         loadedAt: new Date().toISOString(),
       };
       setData(next);
-      setError('');
+      setError(liveWarning);
       const newest = [...next.samples].sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0];
       setSelectedDriver((current) => next.samples.some((sample) => sample.driver_user_id === current) ? current : newest?.driver_user_id || '');
     } catch (reason) {

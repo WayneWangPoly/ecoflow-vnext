@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, Mail, RefreshCw, Save, ShieldCheck, Store, TriangleAlert } from 'lucide-react';
-import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { loadDriverIdentity } from '@/data/repositories/driverLocation';
+import { makeBusinessDay } from '@/domain/syncModel';
 import {
   loadDeliveryNotificationLog,
   loadOwnerDepartureAcknowledgements,
@@ -254,7 +254,7 @@ export function OwnerDeliveryGovernance() {
   const [owner, setOwner] = useState(false);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [tab, setTab] = useState('');
-  const businessDay = buildEcoFlowData().businessDay.date;
+  const businessDay = makeBusinessDay(new Date().toISOString()).date;
 
   useEffect(() => {
     let active = true;

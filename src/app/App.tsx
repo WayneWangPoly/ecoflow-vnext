@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { buildEcoFlowData } from '@/domain/ecoflowData';
 import { buildProductionEmptyData } from '@/domain/productionData';
+import { resolveTrustedLiveSnapshot, type TrustedLiveSnapshot } from '@/domain/trustedLiveSnapshot';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { callInternaliseOrders, setActiveRunCode } from '@/data/repositories/pickSync';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
@@ -45,7 +45,7 @@ import type {
   WarehouseTab
 } from '@/domain/types';
 
-const initialData = import.meta.env.DEV ? buildEcoFlowData() : buildProductionEmptyData();
+const initialData = buildProductionEmptyData();
 const AUTH_PROFILE_CACHE_KEY = 'ecoflow:last-verified-profile';
 
 function readCachedAuthProfile(): EcoFlowAuthProfile | null {
@@ -1052,8 +1052,30 @@ export function App() {
   const [orders, setOrders] = useState<ImportedOrder[]>(initialData.orders);
   const [loadError, setLoadError] = useState('');
   const [loadWarning, setLoadWarning] = useState('');
-  const [snapshotReady, setSnapshotReady] = useState(import.meta.env.DEV);
+  const [snapshotReady, setSnapshotReady] = useState(false);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const trustedLiveDataRef = useRef<TrustedLiveSnapshot<EcoFlowDataSet> | null>(null);
+  const trustedLiveUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let active = true;
+    void import('@/domain/sampleEcoflowData')
+      .then(({ buildDevelopmentSampleData }) => {
+        if (!active) return;
+        const sample = buildDevelopmentSampleData();
+        setData(sample);
+        setOrders(sample.orders);
+        setSnapshotReady(true);
+        setLoadError('');
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setSnapshotReady(false);
+        setLoadError(error instanceof Error ? error.message : 'Synthetic development data is unavailable.');
+      });
+    return () => { active = false; };
+  }, []);
 
   async function refreshAuthProfile() {
     if (!supabase) return null;
@@ -1134,14 +1156,31 @@ export function App() {
     };
   }, [authEnabled]);
 
+  useEffect(() => {
+    const userId = authProfile?.user_id ?? null;
+    if (trustedLiveUserIdRef.current === userId) return;
+    trustedLiveUserIdRef.current = userId;
+    trustedLiveDataRef.current = null;
+    if (!import.meta.env.DEV) {
+      setData(initialData);
+      setOrders(initialData.orders);
+      setSnapshotReady(false);
+      setLoadWarning('');
+    }
+  }, [authProfile?.user_id]);
+
   const reloadViews = useCallback(async () => {
     setSnapshotLoading(true);
     try {
       const views = await loadSupabaseOrdermentumViews();
       if (!views) throw new Error('Supabase live views are not configured.');
       const nextData = applySupabaseOrdermentumViews(initialData, views);
-      setData(nextData);
-      setOrders(nextData.orders);
+      const resolution = resolveTrustedLiveSnapshot(trustedLiveDataRef.current, nextData, Date.now());
+      const accepted = resolution.snapshot;
+      if (!accepted) throw new Error('Supabase returned no trusted live snapshot.');
+      trustedLiveDataRef.current = accepted;
+      setData(accepted.data);
+      setOrders(accepted.data.orders);
       setSnapshotReady(true);
       setLoadWarning(
         views.diagnostics
@@ -1151,6 +1190,13 @@ export function App() {
       );
       setLoadError('');
     } catch (error: unknown) {
+      if (!import.meta.env.DEV) {
+        const resolution = resolveTrustedLiveSnapshot(trustedLiveDataRef.current, null, Date.now());
+        const safeData = resolution.snapshot?.data ?? initialData;
+        setData(safeData);
+        setOrders(safeData.orders);
+        setSnapshotReady(resolution.source === 'last-trusted');
+      }
       setLoadError(error instanceof Error ? error.message : 'Supabase order inbox is unavailable.');
     } finally {
       setSnapshotLoading(false);
@@ -1158,6 +1204,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (import.meta.env.DEV && !authEnabled) return;
     if (authEnabled && !authProfile?.user_id) return;
     void reloadViews();
   }, [reloadViews, authEnabled, authProfile?.user_id]);
@@ -1169,6 +1216,11 @@ export function App() {
     setHasSecureSession(false);
     setLegacyRole(null);
     setAuthProfile(null);
+    trustedLiveDataRef.current = null;
+    trustedLiveUserIdRef.current = null;
+    setData(initialData);
+    setOrders(initialData.orders);
+    setSnapshotReady(false);
   }
 
   const path = window.location.pathname;
