@@ -60,18 +60,16 @@ begin
       effective_to=v_change_at,
       is_current=false,
       recorded_by=old.recorded_by,
-      created_at=old.created_at,
       updated_at=v_change_at
   where d.driver_dimension_id=new.driver_dimension_id;
 
   insert into analytics.dim_driver(
     source_system,source_driver_key,display_name,active,effective_from,effective_to,
-    is_current,source_updated_at,recorded_by,created_at,updated_at
+    is_current,source_updated_at,recorded_by
   ) values(
     old.source_system,old.source_driver_key,v_new_display_name,v_new_active,
     v_change_at,null,true,v_new_source_updated_at,
-    'analytics.ecoflow_version_driver_dimension_name_change',
-    v_change_at,v_change_at
+    'analytics.ecoflow_version_driver_dimension_name_change'
   );
 
   return new;
