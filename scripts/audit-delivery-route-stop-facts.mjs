@@ -3,7 +3,9 @@ import fs from 'node:fs';
 
 const migrationFile =
   'supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql';
+const contractFile = 'scripts/delivery-route-stop-facts-contract-test.sql';
 const migration = fs.readFileSync(migrationFile, 'utf8');
+const contract = fs.readFileSync(contractFile, 'utf8');
 
 const required = [
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
@@ -43,6 +45,12 @@ const required = [
 for (const [name, pattern] of required) {
   assert.match(migration, pattern, `Delivery fact audit failed: ${name}`);
 }
+
+assert.match(
+  contract,
+  /delivery refresh did not complete: result=% status=%[\s\S]{0,700}error_code[\s\S]{0,200}error_message/,
+  'Delivery fact contract must expose refresh SQLSTATE and error message.',
+);
 
 const routeTable = migration.match(
   /create table analytics\.fact_delivery_route_observation\([\s\S]*?\n\);/i,
