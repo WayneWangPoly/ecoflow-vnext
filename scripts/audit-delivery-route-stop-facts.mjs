@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+// This audit intentionally fails until the scoped Driver SCD repair is present.
 const migrationFile =
   'supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql';
 const contractFile = 'scripts/delivery-route-stop-facts-contract-test.sql';
