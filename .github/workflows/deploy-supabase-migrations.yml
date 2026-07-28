@@ -8,7 +8,6 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/functions/**'
       - '.github/workflows/deploy-supabase-migrations.yml'
-      - 'supabase/.temp/project-ref'
 
 permissions:
   contents: read
@@ -20,13 +19,12 @@ concurrency:
 
 env:
   SUPABASE_CLI_VERSION: 2.107.0
+  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
 
 jobs:
   # ------------------------------------------------------------------
-  # Gate: prove pending migrations apply cleanly against a copy of the
-  # REAL production schema before anything touches production. This is
-  # the failure class that previously took four production pushes to
-  # shake out ("migration does not match production schema").
+  # Gate: apply pending migrations to a copy of the real production
+  # schema before any production write is attempted.
   # ------------------------------------------------------------------
   shadow-verify:
     runs-on: ubuntu-latest
@@ -68,6 +66,8 @@ jobs:
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
           test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo 'Missing SUPABASE_PROJECT_REF'; exit 1; }
+          test -n "$SUPABASE_POOLER_HOST" || { echo 'Missing SUPABASE_POOLER_HOST'; exit 1; }
       - name: Isolate legacy SQL archives
         shell: bash
         run: |
@@ -83,13 +83,14 @@ jobs:
           done
       - name: Install Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
-      - name: Resolve pooler database URL
+      - name: Construct IPv4 pooler database URL
         shell: bash
         run: |
+          # supabase/.temp is generated local link state and is intentionally not
+          # tracked. Construct the known session-pooler URL from governed config.
           set -euo pipefail
-          POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
-          SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
           echo "::add-mask::$SUPABASE_DB_URL"
           echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
       - name: Compute pending migrations
@@ -189,8 +190,8 @@ jobs:
       - name: Load production schema into shadow
         shell: bash
         run: |
-          # Grant/ownership noise for platform-managed roles is tolerated here;
-          # the hard gate is the pending-migration application step below.
+          # Platform-managed role grant/ownership noise is tolerated here. The
+          # hard gate is the pending-migration application below.
           set +e
           psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=0 -f /tmp/prod-schema.sql > /tmp/schema-load.log 2>&1
           errors=$(grep -c '^psql:.*ERROR' /tmp/schema-load.log || true)
@@ -226,21 +227,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Verify linked production project
+      - name: Require production migration credentials
         shell: bash
         run: |
-          REPOSITORY_PROJECT_REF="$(tr -d '[:space:]' < supabase/.temp/project-ref)"
-          test "$REPOSITORY_PROJECT_REF" = "$SUPABASE_PROJECT_REF" || {
-            echo "Project ref mismatch: repository=$REPOSITORY_PROJECT_REF workflow=$SUPABASE_PROJECT_REF"
-            exit 1
-          }
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo 'Missing SUPABASE_PROJECT_REF'; exit 1; }
+          test -n "$SUPABASE_POOLER_HOST" || { echo 'Missing SUPABASE_POOLER_HOST'; exit 1; }
       - name: Isolate legacy SQL archives
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/ecoflow-legacy-migrations
           shopt -s nullglob
-
           for file in supabase/migrations/*.sql; do
             base="$(basename "$file")"
             if [[ "$base" == '20260624_remote_production_baseline.sql' ]] || [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
@@ -248,7 +247,6 @@ jobs:
             fi
             mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
           done
-
           echo 'Deployable migration files:'
           for file in supabase/migrations/*.sql; do
             base="$(basename "$file")"
@@ -258,7 +256,6 @@ jobs:
             fi
             echo "  $base"
           done
-
           test -f supabase/migrations/20260624_remote_production_baseline.sql
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
@@ -271,22 +268,33 @@ jobs:
         run: |
           set -o pipefail
           supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee supabase-migration-deploy.log
-      - name: Resolve pooler database URL
+      - name: Verify linked production project
         shell: bash
         run: |
-          # GitHub runners have no IPv6, and the direct db.<ref>.supabase.co host is
-          # IPv6-only - connections time out. The session pooler host is IPv4.
           set -euo pipefail
-          POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
+          test -s supabase/.temp/project-ref || {
+            echo 'Supabase CLI did not generate linked project metadata.'
+            exit 1
+          }
+          LINKED_PROJECT_REF="$(tr -d '[:space:]' < supabase/.temp/project-ref)"
+          test "$LINKED_PROJECT_REF" = "$SUPABASE_PROJECT_REF" || {
+            echo "Project ref mismatch: linked=$LINKED_PROJECT_REF expected=$SUPABASE_PROJECT_REF"
+            exit 1
+          }
+      - name: Construct IPv4 pooler database URL
+        shell: bash
+        run: |
+          # Do not depend on tracked supabase/.temp/pooler-url. That directory is
+          # generated local state and remains excluded from Git.
+          set -euo pipefail
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
-          SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
           echo "::add-mask::$SUPABASE_DB_URL"
           echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
       - name: Inspect migration history
         shell: bash
         run: |
           set -o pipefail
-          # Runner-to-pooler connections occasionally time out; retry before failing the deploy.
           for attempt in 1 2 3; do
             if supabase migration list --db-url "$SUPABASE_DB_URL" 2>&1 | tee -a supabase-migration-deploy.log; then
               exit 0
@@ -354,9 +362,8 @@ jobs:
           retention-days: 30
 
   # ------------------------------------------------------------------
-  # Post the final commit status for the DB deployment, then verify the
-  # frontend is not left behind: when this commit changed frontend files
-  # and Vercel did not deploy it (e.g. rate limit), flag the skew loudly.
+  # Publish final DB state and verify any frontend changed by this commit
+  # is not behind the database deployment.
   # ------------------------------------------------------------------
   finalize:
     needs: [shadow-verify, deploy]
@@ -382,7 +389,7 @@ jobs:
             DESCRIPTION='Shadow verification passed; production database and Edge Functions deployed'
           elif [ "$SHADOW_RESULT" != 'success' ]; then
             STATE='failure'
-            DESCRIPTION='Shadow verification failed - pending migrations do not apply to the production schema'
+            DESCRIPTION='Shadow verification or production connection setup failed; inspect workflow logs'
           else
             STATE='failure'
             DESCRIPTION='Production Supabase deployment failed; inspect workflow log artifact'
