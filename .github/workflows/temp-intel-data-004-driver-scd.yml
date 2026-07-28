@@ -1,5 +1,6 @@
 name: Temporary INTEL-DATA-004 Driver SCD patch
 
+# This second commit intentionally triggers the already-present scoped push workflow.
 on:
   push:
     branches:
