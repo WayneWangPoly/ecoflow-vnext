@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const migrationPath = 'supabase/migrations/20260727120450_restore_return_geofence_prerequisite.sql';
+const viewMigrationPath = 'supabase/migrations/20260727120460_prepare_return_zone_view_for_acl.sql';
 const driftFixturePath = 'scripts/legacy-return-four-arg-production-drift-fixture.sql';
 const workflowPath = '.github/workflows/warehouse-productisation-check.yml';
 
 const migration = fs.readFileSync(migrationPath, 'utf8');
+const viewMigration = fs.readFileSync(viewMigrationPath, 'utf8');
 const driftFixture = fs.readFileSync(driftFixturePath, 'utf8');
 const workflow = fs.readFileSync(workflowPath, 'utf8');
 
@@ -48,11 +50,34 @@ for (const [name, pattern] of forbidden) {
   assert.doesNotMatch(migration, pattern, `Return geofence prerequisite audit failed: ${name}`);
 }
 
+const viewChecks = [
+  ['view transaction boundary', /\bbegin;[\s\S]*\bcommit;\s*$/i],
+  ['view table prerequisite', /RETURN_ZONE_VIEW_PREREQUISITE_TABLE_MISSING/],
+  ['view geofence-column prerequisite', /RETURN_ZONE_VIEW_GEOFENCE_COLUMNS_MISSING/],
+  ['atomic legacy view drop', /drop view if exists public\.v_ecoflow_warehouse_return_zones;/],
+  ['security-invoker replacement', /create view public\.v_ecoflow_warehouse_return_zones[\s\S]{0,120}security_invoker = true/],
+  ['final GPS column order', /warehouse_location,\s*latitude,\s*longitude,\s*radius_metres,\s*active,\s*created_at,\s*updated_at/],
+  ['view anon revoke', /revoke all on table public\.v_ecoflow_warehouse_return_zones[\s\S]{0,80}from public, anon, authenticated/],
+  ['view authenticated grant', /grant select on table public\.v_ecoflow_warehouse_return_zones to authenticated/],
+];
+
+for (const [name, pattern] of viewChecks) {
+  assert.match(viewMigration, pattern, `Return-zone view compatibility audit failed: ${name}`);
+}
+
+assert.doesNotMatch(
+  viewMigration,
+  /drop view[^;]*cascade/i,
+  'Return-zone view compatibility audit failed: dependencies must block rather than cascade'
+);
+
 const fixtureChecks = [
   ['drops seven-argument function', /drop function if exists public\.ecoflow_driver_drop_return\([\s\S]{0,120}double precision,double precision,numeric/],
   ['recreates four-argument function', /create or replace function public\.ecoflow_driver_drop_return\([\s\S]{0,180}p_driver text default null/],
+  ['recreates seven-column legacy view', /create view public\.v_ecoflow_warehouse_return_zones as[\s\S]{0,240}warehouse_location,\s*active,\s*created_at,\s*updated_at/],
   ['asserts four-argument signature', /four-argument production drift fixture was not created/],
   ['asserts seven-argument absence', /seven-argument geofence function still exists in drift fixture/],
+  ['asserts legacy view columns', /legacy return-zone view drift fixture has unexpected columns/],
 ];
 
 for (const [name, pattern] of fixtureChecks) {
@@ -61,16 +86,25 @@ for (const [name, pattern] of fixtureChecks) {
 
 const driftIndex = workflow.indexOf('scripts/legacy-return-four-arg-production-drift-fixture.sql');
 const prerequisiteIndex = workflow.indexOf('20260727120450_restore_return_geofence_prerequisite.sql');
+const viewIndex = workflow.indexOf('20260727120460_prepare_return_zone_view_for_acl.sql');
 const securityIndex = workflow.indexOf('20260727120500_legacy_returns_acl_hardening.sql');
 
-assert.ok(driftIndex >= 0, 'CI does not reproduce the four-argument production drift');
+assert.ok(driftIndex >= 0, 'CI does not reproduce the production return drift');
 assert.ok(prerequisiteIndex >= 0, 'CI does not apply the geofence prerequisite migration');
+assert.ok(viewIndex >= 0, 'CI does not apply the legacy view compatibility migration');
 assert.ok(securityIndex >= 0, 'CI does not apply SEC-DB-002');
 assert.ok(
-  driftIndex < prerequisiteIndex && prerequisiteIndex < securityIndex,
-  'CI order must be drift fixture -> geofence prerequisite -> SEC-DB-002'
+  driftIndex < prerequisiteIndex
+    && prerequisiteIndex < viewIndex
+    && viewIndex < securityIndex,
+  'CI order must be drift fixture -> geofence prerequisite -> view compatibility -> SEC-DB-002'
 );
 
-console.log(
-  `Return geofence prerequisite static audit passed (${migrationChecks.length + forbidden.length + fixtureChecks.length + 4}/${migrationChecks.length + forbidden.length + fixtureChecks.length + 4}).`
-);
+const total = migrationChecks.length
+  + forbidden.length
+  + viewChecks.length
+  + 1
+  + fixtureChecks.length
+  + 5;
+
+console.log(`Return geofence and view compatibility static audit passed (${total}/${total}).`);
