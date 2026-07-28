@@ -1,5 +1,9 @@
 -- Repair the historical return-zone implementation without editing its deployed migration.
--- PostgreSQL format() supports %s, not printf-style %.1f.
+-- PostgreSQL format() supports %s, not printf-style floating-point directives.
+--
+-- This migration may follow either the historical geofence implementation or
+-- the forward prerequisite that already emits the safe format. Treat the safe
+-- end state as an idempotent success rather than requiring the bad pattern.
 
 begin;
 
@@ -21,24 +25,25 @@ begin
   if position(
     'format(''GPS %.1fm from zone; accuracy %.1fm'',v_distance,p_accuracy_metres)'
     in v_definition
-  ) = 0 then
-    if position(
+  ) > 0 then
+    v_repaired := replace(
+      v_definition,
+      'format(''GPS %.1fm from zone; accuracy %.1fm'',v_distance,p_accuracy_metres)',
       'format(''GPS %s m from zone; accuracy %s m'',round(v_distance::numeric,1),round(p_accuracy_metres::numeric,1))'
-      in v_definition
-    ) > 0 then
-      return;
-    end if;
+    );
 
-    raise exception 'RETURN_GEOFENCE_FORMAT_PATTERN_NOT_FOUND';
+    execute v_repaired;
+    return;
   end if;
 
-  v_repaired := replace(
-    v_definition,
-    'format(''GPS %.1fm from zone; accuracy %.1fm'',v_distance,p_accuracy_metres)',
-    'format(''GPS %s m from zone; accuracy %s m'',round(v_distance::numeric,1),round(p_accuracy_metres::numeric,1))'
-  );
+  if position(
+    'GPS %s m from zone; accuracy %s m'
+    in v_definition
+  ) > 0 then
+    return;
+  end if;
 
-  execute v_repaired;
+  raise exception 'RETURN_GEOFENCE_FORMAT_PATTERN_NOT_FOUND';
 end;
 $repair_geofence_format$;
 
