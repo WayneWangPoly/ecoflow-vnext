@@ -33,6 +33,7 @@ jobs:
           set -o pipefail
           npm run audit:warehouse 2>&1 | tee operational-audit.log
           node scripts/audit-stocktake-go-live-readiness.mjs 2>&1 | tee -a operational-audit.log
+          npm run audit:returns-acl 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -105,10 +106,14 @@ jobs:
             supabase/migrations/20260710130300_barcode_scan_conflict_qualification.sql \
             supabase/migrations/20260710130400_receiving_confirmation_qualification.sql \
             supabase/migrations/20260710130500_layout_conflict_qualification.sql \
+            supabase/migrations/20260710_delivery_notifications_returns.sql \
+            supabase/migrations/20260710_return_zone_drop_and_inspection.sql \
+            supabase/migrations/20260710_return_zone_geofence.sql \
             supabase/migrations/20260710140000_owner_driver_location_tracking.sql \
             supabase/migrations/20260710140100_verify_owner_driver_tracking_release.sql \
             supabase/migrations/20260711100000_driver_departure_and_delivery_notifications.sql \
             supabase/migrations/20260711100100_notification_contact_conflict_qualification.sql \
+            supabase/migrations/20260711150000_repair_gbk_mojibake_text.sql \
             supabase/migrations/20260711170000_pick_task_ownership.sql \
             supabase/migrations/20260711180000_unknown_barcode_quarantine.sql \
             supabase/migrations/20260711181000_operational_state_auth_hardening.sql \
@@ -116,7 +121,9 @@ jobs:
             supabase/migrations/20260722194500_stocktake_package_unit_integrity.sql \
             supabase/migrations/20260722194600_verify_stocktake_pick_readiness.sql \
             supabase/migrations/20260725100000_fix_barcode_rpc_ambiguous_sku.sql \
-            supabase/migrations/20260727110000_restore_warehouse_write_guards.sql
+            supabase/migrations/20260727110000_restore_warehouse_write_guards.sql \
+            supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql \
+            supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
@@ -131,6 +138,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/warehouse-write-guard-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute legacy returns ACL role tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/legacy-returns-acl-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute pick ownership concurrency tests
         shell: bash
         run: |
