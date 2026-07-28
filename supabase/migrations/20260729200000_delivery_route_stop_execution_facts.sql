@@ -804,22 +804,27 @@ begin
 
     insert into pg_temp.delivery_pod_agg
     with valid as(
-      select analytics.ecoflow_try_date(p.business_day) as business_day,p.*
+      select analytics.ecoflow_try_date(p.business_day) as parsed_business_day,p.*
       from public.ecoflow_delivery_pod_proofs p
       where analytics.ecoflow_try_date(p.business_day) is not null
         and nullif(btrim(p.order_id),'') is not null
     ), latest as(
-      select distinct on(business_day,order_id)
-        business_day,order_id,order_number,store_name,stop_number,box_code
-      from valid order by business_day,order_id,captured_at desc,created_at desc
+      select distinct on(parsed_business_day,order_id)
+        parsed_business_day as business_day,order_id,order_number,store_name,
+        stop_number,box_code
+      from valid
+      order by parsed_business_day,order_id,captured_at desc,created_at desc
     )
-    select v.business_day,v.order_id,
+    select v.parsed_business_day,v.order_id,
       bool_or(v.proof_type='POD1_DROP_POINT'),
       bool_or(v.proof_type='POD2_GOODS_PLACED'),count(distinct v.proof_type)::integer,
       min(v.captured_at),max(v.captured_at),l.order_number,l.store_name,
       l.stop_number,l.box_code
-    from valid v join latest l using(business_day,order_id)
-    group by v.business_day,v.order_id,l.order_number,l.store_name,l.stop_number,l.box_code;
+    from valid v
+    join latest l
+      on l.business_day=v.parsed_business_day and l.order_id=v.order_id
+    group by v.parsed_business_day,v.order_id,l.order_number,l.store_name,
+      l.stop_number,l.box_code;
 
     create temporary table if not exists pg_temp.delivery_exception_agg(
       business_day date,source_order_id text,exception_count integer,
@@ -832,18 +837,21 @@ begin
 
     insert into pg_temp.delivery_exception_agg
     with valid as(
-      select analytics.ecoflow_try_date(e.business_day) as business_day,e.*
+      select analytics.ecoflow_try_date(e.business_day) as parsed_business_day,e.*
       from public.ecoflow_delivery_exceptions e
       where analytics.ecoflow_try_date(e.business_day) is not null
         and nullif(btrim(e.order_id),'') is not null
     ), latest as(
-      select distinct on(business_day,order_id)
-        business_day,order_id,outcome,recorded_at,expected_cartons,
-        delivered_cartons,return_cartons,order_number,store_name,stop_number,box_code
-      from valid order by business_day,order_id,recorded_at desc,id desc
+      select distinct on(parsed_business_day,order_id)
+        parsed_business_day as business_day,order_id,outcome,recorded_at,
+        expected_cartons,delivered_cartons,return_cartons,order_number,
+        store_name,stop_number,box_code
+      from valid
+      order by parsed_business_day,order_id,recorded_at desc,id desc
     ), counts as(
-      select business_day,order_id,count(*)::integer as exception_count
-      from valid group by business_day,order_id
+      select parsed_business_day as business_day,order_id,
+        count(*)::integer as exception_count
+      from valid group by parsed_business_day,order_id
     )
     select l.business_day,l.order_id,c.exception_count,upper(l.outcome),l.recorded_at,
       l.expected_cartons,l.delivered_cartons,l.return_cartons,l.order_number,
@@ -860,24 +868,29 @@ begin
 
     insert into pg_temp.delivery_notification_agg
     with valid as(
-      select analytics.ecoflow_try_date(n.business_day) as business_day,n.*
+      select analytics.ecoflow_try_date(n.business_day) as parsed_business_day,n.*
       from public.ecoflow_delivery_notifications n
       where analytics.ecoflow_try_date(n.business_day) is not null
         and nullif(btrim(n.order_id),'') is not null
     ), latest as(
-      select distinct on(business_day,order_id)
-        business_day,order_id,order_number,store_name,stop_number,box_code
-      from valid order by business_day,order_id,updated_at desc,id desc
+      select distinct on(parsed_business_day,order_id)
+        parsed_business_day as business_day,order_id,order_number,store_name,
+        stop_number,box_code
+      from valid
+      order by parsed_business_day,order_id,updated_at desc,id desc
     )
-    select v.business_day,v.order_id,count(*)::integer,
+    select v.parsed_business_day,v.order_id,count(*)::integer,
       count(*) filter(where v.notification_status='SENT')::integer,
       count(*) filter(where v.notification_status='FAILED')::integer,
       count(*) filter(where v.notification_status in(
         'PENDING','WAITING_CONTACT','WAITING_CONFIG','SENDING'
       ))::integer,max(greatest(v.queued_at,v.updated_at,v.sent_at)),
       l.order_number,l.store_name,l.stop_number,l.box_code
-    from valid v join latest l using(business_day,order_id)
-    group by v.business_day,v.order_id,l.order_number,l.store_name,l.stop_number,l.box_code;
+    from valid v
+    join latest l
+      on l.business_day=v.parsed_business_day and l.order_id=v.order_id
+    group by v.parsed_business_day,v.order_id,l.order_number,l.store_name,
+      l.stop_number,l.box_code;
 
     create temporary table if not exists pg_temp.delivery_stop_location_agg(
       business_day date,source_order_id text,event_count integer,
