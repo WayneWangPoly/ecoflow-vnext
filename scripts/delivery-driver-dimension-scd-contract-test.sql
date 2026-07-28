@@ -125,7 +125,19 @@ begin
     and effective_from='2026-07-29 12:10:00+09:30';
 
   if v_old_id is null or v_new_id is null or v_old_id=v_new_id then
-    raise exception 'Driver display-name change did not create an SCD version';
+    raise exception 'Driver display-name change did not create an SCD version: rows=%',
+      (select jsonb_agg(jsonb_build_object(
+        'driver_dimension_id',d.driver_dimension_id,
+        'display_name',d.display_name,
+        'effective_from',d.effective_from,
+        'effective_to',d.effective_to,
+        'is_current',d.is_current,
+        'source_updated_at',d.source_updated_at,
+        'updated_at',d.updated_at
+      ) order by d.driver_dimension_id)
+       from analytics.dim_driver d
+       where d.source_system='ECOFLOW'
+         and d.source_driver_key='91000000-0000-0000-0000-000000000001');
   end if;
 
   if (select count(*) from analytics.dim_driver
