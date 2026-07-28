@@ -50,9 +50,9 @@ $repair_geofence_format$;
 alter function public.ecoflow_driver_drop_return_acl_impl(
   uuid,text,text,text,double precision,double precision,numeric
 ) set search_path = pg_catalog, public;
-alter function public.ecoflow_driver_drop_return_acl_impl(
-  uuid,text,text,text,double precision,double precision,numeric
-) set plpgsql.variable_conflict = use_column;
+-- Do not set plpgsql.variable_conflict here: Supabase managed migration
+-- roles cannot change that superuser-only parameter, and the implementation
+-- contract is already exercised without it.
 revoke all on function public.ecoflow_driver_drop_return_acl_impl(
   uuid,text,text,text,double precision,double precision,numeric
 ) from public, anon, authenticated;

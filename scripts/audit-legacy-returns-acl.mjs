@@ -23,7 +23,7 @@ const checks = [
   ['drop impl search path', /ecoflow_driver_drop_return_acl_impl[\s\S]{0,180}set search_path = pg_catalog, public;/],
   ['inspection impl search path', /ecoflow_record_return_inspection_item_acl_impl[\s\S]{0,180}set search_path = pg_catalog, public;/],
   ['complete impl search path', /ecoflow_complete_return_inspection_acl_impl[\s\S]{0,140}set search_path = pg_catalog, public;/],
-  ['impl use column', /set plpgsql\.variable_conflict = use_column;/],
+  ['managed-role-compatible impl settings', /Supabase managed migration roles cannot set the superuser-only[\s\S]{0,180}plpgsql\.variable_conflict/],
   ['wrapper public revoke', /revoke all on function public\.ecoflow_queue_delivery_notifications\([\s\S]{0,260}from public, anon, authenticated;/],
   ['queue wrapper', /create function public\.ecoflow_queue_delivery_notifications\(/],
   ['queue driver gate', /DELIVERY_NOTIFICATION_DRIVER_ROLE_REQUIRED/],
@@ -66,6 +66,17 @@ const checks = [
 for (const [name, pattern, target = source] of checks) {
   assert.match(target, pattern, `Legacy returns ACL check failed: ${name}`);
 }
+
+assert.doesNotMatch(
+  source,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'SEC-DB-002 must not require a superuser-only managed PostgreSQL setting'
+);
+assert.doesNotMatch(
+  repairSource,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'The geofence repair must not require a superuser-only managed PostgreSQL setting'
+);
 
 assert.equal(checks.length, 54);
 console.log(`Legacy returns ACL static audit passed (${checks.length}/${checks.length}).`);
