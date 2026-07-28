@@ -2,6 +2,9 @@ name: Repository hygiene
 
 on:
   pull_request:
+  push:
+    branches:
+      - agent/data/INTEL-DATA-004-delivery-route-execution-facts
 
 permissions:
   contents: write
@@ -9,15 +12,16 @@ permissions:
 jobs:
   version-delivery-driver-dimensions:
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts'
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.ref_name == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts' ||
+       github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out pull request branch
+      - name: Check out target branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: agent/data/INTEL-DATA-004-delivery-route-execution-facts
           fetch-depth: 0
 
       - name: Apply anchored driver SCD repair and contract
@@ -180,4 +184,4 @@ $driver_scd$;
           git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/repository-hygiene.yml
           git diff --cached --exit-code && exit 0
           git commit -m 'fix(data): version delivery driver dimensions'
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:agent/data/INTEL-DATA-004-delivery-route-execution-facts
