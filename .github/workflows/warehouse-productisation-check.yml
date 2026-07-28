@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
       - name: Audit operational invariants
         id: operational_audit
         continue-on-error: true
@@ -114,7 +114,9 @@ jobs:
             supabase/migrations/20260711181000_operational_state_auth_hardening.sql \
             supabase/migrations/20260711182000_multi_run_day_state.sql \
             supabase/migrations/20260722194500_stocktake_package_unit_integrity.sql \
-            supabase/migrations/20260722194600_verify_stocktake_pick_readiness.sql
+            supabase/migrations/20260722194600_verify_stocktake_pick_readiness.sql \
+            supabase/migrations/20260725100000_fix_barcode_rpc_ambiguous_sku.sql \
+            supabase/migrations/20260727110000_restore_warehouse_write_guards.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
@@ -124,6 +126,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute warehouse write guard tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-write-guard-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute pick ownership concurrency tests
         shell: bash
         run: |
