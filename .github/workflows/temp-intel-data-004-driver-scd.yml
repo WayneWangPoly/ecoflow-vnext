@@ -1,8 +1,7 @@
 name: Temporary INTEL-DATA-004 Driver SCD patch
 
-# This second commit intentionally triggers the already-present scoped push workflow.
 on:
-  push:
+  pull_request:
     branches:
       - agent/data/INTEL-DATA-004-delivery-route-execution-facts
 
@@ -11,17 +10,17 @@ permissions:
 
 jobs:
   patch-and-self-delete:
-    if: github.ref_name == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts'
+    if: github.head_ref == 'agent/data/INTEL-DATA-004-driver-scd-fix'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out target branch
+      - name: Check out child branch
         uses: actions/checkout@v4
         with:
-          ref: agent/data/INTEL-DATA-004-delivery-route-execution-facts
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Apply Driver SCD migration and contract patch
+      - name: Apply Driver SCD repair and clean temporary workflows
         shell: bash
         run: |
           python - <<'PY'
@@ -30,8 +29,11 @@ jobs:
 
           migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
           contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
+          productisation_path = Path('.github/workflows/warehouse-productisation-check.yml')
+
           migration = migration_path.read_text()
           contract = contract_path.read_text()
+          productisation = productisation_path.read_text()
 
           driver_pattern = re.compile(
               r"(?ms)^    insert into analytics\.dim_driver\(\n"
@@ -77,7 +79,7 @@ jobs:
 """
           migration, count = driver_pattern.subn(driver_replacement, migration)
           if count != 1:
-              raise SystemExit(f'Expected one anchored driver block, found {count}')
+              raise SystemExit(f'Expected one Driver SCD source block, found {count}')
 
           contract_pattern = re.compile(
               r"\$first_refresh\$;\n\n"
@@ -137,16 +139,24 @@ $driver_scd$;
           if count != 1:
               raise SystemExit(f'Expected one Driver SCD contract insertion point, found {count}')
 
+          marker = '\n  temp-driver-scd-patch:\n'
+          if productisation.count(marker) != 1:
+              raise SystemExit('Temporary productisation job boundary was not unique')
+          productisation = productisation.split(marker,1)[0].rstrip() + '\n'
+          productisation = productisation.replace(
+              'permissions:\n  contents: write',
+              'permissions:\n  contents: read',
+              1,
+          )
+
           migration_path.write_text(migration)
           contract_path.write_text(contract)
+          productisation_path.write_text(productisation)
           PY
 
-      - name: Delete temporary workflow and commit
-        shell: bash
-        run: |
           rm .github/workflows/temp-intel-data-004-driver-scd.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/temp-intel-data-004-driver-scd.yml
+          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/warehouse-productisation-check.yml .github/workflows/temp-intel-data-004-driver-scd.yml
           git commit -m 'fix(data): version delivery driver dimensions'
-          git push origin HEAD:agent/data/INTEL-DATA-004-delivery-route-execution-facts
+          git push origin HEAD:${{ github.head_ref }}
