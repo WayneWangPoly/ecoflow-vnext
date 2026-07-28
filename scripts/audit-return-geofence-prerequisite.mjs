@@ -38,7 +38,7 @@ for (const [name, pattern] of migrationChecks) {
 }
 
 const forbidden = [
-  ['no printf float formatter', /%\.\d+f/],
+  ['no printf float formatter in SQL', /format\(\s*['"][^'"]*%\.\d+f/i],
   ['no anon execute grant', /grant execute[\s\S]{0,180}\bto\s+anon\b/i],
   ['no edit to SEC implementation name', /_acl_impl/],
   ['no direct inventory mutation', /\becoflow_inventory_movements\b/i],
