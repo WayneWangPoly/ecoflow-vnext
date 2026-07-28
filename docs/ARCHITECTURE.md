@@ -21,25 +21,31 @@ renders a hard lock screen (`ProductionConfigurationError` in main.tsx).
 
 1. **Core React app** (`src/app/*`): login, shells, order inbox, pick board,
    driver run, run/route approval.
-2. **Enhancer layer** (`src/*.tsx` + `src/enhancers/*`): feature modules that
+2. **Legacy enhancer layer** (`src/*.tsx` + `src/enhancers/*`): feature modules that
    locate DOM anchors and portal themselves in. They are grouped into lazy
    bundles loaded per surface by `SurfaceModuleGate` (main.tsx):
    Owner / Account / Driver / WarehouseOps / WarehouseMapRoute.
    `FieldModeEnhancer` serves every surface and lazy-loads separately.
 
-Rules for new enhancers:
-- Register DOM observation through `observeBody` (`src/lib/domObserver.ts`) —
-  one shared MutationObserver with a 150ms batch. Never create your own
-  body-wide observer.
-- Put the component into the correct group file in `src/enhancers/`.
-- Read structured state (data attributes, row classes), never operator copy.
+The enhancer layer is deprecated. Do not add a new enhancer, body observer,
+portal replacement, or CSS hide-and-replace workflow. New features belong in
+explicit routes/components and typed application state. Existing enhancers may
+receive bounded maintenance; migrate them in the order defined by
+`docs/operational-stability-roadmap.md`. See ADR-0005.
 
 ## Shared operational state (the day state)
 
-`DriverDayState` (`src/domain/driverRun.ts`) is the single shared fact set:
+`DriverDayState` (`src/domain/driverRun.ts`) is the current shared collaboration
+projection:
 released orders, stop progress, pick state, shift events, run code. It syncs
 through the `ecoflow_day_state` table via `usePickSync` (4s poll, per-scope
 last-write-wins, tombstones for un-release/unstage/unlock).
+
+This is a transitional model, not the target authority for critical operational
+facts. New scope types are frozen without an accepted ADR and Chief Engineer
+approval. Key writes will move incrementally to revisioned, idempotent
+server-side commands while the day state remains a compatibility read model.
+See ADR-0001.
 
 - Multi-run: scopes are prefixed `run:<CODE>:`; `run-control` holds the active
   run; `shift` is shared across runs.
