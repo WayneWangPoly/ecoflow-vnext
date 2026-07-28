@@ -404,6 +404,19 @@ begin
 end;
 $$;
 
+revoke all on function public.ecoflow_queue_delivery_notifications(text,text,text,text,integer,text,text,text,text,text,text,text,text,text)
+  from public, anon, authenticated;
+revoke all on function public.ecoflow_record_delivery_exception(text,text,text,integer,text,text,text,numeric,numeric,numeric,text,text,text,text,text,text)
+  from public, anon, authenticated;
+revoke all on function public.ecoflow_scan_delivery_return(text,text,text,text)
+  from public, anon, authenticated;
+revoke all on function public.ecoflow_driver_drop_return(uuid,text,text,text,double precision,double precision,numeric)
+  from public, anon, authenticated;
+revoke all on function public.ecoflow_record_return_inspection_item(uuid,text,text,numeric,text,text,text,text)
+  from public, anon, authenticated;
+revoke all on function public.ecoflow_complete_return_inspection(uuid,text,text)
+  from public, anon, authenticated;
+
 alter table public.ecoflow_delivery_notification_settings enable row level security;
 alter table public.ecoflow_delivery_notifications enable row level security;
 alter table public.ecoflow_delivery_exceptions enable row level security;
