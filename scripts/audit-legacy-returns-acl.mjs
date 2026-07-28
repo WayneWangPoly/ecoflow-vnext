@@ -22,7 +22,7 @@ const checks = [
   ['inspection impl search path', /ecoflow_record_return_inspection_item_acl_impl[\s\S]{0,180}set search_path = pg_catalog, public;/],
   ['complete impl search path', /ecoflow_complete_return_inspection_acl_impl[\s\S]{0,140}set search_path = pg_catalog, public;/],
   ['impl use column', /set plpgsql\.variable_conflict = use_column;/],
-  ['impl revoke list', /revoke all on function %s from public, anon, authenticated/],
+  ['wrapper public revoke', /revoke all on function public\.ecoflow_queue_delivery_notifications\([\s\S]{0,260}from public, anon, authenticated;/],
   ['queue wrapper', /create function public\.ecoflow_queue_delivery_notifications\(/],
   ['queue driver gate', /DELIVERY_NOTIFICATION_DRIVER_ROLE_REQUIRED/],
   ['exception wrapper', /create function public\.ecoflow_record_delivery_exception\(/],
