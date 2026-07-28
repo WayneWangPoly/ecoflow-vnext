@@ -74,6 +74,17 @@ for (const [name, pattern, target = source] of checks) {
   assert.match(target, pattern, `Legacy returns ACL check failed: ${name}`);
 }
 
+assert.doesNotMatch(
+  source,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'SEC-DB-002 must not require a superuser-only managed PostgreSQL setting'
+);
+assert.doesNotMatch(
+  repairSource,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'The geofence repair must not require a superuser-only managed PostgreSQL setting'
+);
+
 for (const [name, target] of [
   ['managed compatibility migration', managedCompatSource],
   ['SEC-DB-002', source],
