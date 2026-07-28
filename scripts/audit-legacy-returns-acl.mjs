@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const managedCompatFile = 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql';
+const compactFixtureFile = 'scripts/legacy-returns-compact-function-body-fixture.sql';
+const managedRoleFixtureFile = 'scripts/legacy-returns-managed-migration-role-fixture.sql';
 const file = 'supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql';
 const repairFile = 'supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql';
 const managedCompatSource = fs.readFileSync(managedCompatFile, 'utf8');
+const compactFixtureSource = fs.readFileSync(compactFixtureFile, 'utf8');
+const managedRoleFixtureSource = fs.readFileSync(managedRoleFixtureFile, 'utf8');
 const source = fs.readFileSync(file, 'utf8');
 const repairSource = fs.readFileSync(repairFile, 'utf8');
 
@@ -12,8 +16,12 @@ const checks = [
   ['managed compatibility transaction', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i, managedCompatSource],
   ['managed compatibility six functions', /queue_delivery_notifications[\s\S]{0,1200}record_delivery_exception[\s\S]{0,1200}scan_delivery_return[\s\S]{0,1200}driver_drop_return[\s\S]{0,1200}record_return_inspection_item[\s\S]{0,1200}complete_return_inspection/, managedCompatSource],
   ['managed compatibility reads definitions', /pg_get_functiondef\(v_oid\)/, managedCompatSource],
+  ['managed compatibility flexible AS marker', /regexp_match\([\s\S]{0,180}AS\[\[:space:\]\]\+/, managedCompatSource],
+  ['managed compatibility captures full body marker', /v_body_marker := v_marker_match\[1\]/, managedCompatSource],
   ['managed compatibility compiler directive', /#variable_conflict use_column/, managedCompatSource],
   ['managed compatibility recompiles definitions', /execute v_recompiled;/, managedCompatSource],
+  ['compact production body fixture', /compact-body fixture[\s\S]{0,1400}regexp_replace\([\s\S]{0,400}did not reproduce production formatting/, compactFixtureSource],
+  ['compact fixture runs before managed role', /\\ir legacy-returns-compact-function-body-fixture\.sql[\s\S]{0,500}create role ecoflow_managed_migration/, managedRoleFixtureSource],
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
   ['preflight marker', /RETURNS_ACL_PREREQUISITES_MISSING/],
   ['active role hardened search path', /alter function public\.ecoflow_active_app_role\(\)[\s\S]{0,120}set search_path = pg_catalog, public;/],
@@ -75,14 +83,9 @@ for (const [name, pattern, target = source] of checks) {
 }
 
 assert.doesNotMatch(
-  source,
-  /set plpgsql\.variable_conflict = use_column;/,
-  'SEC-DB-002 must not require a superuser-only managed PostgreSQL setting'
-);
-assert.doesNotMatch(
-  repairSource,
-  /set plpgsql\.variable_conflict = use_column;/,
-  'The geofence repair must not require a superuser-only managed PostgreSQL setting'
+  managedCompatSource,
+  /AS \([^'\n]*\\n'/,
+  'Managed compatibility must not require a newline after the body delimiter'
 );
 
 for (const [name, target] of [
@@ -97,5 +100,5 @@ for (const [name, target] of [
   );
 }
 
-assert.equal(checks.length, 59);
+assert.equal(checks.length, 63);
 console.log(`Legacy returns ACL static audit passed (${checks.length}/${checks.length}).`);
