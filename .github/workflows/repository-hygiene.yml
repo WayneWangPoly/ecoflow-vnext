@@ -2,139 +2,25 @@ name: Repository hygiene
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-delivery-fact-aggregation:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts'
+  tracked-local-data:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out pull request branch
+      - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          node-version: 22
 
-      - name: Apply exact aggregation repair
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
-          contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
-          migration = migration_path.read_text()
-          contract = contract_path.read_text()
-
-          replacements = [
-              ("greatest(r.observed_at,p.updated_at)", "greatest(r.observed_at,analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at'))", 1),
-              ("count(a.*)::integer as ack_count", "count(a.id)::integer as ack_count", 1),
-              ("count(s.*)::integer as sample_count", "count(s.id)::integer as sample_count", 1),
-              ("count(*) filter(where s.sample_source='ROUTE_START')", "count(s.id) filter(where s.sample_source='ROUTE_START')", 1),
-              ("count(*) filter(where s.sample_source='ROUTE_END')", "count(s.id) filter(where s.sample_source='ROUTE_END')", 1),
-              ("count(*) filter(where s.sample_source='STOP_ARRIVAL')", "count(s.id) filter(where s.sample_source='STOP_ARRIVAL')", 2),
-              ("count(*) filter(where s.sample_source='DELIVERY')", "count(s.id) filter(where s.sample_source='DELIVERY')", 2),
-              ("count(*) filter(where s.sample_source='FAILED_DELIVERY')", "count(s.id) filter(where s.sample_source='FAILED_DELIVERY')", 2),
-              ("min(a.driver_user_id)::text", "min(a.driver_user_id::text)", 1),
-              ("min(s.driver_user_id)::text", "min(s.driver_user_id::text)", 1),
-          ]
-          for old, new, expected in replacements:
-              count = migration.count(old)
-              if count != expected:
-                  raise SystemExit(f'Expected {expected} match(es), found {count}: {old!r}')
-              migration = migration.replace(old, new, expected)
-
-          projection_pattern = re.compile(
-              r"(?m)^        greatest\(coalesce\(a\.driver_count,0\),coalesce\(l\.driver_count,0\)\) as driver_count,\n"
-              r"        coalesce\(a\.driver_key,l\.driver_key\) as driver_key,$"
-          )
-          projection = """        (
-            select count(distinct u.driver_user_id)::integer
-            from (
-              select da.driver_user_id
-              from public.ecoflow_driver_departure_acknowledgements da
-              where da.business_day=r.business_day and da.route_id=r.source_route_id
-              union all
-              select dl.driver_user_id
-              from public.ecoflow_driver_location_samples dl
-              where dl.business_day=r.business_day and dl.route_id=r.source_route_id
-            ) u
-          ) as driver_count,
-          (
-            select case when count(distinct u.driver_user_id)=1
-                        then min(u.driver_user_id::text) end
-            from (
-              select da.driver_user_id
-              from public.ecoflow_driver_departure_acknowledgements da
-              where da.business_day=r.business_day and da.route_id=r.source_route_id
-              union all
-              select dl.driver_user_id
-              from public.ecoflow_driver_location_samples dl
-              where dl.business_day=r.business_day and dl.route_id=r.source_route_id
-            ) u
-          ) as driver_key,"""
-          migration, count = projection_pattern.subn(projection, migration)
-          if count != 1:
-              raise SystemExit(f'Expected one driver projection, found {count}')
-
-          count = migration.count('departure_driver_count')
-          if count != 5:
-              raise SystemExit(f'Expected five migration field-name matches, found {count}')
-          migration = migration.replace('departure_driver_count','observed_driver_count')
-
-          count = contract.count('departure_driver_count')
-          if count != 1:
-              raise SystemExit(f'Expected one contract field-name match, found {count}')
-          contract = contract.replace('departure_driver_count','observed_driver_count')
-
-          migration_path.write_text(migration)
-          contract_path.write_text(contract)
-          PY
-
-      - name: Restore read-only hygiene workflow
-        shell: bash
-        run: |
-          cat > .github/workflows/repository-hygiene.yml <<'YAML'
-          name: Repository hygiene
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            tracked-local-data:
-              runs-on: ubuntu-latest
-              timeout-minutes: 5
-              steps:
-                - name: Check out repository
-                  uses: actions/checkout@v4
-
-                - name: Set up Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-
-                - name: Reject tracked credentials and local API data
-                  run: node scripts/audit-repository-hygiene.mjs
-          YAML
-
-      - name: Commit scoped repair and self-clean
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/repository-hygiene.yml
-          git diff --cached --exit-code && exit 0
-          git commit -m 'fix(data): combine delivery driver evidence safely'
-          git push origin HEAD:${{ github.head_ref }}
+      - name: Reject tracked credentials and local API data
+        run: node scripts/audit-repository-hygiene.mjs

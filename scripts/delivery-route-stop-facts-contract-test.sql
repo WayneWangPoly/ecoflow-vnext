@@ -192,7 +192,7 @@ begin
   if v_route.route_status<>'COMPLETED'
      or v_route.planned_stop_count<>3
      or v_route.departure_ack_count<>1
-     or v_route.departure_driver_count<>2
+     or v_route.observed_driver_count<>2
      or v_route.driver_resolution_status<>'MULTIPLE'
      or v_route.location_sample_count<>2
      or v_route.route_start_sample_count<>1

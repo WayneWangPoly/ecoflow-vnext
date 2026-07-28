@@ -131,7 +131,7 @@ create table analytics.fact_delivery_route_observation(
   route_ended_at timestamptz,
   planned_stop_count integer not null default 0,
   departure_ack_count integer not null default 0,
-  departure_driver_count integer not null default 0,
+  observed_driver_count integer not null default 0,
   driver_dimension_id bigint references analytics.dim_driver(driver_dimension_id),
   driver_resolution_status text not null,
   first_departure_ack_at timestamptz,
@@ -181,7 +181,7 @@ create table analytics.fact_delivery_route_observation(
   )),
   constraint delivery_route_counts_nonnegative check(
     planned_stop_count>=0 and departure_ack_count>=0 and
-    departure_driver_count>=0 and location_sample_count>=0 and
+    observed_driver_count>=0 and location_sample_count>=0 and
     route_start_sample_count>=0 and route_end_sample_count>=0 and
     stop_arrival_sample_count>=0 and delivery_sample_count>=0 and
     failed_delivery_sample_count>=0 and route_notice_store_count>=0 and
@@ -463,7 +463,7 @@ begin
     select r.driver_user_id::text,
       coalesce(nullif(to_jsonb(p)->>'display_name',''),
                nullif(to_jsonb(p)->>'email',''),r.observed_label,r.driver_user_id::text),
-      greatest(r.observed_at,p.updated_at)
+      greatest(r.observed_at,analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at'))
     from rolled r
     left join public.app_user_profiles p on p.user_id=r.driver_user_id;
 
@@ -506,7 +506,7 @@ begin
       source_route_id text,route_dimension_id bigint,route_status text,
       route_locked_at timestamptz,route_started_at timestamptz,route_ended_at timestamptz,
       planned_stop_count integer,departure_ack_count integer,
-      departure_driver_count integer,driver_dimension_id bigint,
+      observed_driver_count integer,driver_dimension_id bigint,
       driver_resolution_status text,first_departure_ack_at timestamptz,
       latest_departure_ack_at timestamptz,location_sample_count integer,
       route_start_sample_count integer,route_end_sample_count integer,
@@ -538,25 +538,25 @@ begin
       order by r.source_route_key,
         case when d.scope like 'run:%' then 0 else 1 end,d.updated_at desc
     ), ack as(
-      select r.source_route_key,count(a.*)::integer as ack_count,
+      select r.source_route_key,count(a.id)::integer as ack_count,
         count(distinct a.driver_user_id)::integer as driver_count,
         min(a.accepted_at) as first_at,max(a.accepted_at) as latest_at,
-        case when count(distinct a.driver_user_id)=1 then min(a.driver_user_id)::text end
+        case when count(distinct a.driver_user_id)=1 then min(a.driver_user_id::text) end
           as driver_key
       from pg_temp.delivery_route_candidates r
       left join public.ecoflow_driver_departure_acknowledgements a
         on a.business_day=r.business_day and a.route_id=r.source_route_id
       group by r.source_route_key
     ), loc as(
-      select r.source_route_key,count(s.*)::integer as sample_count,
-        count(*) filter(where s.sample_source='ROUTE_START')::integer as route_start_count,
-        count(*) filter(where s.sample_source='ROUTE_END')::integer as route_end_count,
-        count(*) filter(where s.sample_source='STOP_ARRIVAL')::integer as arrival_count,
-        count(*) filter(where s.sample_source='DELIVERY')::integer as delivery_count,
-        count(*) filter(where s.sample_source='FAILED_DELIVERY')::integer as failed_count,
+      select r.source_route_key,count(s.id)::integer as sample_count,
+        count(s.id) filter(where s.sample_source='ROUTE_START')::integer as route_start_count,
+        count(s.id) filter(where s.sample_source='ROUTE_END')::integer as route_end_count,
+        count(s.id) filter(where s.sample_source='STOP_ARRIVAL')::integer as arrival_count,
+        count(s.id) filter(where s.sample_source='DELIVERY')::integer as delivery_count,
+        count(s.id) filter(where s.sample_source='FAILED_DELIVERY')::integer as failed_count,
         min(s.captured_at) as first_at,max(s.captured_at) as latest_at,
         count(distinct s.driver_user_id)::integer as driver_count,
-        case when count(distinct s.driver_user_id)=1 then min(s.driver_user_id)::text end
+        case when count(distinct s.driver_user_id)=1 then min(s.driver_user_id::text) end
           as driver_key
       from pg_temp.delivery_route_candidates r
       left join public.ecoflow_driver_location_samples s
@@ -581,8 +581,31 @@ begin
         case when jsonb_typeof(m.payload->'stopOrder')='array'
              then jsonb_array_length(m.payload->'stopOrder') else 0 end as stop_count,
         coalesce(a.ack_count,0) as ack_count,
-        greatest(coalesce(a.driver_count,0),coalesce(l.driver_count,0)) as driver_count,
-        coalesce(a.driver_key,l.driver_key) as driver_key,
+        (
+  select count(distinct u.driver_user_id)::integer
+  from (
+    select da.driver_user_id
+    from public.ecoflow_driver_departure_acknowledgements da
+    where da.business_day=r.business_day and da.route_id=r.source_route_id
+    union all
+    select dl.driver_user_id
+    from public.ecoflow_driver_location_samples dl
+    where dl.business_day=r.business_day and dl.route_id=r.source_route_id
+  ) u
+) as driver_count,
+(
+  select case when count(distinct u.driver_user_id)=1
+              then min(u.driver_user_id::text) end
+  from (
+    select da.driver_user_id
+    from public.ecoflow_driver_departure_acknowledgements da
+    where da.business_day=r.business_day and da.route_id=r.source_route_id
+    union all
+    select dl.driver_user_id
+    from public.ecoflow_driver_location_samples dl
+    where dl.business_day=r.business_day and dl.route_id=r.source_route_id
+  ) u
+) as driver_key,
         a.first_at as ack_first,a.latest_at as ack_latest,
         coalesce(l.sample_count,0) as sample_count,
         coalesce(l.route_start_count,0) as route_start_count,
@@ -665,7 +688,7 @@ begin
     insert into analytics.fact_delivery_route_observation(
       source_system,business_day,run_code,source_route_key,source_route_id,
       route_dimension_id,route_status,route_locked_at,route_started_at,route_ended_at,
-      planned_stop_count,departure_ack_count,departure_driver_count,
+      planned_stop_count,departure_ack_count,observed_driver_count,
       driver_dimension_id,driver_resolution_status,first_departure_ack_at,
       latest_departure_ack_at,location_sample_count,route_start_sample_count,
       route_end_sample_count,stop_arrival_sample_count,delivery_sample_count,
@@ -678,7 +701,7 @@ begin
     select s.source_system,s.business_day,s.run_code,s.source_route_key,s.source_route_id,
       s.route_dimension_id,s.route_status,s.route_locked_at,s.route_started_at,
       s.route_ended_at,s.planned_stop_count,s.departure_ack_count,
-      s.departure_driver_count,s.driver_dimension_id,s.driver_resolution_status,
+      s.observed_driver_count,s.driver_dimension_id,s.driver_resolution_status,
       s.first_departure_ack_at,s.latest_departure_ack_at,s.location_sample_count,
       s.route_start_sample_count,s.route_end_sample_count,s.stop_arrival_sample_count,
       s.delivery_sample_count,s.failed_delivery_sample_count,s.first_location_sample_at,
@@ -865,9 +888,9 @@ begin
 
     insert into pg_temp.delivery_stop_location_agg
     select s.business_day,s.current_order_id,count(*)::integer,
-      count(*) filter(where s.sample_source='STOP_ARRIVAL')::integer,
-      count(*) filter(where s.sample_source='DELIVERY')::integer,
-      count(*) filter(where s.sample_source='FAILED_DELIVERY')::integer,
+      count(s.id) filter(where s.sample_source='STOP_ARRIVAL')::integer,
+      count(s.id) filter(where s.sample_source='DELIVERY')::integer,
+      count(s.id) filter(where s.sample_source='FAILED_DELIVERY')::integer,
       max(s.captured_at)
     from public.ecoflow_driver_location_samples s
     where nullif(btrim(coalesce(s.current_order_id,'')),'') is not null
