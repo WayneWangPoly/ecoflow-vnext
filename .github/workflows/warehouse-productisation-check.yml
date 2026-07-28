@@ -36,6 +36,7 @@ jobs:
           npm run audit:returns-acl 2>&1 | tee -a operational-audit.log
           npm run audit:analytics 2>&1 | tee -a operational-audit.log
           node scripts/audit-order-fulfilment-facts.mjs 2>&1 | tee -a operational-audit.log
+          node scripts/audit-inventory-movement-snapshots.mjs 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -133,7 +134,9 @@ jobs:
             supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql \
             supabase/migrations/20260727130000_day_state_change_sequence.sql \
             supabase/migrations/20260728221500_analytics_semantic_foundation.sql \
-            supabase/migrations/20260729090000_order_fulfilment_facts.sql
+            supabase/migrations/20260729090000_order_fulfilment_facts.sql \
+            supabase/migrations/20260729120000_inventory_movement_and_daily_snapshot.sql \
+            supabase/migrations/20260729120100_inventory_location_dimension_resolution.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
@@ -183,6 +186,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/pick-task-claim-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute inventory movement and daily snapshot tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/inventory-movement-snapshot-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute inventory location dimension history tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/inventory-location-dimension-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
