@@ -133,7 +133,14 @@ jobs:
             supabase/migrations/20260728221500_analytics_semantic_foundation.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
-            psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
+            if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
+              psql -v ON_ERROR_STOP=1 -f scripts/legacy-returns-managed-migration-role-fixture.sql 2>&1 | tee -a operational-db-contract.log
+              printf 'set role ecoflow_managed_migration;\n\\i %s\nreset role;\n' "$file" \
+                | psql -v ON_ERROR_STOP=1 2>&1 \
+                | tee -a operational-db-contract.log
+            else
+              psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
+            fi
           done
       - name: Execute warehouse transaction contract tests
         shell: bash
