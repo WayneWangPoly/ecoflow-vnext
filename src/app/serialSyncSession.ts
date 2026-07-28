@@ -27,6 +27,7 @@ export type SerialSyncSessionOptions<State, Row extends SyncRow> = {
   diffScopes: (previous: SyncScopeMap, current: SyncScopeMap) => SyncChange[];
   mergeRows: (state: State, rows: Row[]) => State;
   fetchRows: (businessDay: string, cursor: string) => Promise<Row[]>;
+  advanceCursor?: (currentCursor: string, rows: Row[]) => string;
   pushRows: (businessDay: string, changes: SyncChange[], deviceLabel: string) => Promise<void>;
   onStatus: (status: SerialSyncStatus, detail?: string) => void;
 };
@@ -103,10 +104,12 @@ export class SerialSyncSession<State, Row extends SyncRow> {
 
         const rows = fetched.filter((row) => row.business_day === this.businessDay);
         if (rows.length > 0) {
-          this.cursor = rows.reduce(
-            (latest, row) => row.updated_at.localeCompare(latest) > 0 ? row.updated_at : latest,
-            this.cursor
-          );
+          this.cursor = this.options.advanceCursor
+            ? this.options.advanceCursor(this.cursor, rows)
+            : rows.reduce(
+              (latest, row) => row.updated_at.localeCompare(latest) > 0 ? row.updated_at : latest,
+              this.cursor
+            );
         }
 
         let applicableRows = rows;

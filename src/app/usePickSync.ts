@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { loadDriverDayState } from '@/domain/driverRun';
 import type { DriverDayState } from '@/domain/driverRun';
 import {
+  advancePickSyncCursor,
   diffScopes,
   fetchPickRows,
+  INITIAL_PICK_SYNC_CURSOR,
   mergeRowsIntoDay,
   pickSyncAvailable,
   pushPickRows,
@@ -15,7 +17,6 @@ import { SerialSyncSession } from './serialSyncSession';
 export type PickSyncStatus = 'off' | 'connecting' | 'live' | 'error' | 'denied';
 
 const POLL_MS = 4000;
-const EPOCH_CURSOR = '1970-01-01T00:00:00.000Z';
 
 let lastSyncErrorDetail = '';
 
@@ -73,7 +74,7 @@ export function usePickSync(
 
     const session = new SerialSyncSession<DriverDayState, PickSyncRow>({
       businessDay,
-      initialCursor: EPOCH_CURSOR,
+      initialCursor: INITIAL_PICK_SYNC_CURSOR,
       getDeviceLabel: () => deviceLabelRef.current,
       getState: () => dayRef.current,
       updateState: updateDay,
@@ -86,6 +87,7 @@ export function usePickSync(
       diffScopes,
       mergeRows: mergeRowsIntoDay,
       fetchRows: fetchPickRows,
+      advanceCursor: advancePickSyncCursor,
       pushRows: pushPickRows,
       onStatus: (next, detail) => {
         if (sessionRef.current !== session) return;
