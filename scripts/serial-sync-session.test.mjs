@@ -25,8 +25,10 @@ function row(businessDay, scope, payload, updatedAt) {
 
 function harness({
   businessDay = '2026-07-27',
+  initialCursor = EPOCH,
   initialState,
   fetchRows = async () => [],
+  advanceCursor,
   pushRows = async () => undefined
 } = {}) {
   let state = initialState ?? { businessDay, scopes: {} };
@@ -35,7 +37,7 @@ function harness({
 
   const session = new SerialSyncSession({
     businessDay,
-    initialCursor: EPOCH,
+    initialCursor,
     getDeviceLabel: () => 'Test device',
     getState: () => state,
     updateState: (updater) => {
@@ -65,6 +67,7 @@ function harness({
       }
     }),
     fetchRows,
+    advanceCursor,
     pushRows,
     onStatus: (status, detail) => statuses.push({ status, detail })
   });
@@ -136,6 +139,27 @@ test('overlapping poll requests share one in-flight fetch', async () => {
 
   assert.equal(fetches, 1);
   assert.equal(sync.session.isHydrated(), true);
+});
+
+test('a custom monotonic cursor is carried into the next poll', async () => {
+  const cursors = [];
+  let fetchCount = 0;
+  const sync = harness({
+    initialCursor: 'seq:0',
+    fetchRows: async (_businessDay, cursor) => {
+      cursors.push(cursor);
+      fetchCount += 1;
+      return fetchCount === 1
+        ? [row('2026-07-27', 'run:A:task:SKU-1', { status: 'PENDING' }, '2026-07-27T01:00:00Z')]
+        : [];
+    },
+    advanceCursor: (_cursor, _rows) => 'seq:42'
+  });
+
+  await sync.session.requestPoll();
+  await sync.session.requestPoll();
+
+  assert.deepEqual(cursors, ['seq:0', 'seq:42']);
 });
 
 test('a new epoch normalises state before applying remote rows', async () => {

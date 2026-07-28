@@ -7,7 +7,13 @@ on:
     paths:
       - src/app/usePickSync.ts
       - src/app/serialSyncSession.ts
+      - src/OwnerDriverTrackingMap.tsx
+      - src/data/pickSyncCursor.ts
+      - src/data/repositories/pickSync.ts
       - scripts/serial-sync-session.test.mjs
+      - scripts/pick-sync-cursor.test.mjs
+      - scripts/day-state-change-sequence-contract.sql
+      - supabase/migrations/20260727130000_day_state_change_sequence.sql
       - package.json
       - package-lock.json
       - .github/workflows/pick-sync.yml
@@ -18,7 +24,13 @@ on:
     paths:
       - src/app/usePickSync.ts
       - src/app/serialSyncSession.ts
+      - src/OwnerDriverTrackingMap.tsx
+      - src/data/pickSyncCursor.ts
+      - src/data/repositories/pickSync.ts
       - scripts/serial-sync-session.test.mjs
+      - scripts/pick-sync-cursor.test.mjs
+      - scripts/day-state-change-sequence-contract.sql
+      - supabase/migrations/20260727130000_day_state_change_sequence.sql
       - package.json
       - package-lock.json
       - .github/workflows/pick-sync.yml

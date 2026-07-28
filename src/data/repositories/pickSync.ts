@@ -1,6 +1,15 @@
 import type { DriverDayState, PodRecord, StopProgress } from '@/domain/driverRun';
 import type { PickState, PickTaskState } from '@/domain/pickPlan';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  comparePickSyncRows,
+  sequenceFromPickSyncCursor,
+  timestampFromPickSyncCursor
+} from '@/data/pickSyncCursor';
+export {
+  advancePickSyncCursor,
+  INITIAL_PICK_SYNC_CURSOR
+} from '@/data/pickSyncCursor';
 
 export type PickSyncRow = {
   business_day: string;
@@ -8,6 +17,7 @@ export type PickSyncRow = {
   payload: Record<string, unknown>;
   updated_by: string | null;
   updated_at: string;
+  change_seq?: number | string | null;
 };
 
 /** scope -> serialized payload; used to diff local state against what the server knows. */
@@ -15,6 +25,8 @@ export type ScopeMap = Record<string, string>;
 
 const TABLE = 'ecoflow_day_state';
 const POD_BUCKET = 'pod-photos';
+const PAGE_SIZE = 500;
+const MAX_SEQUENCE_PAGES = 20;
 
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
@@ -55,9 +67,64 @@ async function rest<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export async function fetchPickRows(businessDay: string, afterIso: string): Promise<PickSyncRow[]> {
-  const filter = `business_day=eq.${businessDay}&updated_at=gt.${encodeURIComponent(afterIso)}`;
-  return rest<PickSyncRow[]>(`${TABLE}?${filter}&order=updated_at.asc&select=*`);
+function missingChangeSequence(reason: unknown) {
+  if (!(reason instanceof Error)) return false;
+  const status = (reason as Error & { status?: number }).status;
+  return status === 400 && /change_seq/i.test(reason.message);
+}
+
+async function fetchSequencedPickRows(businessDay: string, cursor: string): Promise<PickSyncRow[]> {
+  let afterSequence = sequenceFromPickSyncCursor(cursor) ?? 0n;
+  const rows: PickSyncRow[] = [];
+
+  for (let page = 0; page < MAX_SEQUENCE_PAGES; page += 1) {
+    const filter = `business_day=eq.${encodeURIComponent(businessDay)}&change_seq=gt.${afterSequence.toString()}`;
+    const batch = await rest<PickSyncRow[]>(
+      `${TABLE}?${filter}&order=change_seq.asc&limit=${PAGE_SIZE}&select=*`
+    );
+    if (batch.length === 0) return rows;
+
+    const nextSequence = batch.reduce((latest, row) => {
+      const value = row.change_seq === null || row.change_seq === undefined
+        ? latest
+        : BigInt(String(row.change_seq));
+      return value > latest ? value : latest;
+    }, afterSequence);
+    if (nextSequence <= afterSequence) {
+      throw new Error('Shared-state sequence did not advance; sync stopped to avoid skipping rows.');
+    }
+
+    rows.push(...batch);
+    afterSequence = nextSequence;
+    if (batch.length < PAGE_SIZE) return rows;
+  }
+
+  throw new Error(`Shared-state sync exceeded ${PAGE_SIZE * MAX_SEQUENCE_PAGES} rows in one poll; pagination stopped safely.`);
+}
+
+async function fetchTimestampFallbackRows(businessDay: string, cursor: string) {
+  const afterIso = timestampFromPickSyncCursor(cursor);
+  const filter = `business_day=eq.${encodeURIComponent(businessDay)}&updated_at=gte.${encodeURIComponent(afterIso)}`;
+  const rows: PickSyncRow[] = [];
+
+  for (let page = 0; page < MAX_SEQUENCE_PAGES; page += 1) {
+    const batch = await rest<PickSyncRow[]>(
+      `${TABLE}?${filter}&order=updated_at.asc,scope.asc&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}&select=*`
+    );
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return rows;
+  }
+
+  throw new Error(`Timestamp fallback sync exceeded ${PAGE_SIZE * MAX_SEQUENCE_PAGES} rows in one poll; pagination stopped safely.`);
+}
+
+export async function fetchPickRows(businessDay: string, cursor: string): Promise<PickSyncRow[]> {
+  try {
+    return await fetchSequencedPickRows(businessDay, cursor);
+  } catch (reason) {
+    if (!missingChangeSequence(reason)) throw reason;
+    return fetchTimestampFallbackRows(businessDay, cursor);
+  }
 }
 
 export async function pushPickRows(
@@ -199,7 +266,7 @@ type MetaPayload = { lockedAt?: string | null; stopOrder?: string[]; boxCodes?: 
 /** Applies remote rows (oldest first) onto the local day; per-scope last-write-wins. */
 export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): DriverDayState {
   if (!rows.length) return day;
-  const sorted = [...rows].sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+  const sorted = [...rows].sort(comparePickSyncRows);
   const latestControl = [...sorted].reverse().find((row) => row.scope === 'run-control');
   const remoteRunCode = latestControl ? String((latestControl.payload as { activeRunCode?: string }).activeRunCode || 'A').toUpperCase() : (day.runCode || 'A');
   const switchingRun = remoteRunCode !== (day.runCode || 'A');
@@ -276,4 +343,3 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
   });
   return { ...base, pick, stopOrder, releasedOrders, stopProgress, shiftEvents, routeStartedAt, routeEndedAt };
 }
-

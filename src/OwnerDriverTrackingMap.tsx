@@ -3,7 +3,12 @@ import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { Clock3, LocateFixed, MapPin, RefreshCw, Store, Truck, Warehouse } from 'lucide-react';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
-import { fetchPickRows, mergeRowsIntoDay } from '@/data/repositories/pickSync';
+import {
+  advancePickSyncCursor,
+  fetchPickRows,
+  INITIAL_PICK_SYNC_CURSOR,
+  mergeRowsIntoDay
+} from '@/data/repositories/pickSync';
 import { loadDriverIdentity, loadOwnerDriverLocationTimeline, type DriverLocationSample } from '@/data/repositories/driverLocation';
 import { buildDriverRun, emptyDriverDayState, WAREHOUSE, type DriverDayState, type MapPoint, type RunStop } from '@/domain/driverRun';
 import { buildProductionEmptyData } from '@/domain/productionData';
@@ -117,7 +122,6 @@ function representativeSamples(samples: DriverLocationSample[], maximum = 24) {
 type ViewsCache = TrustedLiveSnapshot<EcoFlowDataSet>;
 /** Reload the heavy Ordermentum views only every Nth poll; pick rows use an incremental cursor. */
 const VIEWS_REFRESH_TICKS = 5;
-const EPOCH_CURSOR = '1970-01-01T00:00:00.000Z';
 
 function deliveryHost() {
   const activeDelivery = Array.from(document.querySelectorAll<HTMLButtonElement>('.sidebar-nav button'))
@@ -156,7 +160,7 @@ export function OwnerDriverTrackingMap() {
 
   const viewsCacheRef = useRef<ViewsCache | null>(null);
   const dayRef = useRef<DriverDayState | null>(null);
-  const cursorRef = useRef(EPOCH_CURSOR);
+  const cursorRef = useRef(INITIAL_PICK_SYNC_CURSOR);
   const tickRef = useRef(0);
 
   async function reload() {
@@ -192,11 +196,11 @@ export function OwnerDriverTrackingMap() {
       const businessDay = base.data.businessDay.date;
       if (!dayRef.current || dayRef.current.businessDay !== businessDay) {
         dayRef.current = emptyDriverDayState(businessDay);
-        cursorRef.current = EPOCH_CURSOR;
+        cursorRef.current = INITIAL_PICK_SYNC_CURSOR;
       }
       const rows = await fetchPickRows(businessDay, cursorRef.current);
       if (rows.length) {
-        cursorRef.current = rows[rows.length - 1].updated_at;
+        cursorRef.current = advancePickSyncCursor(cursorRef.current, rows);
         dayRef.current = mergeRowsIntoDay(dayRef.current, rows);
       }
       const run = buildDriverRun(base.data.orders, businessDay, dayRef.current.releasedOrders, dayRef.current.runCode);

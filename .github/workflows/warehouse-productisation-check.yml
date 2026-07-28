@@ -123,7 +123,8 @@ jobs:
             supabase/migrations/20260725100000_fix_barcode_rpc_ambiguous_sku.sql \
             supabase/migrations/20260727110000_restore_warehouse_write_guards.sql \
             supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql \
-            supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql
+            supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql \
+            supabase/migrations/20260727130000_day_state_change_sequence.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
@@ -158,6 +159,7 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/operational-state-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/day-state-change-sequence-contract.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute driver tracking privacy and idempotency tests
         shell: bash
         run: |
