@@ -1,6 +1,8 @@
 // SYNTHETIC_ONLY: deterministic demo data with no copied customer, order,
 // address, contact, credential, or provider identifiers.
 
+import type { OrdermentumSnapshot } from './ordermentumTypes';
+
 const ANCHOR_MS = Date.parse('2026-07-24T06:30:00.000Z');
 const PRICE_GROUP_IDS = [
   '00000010-0000-4000-8000-000000000001',
@@ -209,4 +211,4 @@ export const ordermentumSnapshot = {
       default: true
     }
   ]
-};
+} satisfies OrdermentumSnapshot;
