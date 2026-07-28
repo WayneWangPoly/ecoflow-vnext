@@ -26,114 +26,84 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
-          text = path.read_text()
+          migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
+          contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
+          migration = migration_path.read_text()
+          contract = contract_path.read_text()
 
-          replacements = []
+          replacements = [
+              (
+                  "greatest(r.observed_at,p.updated_at)",
+                  "greatest(r.observed_at,analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at'))",
+                  1,
+              ),
+              ("count(a.*)::integer as ack_count", "count(a.id)::integer as ack_count", 1),
+              ("count(s.*)::integer as sample_count", "count(s.id)::integer as sample_count", 1),
+              ("count(*) filter(where s.sample_source='ROUTE_START')", "count(s.id) filter(where s.sample_source='ROUTE_START')", 1),
+              ("count(*) filter(where s.sample_source='ROUTE_END')", "count(s.id) filter(where s.sample_source='ROUTE_END')", 1),
+              ("count(*) filter(where s.sample_source='STOP_ARRIVAL')", "count(s.id) filter(where s.sample_source='STOP_ARRIVAL')", 1),
+              ("count(*) filter(where s.sample_source='DELIVERY')", "count(s.id) filter(where s.sample_source='DELIVERY')", 1),
+              ("count(*) filter(where s.sample_source='FAILED_DELIVERY')", "count(s.id) filter(where s.sample_source='FAILED_DELIVERY')", 1),
+              ("min(a.driver_user_id)::text", "min(a.driver_user_id::text)", 1),
+              ("min(s.driver_user_id)::text", "min(s.driver_user_id::text)", 1),
+          ]
 
-          replacements.append((
-          """      greatest(r.observed_at,p.updated_at)
-          """,
-          """      greatest(
-                r.observed_at,
-                analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at')
-              )
-          """))
+          for old, new, expected in replacements:
+              count = migration.count(old)
+              if count != expected:
+                  raise SystemExit(f'Expected {expected} match(es), found {count}: {old!r}')
+              migration = migration.replace(old, new, expected)
 
-          replacements.append((
-          """    ), ack as(
-              select r.source_route_key,count(a.*)::integer as ack_count,
-                count(distinct a.driver_user_id)::integer as driver_count,
-                min(a.accepted_at) as first_at,max(a.accepted_at) as latest_at,
-                case when count(distinct a.driver_user_id)=1 then min(a.driver_user_id)::text end
-                  as driver_key
-              from pg_temp.delivery_route_candidates r
-              left join public.ecoflow_driver_departure_acknowledgements a
-                on a.business_day=r.business_day and a.route_id=r.source_route_id
-              group by r.source_route_key
-            ), loc as(
-              select r.source_route_key,count(s.*)::integer as sample_count,
-                count(*) filter(where s.sample_source='ROUTE_START')::integer as route_start_count,
-                count(*) filter(where s.sample_source='ROUTE_END')::integer as route_end_count,
-                count(*) filter(where s.sample_source='STOP_ARRIVAL')::integer as arrival_count,
-                count(*) filter(where s.sample_source='DELIVERY')::integer as delivery_count,
-                count(*) filter(where s.sample_source='FAILED_DELIVERY')::integer as failed_count,
-                min(s.captured_at) as first_at,max(s.captured_at) as latest_at,
-                count(distinct s.driver_user_id)::integer as driver_count,
-                case when count(distinct s.driver_user_id)=1 then min(s.driver_user_id)::text end
-                  as driver_key
-              from pg_temp.delivery_route_candidates r
-              left join public.ecoflow_driver_location_samples s
-                on s.business_day=r.business_day and s.route_id=r.source_route_id
-              group by r.source_route_key
-            ), notices as(
-          """,
-          """    ), ack as(
-              select r.source_route_key,count(a.id)::integer as ack_count,
-                min(a.accepted_at) as first_at,max(a.accepted_at) as latest_at
-              from pg_temp.delivery_route_candidates r
-              left join public.ecoflow_driver_departure_acknowledgements a
-                on a.business_day=r.business_day and a.route_id=r.source_route_id
-              group by r.source_route_key
-            ), loc as(
-              select r.source_route_key,count(s.id)::integer as sample_count,
-                count(s.id) filter(where s.sample_source='ROUTE_START')::integer as route_start_count,
-                count(s.id) filter(where s.sample_source='ROUTE_END')::integer as route_end_count,
-                count(s.id) filter(where s.sample_source='STOP_ARRIVAL')::integer as arrival_count,
-                count(s.id) filter(where s.sample_source='DELIVERY')::integer as delivery_count,
-                count(s.id) filter(where s.sample_source='FAILED_DELIVERY')::integer as failed_count,
-                min(s.captured_at) as first_at,max(s.captured_at) as latest_at
-              from pg_temp.delivery_route_candidates r
-              left join public.ecoflow_driver_location_samples s
-                on s.business_day=r.business_day and s.route_id=r.source_route_id
-              group by r.source_route_key
-            ), route_drivers as(
-              select r.source_route_key,
-                count(distinct x.driver_user_id)::integer as driver_count,
-                case when count(distinct x.driver_user_id)=1
-                     then min(x.driver_user_id::text) end as driver_key
-              from pg_temp.delivery_route_candidates r
-              left join lateral(
-                select a.driver_user_id
-                from public.ecoflow_driver_departure_acknowledgements a
-                where a.business_day=r.business_day and a.route_id=r.source_route_id
-                union all
-                select s.driver_user_id
-                from public.ecoflow_driver_location_samples s
-                where s.business_day=r.business_day and s.route_id=r.source_route_id
-              ) x on true
-              group by r.source_route_key
-            ), notices as(
-          """))
+          old_driver_projection = """        greatest(coalesce(a.driver_count,0),coalesce(l.driver_count,0)) as driver_count,
+                  coalesce(a.driver_key,l.driver_key) as driver_key,
+          """
+          new_driver_projection = """        (
+                    select count(distinct u.driver_user_id)::integer
+                    from (
+                      select da.driver_user_id
+                      from public.ecoflow_driver_departure_acknowledgements da
+                      where da.business_day=r.business_day
+                        and da.route_id=r.source_route_id
+                      union all
+                      select dl.driver_user_id
+                      from public.ecoflow_driver_location_samples dl
+                      where dl.business_day=r.business_day
+                        and dl.route_id=r.source_route_id
+                    ) u
+                  ) as driver_count,
+                  (
+                    select case when count(distinct u.driver_user_id)=1
+                                then min(u.driver_user_id::text) end
+                    from (
+                      select da.driver_user_id
+                      from public.ecoflow_driver_departure_acknowledgements da
+                      where da.business_day=r.business_day
+                        and da.route_id=r.source_route_id
+                      union all
+                      select dl.driver_user_id
+                      from public.ecoflow_driver_location_samples dl
+                      where dl.business_day=r.business_day
+                        and dl.route_id=r.source_route_id
+                    ) u
+                  ) as driver_key,
+          """
+          count = migration.count(old_driver_projection)
+          if count != 1:
+              raise SystemExit(f'Expected one driver projection, found {count}')
+          migration = migration.replace(old_driver_projection, new_driver_projection, 1)
 
-          replacements.append((
-          """        coalesce(a.ack_count,0) as ack_count,
-                greatest(coalesce(a.driver_count,0),coalesce(l.driver_count,0)) as driver_count,
-                coalesce(a.driver_key,l.driver_key) as driver_key,
-          """,
-          """        coalesce(a.ack_count,0) as ack_count,
-                coalesce(rd.driver_count,0) as driver_count,
-                rd.driver_key,
-          """))
+          count = migration.count('departure_driver_count')
+          if count != 5:
+              raise SystemExit(f'Expected five migration field-name matches, found {count}')
+          migration = migration.replace('departure_driver_count','observed_driver_count')
 
-          replacements.append((
-          """      left join ack a using(source_route_key)
-              left join loc l using(source_route_key)
-              left join notices n using(source_route_key)
-          """,
-          """      left join ack a using(source_route_key)
-              left join loc l using(source_route_key)
-              left join route_drivers rd using(source_route_key)
-              left join notices n using(source_route_key)
-          """))
+          count = contract.count('departure_driver_count')
+          if count != 1:
+              raise SystemExit(f'Expected one contract field-name match, found {count}')
+          contract = contract.replace('departure_driver_count','observed_driver_count')
 
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'Expected exactly one match, found {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
-
-          path.write_text(text)
+          migration_path.write_text(migration)
+          contract_path.write_text(contract)
           PY
 
       - name: Restore read-only hygiene workflow
@@ -173,7 +143,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql .github/workflows/repository-hygiene.yml
+          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/repository-hygiene.yml
           git diff --cached --exit-code && exit 0
           git commit -m 'fix(data): combine delivery driver evidence safely'
           git push origin HEAD:${{ github.head_ref }}
