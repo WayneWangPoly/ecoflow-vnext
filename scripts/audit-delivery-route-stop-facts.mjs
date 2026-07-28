@@ -18,6 +18,7 @@ const required = [
   ['driver dimension', /references analytics\.dim_driver/],
   ['observed driver count', /\bobserved_driver_count\b/],
   ['combined driver evidence', /select da\.driver_user_id[\s\S]{0,500}union all[\s\S]{0,300}select dl\.driver_user_id/],
+  ['parsed durable dates', /\bparsed_business_day\b/],
   ['two typed POD rules', /POD1_DROP_POINT[\s\S]*POD2_GOODS_PLACED/],
   ['durable exception authority', /DURABLE_EXCEPTION/],
   ['notification communication disclaimer', /Notifications are communication evidence and never prove delivery/i],
@@ -64,6 +65,9 @@ assert.ok(stopTable, 'Delivery fact audit could not isolate stop fact DDL.');
 
 for (const [name, pattern, source = migration] of [
   ['legacy departure-only driver field', /\bdeparture_driver_count\b/],
+  ['duplicate parsed POD date alias', /ecoflow_try_date\(p\.business_day\)\s+as\s+business_day\s*,\s*p\.\*/i],
+  ['duplicate parsed exception date alias', /ecoflow_try_date\(e\.business_day\)\s+as\s+business_day\s*,\s*e\.\*/i],
+  ['duplicate parsed notification date alias', /ecoflow_try_date\(n\.business_day\)\s+as\s+business_day\s*,\s*n\.\*/i],
   ['route browser grant', /grant select on table analytics\.fact_delivery_route_observation to (?:anon|authenticated)/],
   ['stop browser grant', /grant select on table analytics\.fact_delivery_stop_observation to (?:anon|authenticated)/],
   ['service route direct writes', /grant all on table analytics\.fact_delivery_route_observation to service_role/],
@@ -85,5 +89,5 @@ for (const [name, pattern, source = migration] of [
   assert.doesNotMatch(source, pattern, `Delivery fact audit found ${name}`);
 }
 
-assert.equal(required.length, 32);
+assert.equal(required.length, 33);
 console.log(`Delivery route/stop fact audit passed (${required.length}/${required.length}).`);
