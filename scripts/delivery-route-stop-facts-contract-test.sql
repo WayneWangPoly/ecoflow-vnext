@@ -181,8 +181,18 @@ declare
   v_o4 record;
 begin
   if exists(select 1 from pg_temp.delivery_refresh_result where refresh_state<>'CURRENT') then
-    raise exception 'delivery refresh did not complete: %',
-      (select jsonb_agg(to_jsonb(r)) from pg_temp.delivery_refresh_result r);
+    raise exception 'delivery refresh did not complete: result=% status=%',
+(select jsonb_agg(to_jsonb(r)) from pg_temp.delivery_refresh_result r),
+(select jsonb_agg(jsonb_build_object(
+  'dataset_key',rs.dataset_key,
+  'status',rs.status,
+  'error_code',rs.error_code,
+  'error_message',rs.error_message
+) order by rs.dataset_key)
+ from analytics.refresh_status rs
+ where rs.dataset_key in(
+   'analytics.delivery_routes','analytics.delivery_stops'
+ ));
   end if;
 
   select * into v_route
