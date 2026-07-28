@@ -126,6 +126,7 @@ jobs:
             supabase/migrations/20260727110000_restore_warehouse_write_guards.sql \
             supabase/migrations/20260727120450_restore_return_geofence_prerequisite.sql \
             supabase/migrations/20260727120460_prepare_return_zone_view_for_acl.sql \
+            supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql \
             supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql \
             supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql \
             supabase/migrations/20260727130000_day_state_change_sequence.sql \
@@ -149,6 +150,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/legacy-returns-acl-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute managed PostgreSQL return-function tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/legacy-returns-managed-postgres-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute analytics semantic foundation tests
         shell: bash
         run: |
