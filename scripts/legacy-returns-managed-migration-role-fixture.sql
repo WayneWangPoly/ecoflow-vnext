@@ -1,5 +1,9 @@
 \set ON_ERROR_STOP on
 
+-- Reproduce the compact function-body formatting observed in the production
+-- schema before changing ownership and executing the compatibility migration.
+\ir legacy-returns-compact-function-body-fixture.sql
+
 -- Model the relevant Supabase managed-migration constraint: the executor owns
 -- the legacy functions and may create functions in public, but is not a
 -- superuser and cannot change superuser-only server parameters.

@@ -6,6 +6,11 @@
 -- #variable_conflict directive is part of each function body instead, so the
 -- original use-column resolution is preserved without requiring elevated
 -- database privileges.
+--
+-- pg_get_functiondef() preserves whether the stored function body starts with
+-- a newline. Production contains compact bodies where code begins immediately
+-- after the dollar-quote delimiter, while historical fixtures contain a leading
+-- newline. Match the AS + dollar-quote marker without assuming either layout.
 
 begin;
 
@@ -14,8 +19,8 @@ declare
   v_signature text;
   v_oid oid;
   v_definition text;
-  v_delimiter text;
-  v_anchor text;
+  v_marker_match text[];
+  v_body_marker text;
   v_position integer;
   v_recompiled text;
 begin
@@ -40,27 +45,27 @@ begin
       continue;
     end if;
 
-    select (regexp_match(
+    select regexp_match(
       v_definition,
-      E'AS (\\$[A-Za-z0-9_]*\\$)\\n'
-    ))[1]
-    into v_delimiter;
+      E'(AS[[:space:]]+(\\$[A-Za-z0-9_]*\\$))'
+    )
+    into v_marker_match;
 
-    if v_delimiter is null then
+    v_body_marker := v_marker_match[1];
+    if v_body_marker is null then
       raise exception 'RETURNS_MANAGED_POSTGRES_BODY_DELIMITER_NOT_FOUND: %', v_signature;
     end if;
 
-    v_anchor := 'AS ' || v_delimiter || E'\n';
-    v_position := strpos(v_definition, v_anchor);
+    v_position := strpos(v_definition, v_body_marker);
     if v_position = 0 then
       raise exception 'RETURNS_MANAGED_POSTGRES_BODY_ANCHOR_NOT_FOUND: %', v_signature;
     end if;
 
     v_recompiled := overlay(
       v_definition
-      placing v_anchor || '#variable_conflict use_column' || E'\n'
+      placing v_body_marker || E'\n#variable_conflict use_column\n'
       from v_position
-      for char_length(v_anchor)
+      for char_length(v_body_marker)
     );
 
     execute v_recompiled;
