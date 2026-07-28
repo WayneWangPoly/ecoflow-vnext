@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const file = 'supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql';
+const repairFile = 'supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql';
 const source = fs.readFileSync(file, 'utf8');
+const repairSource = fs.readFileSync(repairFile, 'utf8');
 
 const checks = [
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
@@ -33,7 +35,7 @@ const checks = [
   ['drop driver gate', /RETURN_DRIVER_ROLE_REQUIRED/],
   ['inspection wrapper', /create function public\.ecoflow_record_return_inspection_item\(/],
   ['inspection warehouse gate', /RETURN_INSPECTION_WAREHOUSE_ROLE_REQUIRED/],
-  ['complete wrapper', /create function public\.ecoflow_complete_return_inspection\(/],
+  ['geofence format repair', /GPS %s m from zone; accuracy %s m[\s\S]{0,260}revoke all on function public\.ecoflow_driver_drop_return_acl_impl/, repairSource],
   ['server actor binding', /format\('%s:%s',v_role,auth\.uid\(\)::text\)/],
   ['notification settings RLS', /alter table public\.ecoflow_delivery_notification_settings enable row level security;/],
   ['notifications RLS', /alter table public\.ecoflow_delivery_notifications enable row level security;/],
@@ -61,8 +63,8 @@ const checks = [
   ['wrapper execute grants', /grant execute on function public\.ecoflow_complete_return_inspection\(uuid,text,text\)[\s\S]{0,40}to authenticated;/],
 ];
 
-for (const [name, pattern] of checks) {
-  assert.match(source, pattern, `Legacy returns ACL check failed: ${name}`);
+for (const [name, pattern, target = source] of checks) {
+  assert.match(target, pattern, `Legacy returns ACL check failed: ${name}`);
 }
 
 assert.equal(checks.length, 54);
