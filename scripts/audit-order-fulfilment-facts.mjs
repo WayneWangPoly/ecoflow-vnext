@@ -5,6 +5,8 @@ const migrationFile =
   'supabase/migrations/20260729090000_order_fulfilment_facts.sql';
 const migration = fs.readFileSync(migrationFile, 'utf8');
 
+// This audit protects boundaries the runtime contract cannot prove by row data:
+// no browser command grants, no automatic refresh, and no inferred fulfilment.
 const checks = [
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
   ['preflight', /ORDER_FULFILMENT_FACT_PREREQUISITES_MISSING/],
