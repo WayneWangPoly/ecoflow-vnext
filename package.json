@@ -23,6 +23,7 @@
     "audit:production-data-boundary": "node scripts/audit-production-data-boundary.mjs",
     "audit:returns-acl": "node scripts/audit-return-geofence-prerequisite.mjs && node scripts/audit-legacy-returns-acl.mjs",
     "audit:analytics": "node scripts/audit-analytics-semantic-foundation.mjs",
+    "audit:analytics-facts": "node scripts/audit-order-fulfilment-facts.mjs",
     "test:data-boundary": "node --experimental-strip-types --test scripts/production-data-boundary.test.mjs",
     "test:pick-sync": "node --experimental-strip-types --test scripts/serial-sync-session.test.mjs scripts/pick-sync-cursor.test.mjs",
     "test:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs && node scripts/audit-desktop-density-stocktake-coverage.mjs && node scripts/audit-warehouse-physical-layout.mjs",
@@ -44,7 +45,7 @@
   },
   "devDependencies": {
     "@types/react": "19.2.15",
-    "@types/react-dom": "19.2.3"
+    "@types/react-dom": "19.2.15"
   },
   "engines": {
     "node": "22.x"
