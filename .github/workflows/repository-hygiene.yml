@@ -20,27 +20,30 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Apply exact qualified join repair
+      - name: Apply anchored qualified join repair
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
           text = path.read_text()
-          old = """      left join pg_temp.delivery_order_route_assignment a
-            using(business_day,source_order_id)
-          left join pg_temp.delivery_pod_agg p
-          """
-          new = """      left join pg_temp.delivery_order_route_assignment a
-            on a.business_day=c.business_day
-           and a.source_order_id=c.source_order_id
-          left join pg_temp.delivery_pod_agg p
-          """
-          count = text.count(old)
+          pattern = re.compile(
+              r"(?m)^(\s*)left join pg_temp\.delivery_order_route_assignment a\n"
+              r"\1  using\(business_day,source_order_id\)\n"
+              r"\1left join pg_temp\.delivery_pod_agg p$"
+          )
+          replacement = (
+              "\\1left join pg_temp.delivery_order_route_assignment a\n"
+              "\\1  on a.business_day=c.business_day\n"
+              "\\1 and a.source_order_id=c.source_order_id\n"
+              "\\1left join pg_temp.delivery_pod_agg p"
+          )
+          text, count = pattern.subn(replacement, text)
           if count != 1:
-              raise SystemExit(f'Expected one ambiguous route-assignment join, found {count}')
-          path.write_text(text.replace(old, new, 1))
+              raise SystemExit(f'Expected one prepared route-assignment join, found {count}')
+          path.write_text(text)
           PY
 
       - name: Restore read-only hygiene workflow
