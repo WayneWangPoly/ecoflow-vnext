@@ -25,29 +25,30 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
           text = path.read_text()
-          old = """    raise exception 'delivery refresh did not complete: %',
-              (select jsonb_agg(to_jsonb(r)) from pg_temp.delivery_refresh_result r);
-          """
-          new = """    raise exception 'delivery refresh did not complete: result=% status=%',
-              (select jsonb_agg(to_jsonb(r)) from pg_temp.delivery_refresh_result r),
-              (select jsonb_agg(jsonb_build_object(
-                'dataset_key',rs.dataset_key,
-                'status',rs.status,
-                'error_code',rs.error_code,
-                'error_message',rs.error_message
-              ) order by rs.dataset_key)
-               from analytics.refresh_status rs
-               where rs.dataset_key in(
-                 'analytics.delivery_routes','analytics.delivery_stops'
-               ));
-          """
-          count = text.count(old)
+          pattern = re.compile(
+              r"raise exception 'delivery refresh did not complete: %',\s*"
+              r"\(select jsonb_agg\(to_jsonb\(r\)\) from pg_temp\.delivery_refresh_result r\);"
+          )
+          replacement = """raise exception 'delivery refresh did not complete: result=% status=%',
+          (select jsonb_agg(to_jsonb(r)) from pg_temp.delivery_refresh_result r),
+          (select jsonb_agg(jsonb_build_object(
+            'dataset_key',rs.dataset_key,
+            'status',rs.status,
+            'error_code',rs.error_code,
+            'error_message',rs.error_message
+          ) order by rs.dataset_key)
+           from analytics.refresh_status rs
+           where rs.dataset_key in(
+             'analytics.delivery_routes','analytics.delivery_stops'
+           ));"""
+          text, count = pattern.subn(replacement, text)
           if count != 1:
-              raise SystemExit(f'Expected one refresh diagnostic block, found {count}')
-          path.write_text(text.replace(old, new, 1))
+              raise SystemExit(f'Expected one anchored refresh diagnostic block, found {count}')
+          path.write_text(text)
           PY
 
       - name: Restore read-only hygiene workflow
