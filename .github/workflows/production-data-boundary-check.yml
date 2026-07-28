@@ -1,0 +1,77 @@
+name: Production data boundary check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/app/App.tsx
+      - src/OwnerDeliveryGovernance.tsx
+      - src/OwnerDriverTrackingMap.tsx
+      - src/data/ordermentumSnapshot.ts
+      - src/data/ordermentumTypes.ts
+      - src/data/repositories/ordermentumRepository.ts
+      - src/data/repositories/sampleOrdermentumRepository.ts
+      - src/domain/ecoflowData.ts
+      - src/domain/productionData.ts
+      - src/domain/sampleEcoflowData.ts
+      - src/domain/trustedLiveSnapshot.ts
+      - scripts/audit-production-data-boundary.mjs
+      - scripts/audit-synthetic-ordermentum-snapshot.mjs
+      - scripts/production-data-boundary.test.mjs
+      - package.json
+      - .github/workflows/production-data-boundary-check.yml
+  push:
+    branches:
+      - main
+      - 'agent/security/DATA-002-*'
+    paths:
+      - src/app/App.tsx
+      - src/OwnerDeliveryGovernance.tsx
+      - src/OwnerDriverTrackingMap.tsx
+      - src/data/ordermentumSnapshot.ts
+      - src/data/ordermentumTypes.ts
+      - src/data/repositories/ordermentumRepository.ts
+      - src/data/repositories/sampleOrdermentumRepository.ts
+      - src/domain/ecoflowData.ts
+      - src/domain/productionData.ts
+      - src/domain/sampleEcoflowData.ts
+      - src/domain/trustedLiveSnapshot.ts
+      - scripts/audit-production-data-boundary.mjs
+      - scripts/audit-synthetic-ordermentum-snapshot.mjs
+      - scripts/production-data-boundary.test.mjs
+      - package.json
+      - .github/workflows/production-data-boundary-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  production-data-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Verify the development fixture is synthetic
+        run: npm run audit:synthetic-snapshot
+
+      - name: Test fail-closed live snapshot selection
+        run: npm run test:data-boundary
+
+      - name: Build production
+        run: npm run build
+
+      - name: Reject sample data in production artifacts
+        run: npm run audit:production-data-boundary

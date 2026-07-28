@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
+    "typecheck": "node ./node_modules/typescript/bin/tsc -b --pretty false",
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "import:master-data": "node scripts/import-master-data.mjs",
@@ -19,6 +20,8 @@
     "audit:warehouse-layout": "node scripts/audit-warehouse-physical-layout.mjs",
     "audit:repository-hygiene": "node scripts/audit-repository-hygiene.mjs",
     "audit:synthetic-snapshot": "node scripts/audit-synthetic-ordermentum-snapshot.mjs",
+    "audit:production-data-boundary": "node scripts/audit-production-data-boundary.mjs",
+    "test:data-boundary": "node --experimental-strip-types --test scripts/production-data-boundary.test.mjs",
     "test:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs && node scripts/audit-desktop-density-stocktake-coverage.mjs && node scripts/audit-warehouse-physical-layout.mjs",
     "import:ordermentum:backfill": "node scripts/import-ordermentum-backfill-all.mjs",
     "import:ordermentum:incremental": "node scripts/import-ordermentum-incremental.mjs",
