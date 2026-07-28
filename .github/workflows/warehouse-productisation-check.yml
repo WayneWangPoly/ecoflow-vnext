@@ -35,7 +35,7 @@ jobs:
           node scripts/audit-stocktake-go-live-readiness.mjs 2>&1 | tee -a operational-audit.log
           npm run audit:returns-acl 2>&1 | tee -a operational-audit.log
           npm run audit:analytics 2>&1 | tee -a operational-audit.log
-          npm run audit:analytics-facts 2>&1 | tee -a operational-audit.log
+          node scripts/audit-order-fulfilment-facts.mjs 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
