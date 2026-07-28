@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: ecoflow-supabase-shadow-diagnostic
@@ -24,10 +25,12 @@ jobs:
     timeout-minutes: 20
     environment: production
     env:
+      GH_TOKEN: ${{ github.token }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
       SHADOW_DB_URL: postgresql://postgres:shadow@localhost:54329/postgres
+      DIAGNOSTIC_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     services:
       shadow:
         image: postgres:17
@@ -42,6 +45,14 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
+      - name: Publish pending diagnostic status
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context='Supabase shadow diagnostic' \
+            -f description='Reading production schema and reproducing pending migration failure' \
+            -f target_url="$DIAGNOSTIC_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
       - name: Require production read credentials
@@ -184,6 +195,32 @@ jobs:
             /tmp/shadow-migration-apply.log
           if-no-files-found: error
           retention-days: 7
+      - name: Publish diagnostic result
+        if: always()
+        shell: bash
+        env:
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+        run: |
+          if [ "$APPLY_OUTCOME" = 'success' ]; then
+            STATE='success'
+            DESCRIPTION='All pending migrations applied to the production-schema shadow'
+          elif [ "$APPLY_OUTCOME" = 'failure' ]; then
+            STATE='failure'
+            DETAIL="$(grep -E 'ERROR:|FATAL:|psql:.*error:' /tmp/shadow-migration-apply.log 2>/dev/null | tail -1 | tr '\n\r' ' ' | cut -c1-90)"
+            if [ -n "$DETAIL" ]; then
+              DESCRIPTION="Shadow apply failed: $DETAIL"
+            else
+              DESCRIPTION='Shadow apply failed; download the diagnostic artifact'
+            fi
+          else
+            STATE='failure'
+            DESCRIPTION='Shadow diagnostic stopped before migration apply'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" \
+            -f context='Supabase shadow diagnostic' \
+            -f description="$DESCRIPTION" \
+            -f target_url="$DIAGNOSTIC_STATUS_URL"
       - name: Preserve diagnostic failure result
         if: steps.apply.outcome == 'failure'
         run: exit 1
