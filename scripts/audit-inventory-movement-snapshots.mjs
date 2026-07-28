@@ -3,7 +3,10 @@ import fs from 'node:fs';
 
 const migrationFile =
   'supabase/migrations/20260729120000_inventory_movement_and_daily_snapshot.sql';
+const locationFixFile =
+  'supabase/migrations/20260729120100_inventory_location_dimension_resolution.sql';
 const migration = fs.readFileSync(migrationFile, 'utf8');
+const locationFix = fs.readFileSync(locationFixFile, 'utf8');
 
 const checks = [
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
@@ -33,11 +36,24 @@ const checks = [
   ['pgrst reload', /notify pgrst,'reload schema'/],
 ];
 
+const locationChecks = [
+  ['location fix transaction', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
+  ['location fix preflight', /INVENTORY_LOCATION_DIMENSION_PREREQUISITES_MISSING/],
+  ['location SCD resolver', /create or replace function analytics\.ecoflow_ensure_warehouse_location_dimension/],
+  ['same-as-of in-place correction', /v_as_of<=v_current\.effective_from/],
+  ['location history close', /set effective_to=v_as_of,[\s\S]{0,80}is_current=false/],
+  ['movement location trigger', /create trigger resolve_inventory_fact_locations/],
+  ['analytics-only statement', /performs no operational warehouse mutation/i],
+];
+
 for (const [name, pattern] of checks) {
   assert.match(migration, pattern, `Inventory fact audit failed: ${name}`);
 }
+for (const [name, pattern] of locationChecks) {
+  assert.match(locationFix, pattern, `Inventory location audit failed: ${name}`);
+}
 
-for (const [name, pattern] of [
+for (const [name, pattern, source = migration] of [
   [
     'browser movement fact grant',
     /grant select on table analytics\.fact_inventory_movement to (?:anon|authenticated)/,
@@ -70,9 +86,17 @@ for (const [name, pattern] of [
     'global ledger reconstructed snapshot',
     /from analytics\.fact_inventory_movement[\s\S]{0,500}insert into analytics\.fact_daily_inventory_snapshot/i,
   ],
+  [
+    'operational location update',
+    /update public\.ecoflow_warehouse_locations/,
+    locationFix,
+  ],
 ]) {
-  assert.doesNotMatch(migration, pattern, `Inventory fact audit found ${name}`);
+  assert.doesNotMatch(source, pattern, `Inventory fact audit found ${name}`);
 }
 
 assert.equal(checks.length, 25);
-console.log(`Inventory movement/snapshot static audit passed (${checks.length}/${checks.length}).`);
+assert.equal(locationChecks.length, 7);
+console.log(
+  `Inventory movement/snapshot static audit passed (${checks.length + locationChecks.length}/${checks.length + locationChecks.length}).`,
+);
