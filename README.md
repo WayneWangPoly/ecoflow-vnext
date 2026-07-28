@@ -10,9 +10,10 @@ and statements — across Owner/Admin, Account, Warehouse and Driver surfaces.
 | Doc | What it covers |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Surfaces, enhancer layer, shared day state, RLS write matrix, edge functions |
+| [docs/engineering/ECOFLOW-INTELLIGENCE-CONTROL-ROOM-2.md](docs/engineering/ECOFLOW-INTELLIGENCE-CONTROL-ROOM-2.md) | Intelligence semantic layer, Control Room 2.0, routed multi-layer UI and delivery waves |
 | [docs/engineering/AGENT-OPERATING-MODEL.md](docs/engineering/AGENT-OPERATING-MODEL.md) | Multi-agent roles, work-package discipline, evidence and merge order |
 | [docs/engineering/FILE-OWNERSHIP.md](docs/engineering/FILE-OWNERSHIP.md) | Protected paths and required implementation/review ownership |
-| [docs/adr/README.md](docs/adr/README.md) | Accepted architecture decisions and ADR process |
+| [docs/adr/README.md](docs/adr/README.md) | Accepted and proposed architecture decisions and ADR process |
 | [docs/OPERATIONS-RUNBOOK.md](docs/OPERATIONS-RUNBOOK.md) | Incident playbooks (deploy pipeline, DB connections, Vercel skew), storage retention, field-device issues |
 | [docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md) | Push discipline, shadow verification gate, release-sync status, local UI smoke testing |
 | docs/archive/ | Historical per-feature write-ups |
