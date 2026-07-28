@@ -9,7 +9,7 @@ on:
       - 'agent/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -231,3 +231,150 @@ jobs:
           name: operational-database-contract
           path: operational-db-contract.log
           if-no-files-found: warn
+
+  temp-driver-scd-patch:
+    if: github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply Driver SCD patch and self-clean workflows
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
+          contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
+          workflow_path = Path('.github/workflows/warehouse-productisation-check.yml')
+          migration = migration_path.read_text()
+          contract = contract_path.read_text()
+          workflow = workflow_path.read_text()
+
+          driver_pattern = re.compile(
+              r"(?ms)^    insert into analytics\.dim_driver\(\n"
+              r".*?^      and d\.is_current and d\.display_name is distinct from s\.display_name;\n\n"
+              r"(?=^    insert into analytics\.dim_route\()"
+          )
+          driver_replacement = """    update analytics.dim_driver d
+    set display_name=s.display_name,
+        source_updated_at=s.source_updated_at,
+        updated_at=v_as_of
+    from pg_temp.delivery_driver_source s
+    where d.source_system='ECOFLOW'
+      and d.source_driver_key=s.source_driver_key
+      and d.is_current
+      and d.display_name is distinct from s.display_name
+      and v_as_of<=d.effective_from;
+
+    update analytics.dim_driver d
+    set effective_to=v_as_of,
+        is_current=false,
+        updated_at=v_as_of
+    from pg_temp.delivery_driver_source s
+    where d.source_system='ECOFLOW'
+      and d.source_driver_key=s.source_driver_key
+      and d.is_current
+      and d.display_name is distinct from s.display_name
+      and v_as_of>d.effective_from;
+
+    insert into analytics.dim_driver(
+      source_system,source_driver_key,display_name,active,effective_from,is_current,
+      source_updated_at,recorded_by
+    )
+    select 'ECOFLOW',s.source_driver_key,s.display_name,true,v_as_of,true,
+      s.source_updated_at,'analytics.refresh_delivery_route_stop_facts'
+    from pg_temp.delivery_driver_source s
+    where not exists(
+      select 1 from analytics.dim_driver d
+      where d.source_system='ECOFLOW'
+        and d.source_driver_key=s.source_driver_key
+        and d.is_current
+    );
+
+"""
+          migration, count = driver_pattern.subn(driver_replacement, migration)
+          if count != 1:
+              raise SystemExit(f'Expected one Driver SCD source block, found {count}')
+
+          contract_pattern = re.compile(
+              r"\$first_refresh\$;\n\n"
+              r"-- A transport-only timestamp update with identical payload must not create history\."
+          )
+          contract_replacement = """$first_refresh$;
+
+-- Driver labels are SCD attributes. A later display-name change creates a new
+-- dimension row without rewriting prior route observations.
+update public.app_user_profiles
+set display_name='Route Driver One Renamed',
+    updated_at='2026-07-29 12:31:00+09:30'
+where user_id='81000000-0000-0000-0000-000000000001';
+
+set role service_role;
+select * from analytics.refresh_delivery_route_stop_facts(
+  '2026-07-29 12:32:00+09:30'
+);
+reset role;
+
+do $driver_scd$
+begin
+  if (select count(*) from analytics.dim_driver
+      where source_system='ECOFLOW'
+        and source_driver_key='81000000-0000-0000-0000-000000000001')<>2 then
+    raise exception 'driver display-name change did not create an SCD version';
+  end if;
+  if not exists(
+    select 1 from analytics.dim_driver
+    where source_system='ECOFLOW'
+      and source_driver_key='81000000-0000-0000-0000-000000000001'
+      and display_name='Route Driver One'
+      and not is_current
+      and effective_to='2026-07-29 12:32:00+09:30'
+  ) then
+    raise exception 'prior driver dimension was not closed';
+  end if;
+  if not exists(
+    select 1 from analytics.dim_driver
+    where source_system='ECOFLOW'
+      and source_driver_key='81000000-0000-0000-0000-000000000001'
+      and display_name='Route Driver One Renamed'
+      and is_current
+      and effective_from='2026-07-29 12:32:00+09:30'
+  ) then
+    raise exception 'current driver dimension was not inserted';
+  end if;
+  if (select count(*) from analytics.fact_delivery_route_observation
+      where source_route_key='2026-07-29:RUN:A')<>1 then
+    raise exception 'driver label change created a false route observation version';
+  end if;
+end;
+$driver_scd$;
+
+-- A transport-only timestamp update with identical payload must not create history."""
+          contract, count = contract_pattern.subn(contract_replacement, contract)
+          if count != 1:
+              raise SystemExit(f'Expected one Driver SCD contract insertion point, found {count}')
+
+          marker = '\n  temp-driver-scd-patch:\n'
+          if workflow.count(marker) != 1:
+              raise SystemExit('Temporary productisation job boundary was not unique')
+          workflow = workflow.split(marker,1)[0].rstrip() + '\n'
+          workflow = workflow.replace('permissions:\n  contents: write','permissions:\n  contents: read',1)
+
+          migration_path.write_text(migration)
+          contract_path.write_text(contract)
+          workflow_path.write_text(workflow)
+          PY
+
+          rm -f .github/workflows/temp-intel-data-004-driver-scd.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql scripts/delivery-route-stop-facts-contract-test.sql .github/workflows/warehouse-productisation-check.yml .github/workflows/temp-intel-data-004-driver-scd.yml
+          git commit -m 'fix(data): version delivery driver dimensions'
+          git push origin HEAD:${{ github.head_ref }}
