@@ -1,0 +1,44 @@
+name: Dependency lock check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/dependency-lock-check.yml
+  push:
+    branches:
+      - main
+      - 'agent/build/**'
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/dependency-lock-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify runtime baseline
+        run: |
+          node -e "if (Number(process.versions.node.split('.')[0]) !== 22) process.exit(1)"
+          npm --version
+
+      - name: Install exactly from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Build from clean install
+        run: npm run build
