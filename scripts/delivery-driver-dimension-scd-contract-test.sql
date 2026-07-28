@@ -114,7 +114,7 @@ begin
     and source_driver_key='91000000-0000-0000-0000-000000000001'
     and display_name='Driver SCD Original'
     and not is_current
-    and effective_to='2026-07-29 12:10:00+09:30';
+    and effective_to='2026-07-29 12:05:00+09:30';
 
   select driver_dimension_id into v_new_id
   from analytics.dim_driver
@@ -122,7 +122,7 @@ begin
     and source_driver_key='91000000-0000-0000-0000-000000000001'
     and display_name='Driver SCD Renamed'
     and is_current
-    and effective_from='2026-07-29 12:10:00+09:30';
+    and effective_from='2026-07-29 12:05:00+09:30';
 
   if v_old_id is null or v_new_id is null or v_old_id=v_new_id then
     raise exception 'Driver display-name change did not create an SCD version: rows=%',
