@@ -2,6 +2,7 @@
   "name": "ecoflow-vnext",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@10.9.4",
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
