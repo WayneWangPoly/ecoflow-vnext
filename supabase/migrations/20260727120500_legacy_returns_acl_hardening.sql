@@ -65,28 +65,20 @@ alter function public.ecoflow_complete_return_inspection(uuid,text,text)
 
 alter function public.ecoflow_queue_delivery_notifications_acl_impl(text,text,text,text,integer,text,text,text,text,text,text,text,text,text)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_queue_delivery_notifications_acl_impl(text,text,text,text,integer,text,text,text,text,text,text,text,text,text)
-  set plpgsql.variable_conflict = use_column;
 alter function public.ecoflow_record_delivery_exception_acl_impl(text,text,text,integer,text,text,text,numeric,numeric,numeric,text,text,text,text,text,text)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_record_delivery_exception_acl_impl(text,text,text,integer,text,text,text,numeric,numeric,numeric,text,text,text,text,text,text)
-  set plpgsql.variable_conflict = use_column;
 alter function public.ecoflow_scan_delivery_return_acl_impl(text,text,text,text)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_scan_delivery_return_acl_impl(text,text,text,text)
-  set plpgsql.variable_conflict = use_column;
 alter function public.ecoflow_driver_drop_return_acl_impl(uuid,text,text,text,double precision,double precision,numeric)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_driver_drop_return_acl_impl(uuid,text,text,text,double precision,double precision,numeric)
-  set plpgsql.variable_conflict = use_column;
 alter function public.ecoflow_record_return_inspection_item_acl_impl(uuid,text,text,numeric,text,text,text,text)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_record_return_inspection_item_acl_impl(uuid,text,text,numeric,text,text,text,text)
-  set plpgsql.variable_conflict = use_column;
 alter function public.ecoflow_complete_return_inspection_acl_impl(uuid,text,text)
   set search_path = pg_catalog, public;
-alter function public.ecoflow_complete_return_inspection_acl_impl(uuid,text,text)
-  set plpgsql.variable_conflict = use_column;
+
+-- Supabase managed migration roles cannot set the superuser-only
+-- plpgsql.variable_conflict parameter. The preserved implementations are
+-- executed by the PostgreSQL role contract after rename, without relying on it.
 
 do $revoke_functions$
 declare

@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+const managedCompatFile = 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql';
 const file = 'supabase/migrations/20260727120500_legacy_returns_acl_hardening.sql';
 const repairFile = 'supabase/migrations/20260727120510_legacy_return_geofence_format_repair.sql';
+const managedCompatSource = fs.readFileSync(managedCompatFile, 'utf8');
 const source = fs.readFileSync(file, 'utf8');
 const repairSource = fs.readFileSync(repairFile, 'utf8');
 
 const checks = [
+  ['managed compatibility transaction', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i, managedCompatSource],
+  ['managed compatibility six functions', /queue_delivery_notifications[\s\S]{0,1200}record_delivery_exception[\s\S]{0,1200}scan_delivery_return[\s\S]{0,1200}driver_drop_return[\s\S]{0,1200}record_return_inspection_item[\s\S]{0,1200}complete_return_inspection/, managedCompatSource],
+  ['managed compatibility reads definitions', /pg_get_functiondef\(v_oid\)/, managedCompatSource],
+  ['managed compatibility compiler directive', /#variable_conflict use_column/, managedCompatSource],
+  ['managed compatibility recompiles definitions', /execute v_recompiled;/, managedCompatSource],
   ['transaction boundary', /\bbegin;\s*[\s\S]*\bcommit;\s*$/i],
   ['preflight marker', /RETURNS_ACL_PREREQUISITES_MISSING/],
   ['active role hardened search path', /alter function public\.ecoflow_active_app_role\(\)[\s\S]{0,120}set search_path = pg_catalog, public;/],
@@ -23,7 +30,7 @@ const checks = [
   ['drop impl search path', /ecoflow_driver_drop_return_acl_impl[\s\S]{0,180}set search_path = pg_catalog, public;/],
   ['inspection impl search path', /ecoflow_record_return_inspection_item_acl_impl[\s\S]{0,180}set search_path = pg_catalog, public;/],
   ['complete impl search path', /ecoflow_complete_return_inspection_acl_impl[\s\S]{0,140}set search_path = pg_catalog, public;/],
-  ['impl use column', /set plpgsql\.variable_conflict = use_column;/],
+  ['managed-role-compatible impl settings', /Supabase managed migration roles cannot set the superuser-only[\s\S]{0,180}plpgsql\.variable_conflict/],
   ['wrapper public revoke', /revoke all on function public\.ecoflow_queue_delivery_notifications\([\s\S]{0,260}from public, anon, authenticated;/],
   ['queue wrapper', /create function public\.ecoflow_queue_delivery_notifications\(/],
   ['queue driver gate', /DELIVERY_NOTIFICATION_DRIVER_ROLE_REQUIRED/],
@@ -67,5 +74,28 @@ for (const [name, pattern, target = source] of checks) {
   assert.match(target, pattern, `Legacy returns ACL check failed: ${name}`);
 }
 
-assert.equal(checks.length, 54);
+assert.doesNotMatch(
+  source,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'SEC-DB-002 must not require a superuser-only managed PostgreSQL setting'
+);
+assert.doesNotMatch(
+  repairSource,
+  /set plpgsql\.variable_conflict = use_column;/,
+  'The geofence repair must not require a superuser-only managed PostgreSQL setting'
+);
+
+for (const [name, target] of [
+  ['managed compatibility migration', managedCompatSource],
+  ['SEC-DB-002', source],
+  ['geofence repair', repairSource],
+]) {
+  assert.doesNotMatch(
+    target,
+    /set plpgsql\.variable_conflict\s*=\s*use_column;/,
+    `${name} must not require a superuser-only managed PostgreSQL setting`
+  );
+}
+
+assert.equal(checks.length, 59);
 console.log(`Legacy returns ACL static audit passed (${checks.length}/${checks.length}).`);
