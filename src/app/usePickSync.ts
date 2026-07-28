@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { loadDriverDayState } from '@/domain/driverRun';
 import type { DriverDayState } from '@/domain/driverRun';
 import {
   diffScopes,
@@ -8,21 +9,19 @@ import {
   pushPickRows,
   scopesFromDay
 } from '@/data/repositories/pickSync';
-import type { ScopeMap } from '@/data/repositories/pickSync';
+import type { PickSyncRow } from '@/data/repositories/pickSync';
+import { SerialSyncSession } from './serialSyncSession';
 
 export type PickSyncStatus = 'off' | 'connecting' | 'live' | 'error' | 'denied';
 
 const POLL_MS = 4000;
+const EPOCH_CURSOR = '1970-01-01T00:00:00.000Z';
 
 let lastSyncErrorDetail = '';
 
 /** Human-readable detail for the most recent sync failure (shown as chip tooltip). */
 export function getPickSyncErrorDetail() {
   return lastSyncErrorDetail;
-}
-
-function serializeChanges(changes: { scope: string; payload: unknown }[]) {
-  return JSON.stringify(changes);
 }
 
 /**
@@ -43,68 +42,77 @@ export function usePickSync(
   deviceLabel: string
 ): PickSyncStatus {
   const [status, setStatus] = useState<PickSyncStatus>(() => (pickSyncAvailable() ? 'connecting' : 'off'));
-  const lastKnown = useRef<ScopeMap>({});
-  const cursor = useRef('1970-01-01T00:00:00.000Z');
-  const hydrated = useRef(false);
-  const deniedSignature = useRef('');
+  const dayRef = useRef(day);
+  const deviceLabelRef = useRef(deviceLabel);
+  const sessionRef = useRef<SerialSyncSession<DriverDayState, PickSyncRow> | null>(null);
+
+  dayRef.current = day;
+  deviceLabelRef.current = deviceLabel;
+
+  const updateDay = (updater: (current: DriverDayState) => DriverDayState) => {
+    setDay((current) => {
+      const next = updater(current);
+      dayRef.current = next;
+      return next;
+    });
+  };
 
   useEffect(() => {
-    if (!pickSyncAvailable()) return undefined;
-    let active = true;
-    const tick = async () => {
-      try {
-        const rows = await fetchPickRows(businessDay, cursor.current);
-        if (!active) return;
-        if (rows.length) {
-          cursor.current = rows[rows.length - 1].updated_at;
-          rows.forEach((row) => {
-            lastKnown.current[row.scope] = JSON.stringify(row.payload);
-          });
-          setDay((current) => mergeRowsIntoDay(current, rows));
+    sessionRef.current?.stop();
+    if (!pickSyncAvailable()) {
+      sessionRef.current = null;
+      setStatus('off');
+      return undefined;
+    }
+
+    lastSyncErrorDetail = '';
+    setStatus('connecting');
+    updateDay((current) => (
+      current.businessDay === businessDay ? current : loadDriverDayState(businessDay)
+    ));
+
+    const session = new SerialSyncSession<DriverDayState, PickSyncRow>({
+      businessDay,
+      initialCursor: EPOCH_CURSOR,
+      getDeviceLabel: () => deviceLabelRef.current,
+      getState: () => dayRef.current,
+      updateState: updateDay,
+      normalizeState: (current, expectedBusinessDay) => (
+        current.businessDay === expectedBusinessDay
+          ? current
+          : loadDriverDayState(expectedBusinessDay)
+      ),
+      scopesFromState: scopesFromDay,
+      diffScopes,
+      mergeRows: mergeRowsIntoDay,
+      fetchRows: fetchPickRows,
+      pushRows: pushPickRows,
+      onStatus: (next, detail) => {
+        if (sessionRef.current !== session) return;
+        if (detail) {
+          lastSyncErrorDetail = next === 'denied'
+            ? `Your role is not allowed to write this shared state. The change stays on this device; ask the office to check role setup. ${detail}`
+            : detail;
         }
-        hydrated.current = true;
-        setStatus((current) => (current === 'denied' ? current : 'live'));
-      } catch (error) {
-        if (!active) return;
-        hydrated.current = true;
-        lastSyncErrorDetail = error instanceof Error ? error.message : String(error);
-        setStatus('error');
+        setStatus(next);
       }
-    };
-    tick();
-    const timer = window.setInterval(tick, POLL_MS);
+    });
+    sessionRef.current = session;
+
+    void session.requestPoll();
+    const timer = window.setInterval(() => void session.requestPoll(), POLL_MS);
     return () => {
-      active = false;
+      session.stop();
+      if (sessionRef.current === session) sessionRef.current = null;
       window.clearInterval(timer);
     };
   }, [businessDay, setDay]);
 
   useEffect(() => {
-    if (!pickSyncAvailable() || !hydrated.current) return;
-    const current = scopesFromDay(day);
-    const changes = diffScopes(lastKnown.current, current);
-    if (!changes.length) return;
-    const signature = serializeChanges(changes);
-    // Do not hot-loop a changeset the server has already refused for this role.
-    if (deniedSignature.current && deniedSignature.current === signature) return;
-    pushPickRows(businessDay, changes, deviceLabel)
-      .then(() => {
-        deniedSignature.current = '';
-        changes.forEach((change) => {
-          lastKnown.current[change.scope] = JSON.stringify(change.payload);
-        });
-        setStatus('live');
-      })
-      .catch((error: Error & { status?: number }) => {
-        lastSyncErrorDetail = error.message || String(error);
-        if (error.status === 401 || error.status === 403) {
-          deniedSignature.current = signature;
-          lastSyncErrorDetail = `Your role is not allowed to write this shared state (HTTP ${error.status}). The change stays on this device; ask the office to check role setup. ${error.message}`;
-          setStatus('denied');
-        } else {
-          setStatus('error');
-        }
-      });
+    const session = sessionRef.current;
+    if (!pickSyncAvailable() || !session || session.businessDay !== businessDay) return;
+    if (day.businessDay !== businessDay || !session.isHydrated()) return;
+    void session.requestPush();
   }, [day, businessDay, deviceLabel, status]);
 
   return status;

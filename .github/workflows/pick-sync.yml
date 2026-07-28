@@ -1,0 +1,50 @@
+name: Pick sync safety
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/app/usePickSync.ts
+      - src/app/serialSyncSession.ts
+      - scripts/serial-sync-session.test.mjs
+      - package.json
+      - package-lock.json
+      - .github/workflows/pick-sync.yml
+  push:
+    branches:
+      - main
+      - 'agent/sync/**'
+    paths:
+      - src/app/usePickSync.ts
+      - src/app/serialSyncSession.ts
+      - scripts/serial-sync-session.test.mjs
+      - package.json
+      - package-lock.json
+      - .github/workflows/pick-sync.yml
+
+permissions:
+  contents: read
+
+jobs:
+  serial-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The repository lockfile repair is tracked separately; current CI
+      # intentionally follows the existing install policy until BUILD-001.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test serial sync epochs
+        run: npm run test:pick-sync
+
+      - name: TypeScript check
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
