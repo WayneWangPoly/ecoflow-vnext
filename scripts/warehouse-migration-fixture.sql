@@ -66,7 +66,9 @@ create table public.ecoflow_barcode_scan_sessions (
   session_name text,
   target_area text,
   session_status text default 'OPEN',
-  created_at timestamptz default now()
+  created_by uuid,
+  created_at timestamptz default now(),
+  closed_at timestamptz
 );
 
 create table public.ecoflow_sku_barcode_registry (
@@ -105,9 +107,13 @@ create table public.ecoflow_barcode_scan_events (
 
 create table public.ecoflow_sku_package_policies (
   sku text primary key,
+  product_name text,
   package_mode text not null default 'UNKNOWN',
+  default_units_per_carton numeric,
+  default_units_per_sleeve numeric,
+  default_units_per_each numeric,
   default_shelf text,
-  note text,
+  policy_note text,
   updated_by uuid,
   updated_at timestamptz default now()
 );
@@ -115,6 +121,7 @@ create table public.ecoflow_sku_package_policies (
 create table public.ecoflow_inventory_sku_controls (
   sku text primary key,
   product_name text,
+  category text,
   fixed_shelf text,
   primary_barcode text,
   reorder_target numeric,
@@ -123,6 +130,20 @@ create table public.ecoflow_inventory_sku_controls (
   owner_note text,
   updated_by uuid,
   updated_at timestamptz default now()
+);
+
+create table public.ecoflow_inventory_sku_actions (
+  id uuid primary key default gen_random_uuid(),
+  sku text not null,
+  action text not null,
+  action_value text,
+  action_note text,
+  execution_status text not null,
+  before_snapshot jsonb,
+  after_snapshot jsonb,
+  error_message text,
+  executed_by uuid,
+  executed_at timestamptz default now()
 );
 
 create table public.ecoflow_inventory_movements (
@@ -141,6 +162,16 @@ create table public.ecoflow_inventory_movements (
   moved_by uuid,
   moved_at timestamptz default now()
 );
+
+-- Reproduce the legacy browser-write grants so the final-state hotfix contract
+-- proves that it removes them.
+grant select, insert, update on public.ecoflow_barcode_scan_sessions to authenticated;
+grant select, insert, update on public.ecoflow_sku_barcode_registry to authenticated;
+grant select, insert on public.ecoflow_barcode_scan_events to authenticated;
+grant select, insert, update on public.ecoflow_sku_package_policies to authenticated;
+grant select, insert, update on public.ecoflow_inventory_sku_controls to authenticated;
+grant select, insert on public.ecoflow_inventory_sku_actions to authenticated;
+grant select, insert on public.ecoflow_inventory_movements to authenticated;
 
 create table public.ecoflow_warehouse_locations (
   id uuid primary key default gen_random_uuid(),

@@ -50,6 +50,7 @@ const departureMigration = read('supabase/migrations/20260711100000_driver_depar
 const unknownMigration = read('supabase/migrations/20260711180000_unknown_barcode_quarantine.sql');
 const stateHardeningMigration = read('supabase/migrations/20260711181000_operational_state_auth_hardening.sql');
 const multiRunMigration = read('supabase/migrations/20260711182000_multi_run_day_state.sql');
+const warehouseWriteGuardMigration = read('supabase/migrations/20260727110000_restore_warehouse_write_guards.sql');
 const warehouseMapPage = read('src/features/warehouse/WarehouseMapPage.tsx');
 
 // Receiving and inventory source of truth.
@@ -67,6 +68,11 @@ lacks(warehouseMapPage, 'receiveWarehouseStock', 'Warehouse Map must not contain
 lacks(warehouseMapPage, 'Receive + putaway', 'Warehouse Map must be read-only for stock changes.');
 has(warehouseMigration, 'DIRECT_RECEIVE_DISABLED', 'Database must block legacy direct receiving.');
 has(warehouseMigration, 'WAREHOUSE_RECEIVING_LINE', 'Ledger and location balance must share receiving-line references.');
+has(warehouseWriteGuardMigration, 'revoke insert, update, delete on public.ecoflow_inventory_movements', 'Browser roles must not write the inventory ledger directly.');
+has(warehouseWriteGuardMigration, 'if not public.ecoflow_can_manage_warehouse()', 'Warehouse write commands must enforce the active warehouse role.');
+has(warehouseWriteGuardMigration, 'BARCODE_CONFLICT', 'A barcode conflict must be rejected instead of silently remapped.');
+has(warehouseWriteGuardMigration, 'BARCODE_SETUP_CANNOT_RECEIVE_STOCK', 'Barcode mapping must not become a direct receiving path.');
+has(warehouseWriteGuardMigration, "'INVENTORY_CONTROL'", 'Movement source metadata must be server controlled.');
 lacks(barcodeSetup, 'Save + receive stock', 'Barcode setup must never become a stock receiving path.');
 lacks(inventory, '<option value="RECEIVE">', 'Inventory ledger must not expose uncontrolled Receive.');
 
