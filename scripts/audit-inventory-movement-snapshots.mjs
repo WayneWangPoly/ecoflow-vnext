@@ -43,6 +43,11 @@ const locationChecks = [
   ['same-as-of in-place correction', /v_as_of<=v_current\.effective_from/],
   ['location history close', /set effective_to=v_as_of,[\s\S]{0,80}is_current=false/],
   ['movement location trigger', /create trigger resolve_inventory_fact_locations/],
+  ['snapshot location trigger', /create trigger resolve_daily_snapshot_location/],
+  ['movement update preserves from dimension', /new\.from_location_dimension_id\s*:=\s*old\.from_location_dimension_id/],
+  ['movement update preserves to dimension', /new\.to_location_dimension_id\s*:=\s*old\.to_location_dimension_id/],
+  ['movement location change detection', /new\.from_location_key is distinct from old\.from_location_key/],
+  ['snapshot current resolution', /new\.warehouse_location_dimension_id\s*:=\s*[\s\S]{0,120}ecoflow_ensure_warehouse_location_dimension/],
   ['analytics-only statement', /performs no operational warehouse mutation/i],
 ];
 
@@ -96,7 +101,7 @@ for (const [name, pattern, source = migration] of [
 }
 
 assert.equal(checks.length, 25);
-assert.equal(locationChecks.length, 7);
+assert.equal(locationChecks.length, 12);
 console.log(
   `Inventory movement/snapshot static audit passed (${checks.length + locationChecks.length}/${checks.length + locationChecks.length}).`,
 );
