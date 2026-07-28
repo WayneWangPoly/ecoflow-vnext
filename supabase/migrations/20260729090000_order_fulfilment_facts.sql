@@ -756,7 +756,7 @@ begin
       'analytics.fact_fulfilment_line','REFRESHING',v_as_of,interval '5 minutes',
       array['OWNER','ADMIN','ACCOUNT','VIEWER','WAREHOUSE']::text[],v_as_of
     )
-  on conflict(dataset_key) do update
+  on conflict on constraint refresh_status_pkey do update
   set status='REFRESHING',
       last_started_at=excluded.last_started_at,
       error_code=null,
