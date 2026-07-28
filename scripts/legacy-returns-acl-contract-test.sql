@@ -255,23 +255,6 @@ declare
   v_inspected text;
   v_completed text;
 begin
-  select inspected_by into v_inspected
-  from public.ecoflow_delivery_return_inspection_lines
-  where order_id is null;
-exception when undefined_column then
-  select inspected_by into v_inspected
-  from public.ecoflow_delivery_return_inspection_lines l
-  join public.ecoflow_delivery_exceptions e on e.id=l.exception_id
-  where e.order_id='driver-order'
-  limit 1;
-end;
-$$;
-
-do $$
-declare
-  v_inspected text;
-  v_completed text;
-begin
   select l.inspected_by,e.inspection_completed_by
   into v_inspected,v_completed
   from public.ecoflow_delivery_return_inspection_lines l
