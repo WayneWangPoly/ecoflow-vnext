@@ -113,6 +113,29 @@ begin
     raise exception 'facts are directly browser-readable before projections';
   end if;
 
+  if not has_table_privilege('service_role','analytics.fact_order_line','SELECT')
+    or not has_table_privilege(
+      'service_role','analytics.fact_fulfilment_line','SELECT'
+    )
+    or has_table_privilege('service_role','analytics.fact_order_line','INSERT')
+    or has_table_privilege('service_role','analytics.fact_order_line','UPDATE')
+    or has_table_privilege('service_role','analytics.fact_order_line','DELETE')
+    or has_table_privilege('service_role','analytics.fact_order_line','TRUNCATE')
+    or has_table_privilege(
+      'service_role','analytics.fact_fulfilment_line','INSERT'
+    )
+    or has_table_privilege(
+      'service_role','analytics.fact_fulfilment_line','UPDATE'
+    )
+    or has_table_privilege(
+      'service_role','analytics.fact_fulfilment_line','DELETE'
+    )
+    or has_table_privilege(
+      'service_role','analytics.fact_fulfilment_line','TRUNCATE'
+    ) then
+    raise exception 'service role can bypass the controlled fact refresh';
+  end if;
+
   if has_function_privilege(
       'authenticated',
       'public.ecoflow_record_order_fulfilment_allocation(text,text,text,uuid,numeric,text,text,numeric,text,jsonb,text,timestamptz,uuid,text)',
@@ -225,6 +248,38 @@ values
     '50000000-0000-0000-0000-000000000002',
     'BRAND-B-GLOVE-M-BLK','Brand B Medium Black Gloves'
   );
+
+insert into public.om_order_items(
+  id,order_id,sku,name,quantity,unit,price,subtotal,gst,total
+)
+values(
+  '30000000-0000-0000-0000-000000000002',
+  '20000000-0000-0000-0000-000000000001',
+  'DELIVERY-FEE','Delivery Fee',1,'Each',5,5,0.50,5.50
+);
+
+insert into public.ecoflow_sku_barcode_confirmations(
+  provider,external_sku_code,status
+)
+values('ORDERMENTUM','DELIVERY-FEE','SERVICE_ITEM');
+
+set role service_role;
+select public.ecoflow_facts_test_expect_error(
+  $sql$select * from public.ecoflow_record_order_fulfilment_allocation(
+    'pick:OM-1001:DELIVERY-FEE:invalid-physical',
+    '20000000-0000-0000-0000-000000000001',
+    '30000000-0000-0000-0000-000000000002',
+    '50000000-0000-0000-0000-000000000001',
+    1,'EACH','PRIMARY',0,null
+  )$sql$,
+  'FULFILMENT_SERVICE_LINE_NOT_PHYSICAL'
+);
+reset role;
+
+delete from public.ecoflow_sku_barcode_confirmations
+where provider='ORDERMENTUM' and external_sku_code='DELIVERY-FEE';
+delete from public.om_order_items
+where id='30000000-0000-0000-0000-000000000002';
 
 create temporary table pg_temp.ecoflow_fulfilment_test_results(
   result_name text primary key,
@@ -406,6 +461,46 @@ begin
   end if;
 end;
 $first_refresh$;
+
+-- Observation time alone must not manufacture a new business fact version.
+update public.ordermentum_raw_orders
+set last_synced_at='2026-07-29 09:30:00+09:30'
+where id='10000000-0000-0000-0000-000000000001';
+update public.ecoflow_ordermentum_internal_orders
+set last_synced_at='2026-07-29 09:30:00+09:30'
+where id='40000000-0000-0000-0000-000000000001';
+
+set role service_role;
+select *
+from analytics.refresh_order_fulfilment_facts(
+  '2026-07-29 09:35:00+09:30'
+);
+reset role;
+
+do $observation_only_refresh$
+begin
+  if (
+    select count(*)
+    from analytics.fact_order_line
+    where source_order_line_key=
+      '20000000-0000-0000-0000-000000000001:30000000-0000-0000-0000-000000000001'
+  )<>1 then
+    raise exception 'observation-only sync created a false fact version';
+  end if;
+
+  if not exists(
+    select 1
+    from analytics.fact_order_line
+    where source_order_line_key=
+      '20000000-0000-0000-0000-000000000001:30000000-0000-0000-0000-000000000001'
+      and is_current
+      and last_observed_at='2026-07-29 09:35:00+09:30'
+      and source_last_synced_at='2026-07-29 09:30:00+09:30'
+  ) then
+    raise exception 'observation metadata was not advanced in place';
+  end if;
+end;
+$observation_only_refresh$;
 
 update public.om_order_items
 set price=11,subtotal=110,gst=11,total=121

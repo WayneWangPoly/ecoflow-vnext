@@ -232,6 +232,7 @@ declare
   v_commercial_product_name text;
   v_ordered_quantity numeric(14,4);
   v_ordered_unit text;
+  v_source_line_status text;
   v_physical_sku_code text;
   v_physical_product_name text;
   v_fulfilled_unit text;
@@ -305,7 +306,8 @@ begin
     l.sku,
     l.name,
     l.quantity,
-    upper(btrim(coalesce(nullif(l.unit,''),nullif(l.uom,''),'UNSPECIFIED')))
+    upper(btrim(coalesce(nullif(l.unit,''),nullif(l.uom,''),'UNSPECIFIED'))),
+    bc.status
   into
     v_internal_order_id,
     v_source_order_key,
@@ -313,11 +315,15 @@ begin
     v_commercial_sku_code,
     v_commercial_product_name,
     v_ordered_quantity,
-    v_ordered_unit
+    v_ordered_unit,
+    v_source_line_status
   from public.v_ecoflow_ordermentum_order_lines l
   join public.ecoflow_ordermentum_internal_orders io
     on io.source_provider = 'ORDERMENTUM'
    and io.external_order_id = l.external_order_id
+  left join public.ecoflow_sku_barcode_confirmations bc
+    on bc.provider='ORDERMENTUM'
+   and bc.external_sku_code=l.sku
   where l.external_order_id = btrim(p_external_order_id)
     and l.line_id = btrim(p_source_order_line_id)
   order by io.updated_at desc
@@ -325,6 +331,10 @@ begin
 
   if v_internal_order_id is null then
     raise exception 'FULFILMENT_INTERNALISED_SOURCE_LINE_NOT_FOUND: %:%',
+      btrim(p_external_order_id),btrim(p_source_order_line_id);
+  end if;
+  if v_source_line_status='SERVICE_ITEM' then
+    raise exception 'FULFILMENT_SERVICE_LINE_NOT_PHYSICAL: %:%',
       btrim(p_external_order_id),btrim(p_source_order_line_id);
   end if;
   if coalesce(v_ordered_quantity,0) <= 0 then
@@ -649,12 +659,11 @@ alter table analytics.fact_order_line enable row level security;
 alter table analytics.fact_fulfilment_line enable row level security;
 
 revoke all on table analytics.fact_order_line
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 revoke all on table analytics.fact_fulfilment_line
-  from public,anon,authenticated;
-grant all on table analytics.fact_order_line to service_role;
-grant all on table analytics.fact_fulfilment_line to service_role;
-grant usage,select on all sequences in schema analytics to service_role;
+  from public,anon,authenticated,service_role;
+grant select on table analytics.fact_order_line to service_role;
+grant select on table analytics.fact_fulfilment_line to service_role;
 
 create or replace view analytics.v_order_fulfilment_coverage
 with (security_barrier = true, security_invoker = true)
@@ -829,10 +838,29 @@ begin
       encode(
         digest(
           jsonb_build_array(
-            l.external_order_id,l.line_id,l.sku,l.name,l.quantity,l.unit,l.uom,
-            l.price,l.subtotal,l.gst,l.tax,l.total,
-            r.status,r.payment_status,io.status,io.account_release_status,
-            io.warehouse_gate_status,r.external_updated_at,r.last_synced_at
+            l.external_order_id,
+            l.line_id,
+            coalesce(io.external_order_number,io.order_number,l.order_number),
+            coalesce(io.invoice_number,l.invoice_number),
+            case
+              when coalesce(to_jsonb(r)->>'delivery_date','')
+                ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                then left(to_jsonb(r)->>'delivery_date',10)::date
+              else null
+            end,
+            r.external_created_at,
+            r.external_updated_at,
+            r.status,
+            coalesce(r.payment_status,io.payment_status,io.invoice_payment_status),
+            l.sku,
+            l.name,
+            l.quantity,
+            upper(btrim(coalesce(nullif(l.unit,''),nullif(l.uom,''),'UNSPECIFIED'))),
+            l.price,
+            l.subtotal,
+            coalesce(l.gst,l.tax),
+            l.total,
+            case when bc.status='SERVICE_ITEM' then 'SERVICE' else 'STOCK' end
           )::text,
           'sha256'
         ),

@@ -20,11 +20,14 @@ const checks = [
   ['record command', /create or replace function public\.ecoflow_record_order_fulfilment_allocation/],
   ['event conflict', /FULFILMENT_EVENT_KEY_CONFLICT/],
   ['unit conversion gate', /FULFILMENT_UNIT_CONVERSION_REQUIRED/],
+  ['service-line physical gate', /FULFILMENT_SERVICE_LINE_NOT_PHYSICAL/],
   ['quantity ceiling', /FULFILMENT_QUANTITY_EXCEEDS_ORDERED/],
   ['source-line advisory lock', /pg_advisory_xact_lock\(hashtext\(v_source_line_key\)\)/],
   ['void command', /create or replace function public\.ecoflow_void_order_fulfilment_allocation/],
   ['order fact', /create table analytics\.fact_order_line/],
   ['fulfilment fact', /create table analytics\.fact_fulfilment_line/],
+  ['service order fact read', /grant select on table analytics\.fact_order_line to service_role/],
+  ['service fulfilment fact read', /grant select on table analytics\.fact_fulfilment_line to service_role/],
   ['current version index', /create unique index fact_order_line_one_current[\s\S]{0,180}where is_current/],
   ['coverage projection', /create or replace view analytics\.v_order_fulfilment_coverage/],
   ['controlled refresh', /create or replace function analytics\.refresh_order_fulfilment_facts/],
@@ -66,9 +69,21 @@ for (const [name, pattern] of [
     'day state inference',
     /from\s+public\.ecoflow_day_state/i,
   ],
+  [
+    'direct service fact writes',
+    /grant all on table analytics\.fact_(?:order|fulfilment)_line to service_role/,
+  ],
+  [
+    'broad analytics sequence grant',
+    /grant usage,select on all sequences in schema analytics to service_role/,
+  ],
+  [
+    'observation time in business version hash',
+    /jsonb_build_array\([\s\S]{0,1200}last_synced_at[\s\S]{0,120}\)::text/,
+  ],
 ]) {
   assert.doesNotMatch(migration, pattern, `Order/fulfilment fact audit found ${name}`);
 }
 
-assert.equal(checks.length, 27);
+assert.equal(checks.length, 30);
 console.log(`Order/fulfilment fact static audit passed (${checks.length}/${checks.length}).`);
