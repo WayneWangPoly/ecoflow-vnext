@@ -2,88 +2,25 @@ name: Repository hygiene
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-delivery-route-assignment-join:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/data/INTEL-DATA-004-delivery-route-execution-facts'
+  tracked-local-data:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out pull request branch
+      - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          node-version: 22
 
-      - name: Apply anchored qualified join repair
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
-          text = path.read_text()
-          pattern = re.compile(
-              r"(?m)^(\s*)left join pg_temp\.delivery_order_route_assignment a\n"
-              r"\1  using\(business_day,source_order_id\)\n"
-              r"\1left join pg_temp\.delivery_pod_agg p$"
-          )
-          replacement = (
-              "\\1left join pg_temp.delivery_order_route_assignment a\n"
-              "\\1  on a.business_day=c.business_day\n"
-              "\\1 and a.source_order_id=c.source_order_id\n"
-              "\\1left join pg_temp.delivery_pod_agg p"
-          )
-          text, count = pattern.subn(replacement, text)
-          if count != 1:
-              raise SystemExit(f'Expected one prepared route-assignment join, found {count}')
-          path.write_text(text)
-          PY
-
-      - name: Restore read-only hygiene workflow
-        shell: bash
-        run: |
-          cat > .github/workflows/repository-hygiene.yml <<'YAML'
-          name: Repository hygiene
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            tracked-local-data:
-              runs-on: ubuntu-latest
-              timeout-minutes: 5
-              steps:
-                - name: Check out repository
-                  uses: actions/checkout@v4
-
-                - name: Set up Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-
-                - name: Reject tracked credentials and local API data
-                  run: node scripts/audit-repository-hygiene.mjs
-          YAML
-
-      - name: Commit scoped repair and self-clean
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql .github/workflows/repository-hygiene.yml
-          git diff --cached --exit-code && exit 0
-          git commit -m 'fix(data): qualify delivery route assignment join'
-          git push origin HEAD:${{ github.head_ref }}
+      - name: Reject tracked credentials and local API data
+        run: node scripts/audit-repository-hygiene.mjs

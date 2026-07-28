@@ -995,7 +995,8 @@ begin
         on s.business_day=c.business_day and s.run_code=c.run_code
        and s.source_order_id=c.source_order_id
       left join pg_temp.delivery_order_route_assignment a
-        using(business_day,source_order_id)
+        on a.business_day=c.business_day
+       and a.source_order_id=c.source_order_id
       left join pg_temp.delivery_pod_agg p
         on p.business_day=c.business_day and p.source_order_id=c.source_order_id
        and (c.route_assignment_status='UNASSIGNED' or a.route_count=1)
