@@ -138,6 +138,9 @@ jobs:
               printf 'set role ecoflow_managed_migration;\n\\i %s\nreset role;\n' "$file" \
                 | psql -v ON_ERROR_STOP=1 2>&1 \
                 | tee -a operational-db-contract.log
+              psql -v ON_ERROR_STOP=1 \
+                -c 'reassign owned by ecoflow_managed_migration to postgres' \
+                2>&1 | tee -a operational-db-contract.log
             else
               psql -v ON_ERROR_STOP=1 -f "$file" 2>&1 | tee -a operational-db-contract.log
             fi
