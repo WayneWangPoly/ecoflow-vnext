@@ -1,9 +1,10 @@
 \set ON_ERROR_STOP on
 
--- Reproduce the production state observed by the 2026-07-28 shadow gate:
+-- Reproduce the production state observed by the 2026-07-28 shadow gates:
 -- return tables and inspection functions exist, but the geofence archive was
--- never part of the timestamped deployment history, leaving the four-argument
--- driver drop function active.
+-- never part of the timestamped deployment history. Production therefore kept
+-- both the four-argument driver-drop function and the seven-column pre-geofence
+-- return-zone view.
 
 drop function if exists public.ecoflow_driver_drop_return(
   uuid,text,text,text,double precision,double precision,numeric
@@ -92,7 +93,27 @@ grant execute on function public.ecoflow_driver_drop_return(
   uuid,text,text,text
 ) to anon, authenticated;
 
+-- The pre-geofence production view exposes `active` as column five. The final
+-- ACL view inserts GPS columns before it, which CREATE OR REPLACE cannot do.
+drop view if exists public.v_ecoflow_warehouse_return_zones cascade;
+create view public.v_ecoflow_warehouse_return_zones as
+select
+  id,
+  zone_code,
+  zone_name,
+  warehouse_location,
+  active,
+  created_at,
+  updated_at
+from public.ecoflow_warehouse_return_zones
+where active
+order by created_at;
+
+grant select on public.v_ecoflow_warehouse_return_zones to anon, authenticated;
+
 do $assert_drift$
+declare
+  v_columns text[];
 begin
   if to_regprocedure(
     'public.ecoflow_driver_drop_return(uuid,text,text,text)'
@@ -104,6 +125,20 @@ begin
     'public.ecoflow_driver_drop_return(uuid,text,text,text,double precision,double precision,numeric)'
   ) is not null then
     raise exception 'seven-argument geofence function still exists in drift fixture';
+  end if;
+
+  select array_agg(a.attname order by a.attnum)
+  into v_columns
+  from pg_attribute a
+  where a.attrelid = 'public.v_ecoflow_warehouse_return_zones'::regclass
+    and a.attnum > 0
+    and not a.attisdropped;
+
+  if v_columns is distinct from array[
+    'id','zone_code','zone_name','warehouse_location','active','created_at','updated_at'
+  ]::text[] then
+    raise exception 'legacy return-zone view drift fixture has unexpected columns: %',
+      v_columns;
   end if;
 end;
 $assert_drift$;
