@@ -10,8 +10,9 @@ The deploy workflow is `.github/workflows/deploy-supabase-migrations.yml`:
 
 ### "failed to connect to postgres: Connection timed out"
 - The direct host `db.<ref>.supabase.co` is **IPv6-only**; GitHub runners have
-  no IPv6. CI must use the IPv4 session pooler URL (built from
-  `supabase/.temp/pooler-url` + the `SUPABASE_DB_PASSWORD` secret). Never
+  no IPv6. CI must use the IPv4 session pooler URL (built from the locally
+  generated, Git-ignored `supabase/.temp/pooler-url` plus the
+  `SUPABASE_DB_PASSWORD` secret). Never commit `.temp` link state and never
   switch the workflow back to `--linked` for db commands.
 - Supabase CLI is **pinned to 2.107.0** in CI: 2.109.x ships a rewritten
   PgClient that times out against the pooler even when raw TCP is open.
