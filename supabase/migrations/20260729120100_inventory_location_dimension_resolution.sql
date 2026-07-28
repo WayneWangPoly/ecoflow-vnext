@@ -1,17 +1,18 @@
 -- INTEL-DATA-003 follow-up: resolve warehouse location dimensions on the first
--- inventory movement fact refresh.
+-- inventory movement and daily snapshot refresh without rewriting history.
 --
--- The preceding additive migration creates facts before it seeds location
--- dimensions. No refresh is invoked during deployment, but the controlled
--- refresh must still be complete on its first call. This analytics-only trigger
--- resolves or versions the authoritative warehouse location before each
--- movement fact row is written.
+-- Movement facts are historical events. Once a source location key/code has
+-- resolved to a dimension version, later refreshes must retain that version
+-- unless the source movement itself changes location or had no prior resolution.
+-- Daily snapshots are current-state observations and must resolve the location
+-- dimension that is current for that snapshot refresh.
 
 begin;
 
 do $preflight$
 begin
   if to_regclass('analytics.fact_inventory_movement') is null
+     or to_regclass('analytics.fact_daily_inventory_snapshot') is null
      or to_regclass('analytics.dim_warehouse_location') is null
      or to_regclass('public.ecoflow_warehouse_locations') is null then
     raise exception 'INVENTORY_LOCATION_DIMENSION_PREREQUISITES_MISSING';
@@ -147,15 +148,29 @@ security definer
 set search_path=pg_catalog,analytics,public
 as $$
 begin
-  new.from_location_dimension_id :=
-    analytics.ecoflow_ensure_warehouse_location_dimension(
-      new.from_location_key,new.from_location_code,new.as_of_at
-    );
+  if tg_op='INSERT'
+     or old.from_location_dimension_id is null
+     or new.from_location_key is distinct from old.from_location_key
+     or new.from_location_code is distinct from old.from_location_code then
+    new.from_location_dimension_id :=
+      analytics.ecoflow_ensure_warehouse_location_dimension(
+        new.from_location_key,new.from_location_code,new.as_of_at
+      );
+  else
+    new.from_location_dimension_id := old.from_location_dimension_id;
+  end if;
 
-  new.to_location_dimension_id :=
-    analytics.ecoflow_ensure_warehouse_location_dimension(
-      new.to_location_key,new.to_location_code,new.as_of_at
-    );
+  if tg_op='INSERT'
+     or old.to_location_dimension_id is null
+     or new.to_location_key is distinct from old.to_location_key
+     or new.to_location_code is distinct from old.to_location_code then
+    new.to_location_dimension_id :=
+      analytics.ecoflow_ensure_warehouse_location_dimension(
+        new.to_location_key,new.to_location_code,new.as_of_at
+      );
+  else
+    new.to_location_dimension_id := old.to_location_dimension_id;
+  end if;
 
   return new;
 end;
@@ -172,13 +187,42 @@ before insert or update of
 on analytics.fact_inventory_movement
 for each row execute function analytics.ecoflow_resolve_inventory_fact_locations();
 
+create or replace function analytics.ecoflow_resolve_daily_snapshot_location()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,analytics,public
+as $$
+begin
+  new.warehouse_location_dimension_id :=
+    analytics.ecoflow_ensure_warehouse_location_dimension(
+      new.source_location_key,new.location_code,new.as_of_at
+    );
+  return new;
+end;
+$$;
+
+revoke all on function analytics.ecoflow_resolve_daily_snapshot_location()
+  from public,anon,authenticated,service_role;
+
+drop trigger if exists resolve_daily_snapshot_location
+  on analytics.fact_daily_inventory_snapshot;
+create trigger resolve_daily_snapshot_location
+before insert or update of
+  source_location_key,location_code,as_of_at
+on analytics.fact_daily_inventory_snapshot
+for each row execute function analytics.ecoflow_resolve_daily_snapshot_location();
+
 comment on function analytics.ecoflow_ensure_warehouse_location_dimension(
   text,text,timestamptz
 ) is
-  'Analytics-only location SCD resolver used by inventory movement fact writes. It performs no operational warehouse mutation.';
+  'Analytics-only location SCD resolver. It performs no operational warehouse mutation.';
 comment on trigger resolve_inventory_fact_locations
   on analytics.fact_inventory_movement is
-  'Ensures the first controlled inventory refresh resolves source location dimensions.';
+  'Resolves first-write locations while preserving historical movement dimension versions on later refreshes.';
+comment on trigger resolve_daily_snapshot_location
+  on analytics.fact_daily_inventory_snapshot is
+  'Resolves the current location dimension for each daily inventory snapshot observation.';
 
 notify pgrst,'reload schema';
 
