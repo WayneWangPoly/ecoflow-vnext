@@ -25,6 +25,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           migration_path = Path('supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql')
           contract_path = Path('scripts/delivery-route-stop-facts-contract-test.sql')
@@ -32,65 +33,55 @@ jobs:
           contract = contract_path.read_text()
 
           replacements = [
-              (
-                  "greatest(r.observed_at,p.updated_at)",
-                  "greatest(r.observed_at,analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at'))",
-                  1,
-              ),
+              ("greatest(r.observed_at,p.updated_at)", "greatest(r.observed_at,analytics.ecoflow_try_timestamptz(to_jsonb(p)->>'updated_at'))", 1),
               ("count(a.*)::integer as ack_count", "count(a.id)::integer as ack_count", 1),
               ("count(s.*)::integer as sample_count", "count(s.id)::integer as sample_count", 1),
               ("count(*) filter(where s.sample_source='ROUTE_START')", "count(s.id) filter(where s.sample_source='ROUTE_START')", 1),
               ("count(*) filter(where s.sample_source='ROUTE_END')", "count(s.id) filter(where s.sample_source='ROUTE_END')", 1),
-              ("count(*) filter(where s.sample_source='STOP_ARRIVAL')", "count(s.id) filter(where s.sample_source='STOP_ARRIVAL')", 1),
-              ("count(*) filter(where s.sample_source='DELIVERY')", "count(s.id) filter(where s.sample_source='DELIVERY')", 1),
-              ("count(*) filter(where s.sample_source='FAILED_DELIVERY')", "count(s.id) filter(where s.sample_source='FAILED_DELIVERY')", 1),
+              ("count(*) filter(where s.sample_source='STOP_ARRIVAL')", "count(s.id) filter(where s.sample_source='STOP_ARRIVAL')", 2),
+              ("count(*) filter(where s.sample_source='DELIVERY')", "count(s.id) filter(where s.sample_source='DELIVERY')", 2),
+              ("count(*) filter(where s.sample_source='FAILED_DELIVERY')", "count(s.id) filter(where s.sample_source='FAILED_DELIVERY')", 2),
               ("min(a.driver_user_id)::text", "min(a.driver_user_id::text)", 1),
               ("min(s.driver_user_id)::text", "min(s.driver_user_id::text)", 1),
           ]
-
           for old, new, expected in replacements:
               count = migration.count(old)
               if count != expected:
                   raise SystemExit(f'Expected {expected} match(es), found {count}: {old!r}')
               migration = migration.replace(old, new, expected)
 
-          old_driver_projection = """        greatest(coalesce(a.driver_count,0),coalesce(l.driver_count,0)) as driver_count,
-                  coalesce(a.driver_key,l.driver_key) as driver_key,
-          """
-          new_driver_projection = """        (
-                    select count(distinct u.driver_user_id)::integer
-                    from (
-                      select da.driver_user_id
-                      from public.ecoflow_driver_departure_acknowledgements da
-                      where da.business_day=r.business_day
-                        and da.route_id=r.source_route_id
-                      union all
-                      select dl.driver_user_id
-                      from public.ecoflow_driver_location_samples dl
-                      where dl.business_day=r.business_day
-                        and dl.route_id=r.source_route_id
-                    ) u
-                  ) as driver_count,
-                  (
-                    select case when count(distinct u.driver_user_id)=1
-                                then min(u.driver_user_id::text) end
-                    from (
-                      select da.driver_user_id
-                      from public.ecoflow_driver_departure_acknowledgements da
-                      where da.business_day=r.business_day
-                        and da.route_id=r.source_route_id
-                      union all
-                      select dl.driver_user_id
-                      from public.ecoflow_driver_location_samples dl
-                      where dl.business_day=r.business_day
-                        and dl.route_id=r.source_route_id
-                    ) u
-                  ) as driver_key,
-          """
-          count = migration.count(old_driver_projection)
+          projection_pattern = re.compile(
+              r"(?m)^        greatest\(coalesce\(a\.driver_count,0\),coalesce\(l\.driver_count,0\)\) as driver_count,\n"
+              r"        coalesce\(a\.driver_key,l\.driver_key\) as driver_key,$"
+          )
+          projection = """        (
+            select count(distinct u.driver_user_id)::integer
+            from (
+              select da.driver_user_id
+              from public.ecoflow_driver_departure_acknowledgements da
+              where da.business_day=r.business_day and da.route_id=r.source_route_id
+              union all
+              select dl.driver_user_id
+              from public.ecoflow_driver_location_samples dl
+              where dl.business_day=r.business_day and dl.route_id=r.source_route_id
+            ) u
+          ) as driver_count,
+          (
+            select case when count(distinct u.driver_user_id)=1
+                        then min(u.driver_user_id::text) end
+            from (
+              select da.driver_user_id
+              from public.ecoflow_driver_departure_acknowledgements da
+              where da.business_day=r.business_day and da.route_id=r.source_route_id
+              union all
+              select dl.driver_user_id
+              from public.ecoflow_driver_location_samples dl
+              where dl.business_day=r.business_day and dl.route_id=r.source_route_id
+            ) u
+          ) as driver_key,"""
+          migration, count = projection_pattern.subn(projection, migration)
           if count != 1:
               raise SystemExit(f'Expected one driver projection, found {count}')
-          migration = migration.replace(old_driver_projection, new_driver_projection, 1)
 
           count = migration.count('departure_driver_count')
           if count != 5:
