@@ -218,7 +218,9 @@ export function applyListQuery<Row, FilterKey extends string, SortKey extends st
       issues.push({ code: 'INVALID_SORT_DIRECTION', value: state.sort });
     } else {
       sortKey = parsedSort.key;
-      direction = parsedSort.direction ?? schema.defaultSort.direction;
+      direction = parsedSort.direction === 'asc' || parsedSort.direction === 'desc'
+        ? parsedSort.direction
+        : schema.defaultSort.direction;
     }
   }
 
