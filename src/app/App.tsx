@@ -971,7 +971,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
       {loadError ? <div className="sync-error-banner desktop-error-banner">Live operational refresh failed. The last trusted snapshot remains on screen; EcoFlow is not showing demo data. {loadError}</div> : null}
       {role === 'viewer' ? <div className="sync-error-banner desktop-readonly-banner">Viewer workspace is read-only. Operational changes, route approval, integrations and team administration are hidden.</div> : null}
-      {tab === 'dashboard' ? <DashboardPage role={role} data={data} orders={effectiveOrders} snapshotReady={snapshotReady} loading={snapshotLoading} loadError={loadError} healthNotice={healthNotice} onReload={onReload} onOpenOrders={() => setTab('orders')} /> : null}
+      {tab === 'dashboard' ? <DashboardPage role={role} data={data} orders={effectiveOrders} snapshotReady={snapshotReady} loading={snapshotLoading} loadError={loadError} healthNotice={healthNotice} onReload={onReload} onOpenTab={setTab} /> : null}
       {tab === 'ordermentum' ? <OrdermentumPanel orders={effectiveOrders} setOrders={setOrders} data={data} mappingExceptions={data.mappingExceptions} day={day} setDay={setDay} onReload={onReload} /> : null}
       {tab === 'orders' ? <OrdersPanel orders={effectiveOrders} /> : null}
       {tab === 'delivery' ? <DeliveryBoard orders={effectiveOrders} day={day} setDay={setDay} businessDay={data.businessDay} canPlan={role === 'owner' || role === 'admin' || role === 'account'} /> : null}
