@@ -141,7 +141,8 @@ jobs:
             supabase/migrations/20260729120100_inventory_location_dimension_resolution.sql \
             supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql \
             supabase/migrations/20260729200100_delivery_driver_dimension_scd_guard.sql \
-            supabase/migrations/20260729210000_return_inspection_facts.sql
+            supabase/migrations/20260729210000_return_inspection_facts.sql \
+            supabase/migrations/20260729210100_return_inspection_source_drift_capture.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
@@ -216,6 +217,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/return-inspection-facts-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute return inspection source-drift tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/return-inspection-source-drift-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
