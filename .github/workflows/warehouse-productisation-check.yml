@@ -38,6 +38,7 @@ jobs:
           node scripts/audit-order-fulfilment-facts.mjs 2>&1 | tee -a operational-audit.log
           node scripts/audit-inventory-movement-snapshots.mjs 2>&1 | tee -a operational-audit.log
           node scripts/audit-delivery-route-stop-facts.mjs 2>&1 | tee -a operational-audit.log
+          node scripts/audit-return-inspection-facts.mjs 2>&1 | tee -a operational-audit.log
       - name: TypeScript check
         shell: bash
         run: |
@@ -139,7 +140,9 @@ jobs:
             supabase/migrations/20260729120000_inventory_movement_and_daily_snapshot.sql \
             supabase/migrations/20260729120100_inventory_location_dimension_resolution.sql \
             supabase/migrations/20260729200000_delivery_route_stop_execution_facts.sql \
-            supabase/migrations/20260729200100_delivery_driver_dimension_scd_guard.sql
+            supabase/migrations/20260729200100_delivery_driver_dimension_scd_guard.sql \
+            supabase/migrations/20260729210000_return_inspection_facts.sql \
+            supabase/migrations/20260729210100_return_inspection_source_drift_capture.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
@@ -209,6 +212,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-dimension-scd-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute return inspection fact tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/return-inspection-facts-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute return inspection source-drift tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/return-inspection-source-drift-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
