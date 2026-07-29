@@ -10,6 +10,7 @@ function read(relativePath) {
 }
 
 const app = read('src/app/App.tsx');
+const routeContract = read('src/features/intelligence/navigation/routeContract.ts');
 const adapter = read('src/features/intelligence/navigation/useDesktopRouteAdapter.ts');
 const boundary = read('src/features/intelligence/navigation/DesktopRouteBoundary.tsx');
 const test = read('scripts/intel-desktop-route-adapter-contract.test.mjs');
@@ -45,7 +46,7 @@ for (const banned of [
   'createPortal',
   'localStorage',
 ]) {
-  if (adapter.includes(banned) || boundary.includes(banned)) {
+  if (adapter.includes(banned) || boundary.includes(banned) || routeContract.includes(banned)) {
     throw new Error(`INTEL_FE_001B_NATIVE_ROUTE_BANNED_PATTERN: ${banned}`);
   }
 }
@@ -53,17 +54,28 @@ for (const banned of [
 for (const required of [
   'deriveDesktopRouteAdapterModel',
   'desktopTabNavigationTarget',
-  'useLocation()',
-  'useNavigate()',
   'canonicalRedirect',
   'WORKSPACE_NOT_MIGRATED',
   'ROLE_NOT_AUTHORISED',
 ]) {
-  if (!adapter.includes(required)) throw new Error(`INTEL_FE_001B_ADAPTER_CONTRACT_MISSING: ${required}`);
+  if (!routeContract.includes(required)) throw new Error(`INTEL_FE_001B_PURE_MODEL_CONTRACT_MISSING: ${required}`);
+}
+
+for (const required of [
+  'useLocation()',
+  'useNavigate()',
+  'deriveDesktopRouteAdapterModel({',
+  'desktopTabNavigationTarget(nextTab, location.search)',
+]) {
+  if (!adapter.includes(required)) throw new Error(`INTEL_FE_001B_REACT_ADAPTER_CONTRACT_MISSING: ${required}`);
 }
 
 if (!adapter.includes('intelligenceFeatureFlags.overlay_navigation_v1')) {
   throw new Error('INTEL_FE_001B_ROUTE_FLAG_NOT_ENFORCED');
+}
+
+if (!test.includes("from '../src/features/intelligence/navigation/routeContract.ts'")) {
+  throw new Error('INTEL_FE_001B_NODE_TEST_LOADS_REACT_HOOK');
 }
 
 for (const copy of [
