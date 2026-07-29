@@ -11,6 +11,7 @@ import { observeBody } from './lib/domObserver';
 import { pruneEcoflowStorage } from './domain/driverRun';
 import { hasSupabaseAuthClient } from './lib/supabaseClient';
 import './styles.css';
+import './features/intelligence/designSystem/tokens.css';
 import './fieldMode.css';
 import './brandLockup.css';
 import './industrialTheme.css';

@@ -1,0 +1,78 @@
+:root {
+  --ef-space-0: 0;
+  --ef-space-1: 4px;
+  --ef-space-2: 8px;
+  --ef-space-3: 12px;
+  --ef-space-4: 16px;
+  --ef-space-5: 20px;
+  --ef-space-6: 24px;
+  --ef-space-8: 32px;
+  --ef-space-10: 40px;
+  --ef-space-12: 48px;
+
+  --ef-radius-1: 5px;
+  --ef-radius-2: 8px;
+  --ef-radius-3: 10px;
+  --ef-radius-4: 12px;
+  --ef-radius-round: 999px;
+
+  --ef-elevation-1: var(--ef-shadow-1);
+  --ef-elevation-2: var(--ef-shadow-2);
+  --ef-elevation-overlay: var(--ef-shadow-overlay);
+
+  --ef-surface-canvas: var(--ef-bg);
+  --ef-surface-panel: var(--ef-surface);
+  --ef-surface-subtle: var(--ef-surface-2);
+  --ef-border-default: var(--ef-border);
+  --ef-border-emphasis: var(--ef-border-strong);
+  --ef-text-primary: var(--ef-text);
+  --ef-text-secondary: var(--ef-text-2);
+  --ef-text-muted: var(--ef-text-3);
+
+  --ef-status-success-foreground: var(--ef-good);
+  --ef-status-success-background: var(--ef-good-bg);
+  --ef-status-warning-foreground: var(--ef-warn);
+  --ef-status-warning-background: var(--ef-warn-bg);
+  --ef-status-danger-foreground: var(--ef-danger);
+  --ef-status-danger-background: var(--ef-danger-bg);
+  --ef-status-information-foreground: var(--ef-info);
+  --ef-status-information-background: var(--ef-info-bg);
+  --ef-status-neutral-foreground: var(--ef-text-2);
+  --ef-status-neutral-background: var(--ef-surface-2);
+
+  --ef-type-xs: 11px;
+  --ef-type-sm: 12px;
+  --ef-type-md: 14px;
+  --ef-type-lg: 16px;
+  --ef-type-xl: 20px;
+  --ef-type-2xl: 24px;
+  --ef-leading-tight: 1.15;
+  --ef-leading-standard: 1.45;
+  --ef-leading-relaxed: 1.6;
+  --ef-weight-regular: 400;
+  --ef-weight-medium: 550;
+  --ef-weight-semibold: 650;
+  --ef-weight-bold: 700;
+
+  --ef-motion-instant: 0ms;
+  --ef-motion-fast: 100ms;
+  --ef-motion-standard: 160ms;
+  --ef-motion-slow: 240ms;
+
+  --ef-focus-ring-width: 2px;
+  --ef-focus-ring-offset: 1px;
+  --ef-focus-ring-color: rgba(47, 191, 127, .55);
+
+  --ef-density-compact-row: 32px;
+  --ef-density-standard-row: 40px;
+  --ef-density-comfortable-row: 48px;
+  --ef-touch-target-min: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ef-motion-fast: 0ms;
+    --ef-motion-standard: 0ms;
+    --ef-motion-slow: 0ms;
+  }
+}
