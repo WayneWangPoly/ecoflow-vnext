@@ -73,6 +73,18 @@ function dateTime(value?: string | null) {
   });
 }
 
+function normalisedIdentity(value: string) {
+  return value.trim().toLocaleLowerCase('en-AU');
+}
+
+function storeForOrder(order: ImportedOrder, stores: EcoFlowDataSet['stores']) {
+  const candidates = stores.filter((store) => normalisedIdentity(store.name) === normalisedIdentity(order.store));
+  if (!candidates.length) return undefined;
+  const accountMatch = candidates.find((store) => normalisedIdentity(store.account) === normalisedIdentity(order.account));
+  if (accountMatch) return accountMatch;
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 function isOpen(order: ImportedOrder) {
   return !CLOSED.has(order.status);
 }
@@ -453,6 +465,7 @@ export function DashboardPage({
           </div>
           {activeOrders.map((order) => {
             const stage = stageOf(order);
+            const storeProfile = storeForOrder(order, data.stores);
             return (
               <button
                 type="button"
@@ -476,6 +489,30 @@ export function DashboardPage({
                     { label: 'Blockers', value: order.releaseBlockers || order.changeSummary || 'None reported' },
                     { label: 'POD', value: order.podStatus },
                   ],
+                  relatedRecords: storeProfile ? [{
+                    label: 'Store',
+                    entity: { kind: 'store', id: storeProfile.id },
+                    eyebrow: 'Store',
+                    title: storeProfile.name,
+                    subtitle: storeProfile.suburb,
+                    fields: [
+                      { label: 'Account', value: storeProfile.account },
+                      { label: 'Suburb', value: storeProfile.suburb },
+                      { label: 'Price tier', value: storeProfile.priceTier },
+                      { label: 'Payment terms', value: storeProfile.paymentTerms },
+                      { label: 'Status', value: storeProfile.status },
+                      { label: 'Address', value: storeProfile.address || '—' },
+                      { label: 'Phone', value: storeProfile.phone || '—' },
+                      { label: 'Ordermentum ID', value: storeProfile.ordermentumId },
+                      { label: 'Statement group', value: storeProfile.statementGroup },
+                      ...(storeProfile.orderCount !== undefined
+                        ? [{ label: 'Order count', value: String(storeProfile.orderCount) }]
+                        : []),
+                      ...(storeProfile.totalValue !== undefined
+                        ? [{ label: 'Total value', value: money(storeProfile.totalValue) }]
+                        : []),
+                    ],
+                  }] : undefined,
                 })}
               >
                 <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
