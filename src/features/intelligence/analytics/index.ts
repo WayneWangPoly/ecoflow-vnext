@@ -39,3 +39,4 @@ export {
   type AnalyticsShadowRequest,
   type NormalisedAnalyticsShadowRequest,
 } from './analyticsRepositoryContract';
+export * from './primitives';

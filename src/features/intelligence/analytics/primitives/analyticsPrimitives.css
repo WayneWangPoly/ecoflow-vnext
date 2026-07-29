@@ -1,0 +1,505 @@
+.ef-analytics-frame {
+  --ef-analytics-signal: var(--ef-text-muted);
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ef-border-emphasis) 82%, transparent);
+  border-radius: var(--ef-radius-3);
+  color: var(--ef-text-primary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(248, 250, 248, .96)),
+    var(--ef-surface-panel);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .9) inset,
+    0 -1px 0 rgba(6, 36, 24, .05) inset,
+    var(--ef-elevation-2);
+}
+
+.ef-analytics-frame[data-tone="success"],
+.ef-analytics-line[data-tone="success"],
+.ef-analytics-bars[data-tone="success"] {
+  --ef-analytics-signal: var(--ef-status-success-foreground);
+}
+
+.ef-analytics-frame[data-tone="warning"],
+.ef-analytics-line[data-tone="warning"],
+.ef-analytics-bars[data-tone="warning"] {
+  --ef-analytics-signal: var(--ef-status-warning-foreground);
+}
+
+.ef-analytics-frame[data-tone="danger"],
+.ef-analytics-line[data-tone="danger"],
+.ef-analytics-bars[data-tone="danger"] {
+  --ef-analytics-signal: var(--ef-status-danger-foreground);
+}
+
+.ef-analytics-frame[data-tone="information"],
+.ef-analytics-line[data-tone="information"],
+.ef-analytics-bars[data-tone="information"] {
+  --ef-analytics-signal: var(--ef-status-information-foreground);
+}
+
+.ef-analytics-frame__rail {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 24px;
+  width: 92px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ef-analytics-signal), color-mix(in srgb, var(--ef-analytics-signal) 35%, transparent));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--ef-analytics-signal) 24%, transparent);
+}
+
+.ef-analytics-frame__header {
+  min-height: 72px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ef-space-4);
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ef-border-default) 88%, transparent);
+  background:
+    linear-gradient(rgba(8, 50, 34, .028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 50, 34, .028) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, .82), rgba(245, 248, 246, .9));
+  background-size: 24px 24px, 24px 24px, auto;
+}
+
+.ef-analytics-frame__heading {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.ef-analytics-frame__heading > span {
+  color: var(--ef-analytics-signal);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.ef-analytics-frame__heading h2 {
+  margin: 0;
+  color: var(--ef-text-primary);
+  font-size: clamp(17px, 1.6vw, 22px);
+  font-weight: 720;
+  letter-spacing: -.028em;
+  line-height: var(--ef-leading-tight);
+}
+
+.ef-analytics-frame__meta {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-analytics-frame__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ef-space-2);
+}
+
+.ef-analytics-frame__readout {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ef-space-4);
+  padding: 18px 22px 8px;
+}
+
+.ef-analytics-frame__value {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-frame__value strong {
+  color: var(--ef-text-primary);
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: .95;
+  font-weight: 740;
+  letter-spacing: -.055em;
+}
+
+.ef-analytics-frame__value span {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+}
+
+.ef-analytics-frame__status {
+  flex: none;
+}
+
+.ef-analytics-frame__body {
+  min-width: 0;
+  padding: 14px 22px 22px;
+}
+
+.ef-analytics-frame__footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ef-space-3);
+  padding: 10px 22px;
+  border-top: 1px solid var(--ef-border-default);
+  color: var(--ef-text-muted);
+  background: color-mix(in srgb, var(--ef-surface-subtle) 86%, transparent);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-analytics-line {
+  --ef-analytics-signal: var(--ef-text-muted);
+  position: relative;
+  min-width: 0;
+  height: var(--ef-analytics-chart-height, 260px);
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(154, 190, 172, .2);
+  border-radius: var(--ef-radius-2);
+  color: var(--ef-analytics-signal);
+  background:
+    radial-gradient(circle at 90% -20%, color-mix(in srgb, var(--ef-analytics-signal) 18%, transparent), transparent 44%),
+    linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px),
+    linear-gradient(145deg, #13271f, #091912 74%);
+  background-size: auto, 24px 24px, 24px 24px, auto;
+  box-shadow:
+    0 1px rgba(255, 255, 255, .045) inset,
+    0 14px 34px rgba(4, 24, 16, .16);
+}
+
+.ef-analytics-line::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 22px;
+  width: 78px;
+  height: 2px;
+  background: var(--ef-analytics-signal);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--ef-analytics-signal) 44%, transparent);
+}
+
+.ef-analytics-line svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ef-analytics-line__grid line {
+  stroke: rgba(209, 231, 220, .1);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ef-analytics-line__missing line {
+  stroke: rgba(232, 190, 93, .48);
+  stroke-width: 1;
+  stroke-dasharray: 3 6;
+  vector-effect: non-scaling-stroke;
+}
+
+.ef-analytics-line__area {
+  fill: currentColor;
+  opacity: .075;
+}
+
+.ef-analytics-line__glow,
+.ef-analytics-line__path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.ef-analytics-line__glow {
+  stroke-width: 9;
+  opacity: .14;
+  filter: blur(3px);
+}
+
+.ef-analytics-line__path {
+  stroke-width: 2.2;
+}
+
+.ef-analytics-line__series circle {
+  fill: #0c1c15;
+  stroke: currentColor;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.ef-analytics-line__scale {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  color: rgba(224, 237, 230, .62);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-line__values {
+  position: absolute;
+  top: 28px;
+  bottom: 31px;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+}
+
+.ef-analytics-line__labels {
+  position: absolute;
+  right: 28px;
+  bottom: 7px;
+  left: 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ef-analytics-line__labels span {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-analytics-line[data-state="empty"] .ef-analytics-line__grid,
+.ef-analytics-line[data-state="empty"] .ef-analytics-line__scale {
+  opacity: .45;
+}
+
+.ef-analytics-bars {
+  --ef-analytics-signal: var(--ef-text-muted);
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-border-default);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-bars__row {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(120px, .8fr) minmax(160px, 2fr) minmax(72px, auto);
+  align-items: center;
+  gap: var(--ef-space-4);
+  padding: 9px 13px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ef-analytics-signal) 4%, transparent), transparent 32%),
+    var(--ef-surface-panel);
+}
+
+.ef-analytics-bars__row[data-direction="missing"] {
+  color: var(--ef-text-muted);
+}
+
+.ef-analytics-bars__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-analytics-bars__track {
+  position: relative;
+  height: 11px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ef-border-emphasis) 70%, transparent);
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, rgba(9, 42, 29, .04) 1px, transparent 1px),
+    var(--ef-surface-subtle);
+  background-size: 12.5% 100%, auto;
+  box-shadow: 0 1px 1px rgba(4, 27, 18, .05) inset;
+}
+
+.ef-analytics-bars__track b {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  min-width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ef-analytics-signal) 72%, #fff), var(--ef-analytics-signal));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ef-analytics-signal) 20%, transparent);
+}
+
+.ef-analytics-bars__row[data-direction="negative"] .ef-analytics-bars__track b {
+  background: linear-gradient(90deg, var(--ef-analytics-signal), color-mix(in srgb, var(--ef-analytics-signal) 68%, #fff));
+}
+
+.ef-analytics-bars__zero {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(24, 47, 36, .52);
+}
+
+.ef-analytics-bars__row > strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  text-align: right;
+}
+
+.ef-analytics-table-shell {
+  position: relative;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-panel);
+  box-shadow: 0 1px 2px rgba(5, 30, 20, .04);
+}
+
+.ef-analytics-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-table caption {
+  padding: 11px 14px;
+  color: var(--ef-text-secondary);
+  border-bottom: 1px solid var(--ef-border-default);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+  text-align: left;
+}
+
+.ef-analytics-table th,
+.ef-analytics-table td {
+  padding: 11px 13px;
+  border-right: 1px solid var(--ef-border-default);
+  border-bottom: 1px solid var(--ef-border-default);
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ef-analytics-table th:last-child,
+.ef-analytics-table td:last-child {
+  border-right: 0;
+}
+
+.ef-analytics-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ef-analytics-table th {
+  color: var(--ef-text-muted);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .9), rgba(240, 245, 242, .95)),
+    var(--ef-surface-subtle);
+  font-size: 10px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .075em;
+  text-transform: uppercase;
+}
+
+.ef-analytics-table-shell[data-sticky-header="true"] thead {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  box-shadow: 0 1px var(--ef-border-emphasis);
+}
+
+.ef-analytics-table tbody tr {
+  transition: background var(--ef-motion-fast) linear;
+}
+
+.ef-analytics-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--ef-surface-subtle) 46%, transparent);
+}
+
+.ef-analytics-table tbody tr:hover {
+  background: color-mix(in srgb, var(--ef-status-success-background) 42%, transparent);
+}
+
+.ef-analytics-table [data-align="center"] {
+  text-align: center;
+}
+
+.ef-analytics-table [data-align="end"] {
+  text-align: right;
+}
+
+.ef-analytics-table__empty {
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: var(--ef-text-muted);
+  border-top: 1px solid var(--ef-border-default);
+  background: var(--ef-surface-subtle);
+  font-size: var(--ef-type-sm);
+}
+
+@media (max-width: 760px) {
+  .ef-analytics-frame__header,
+  .ef-analytics-frame__readout {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ef-analytics-frame__actions,
+  .ef-analytics-frame__status {
+    width: 100%;
+  }
+
+  .ef-analytics-frame__body {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .ef-analytics-bars__row {
+    grid-template-columns: minmax(0, 1fr) minmax(70px, auto);
+    gap: 8px 14px;
+  }
+
+  .ef-analytics-bars__track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .ef-analytics-line__labels span:nth-child(even) {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-analytics-line__grid line {
+    stroke: rgba(255, 255, 255, .25);
+  }
+
+  .ef-analytics-line__path,
+  .ef-analytics-line__series circle {
+    stroke-width: 3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-analytics-table tbody tr {
+    transition: none;
+  }
+}
