@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App';
+import { OverlayManagerProvider } from './features/intelligence/overlays';
 import { OperationalSessionIdentityBinder } from './OperationalSessionIdentityBinder';
 import { OperationalSafetyCenter } from './OperationalSafetyCenter';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
@@ -134,7 +135,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       {productionConfigurationMissing ? (
         <ProductionConfigurationError />
       ) : (
-        <>
+        <OverlayManagerProvider>
           <ProductionWriteSafety />
           <OperationalSessionIdentityBinder />
           <OperationalSafetyCenter />
@@ -151,7 +152,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           ) : (
             <App />
           )}
-        </>
+        </OverlayManagerProvider>
       )}
     </BrowserRouter>
   </React.StrictMode>,
