@@ -74,10 +74,13 @@ begin
     raise exception 'fill/substitution projections are not shadow-only';
   end if;
 
-  if not ('ORDER_CURRENCY_NOT_CAPTURED'=any(
-      (select blocker_codes from analytics.metric_projection_readiness
-       where metric_key='revenue' and metric_version=1)
-    )) then
+  if not exists(
+    select 1
+    from analytics.metric_projection_readiness
+    where metric_key='revenue'
+      and metric_version=1
+      and 'ORDER_CURRENCY_NOT_CAPTURED'=any(blocker_codes)
+  ) then
     raise exception 'revenue currency blocker missing';
   end if;
 
