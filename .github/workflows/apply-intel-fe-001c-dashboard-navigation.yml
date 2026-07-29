@@ -6,6 +6,11 @@ on:
       - agent/frontend/INTEL-FE-001C-dashboard-navigation
     paths:
       - .github/workflows/apply-intel-fe-001c-dashboard-navigation.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-intel-fe-001c-dashboard-navigation.yml
 
 permissions:
   contents: write
