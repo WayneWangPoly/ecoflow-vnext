@@ -14,7 +14,7 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { ArrowRight, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   EMPTY_INTELLIGENCE_OVERLAY_STATE,
@@ -28,6 +28,7 @@ import { intelligenceFeatureFlags } from '../featureFlags';
 import {
   normaliseOverlayRecord,
   overlayEntityKey,
+  relatedOverlayRecord,
   topOverlayLayer,
   type OverlayRecordInput,
 } from './overlayManagerContract';
@@ -107,6 +108,7 @@ function OverlayRecordPanel({
   covered,
   panelRef,
   onClose,
+  onOpenRelated,
   onKeyDown,
 }: {
   runtime: RuntimeRecord;
@@ -114,6 +116,7 @@ function OverlayRecordPanel({
   covered: boolean;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
+  onOpenRelated: (record: OverlayRecordInput) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }) {
   const titleId = useId();
@@ -153,6 +156,21 @@ function OverlayRecordPanel({
             </div>
           ))}
         </dl>
+        {record.relatedRecords?.length ? (
+          <nav className="ef-overlay-related" aria-label="Related records">
+            {record.relatedRecords.map((related) => (
+              <button
+                key={overlayEntityKey(related.entity)}
+                type="button"
+                onClick={() => onOpenRelated(relatedOverlayRecord(related))}
+              >
+                <span>{related.label}</span>
+                <strong>{related.title}</strong>
+                <ArrowRight aria-hidden="true" />
+              </button>
+            ))}
+          </nav>
+        ) : null}
       </div>
     </aside>
   );
@@ -371,6 +389,7 @@ export function OverlayManagerProvider({ children }: { children: ReactNode }) {
             covered={Boolean(state.secondary || state.commit)}
             panelRef={primaryRef}
             onClose={closePrimary}
+            onOpenRelated={openRelatedRecord}
             onKeyDown={handleKeyDown}
           />
         ) : null}
@@ -381,6 +400,7 @@ export function OverlayManagerProvider({ children }: { children: ReactNode }) {
             covered={Boolean(state.commit)}
             panelRef={secondaryRef}
             onClose={closeSecondary}
+            onOpenRelated={openRelatedRecord}
             onKeyDown={handleKeyDown}
           />
         ) : null}

@@ -8,12 +8,23 @@ export type OverlayRecordField = {
   value: string;
 };
 
+export type OverlayRelatedRecordInput = {
+  label: string;
+  entity: OverlayEntityRef;
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  fields: readonly OverlayRecordField[];
+  width?: OverlayDrawerWidth;
+};
+
 export type OverlayRecordInput = {
   entity: OverlayEntityRef;
   eyebrow: string;
   title: string;
   subtitle?: string;
   fields: readonly OverlayRecordField[];
+  relatedRecords?: readonly OverlayRelatedRecordInput[];
   width?: OverlayDrawerWidth;
 };
 
@@ -24,29 +35,66 @@ const MAX_SUBTITLE_LENGTH = 240;
 const MAX_FIELD_LABEL_LENGTH = 80;
 const MAX_FIELD_VALUE_LENGTH = 800;
 const MAX_FIELDS = 40;
+const MAX_RELATED_RECORDS = 6;
 
 function clean(value: string, maximum: number): string {
   return value.trim().slice(0, maximum);
+}
+
+function normaliseEntity(entity: OverlayEntityRef): OverlayEntityRef {
+  return {
+    ...entity,
+    id: clean(entity.id, MAX_TITLE_LENGTH),
+    tab: entity.tab ? clean(entity.tab, MAX_FIELD_LABEL_LENGTH) || undefined : undefined,
+  };
+}
+
+function normaliseFields(fields: readonly OverlayRecordField[]): readonly OverlayRecordField[] {
+  return fields.slice(0, MAX_FIELDS).map((field) => ({
+    label: clean(field.label, MAX_FIELD_LABEL_LENGTH),
+    value: clean(field.value, MAX_FIELD_VALUE_LENGTH),
+  }));
 }
 
 export function overlayEntityKey(entity: OverlayEntityRef): string {
   return `${entity.kind}:${entity.id.trim()}`;
 }
 
-export function normaliseOverlayRecord(input: OverlayRecordInput): OverlayRecordInput {
+export function normaliseRelatedOverlayRecord(input: OverlayRelatedRecordInput): OverlayRelatedRecordInput {
   return {
-    entity: {
-      ...input.entity,
-      id: clean(input.entity.id, MAX_TITLE_LENGTH),
-      tab: input.entity.tab ? clean(input.entity.tab, MAX_FIELD_LABEL_LENGTH) || undefined : undefined,
-    },
+    label: clean(input.label, MAX_FIELD_LABEL_LENGTH),
+    entity: normaliseEntity(input.entity),
     eyebrow: clean(input.eyebrow, MAX_FIELD_LABEL_LENGTH),
     title: clean(input.title, MAX_TITLE_LENGTH),
     subtitle: input.subtitle ? clean(input.subtitle, MAX_SUBTITLE_LENGTH) || undefined : undefined,
-    fields: input.fields.slice(0, MAX_FIELDS).map((field) => ({
-      label: clean(field.label, MAX_FIELD_LABEL_LENGTH),
-      value: clean(field.value, MAX_FIELD_VALUE_LENGTH),
-    })),
+    fields: normaliseFields(input.fields),
+    width: input.width ?? 'standard',
+  };
+}
+
+export function relatedOverlayRecord(input: OverlayRelatedRecordInput): OverlayRecordInput {
+  const related = normaliseRelatedOverlayRecord(input);
+  return {
+    entity: related.entity,
+    eyebrow: related.eyebrow,
+    title: related.title,
+    subtitle: related.subtitle,
+    fields: related.fields,
+    width: related.width,
+  };
+}
+
+export function normaliseOverlayRecord(input: OverlayRecordInput): OverlayRecordInput {
+  return {
+    entity: normaliseEntity(input.entity),
+    eyebrow: clean(input.eyebrow, MAX_FIELD_LABEL_LENGTH),
+    title: clean(input.title, MAX_TITLE_LENGTH),
+    subtitle: input.subtitle ? clean(input.subtitle, MAX_SUBTITLE_LENGTH) || undefined : undefined,
+    fields: normaliseFields(input.fields),
+    relatedRecords: input.relatedRecords
+      ?.slice(0, MAX_RELATED_RECORDS)
+      .map(normaliseRelatedOverlayRecord)
+      .filter((related) => related.entity.id && related.title && related.label),
     width: input.width ?? 'standard',
   };
 }
