@@ -91,7 +91,7 @@ export function ControlFieldFrame({
   children,
 }: ControlFieldFrameProps) {
   return (
-    <div className={controlClassName('ef-control-field', error && 'has-error', className)}>
+    <div className={controlClassName('ef-control-field', Boolean(error) && 'has-error', className)}>
       <label className={controlClassName('ef-control-field__label', labelMode === 'sr-only' && 'ef-control-sr-only')} htmlFor={id}>
         <span>{label}</span>
         {requiredIndicator ? <span className="ef-control-field__required">{requiredIndicator}</span> : null}
