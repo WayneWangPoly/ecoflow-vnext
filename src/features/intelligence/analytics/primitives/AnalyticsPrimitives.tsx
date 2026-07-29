@@ -123,12 +123,6 @@ export function AnalyticsLineChart({
         aria-label={ariaLabel}
         preserveAspectRatio="none"
       >
-        <defs>
-          <linearGradient id="ef-analytics-line-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity=".16" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-          </linearGradient>
-        </defs>
         <g className="ef-analytics-line__grid" aria-hidden="true">
           {numericTicks.map((tick) => {
             const y = yForValue(tick);
@@ -167,7 +161,7 @@ export function AnalyticsLineChart({
             );
           })}
           {geometry.points.filter((point) => point.y !== null && point.value !== null).map((point) => (
-            <circle key={point.key} cx={point.x} cy={point.y ?? 0} r="3.4">
+            <circle key={point.key} cx={point.x} cy={point.y as number} r="3.4">
               <title>{point.label} · {valueFormatter(point.value as number)}</title>
             </circle>
           ))}
