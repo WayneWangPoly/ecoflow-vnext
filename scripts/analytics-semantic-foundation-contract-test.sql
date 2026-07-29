@@ -108,10 +108,16 @@ begin
 
   select count(*) into v_policy_count
   from pg_policies
-  where schemaname='analytics';
+  where schemaname='analytics'
+    and (tablename,policyname) in (
+      ('metric_definition','analytics_metric_definition_read'),
+      ('refresh_status','analytics_refresh_status_read'),
+      ('data_quality_status','analytics_data_quality_status_read')
+    );
 
   if v_policy_count <> 3 then
-    raise exception 'unexpected analytics policy count: %',v_policy_count;
+    raise exception 'foundation analytics policies missing: % of 3 present',
+      v_policy_count;
   end if;
 
   foreach v_table in array array[
