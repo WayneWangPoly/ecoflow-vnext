@@ -36,7 +36,7 @@
 .ef-analytics-frame[data-tone="information"],
 .ef-analytics-line[data-tone="information"],
 .ef-analytics-bars[data-tone="information"] {
-  --ef-analytics-signal: var(--ef-status-info-foreground);
+  --ef-analytics-signal: var(--ef-status-information-foreground);
 }
 
 .ef-analytics-frame__rail {
@@ -57,7 +57,7 @@
   justify-content: space-between;
   gap: var(--ef-space-4);
   padding: 20px 22px 16px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ef-border-subtle) 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ef-border-default) 88%, transparent);
   background:
     linear-gradient(rgba(8, 50, 34, .028) 1px, transparent 1px),
     linear-gradient(90deg, rgba(8, 50, 34, .028) 1px, transparent 1px),
@@ -91,7 +91,7 @@
 .ef-analytics-frame__meta {
   color: var(--ef-text-muted);
   font-size: var(--ef-type-sm);
-  line-height: var(--ef-leading-normal);
+  line-height: var(--ef-leading-standard);
 }
 
 .ef-analytics-frame__actions {
@@ -147,7 +147,7 @@
   justify-content: space-between;
   gap: var(--ef-space-3);
   padding: 10px 22px;
-  border-top: 1px solid var(--ef-border-subtle);
+  border-top: 1px solid var(--ef-border-default);
   color: var(--ef-text-muted);
   background: color-mix(in srgb, var(--ef-surface-subtle) 86%, transparent);
   font-size: var(--ef-type-xs);
@@ -286,9 +286,9 @@
   display: grid;
   gap: 1px;
   overflow: hidden;
-  border: 1px solid var(--ef-border-subtle);
+  border: 1px solid var(--ef-border-default);
   border-radius: var(--ef-radius-2);
-  background: var(--ef-border-subtle);
+  background: var(--ef-border-default);
   font-variant-numeric: tabular-nums lining-nums;
 }
 
@@ -363,7 +363,7 @@
   position: relative;
   min-width: 0;
   overflow: auto;
-  border: 1px solid var(--ef-border-subtle);
+  border: 1px solid var(--ef-border-default);
   border-radius: var(--ef-radius-2);
   background: var(--ef-surface-panel);
   box-shadow: 0 1px 2px rgba(5, 30, 20, .04);
@@ -381,7 +381,7 @@
 .ef-analytics-table caption {
   padding: 11px 14px;
   color: var(--ef-text-secondary);
-  border-bottom: 1px solid var(--ef-border-subtle);
+  border-bottom: 1px solid var(--ef-border-default);
   font-size: var(--ef-type-sm);
   font-weight: var(--ef-weight-semibold);
   text-align: left;
@@ -390,8 +390,8 @@
 .ef-analytics-table th,
 .ef-analytics-table td {
   padding: 11px 13px;
-  border-right: 1px solid var(--ef-border-subtle);
-  border-bottom: 1px solid var(--ef-border-subtle);
+  border-right: 1px solid var(--ef-border-default);
+  border-bottom: 1px solid var(--ef-border-default);
   line-height: 1.35;
   text-align: left;
   vertical-align: top;
@@ -433,7 +433,7 @@
 }
 
 .ef-analytics-table tbody tr:hover {
-  background: color-mix(in srgb, var(--ef-green-100) 42%, transparent);
+  background: color-mix(in srgb, var(--ef-status-success-background) 42%, transparent);
 }
 
 .ef-analytics-table [data-align="center"] {
@@ -450,7 +450,7 @@
   place-items: center;
   padding: 18px;
   color: var(--ef-text-muted);
-  border-top: 1px solid var(--ef-border-subtle);
+  border-top: 1px solid var(--ef-border-default);
   background: var(--ef-surface-subtle);
   font-size: var(--ef-type-sm);
 }
