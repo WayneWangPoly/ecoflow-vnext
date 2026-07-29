@@ -248,6 +248,91 @@
   white-space: pre-wrap;
 }
 
+.ef-overlay-related {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #c6d0ca;
+}
+
+.ef-overlay-related button {
+  position: relative;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 12px 10px 15px;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid #bfcac4;
+  border-radius: var(--ef-radius-1);
+  color: #17241e;
+  background:
+    linear-gradient(90deg, rgba(48, 126, 91, .08), transparent 72px),
+    #fff;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .9);
+  cursor: pointer;
+  transition:
+    border-color var(--ef-motion-fast) linear,
+    background var(--ef-motion-fast) linear,
+    transform 50ms linear;
+}
+
+.ef-overlay-related button::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  background: #3b8965;
+}
+
+.ef-overlay-related button span {
+  grid-column: 1;
+  color: #718078;
+  font-size: 9px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.ef-overlay-related button strong {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #17241e;
+  font-size: 13px;
+  font-weight: 690;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-overlay-related button svg {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  width: 16px;
+  height: 16px;
+  color: #527064;
+}
+
+.ef-overlay-related button:hover {
+  border-color: #748f82;
+  background:
+    linear-gradient(90deg, rgba(48, 126, 91, .13), transparent 96px),
+    #fff;
+}
+
+.ef-overlay-related button:active {
+  transform: translateY(1px);
+}
+
+.ef-overlay-related button:focus-visible {
+  outline: var(--ef-focus-ring-width) solid var(--ef-focus-ring-color);
+  outline-offset: var(--ef-focus-ring-offset);
+}
+
 .ef-overlay-commit {
   position: absolute;
   z-index: 4;
