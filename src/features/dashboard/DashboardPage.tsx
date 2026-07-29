@@ -27,6 +27,7 @@ import {
   ControlSkeleton,
   ControlStatus,
 } from '@/features/intelligence/designSystem/primitives';
+import { useOverlayManager } from '@/features/intelligence/overlays';
 import { supabase } from '@/lib/supabaseClient';
 import './fieldReadinessDashboard.css';
 import './dashboardControlRoom.css';
@@ -70,10 +71,6 @@ function dateTime(value?: string | null) {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function openWorkItem(detail: { id: string; title: string; subtitle: string; kind: string; fields: Array<{ label: string; value: string }> }) {
-  window.dispatchEvent(new CustomEvent('ecoflow:open-work-item', { detail }));
 }
 
 function isOpen(order: ImportedOrder) {
@@ -122,6 +119,7 @@ export function DashboardPage({
   onReload,
   onOpenTab,
 }: Props) {
+  const { openPrimaryRecord } = useOverlayManager();
   const [operations, setOperations] = useState<OrderOperationsSummary | null>(null);
   const [mirror, setMirror] = useState<OrdermentumMirrorHealthRow | null>(null);
   const [inventory, setInventory] = useState<InventoryKpis | null>(null);
@@ -393,11 +391,11 @@ export function DashboardPage({
                 key={item.id}
                 type="button"
                 className={`ops-control-action-row ${item.tone}`}
-                onClick={() => openWorkItem({
-                  id: `queue-${item.id}`,
+                onClick={() => openPrimaryRecord({
+                  entity: { kind: 'exception', id: `queue-${item.id}` },
+                  eyebrow: 'Action queue',
                   title: item.title,
                   subtitle: item.detail,
-                  kind: 'Action queue',
                   fields: [
                     { label: 'Open items', value: String(item.count) },
                     { label: 'Role view', value: roleName },
@@ -460,11 +458,12 @@ export function DashboardPage({
                 type="button"
                 className="ops-control-order-row"
                 key={order.id}
-                onClick={() => openWorkItem({
-                  id: `order-${order.id}`,
+                onClick={() => openPrimaryRecord({
+                  entity: { kind: 'order', id: order.id },
+                  eyebrow: 'Order',
                   title: order.orderNo,
                   subtitle: `${order.store} · ${order.suburb}`,
-                  kind: 'Order',
+                  width: 'wide',
                   fields: [
                     { label: 'Order', value: order.orderNo },
                     { label: 'Invoice', value: order.invoiceNo || '—' },
