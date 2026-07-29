@@ -16,9 +16,11 @@ import {
   type AnalyticsDataQualityRow,
   type AnalyticsHealthRow,
   type AnalyticsMetricCatalogRow,
+  type AnalyticsReadFailure,
   type AnalyticsReadResult,
   type AnalyticsReconciliationRow,
   type AnalyticsRefreshStatusRow,
+  type AnalyticsRepositoryIssue,
   type AnalyticsShadowProjectionRow,
   type AnalyticsShadowRequest,
 } from '@/features/intelligence/analytics/analyticsRepositoryContract';
@@ -40,6 +42,20 @@ function activeClient(client?: SupabaseClient | null): SupabaseClient | null {
 
 function unavailableClient() {
   return analyticsReadFailure({ code: 'NOT_CONFIGURED', message: 'Supabase is not configured.' });
+}
+
+function invalidRequest(issue: AnalyticsRepositoryIssue): AnalyticsReadFailure {
+  const message = `${issue.code}${issue.value ? `: ${issue.value}` : ''}`;
+  return {
+    ok: false,
+    state: 'invalid',
+    data: null,
+    error: {
+      state: 'invalid',
+      code: issue.code,
+      message,
+    },
+  };
 }
 
 export function createAnalyticsRepository(client?: SupabaseClient | null): AnalyticsRepository {
@@ -110,12 +126,7 @@ export function createAnalyticsRepository(client?: SupabaseClient | null): Analy
 
     async readShadowProjection(input) {
       const request = normaliseAnalyticsShadowRequest(input);
-      if (!request.ok) {
-        return analyticsReadFailure({
-          code: request.issue.code,
-          message: `${request.issue.code}${request.issue.value ? `: ${request.issue.value}` : ''}`,
-        });
-      }
+      if (!request.ok) return invalidRequest(request.issue);
       const active = activeClient(client);
       if (!active) return unavailableClient();
       const result = await active
@@ -136,12 +147,7 @@ export function createAnalyticsRepository(client?: SupabaseClient | null): Analy
 
     async readReconciliation(input) {
       const request = normaliseAnalyticsShadowRequest(input);
-      if (!request.ok) {
-        return analyticsReadFailure({
-          code: request.issue.code,
-          message: `${request.issue.code}${request.issue.value ? `: ${request.issue.value}` : ''}`,
-        });
-      }
+      if (!request.ok) return invalidRequest(request.issue);
       const active = activeClient(client);
       if (!active) return unavailableClient();
       const result = await active
