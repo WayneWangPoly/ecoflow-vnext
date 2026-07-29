@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   deriveDesktopRouteAdapterModel,
   desktopTabNavigationTarget,
-} from '../src/features/intelligence/navigation/useDesktopRouteAdapter.ts';
+} from '../src/features/intelligence/navigation/routeContract.ts';
 
 test('flag-off mode preserves the existing local desktop tab regardless of URL', () => {
   assert.deepEqual(
