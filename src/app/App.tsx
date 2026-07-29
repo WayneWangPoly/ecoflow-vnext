@@ -23,6 +23,8 @@ import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTyp
 import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
+import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';
+import { useDesktopRouteAdapter } from '@/features/intelligence/navigation/useDesktopRouteAdapter';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import type {
@@ -949,13 +951,21 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
   snapshotLoading: boolean;
   healthNotice?: string;
 }) {
-  const [tab, setTab] = useState<DesktopTab>('dashboard');
+  const { tab, setTab, boundary } = useDesktopRouteAdapter(role);
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(data.businessDay.date));
   useEffect(() => saveDriverDayState(day), [day]);
   usePickSync(data.businessDay.date, day, setDay, authProfile?.display_name || authProfile?.email || 'Office');
 
   // Shared day facts (release, staging, delivery, POD) projected onto orders for every panel.
   const effectiveOrders = useMemo(() => applyDayStateToOrders(orders, day), [orders, day]);
+
+  if (boundary) {
+    return (
+      <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
+        <DesktopRouteBoundary boundary={boundary} />
+      </DesktopShell>
+    );
+  }
 
   return (
     <DesktopShell role={role} tab={tab} setTab={setTab} onLogout={onLogout}>
