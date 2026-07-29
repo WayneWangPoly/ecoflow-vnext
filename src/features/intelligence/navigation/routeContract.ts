@@ -35,6 +35,27 @@ export type IntelligenceRouteResolution =
   | { status: 'FORBIDDEN'; route: IntelligenceRouteMatch; reason: 'ROLE_NOT_AUTHORISED' }
   | { status: 'UNAVAILABLE'; pathname: string; reason: 'ROUTE_NOT_FOUND' | 'INVALID_ENTITY_ID' };
 
+export type DesktopRouteBoundaryState =
+  | {
+      status: 'FORBIDDEN';
+      pathname: string;
+      workspace: IntelligenceWorkspaceId;
+      reason: 'ROLE_NOT_AUTHORISED';
+    }
+  | {
+      status: 'UNAVAILABLE';
+      pathname: string;
+      workspace?: IntelligenceWorkspaceId;
+      reason: 'ROUTE_NOT_FOUND' | 'INVALID_ENTITY_ID' | 'WORKSPACE_NOT_MIGRATED';
+    };
+
+export type DesktopRouteAdapterModel = {
+  enabled: boolean;
+  tab: DesktopTab;
+  boundary: DesktopRouteBoundaryState | null;
+  canonicalRedirect?: string;
+};
+
 type StaticRoute = {
   path: string;
   workspace: IntelligenceWorkspaceId;
@@ -151,6 +172,69 @@ export function resolveIntelligenceRoute(pathname: string, role: Role): Intellig
     return { status: 'FORBIDDEN', route: matched.route, reason: 'ROLE_NOT_AUTHORISED' };
   }
   return matched;
+}
+
+export function deriveDesktopRouteAdapterModel(input: {
+  enabled: boolean;
+  pathname: string;
+  role: Role;
+  legacyTab: DesktopTab;
+}): DesktopRouteAdapterModel {
+  if (!input.enabled) {
+    return { enabled: false, tab: input.legacyTab, boundary: null };
+  }
+
+  const resolution = resolveIntelligenceRoute(input.pathname, input.role);
+  if (resolution.status === 'FORBIDDEN') {
+    return {
+      enabled: true,
+      tab: input.legacyTab,
+      boundary: {
+        status: 'FORBIDDEN',
+        pathname: input.pathname,
+        workspace: resolution.route.workspace,
+        reason: resolution.reason,
+      },
+    };
+  }
+
+  if (resolution.status === 'UNAVAILABLE') {
+    return {
+      enabled: true,
+      tab: input.legacyTab,
+      boundary: {
+        status: 'UNAVAILABLE',
+        pathname: input.pathname,
+        reason: resolution.reason,
+      },
+    };
+  }
+
+  const routeTab = resolution.route.legacyDesktopTab;
+  if (!routeTab) {
+    return {
+      enabled: true,
+      tab: input.legacyTab,
+      boundary: {
+        status: 'UNAVAILABLE',
+        pathname: input.pathname,
+        workspace: resolution.route.workspace,
+        reason: 'WORKSPACE_NOT_MIGRATED',
+      },
+    };
+  }
+
+  return {
+    enabled: true,
+    tab: routeTab,
+    boundary: null,
+    canonicalRedirect: input.pathname === '/' ? '/control-room' : undefined,
+  };
+}
+
+export function desktopTabNavigationTarget(tab: DesktopTab, search: string): string {
+  const query = search.startsWith('?') || !search ? search : `?${search}`;
+  return `${pathForLegacyDesktopTab(tab)}${query}`;
 }
 
 export function canonicalIntelligencePaths(): readonly string[] {
