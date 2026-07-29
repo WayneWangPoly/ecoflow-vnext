@@ -11,6 +11,10 @@ permissions:
   issues: write
   statuses: write
 
+concurrency:
+  group: supabase-migration-diagnostic-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
 jobs:
   collect:
     if: github.event.workflow_run.conclusion == 'failure'
@@ -81,3 +85,46 @@ jobs:
             -f context='Supabase migration diagnostic' \
             -f description='Exact failed migration error published and archived' \
             -f target_url="$DIAGNOSTIC_RUN_URL"
+
+  recover:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RECOVERED_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+      RECOVERED_SHA: ${{ github.event.workflow_run.head_sha }}
+      RECOVERED_RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Close matching failure issues
+        shell: bash
+        run: |
+          set -euo pipefail
+          matching_issues="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 100 \
+              --search "$RECOVERED_SHA in:body" \
+              --json number,title \
+              --jq '.[] | select(.title | startswith("Supabase migration failure · run ")) | .number'
+          )"
+
+          while IFS= read -r issue_number; do
+            if [[ -z "$issue_number" ]]; then
+              continue
+            fi
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Recovered by successful Supabase deployment workflow run $RECOVERED_RUN_NUMBER: $RECOVERED_RUN_URL"
+            gh issue close "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --reason completed
+          done <<< "$matching_issues"
+      - name: Publish recovered diagnostic status
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$RECOVERED_SHA" \
+            -f state='success' \
+            -f context='Supabase migration diagnostic' \
+            -f description='Supabase deployment completed successfully; prior diagnostic cleared' \
+            -f target_url="$RECOVERED_RUN_URL"
