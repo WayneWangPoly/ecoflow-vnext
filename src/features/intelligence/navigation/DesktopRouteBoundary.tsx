@@ -1,4 +1,4 @@
-import type { DesktopRouteBoundaryState } from './useDesktopRouteAdapter';
+import type { DesktopRouteBoundaryState } from './routeContract';
 
 function boundaryCopy(boundary: DesktopRouteBoundaryState): {
   eyebrow: string;
