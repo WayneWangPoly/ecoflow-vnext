@@ -6,6 +6,7 @@ test('operational and ready stages open Orders', () => {
   assert.equal(dashboardStageTarget('blocked', 'owner'), 'orders');
   assert.equal(dashboardStageTarget('ready', 'viewer'), 'orders');
   assert.equal(dashboardStageTarget('review', 'owner'), 'orders');
+  assert.equal(dashboardStageTarget('review', 'admin'), 'orders');
 });
 
 test('Accounts finance review opens Reconciliation', () => {
