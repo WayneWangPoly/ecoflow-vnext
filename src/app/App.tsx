@@ -23,6 +23,7 @@ import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTyp
 import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
+import { OrdersControlPage } from '@/features/orders/OrdersControlPage';
 import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';
 import { useDesktopRouteAdapter } from '@/features/intelligence/navigation/useDesktopRouteAdapter';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
@@ -625,25 +626,7 @@ function OrdermentumPanel({ orders, setOrders, data, mappingExceptions, day, set
 }
 
 function OrdersPanel({ orders }: { orders: ImportedOrder[] }) {
-  // Read-only: status changes only happen through release, picking and delivery actions.
-  return (
-    <section className="panel">
-      <div className="panel-head"><h2>Order control</h2><span>{orders.length} orders from Ordermentum · status follows the real workflow</span></div>
-      <div className="table-like">
-        <div className="table-head"><span>Order</span><span>Store</span><span>Tier</span><span>Status</span><span>Value</span><span>POD</span></div>
-        {orders.map((order) => (
-          <div className="table-row" key={order.id}>
-            <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
-            <span><strong>{order.store}</strong><small>{order.suburb}</small></span>
-            <span>{order.priceTier}</span>
-            <span><StatusPill status={order.status} /></span>
-            <span>{money(order.amount)}</span>
-            <span>{order.podStatus}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  return <OrdersControlPage orders={orders} />;
 }
 
 function stopStatusLabelDesk(status: string) {
