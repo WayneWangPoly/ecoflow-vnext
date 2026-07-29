@@ -12,6 +12,7 @@ function read(relativePath) {
 const component = read('src/features/intelligence/analytics/primitives/AnalyticsPrimitives.tsx');
 const contract = read('src/features/intelligence/analytics/primitives/analyticsPrimitiveContract.ts');
 const css = read('src/features/intelligence/analytics/primitives/analyticsPrimitives.css');
+const designTokens = read('src/features/intelligence/designSystem/tokens.css');
 const barrel = read('src/features/intelligence/analytics/primitives/index.ts');
 const featureBarrel = read('src/features/intelligence/analytics/index.ts');
 const test = read('scripts/intel-analytics-primitives-contract.test.mjs');
@@ -103,6 +104,35 @@ for (const required of [
 
 for (const forbidden of ['!important', 'url(', '@font-face', '.dashboard-', '.orders-', '.inventory-', '.delivery-']) {
   if (css.includes(forbidden)) throw new Error(`INTEL_FE_005B_VISUAL_SCOPE_EXPANSION: ${forbidden}`);
+}
+
+const publishedTokens = new Set(
+  Array.from(designTokens.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
+);
+const locallyDeclaredTokens = new Set(
+  Array.from(css.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
+);
+for (const reference of Array.from(css.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (match) => match[1])) {
+  if (!publishedTokens.has(reference) && !locallyDeclaredTokens.has(reference)) {
+    throw new Error(`INTEL_FE_005B_UNPUBLISHED_DESIGN_TOKEN: ${reference}`);
+  }
+}
+
+for (const required of [
+  '--ef-status-information-foreground',
+  '--ef-leading-standard',
+  '--ef-border-default',
+  '--ef-status-success-background',
+]) {
+  if (!css.includes(`var(${required})`)) throw new Error(`INTEL_FE_005B_PUBLISHED_TOKEN_USAGE_MISSING: ${required}`);
+}
+for (const forbidden of [
+  '--ef-status-info-foreground',
+  '--ef-leading-normal',
+  '--ef-border-subtle',
+  '--ef-green-100',
+]) {
+  if (css.includes(forbidden)) throw new Error(`INTEL_FE_005B_UNPUBLISHED_TOKEN_REMAINS: ${forbidden}`);
 }
 
 for (const required of [
