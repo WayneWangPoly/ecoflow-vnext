@@ -1,0 +1,861 @@
+.ef-control-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ef-control-button {
+  --ef-control-button-foreground: var(--ef-text-primary);
+  --ef-control-button-background: var(--ef-surface-panel);
+  --ef-control-button-border: var(--ef-border-emphasis);
+  --ef-control-button-edge: rgba(7, 31, 23, .18);
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ef-space-2);
+  min-width: 0;
+  border: 1px solid var(--ef-control-button-border);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-control-button-background);
+  color: var(--ef-control-button-foreground);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .72) inset,
+    0 -1px 0 rgba(7, 31, 23, .07) inset,
+    var(--ef-elevation-1);
+  font-weight: var(--ef-weight-semibold);
+  letter-spacing: -.01em;
+  line-height: 1;
+  overflow: hidden;
+  transition:
+    transform var(--ef-motion-fast) ease,
+    border-color var(--ef-motion-fast) ease,
+    background var(--ef-motion-fast) ease,
+    color var(--ef-motion-fast) ease,
+    box-shadow var(--ef-motion-fast) ease;
+}
+
+.ef-control-button::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 2px;
+  border-radius: 0 var(--ef-radius-round) var(--ef-radius-round) 0;
+  background: var(--ef-control-button-edge);
+  opacity: .72;
+}
+
+.ef-control-button__surface {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .14), transparent 44%),
+    linear-gradient(90deg, transparent 0, rgba(255, 255, 255, .05) 50%, transparent 100%);
+  pointer-events: none;
+}
+
+.ef-control-button-size--compact {
+  min-height: var(--ef-density-compact-row);
+  padding: 0 var(--ef-space-3);
+  font-size: var(--ef-type-sm);
+}
+
+.ef-control-button-size--standard {
+  min-height: var(--ef-density-standard-row);
+  padding: 0 var(--ef-space-4);
+  font-size: var(--ef-type-md);
+}
+
+.ef-control-button-size--touch {
+  min-height: var(--ef-touch-target-min);
+  padding: 0 var(--ef-space-5);
+  font-size: var(--ef-type-md);
+}
+
+.ef-control-button--primary {
+  --ef-control-button-foreground: #fff;
+  --ef-control-button-background: linear-gradient(180deg, #17825d 0%, var(--ef-green-600) 100%);
+  --ef-control-button-border: #0a5c3d;
+  --ef-control-button-edge: rgba(255, 255, 255, .72);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .22) inset,
+    0 -1px 0 rgba(0, 0, 0, .18) inset,
+    0 5px 12px rgba(14, 107, 71, .16);
+}
+
+.ef-control-button--secondary {
+  --ef-control-button-background: linear-gradient(180deg, #fff 0%, var(--ef-surface-subtle) 100%);
+}
+
+.ef-control-button--quiet {
+  --ef-control-button-background: transparent;
+  --ef-control-button-border: transparent;
+  --ef-control-button-edge: var(--ef-border-emphasis);
+  box-shadow: none;
+}
+
+.ef-control-button--danger {
+  --ef-control-button-foreground: #fff;
+  --ef-control-button-background: linear-gradient(180deg, #bd4638 0%, var(--ef-status-danger-foreground) 100%);
+  --ef-control-button-border: #8f281d;
+  --ef-control-button-edge: rgba(255, 255, 255, .72);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .2) inset,
+    0 -1px 0 rgba(0, 0, 0, .18) inset,
+    0 5px 12px rgba(176, 51, 37, .14);
+}
+
+.ef-control-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--ef-control-button-border) 72%, var(--ef-accent));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .25) inset,
+    0 -1px 0 rgba(0, 0, 0, .12) inset,
+    0 7px 16px rgba(7, 31, 23, .13);
+}
+
+.ef-control-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 3px rgba(7, 31, 23, .14) inset,
+    0 1px 1px rgba(255, 255, 255, .45);
+}
+
+.ef-control-button:focus-visible {
+  outline: var(--ef-focus-ring-width) solid var(--ef-focus-ring-color);
+  outline-offset: var(--ef-focus-ring-offset);
+}
+
+.ef-control-button:disabled {
+  filter: saturate(.62);
+}
+
+.ef-control-button__leading,
+.ef-control-button__trailing {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.ef-control-button__leading > svg,
+.ef-control-button__trailing > svg {
+  width: 1.05em;
+  height: 1.05em;
+  stroke-width: 2;
+}
+
+.ef-control-button__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-control-button__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--ef-radius-round);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: ef-control-spin 720ms linear infinite;
+}
+
+.ef-control-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ef-control-field__label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ef-space-1);
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-semibold);
+  letter-spacing: .07em;
+  line-height: var(--ef-leading-tight);
+  text-transform: uppercase;
+}
+
+.ef-control-field__required {
+  color: var(--ef-status-danger-foreground);
+}
+
+.ef-control-field__message {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-control-field__message--error {
+  color: var(--ef-status-danger-foreground);
+  font-weight: var(--ef-weight-medium);
+}
+
+.ef-control-input-shell,
+.ef-control-select-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--ef-border-emphasis);
+  border-radius: var(--ef-radius-2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(247, 250, 248, .96));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .9) inset,
+    0 1px 2px rgba(7, 31, 23, .04);
+  transition:
+    border-color var(--ef-motion-fast) ease,
+    box-shadow var(--ef-motion-fast) ease,
+    background var(--ef-motion-fast) ease;
+}
+
+.ef-control-input-shell::before,
+.ef-control-select-shell::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 0 var(--ef-radius-round) var(--ef-radius-round) 0;
+  background: var(--ef-border-emphasis);
+  transition: background var(--ef-motion-fast) ease;
+}
+
+.ef-control-input-shell:focus-within,
+.ef-control-select-shell:focus-within {
+  border-color: var(--ef-green-500);
+  background: #fff;
+  box-shadow:
+    0 0 0 var(--ef-focus-ring-width) var(--ef-focus-ring-color),
+    0 7px 18px rgba(14, 107, 71, .08);
+}
+
+.ef-control-input-shell:focus-within::before,
+.ef-control-select-shell:focus-within::before {
+  background: var(--ef-accent);
+}
+
+.ef-control-field.has-error .ef-control-input-shell,
+.ef-control-field.has-error .ef-control-select-shell {
+  border-color: color-mix(in srgb, var(--ef-status-danger-foreground) 68%, white);
+  box-shadow: 0 0 0 1px rgba(176, 51, 37, .07);
+}
+
+.ef-control-field.has-error .ef-control-input-shell::before,
+.ef-control-field.has-error .ef-control-select-shell::before {
+  background: var(--ef-status-danger-foreground);
+}
+
+.ef-control-density--compact { min-height: var(--ef-density-compact-row); }
+.ef-control-density--standard { min-height: var(--ef-density-standard-row); }
+.ef-control-density--comfortable { min-height: var(--ef-density-comfortable-row); }
+
+.ef-control-input,
+.ef-control-select {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ef-text-primary);
+  font: inherit;
+  font-size: var(--ef-type-md);
+  font-weight: var(--ef-weight-medium);
+}
+
+.ef-control-input {
+  padding: 0 var(--ef-space-3);
+}
+
+.ef-control-input::placeholder {
+  color: var(--ef-text-muted);
+  opacity: .82;
+}
+
+.ef-control-input-shell__slot {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding-left: var(--ef-space-3);
+  color: var(--ef-text-muted);
+}
+
+.ef-control-input-shell__slot:last-child {
+  padding-left: 0;
+  padding-right: var(--ef-space-3);
+}
+
+.ef-control-input-shell__slot > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+
+.ef-control-select {
+  appearance: none;
+  padding: 0 calc(var(--ef-space-8) + var(--ef-space-2)) 0 var(--ef-space-3);
+}
+
+.ef-control-select__chevron {
+  position: absolute;
+  right: var(--ef-space-3);
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--ef-text-secondary);
+  border-bottom: 1.5px solid var(--ef-text-secondary);
+  transform: translateY(-2px) rotate(45deg);
+  pointer-events: none;
+}
+
+.ef-control-status {
+  --ef-control-status-fg: var(--ef-status-neutral-foreground);
+  --ef-control-status-bg: var(--ef-status-neutral-background);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--ef-control-status-fg) 22%, transparent);
+  border-radius: var(--ef-radius-1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .58), transparent),
+    var(--ef-control-status-bg);
+  color: var(--ef-control-status-fg);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .72) inset;
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .055em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ef-control-status.is-compact {
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+
+.ef-control-status--success {
+  --ef-control-status-fg: var(--ef-status-success-foreground);
+  --ef-control-status-bg: var(--ef-status-success-background);
+}
+
+.ef-control-status--warning {
+  --ef-control-status-fg: var(--ef-status-warning-foreground);
+  --ef-control-status-bg: var(--ef-status-warning-background);
+}
+
+.ef-control-status--danger {
+  --ef-control-status-fg: var(--ef-status-danger-foreground);
+  --ef-control-status-bg: var(--ef-status-danger-background);
+}
+
+.ef-control-status--information {
+  --ef-control-status-fg: var(--ef-status-information-foreground);
+  --ef-control-status-bg: var(--ef-status-information-background);
+}
+
+.ef-control-status__signal {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.ef-control-status.is-pulsing .ef-control-status__signal::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  animation: ef-control-signal 1.8s ease-out infinite;
+}
+
+.ef-control-panel {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-3);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .94), rgba(255, 255, 255, .86)),
+    var(--ef-surface-panel);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .92) inset,
+    var(--ef-elevation-1);
+  overflow: hidden;
+}
+
+.ef-control-panel__edge {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: var(--ef-space-4);
+  right: var(--ef-space-4);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(47, 191, 127, .62), transparent);
+  opacity: .55;
+  pointer-events: none;
+}
+
+.ef-control-panel--raised {
+  border-color: var(--ef-border-emphasis);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .94) inset,
+    0 10px 28px rgba(7, 31, 23, .09);
+}
+
+.ef-control-panel--dark {
+  border-color: rgba(255, 255, 255, .09);
+  background:
+    var(--ef-grid-texture),
+    linear-gradient(155deg, var(--ef-pine-900), var(--ef-pine-950));
+  background-size: 24px 24px, 24px 24px, auto;
+  color: #eaf2ed;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .08) inset,
+    0 18px 36px rgba(7, 31, 23, .2);
+}
+
+.ef-control-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ef-space-4);
+  min-height: 58px;
+  padding: var(--ef-space-4) var(--ef-space-5);
+  border-bottom: 1px solid var(--ef-border-default);
+}
+
+.ef-control-panel--dark .ef-control-panel__header {
+  border-bottom-color: rgba(255, 255, 255, .09);
+}
+
+.ef-control-panel__heading {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ef-control-panel__eyebrow {
+  color: var(--ef-green-600);
+  font-size: 10px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .13em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ef-control-panel--dark .ef-control-panel__eyebrow {
+  color: #79d7aa;
+}
+
+.ef-control-panel__heading h2 {
+  margin: 0;
+  color: inherit;
+  font-size: var(--ef-type-lg);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: -.018em;
+  line-height: var(--ef-leading-tight);
+}
+
+.ef-control-panel__meta {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-control-panel--dark .ef-control-panel__meta {
+  color: #89a99a;
+}
+
+.ef-control-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ef-space-2);
+  flex-wrap: wrap;
+}
+
+.ef-control-panel__body {
+  padding: var(--ef-space-5);
+}
+
+.ef-control-panel__footer {
+  padding: var(--ef-space-3) var(--ef-space-5);
+  border-top: 1px solid var(--ef-border-default);
+  background: color-mix(in srgb, var(--ef-surface-subtle) 78%, transparent);
+}
+
+.ef-control-panel--dark .ef-control-panel__footer {
+  border-top-color: rgba(255, 255, 255, .09);
+  background: rgba(255, 255, 255, .035);
+}
+
+.ef-control-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.ef-control-tabs--rail {
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background:
+    linear-gradient(180deg, rgba(7, 31, 23, .035), transparent),
+    var(--ef-surface-subtle);
+  box-shadow: 0 1px 2px rgba(7, 31, 23, .035) inset;
+}
+
+.ef-control-tabs--segmented {
+  border-bottom: 1px solid var(--ef-border-default);
+  gap: var(--ef-space-1);
+}
+
+.ef-control-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ef-space-2);
+  min-height: var(--ef-density-compact-row);
+  min-width: 0;
+  padding: 0 var(--ef-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--ef-radius-1);
+  background: transparent;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+  white-space: nowrap;
+  transition:
+    color var(--ef-motion-fast) ease,
+    background var(--ef-motion-fast) ease,
+    border-color var(--ef-motion-fast) ease,
+    box-shadow var(--ef-motion-fast) ease;
+}
+
+.ef-control-tab:hover:not(:disabled) {
+  color: var(--ef-text-primary);
+  background: rgba(255, 255, 255, .7);
+}
+
+.ef-control-tab.is-active {
+  border-color: var(--ef-border-emphasis);
+  background: #fff;
+  color: var(--ef-pine-900);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .9) inset,
+    0 2px 6px rgba(7, 31, 23, .07);
+}
+
+.ef-control-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--ef-radius-round) var(--ef-radius-round) 0 0;
+  background: var(--ef-accent);
+}
+
+.ef-control-tabs--segmented .ef-control-tab {
+  border: 0;
+  border-radius: var(--ef-radius-1) var(--ef-radius-1) 0 0;
+  box-shadow: none;
+}
+
+.ef-control-tabs--segmented .ef-control-tab.is-active {
+  background: linear-gradient(180deg, rgba(47, 191, 127, .08), transparent);
+}
+
+.ef-control-tab b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-subtle);
+  color: var(--ef-text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ef-control-tab.is-active b {
+  background: var(--ef-status-success-background);
+  color: var(--ef-status-success-foreground);
+}
+
+.ef-control-tab:focus-visible {
+  outline: var(--ef-focus-ring-width) solid var(--ef-focus-ring-color);
+  outline-offset: -1px;
+}
+
+.ef-control-tooltip {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  outline: none;
+}
+
+.ef-control-tooltip__trigger {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.ef-control-tooltip__bubble {
+  position: absolute;
+  z-index: 80;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: var(--ef-radius-1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .055), transparent),
+    var(--ef-pine-950);
+  color: #edf4ef;
+  box-shadow: var(--ef-elevation-overlay);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-medium);
+  line-height: var(--ef-leading-standard);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px) scale(.985);
+  transform-origin: center;
+  transition:
+    opacity var(--ef-motion-fast) ease,
+    transform var(--ef-motion-fast) ease;
+}
+
+.ef-control-tooltip:hover .ef-control-tooltip__bubble,
+.ef-control-tooltip:focus .ef-control-tooltip__bubble,
+.ef-control-tooltip:focus-within .ef-control-tooltip__bubble {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ef-control-tooltip--top .ef-control-tooltip__bubble {
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, 3px) scale(.985);
+}
+
+.ef-control-tooltip--top:hover .ef-control-tooltip__bubble,
+.ef-control-tooltip--top:focus .ef-control-tooltip__bubble,
+.ef-control-tooltip--top:focus-within .ef-control-tooltip__bubble {
+  transform: translate(-50%, 0) scale(1);
+}
+
+.ef-control-tooltip--bottom .ef-control-tooltip__bubble {
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translate(-50%, -3px) scale(.985);
+}
+
+.ef-control-tooltip--bottom:hover .ef-control-tooltip__bubble,
+.ef-control-tooltip--bottom:focus .ef-control-tooltip__bubble,
+.ef-control-tooltip--bottom:focus-within .ef-control-tooltip__bubble {
+  transform: translate(-50%, 0) scale(1);
+}
+
+.ef-control-tooltip--left .ef-control-tooltip__bubble {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translate(3px, -50%) scale(.985);
+}
+
+.ef-control-tooltip--left:hover .ef-control-tooltip__bubble,
+.ef-control-tooltip--left:focus .ef-control-tooltip__bubble,
+.ef-control-tooltip--left:focus-within .ef-control-tooltip__bubble {
+  transform: translate(0, -50%) scale(1);
+}
+
+.ef-control-tooltip--right .ef-control-tooltip__bubble {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translate(-3px, -50%) scale(.985);
+}
+
+.ef-control-tooltip--right:hover .ef-control-tooltip__bubble,
+.ef-control-tooltip--right:focus .ef-control-tooltip__bubble,
+.ef-control-tooltip--right:focus-within .ef-control-tooltip__bubble {
+  transform: translate(0, -50%) scale(1);
+}
+
+.ef-control-skeleton {
+  display: grid;
+  gap: 7px;
+  width: var(--ef-skeleton-width, 100%);
+  min-width: 0;
+}
+
+.ef-control-skeleton i {
+  display: block;
+  width: 100%;
+  height: 11px;
+  border-radius: 3px;
+  background:
+    linear-gradient(100deg, transparent 18%, rgba(255, 255, 255, .74) 42%, transparent 66%),
+    linear-gradient(180deg, #e7ede9, #dce5df);
+  background-size: 240% 100%, 100% 100%;
+  animation: ef-control-skeleton 1.45s ease-in-out infinite;
+}
+
+.ef-control-skeleton i:last-child:not(:first-child) {
+  width: 68%;
+}
+
+.ef-control-skeleton--block i {
+  height: 72px;
+  border-radius: var(--ef-radius-2);
+}
+
+.ef-control-skeleton--circle {
+  display: inline-grid;
+  width: var(--ef-skeleton-width, 36px);
+}
+
+.ef-control-skeleton--circle i {
+  width: var(--ef-skeleton-width, 36px);
+  height: var(--ef-skeleton-width, 36px);
+  border-radius: var(--ef-radius-round);
+}
+
+.ef-control-banner {
+  --ef-control-banner-fg: var(--ef-status-information-foreground);
+  --ef-control-banner-bg: var(--ef-status-information-background);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--ef-space-3);
+  min-height: 52px;
+  padding: var(--ef-space-3) var(--ef-space-4);
+  border: 1px solid color-mix(in srgb, var(--ef-control-banner-fg) 25%, transparent);
+  border-radius: var(--ef-radius-2);
+  background:
+    linear-gradient(105deg, color-mix(in srgb, var(--ef-control-banner-fg) 7%, transparent), transparent 45%),
+    var(--ef-control-banner-bg);
+  color: var(--ef-text-primary);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .68) inset;
+  overflow: hidden;
+}
+
+.ef-control-banner__rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--ef-control-banner-fg);
+}
+
+.ef-control-banner--success {
+  --ef-control-banner-fg: var(--ef-status-success-foreground);
+  --ef-control-banner-bg: var(--ef-status-success-background);
+}
+
+.ef-control-banner--warning {
+  --ef-control-banner-fg: var(--ef-status-warning-foreground);
+  --ef-control-banner-bg: var(--ef-status-warning-background);
+}
+
+.ef-control-banner--danger {
+  --ef-control-banner-fg: var(--ef-status-danger-foreground);
+  --ef-control-banner-bg: var(--ef-status-danger-background);
+}
+
+.ef-control-banner--neutral {
+  --ef-control-banner-fg: var(--ef-status-neutral-foreground);
+  --ef-control-banner-bg: var(--ef-status-neutral-background);
+}
+
+.ef-control-banner__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--ef-control-banner-fg);
+}
+
+.ef-control-banner__icon > svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2;
+}
+
+.ef-control-banner__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-control-banner__copy strong {
+  color: var(--ef-control-banner-fg);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: -.006em;
+}
+
+.ef-control-banner__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ef-space-2);
+  flex-wrap: wrap;
+}
+
+@keyframes ef-control-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ef-control-signal {
+  0% { opacity: .72; transform: scale(.72); }
+  70%, 100% { opacity: 0; transform: scale(1.65); }
+}
+
+@keyframes ef-control-skeleton {
+  0% { background-position: 140% 0, 0 0; }
+  100% { background-position: -80% 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-control-button,
+  .ef-control-input-shell,
+  .ef-control-select-shell,
+  .ef-control-tab,
+  .ef-control-tooltip__bubble {
+    transition-duration: 0ms;
+  }
+
+  .ef-control-button__spinner,
+  .ef-control-status.is-pulsing .ef-control-status__signal::after,
+  .ef-control-skeleton i {
+    animation-duration: 0ms;
+  }
+}
