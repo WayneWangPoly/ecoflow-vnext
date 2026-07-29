@@ -14,6 +14,13 @@ const adapter = read('src/features/intelligence/navigation/useDesktopRouteAdapte
 const boundary = read('src/features/intelligence/navigation/DesktopRouteBoundary.tsx');
 const test = read('scripts/intel-desktop-route-adapter-contract.test.mjs');
 const packageJson = JSON.parse(read('package.json'));
+const operationalWorkflow = read('.github/workflows/operational-safety-continuity.yml');
+
+if (fs.existsSync(path.join(root, 'scripts/apply-intel-fe-001b-app-patch.py'))
+  || operationalWorkflow.includes('apply-intel-fe-001b-route-shell')
+  || operationalWorkflow.includes('contents: write')) {
+  throw new Error('INTEL_FE_001B_TEMPORARY_PATCH_MECHANISM_REMAINS');
+}
 
 for (const required of [
   "import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';",
