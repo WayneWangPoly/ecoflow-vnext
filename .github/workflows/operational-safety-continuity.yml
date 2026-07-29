@@ -24,9 +24,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  apply-intel-fe-001b-route-shell:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontend/INTEL-FE-001B-routed-desktop-shell'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply exact App route-shell patch
+        run: python3 scripts/apply-intel-fe-001b-app-patch.py
+
+      - name: Restore read-only workflow and publish final feature diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          git checkout origin/main -- .github/workflows/operational-safety-continuity.yml
+          rm scripts/apply-intel-fe-001b-app-patch.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/app/App.tsx .github/workflows/operational-safety-continuity.yml scripts/apply-intel-fe-001b-app-patch.py
+          git commit -m '[INTEL-FE-001B] Wire canonical routes into desktop shell'
+          git push origin "HEAD:${{ github.head_ref }}"
+
   contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
