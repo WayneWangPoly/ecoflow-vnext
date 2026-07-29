@@ -109,9 +109,10 @@ for (const forbidden of ['!important', 'url(', '@font-face', '.dashboard-', '.or
 const publishedTokens = new Set(
   Array.from(designTokens.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
 );
-const locallyDeclaredTokens = new Set(
-  Array.from(css.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
-);
+const locallyDeclaredTokens = new Set([
+  ...Array.from(css.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
+  ...Array.from(component.matchAll(/['"](--ef-[a-z0-9-]+)['"]\s*:/gi), (match) => match[1]),
+]);
 for (const reference of Array.from(css.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (match) => match[1])) {
   if (!publishedTokens.has(reference) && !locallyDeclaredTokens.has(reference)) {
     throw new Error(`INTEL_FE_005B_UNPUBLISHED_DESIGN_TOKEN: ${reference}`);
