@@ -1,6 +1,5 @@
-import {
-  operationalPulseMetricDefinitions,
-  type OperationalPulseMetricKey,
+import type {
+  OperationalPulseMetricKey,
 } from '@/features/intelligence/operationalPulse/operationalPulseContract.ts';
 import type {
   CrossFilterAffectedEntity,
@@ -22,12 +21,21 @@ export type CrossFilterDrillStatePresentation = {
   tone: CrossFilterDrillPresentationTone;
 };
 
-const METRIC_LABELS = new Map<OperationalPulseMetricKey, string>(
-  operationalPulseMetricDefinitions.map((definition) => [definition.metricKey, definition.label]),
-);
+const OPERATIONAL_PULSE_METRIC_LABELS = {
+  revenue: 'Revenue',
+  gross_margin: 'Gross margin',
+  fill_rate: 'Fill rate',
+  on_time_delivery_rate: 'On-time delivery rate',
+  stockout_risk_count: 'Stockout risk count',
+  dead_stock_value: 'Dead stock value',
+  substitution_rate: 'Substitution rate',
+  lines_picked_per_hour: 'Lines picked per hour',
+  inventory_days_of_cover: 'Inventory days of cover',
+  customer_concentration: 'Customer concentration',
+} satisfies Record<OperationalPulseMetricKey, string>;
 
 export function crossFilterDrillMetricLabel(model: CrossFilterDrillModel): string {
-  return model.metricKey ? METRIC_LABELS.get(model.metricKey) ?? model.metricKey : 'Unknown metric';
+  return model.metricKey ? OPERATIONAL_PULSE_METRIC_LABELS[model.metricKey] : 'Unknown metric';
 }
 
 export function crossFilterDrillStatePresentation(
