@@ -24,7 +24,10 @@ for (const marker of [
   'ActionableExceptionQueue',
   'repository.readActionableExceptions()',
   'actionableExceptionReadFailure(error)',
+  'const EMPTY_ATTENTION_QUEUE: AttentionQueue',
+  'records.length',
   'buildAttentionQueue(records.map((record) => record.input), nowAt ??',
+  ': EMPTY_ATTENTION_QUEUE',
   'latestActionableExceptionReadAt(records)',
   'buildActionableExceptionDisplayRows(records, orderedItems)',
   '<table className="ef-actionable-exceptions__table">',
@@ -166,6 +169,7 @@ for (const reference of Array.from(css.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (ma
 for (const marker of [
   "import { ActionableExceptionQueue } from '@/features/intelligence/attention';",
   "<ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />",
+  'eyebrow="Needs attention"',
   'title="Operational queues"',
   "{ id: 'finance', title: 'Finance review'",
   "{ id: 'pod', title: 'Delivery proof incomplete'",
@@ -215,6 +219,7 @@ for (const testName of [
   'surface tone never interprets source status as severity',
   'order reference follows verified identifier precedence',
   'surface summary counts records and issues without business-impact aggregation',
+  'empty presentation remains zero-count without unknown lifecycle or issues',
 ]) {
   if (!tests.includes(testName)) throw new Error(`INTEL_UI_003B_TEST_MISSING: ${testName}`);
 }
@@ -223,8 +228,14 @@ for (const phrase of ['How to', 'Learn more', 'Getting started', 'Click here', '
   if (`${component}\n${css}`.includes(phrase)) throw new Error(`INTEL_UI_003B_GUIDANCE_COPY: ${phrase}`);
 }
 
-const materializer = path.join(root, '.github/workflows/materialize-intel-ui-003b.yml');
-if (fs.existsSync(materializer)) throw new Error('INTEL_UI_003B_MATERIALIZER_REMAINS');
+for (const materializer of [
+  '.github/workflows/materialize-intel-ui-003b.yml',
+  '.github/workflows/materialize-intel-ui-003b-copy.yml',
+]) {
+  if (fs.existsSync(path.join(root, materializer))) {
+    throw new Error(`INTEL_UI_003B_MATERIALIZER_REMAINS: ${materializer}`);
+  }
+}
 
 const auditCommand = packageJson.scripts?.['audit:intel-frontend'];
 if (typeof auditCommand !== 'string'
