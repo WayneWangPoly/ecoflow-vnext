@@ -166,9 +166,9 @@
 }
 
 .ef-shadow-evidence__breakdown-button:focus-visible {
-  outline: 2px solid var(--ef-focus-ring);
-  outline-offset: 3px;
-  border-radius: var(--ef-radius-sm);
+  outline: var(--ef-focus-ring-width) solid var(--ef-focus-ring-color);
+  outline-offset: var(--ef-focus-ring-offset);
+  border-radius: var(--ef-radius-1);
 }
 
 .ef-shadow-evidence__breakdown-button strong {
