@@ -117,6 +117,18 @@ export {
 } from './actionableExceptionLifecycleAccessContract';
 
 export {
+  actionableExceptionLifecycleAccessLabel,
+  actionableExceptionLifecycleActionOption,
+  actionableExceptionLifecycleActionOptions,
+  actionableExceptionLifecycleCurrentState,
+  actionableExceptionLifecycleOwnerLabel,
+  actionableExceptionLifecycleStatusLabel,
+  type ActionableExceptionLifecycleActionOption,
+  type ActionableExceptionLifecycleActionTone,
+  type ActionableExceptionLifecycleFieldKind,
+} from './actionableExceptionLifecyclePresentationContract';
+
+export {
   actionableExceptionCapabilityLabel,
   actionableExceptionDefaultDisplayLimit,
   actionableExceptionMaximumDisplayLimit,
@@ -131,6 +143,11 @@ export {
   type ActionableExceptionSurfaceSummary,
   type ActionableExceptionSurfaceTone,
 } from './actionableExceptionPresentationContract';
+
+export {
+  ExceptionLifecycleCommitModal,
+  type ExceptionLifecycleCommitModalProps,
+} from './ExceptionLifecycleCommitModal';
 
 export {
   ActionableExceptionQueue,
