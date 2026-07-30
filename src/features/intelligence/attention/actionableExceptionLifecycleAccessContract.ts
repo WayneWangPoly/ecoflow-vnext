@@ -5,7 +5,7 @@ import {
   type ActionableExceptionDataCapability,
   type ActionableExceptionLifecycleAction,
   type ActionableExceptionLifecycleRepositoryError,
-} from './actionableExceptionLifecycleContract';
+} from './actionableExceptionLifecycleContract.ts';
 
 export const actionableExceptionLifecycleAccessRpcName = 'get_actionable_exception_lifecycle_access' as const;
 
