@@ -121,8 +121,10 @@ export function ActionableExceptionQueue({
     let active = true;
 
     async function load() {
+      setManageExceptionId(null);
       setLoading(true);
       setLifecycleLoading(true);
+
       const [activeOutcome, accessOutcome] = await Promise.allSettled([
         repository.readActionableExceptions(),
         lifecycleAccessRepository.readAccess(),
@@ -190,6 +192,7 @@ export function ActionableExceptionQueue({
     [orderedItems, records],
   );
   const issueCount = (result?.ok ? result.issues.length : 0)
+    + (accessResult?.ok ? accessResult.issues.length : 0)
     + (lifecycleResult?.ok ? lifecycleResult.issues.length : 0)
     + queue.issues.length;
   const summary = useMemo(
@@ -421,7 +424,10 @@ export function ActionableExceptionQueue({
           setManageExceptionId(null);
           refreshAfterCommand();
         }}
-        onConflict={refreshAfterCommand}
+        onConflict={() => {
+          setManageExceptionId(null);
+          refreshAfterCommand();
+        }}
       />
     </>
   );
