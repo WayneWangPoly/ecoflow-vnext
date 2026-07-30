@@ -17,8 +17,8 @@ begin
   if to_regclass('analytics.metric_projection_readiness') is null then
     v_missing := array_append(v_missing,'analytics.metric_projection_readiness');
   end if;
-  if to_regprocedure('public.ecoflow_active_app_role()') is null then
-    v_missing := array_append(v_missing,'public.ecoflow_active_app_role()');
+  if to_regclass('public.app_user_profiles') is null then
+    v_missing := array_append(v_missing,'public.app_user_profiles');
   end if;
 
   if cardinality(v_missing)>0 then
@@ -48,10 +48,20 @@ security definer
 set search_path=pg_catalog,analytics,public
 as $$
 declare
-  v_role text := public.ecoflow_active_app_role();
+  v_user uuid := auth.uid();
+  v_role text;
   v_read_at timestamptz := statement_timestamp();
 begin
-  if auth.uid() is null or v_role not in ('OWNER','ADMIN') then
+  if v_user is not null then
+    select p.app_role
+    into v_role
+    from public.app_user_profiles p
+    where p.user_id=v_user
+      and p.is_active=true
+      and p.team_status='ACTIVE';
+  end if;
+
+  if v_user is null or v_role not in ('OWNER','ADMIN') then
     raise exception using errcode='42501',
       message='METRIC_DRILL_ACCESS_OWNER_OR_ADMIN_REQUIRED';
   end if;
@@ -126,7 +136,7 @@ grant execute on function analytics.get_metric_drill_access()
   to authenticated;
 
 comment on function analytics.get_metric_drill_access() is
-  'Owner/Admin bounded read-only drill-authority metadata for the ten initial Operational Pulse metrics. Returns no KPI values, facts, breakdowns, or affected entities.';
+  'Active Owner/Admin bounded read-only drill-authority metadata for the ten initial Operational Pulse metrics. Returns no KPI values, facts, breakdowns, or affected entities.';
 
 notify pgrst,'reload schema';
 
