@@ -146,6 +146,8 @@ begin
       message='PRIORITY_WORK_LIMIT_INVALID';
   end if;
 
+  -- lifecycle_status='RESOLVED' rows are completed and not actionable.
+  -- lifecycle_status='SNOOZED' rows remain suppressed while the snooze is active.
   return query
   with source_rows as (
     select
