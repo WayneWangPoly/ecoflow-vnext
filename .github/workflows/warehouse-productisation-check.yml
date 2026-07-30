@@ -102,7 +102,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f scripts/operational-state-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/order-fulfilment-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-read-model-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
-      - name: Apply operational migrations in release order
+      - name: Apply operational migrations through lifecycle ledger
         shell: bash
         run: |
           set -euo pipefail
@@ -147,7 +147,8 @@ jobs:
             supabase/migrations/20260729210100_return_inspection_source_drift_capture.sql \
             supabase/migrations/20260729220000_initial_kpi_projections_reconciliation.sql \
             supabase/migrations/20260730103000_metric_readiness_read_boundary.sql \
-            supabase/migrations/20260730160000_actionable_exception_read_model.sql
+            supabase/migrations/20260730160000_actionable_exception_read_model.sql \
+            supabase/migrations/20260730190000_actionable_exception_lifecycle_ledger.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
@@ -242,6 +243,21 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-read-model-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute actionable exception lifecycle ledger tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-lifecycle-ledger-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply actionable exception replay snapshot migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260730190100_actionable_exception_idempotent_replay_snapshot.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute actionable exception lifecycle replay tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-lifecycle-replay-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
