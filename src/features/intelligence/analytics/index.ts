@@ -41,11 +41,9 @@ export {
 } from './analyticsRepositoryContract';
 export * from './metricReadinessContract';
 export * from './primitives';
+export * from './healthConsole';
 export {
-  type AnalyticsHealthConsoleProps,
-} from './healthConsole';
-export {
-  OperationalPulseReadinessWorkspace as AnalyticsHealthConsole,
+  OperationalPulseReadinessWorkspace,
   type OperationalPulseReadinessWorkspaceProps,
 } from './OperationalPulseReadinessWorkspace';
 export {
