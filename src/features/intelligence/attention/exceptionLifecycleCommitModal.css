@@ -16,7 +16,7 @@
   border: 1px solid var(--ef-border-emphasis);
   border-radius: var(--ef-radius-1);
   background: var(--ef-surface-panel);
-  box-shadow: var(--ef-shadow-overlay);
+  box-shadow: var(--ef-elevation-overlay);
 }
 
 .ef-lifecycle-commit-modal__header {
