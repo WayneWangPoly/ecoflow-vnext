@@ -61,7 +61,7 @@ test('non-ready metrics suppress supplied values instead of presenting shadow da
   assert.equal(result.issues.some((issue) => issue.code === 'NON_READY_VALUE_SUPPRESSED'), true);
 });
 
-test('ready metrics with invalid or undisplayable values fail closed as empty', () => {
+test('ready metrics with invalid, null or undisplayable values fail closed as empty', () => {
   const invalidValue = normaliseOperationalPulseMetric({
     metricKey: 'revenue',
     displayName: 'Revenue',
@@ -73,6 +73,18 @@ test('ready metrics with invalid or undisplayable values fail closed as empty', 
   assert.equal(invalidValue.metric?.availability, 'EMPTY');
   assert.equal(invalidValue.metric?.value, null);
   assert.equal(invalidValue.issues[0]?.code, 'READY_VALUE_INVALID');
+
+  const nullValue = normaliseOperationalPulseMetric({
+    metricKey: 'fill_rate',
+    displayName: 'Fill Rate',
+    unitKind: 'PERCENT',
+    availability: 'READY',
+    value: null,
+    displayValue: '0%',
+  });
+  assert.equal(nullValue.metric?.availability, 'EMPTY');
+  assert.equal(nullValue.metric?.value, null);
+  assert.equal(nullValue.issues[0]?.code, 'READY_VALUE_INVALID');
 
   const missingDisplay = normaliseOperationalPulseMetric({
     metricKey: 'gross_margin',
