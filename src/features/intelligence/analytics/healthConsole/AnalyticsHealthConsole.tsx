@@ -103,6 +103,11 @@ function MetricReadout({
   );
 }
 
+function countTone(value: number | null): AnalyticsConsoleTone {
+  if (value === null) return 'neutral';
+  return value === 0 ? 'success' : 'warning';
+}
+
 export type AnalyticsHealthConsoleProps = {
   repository?: AnalyticsRepository;
 };
@@ -298,11 +303,15 @@ export function AnalyticsHealthConsole({ repository = analyticsRepository }: Ana
         </div>
       ) : null}
 
+      {reads.health && !reads.health.ok ? (
+        <ResourceFailure title="Analytics health unavailable" result={reads.health} />
+      ) : null}
+
       <div className="ef-analytics-console__metrics" aria-label="Analytics health summary">
         <MetricReadout label="Overall" value={healthReadout.status} tone={healthTone} />
         <MetricReadout label="Visible datasets" value={displayAnalyticsCount(healthReadout.visibleDatasetCount)} tone="information" />
-        <MetricReadout label="Open quality" value={displayAnalyticsCount(healthReadout.openQualityCount)} tone={healthReadout.openQualityCount === 0 ? 'success' : 'warning'} />
-        <MetricReadout label="Never refreshed" value={displayAnalyticsCount(healthReadout.neverRefreshedCount)} tone={healthReadout.neverRefreshedCount === 0 ? 'success' : 'warning'} />
+        <MetricReadout label="Open quality" value={displayAnalyticsCount(healthReadout.openQualityCount)} tone={countTone(healthReadout.openQualityCount)} />
+        <MetricReadout label="Never refreshed" value={displayAnalyticsCount(healthReadout.neverRefreshedCount)} tone={countTone(healthReadout.neverRefreshedCount)} />
       </div>
 
       <div className="ef-analytics-console__status-strip">
