@@ -16,9 +16,17 @@ const repository = fs.readFileSync(repositoryPath, 'utf8');
 const index = fs.readFileSync(indexPath, 'utf8');
 const tests = fs.readFileSync(testPath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+const workspace = fs.readFileSync(
+  'src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx',
+  'utf8',
+);
+const statusSurface = fs.readFileSync(
+  'src/features/intelligence/crossFilter/MetricDrillAccessStatus.tsx',
+  'utf8',
+);
 const dashboard = fs.readFileSync('src/features/dashboard/DashboardPage.tsx', 'utf8');
 const pulse = fs.readFileSync('src/features/intelligence/operationalPulse/OperationalPulse.tsx', 'utf8');
-const surface = fs.readFileSync('src/features/intelligence/crossFilter/CrossFilterDrillSurface.tsx', 'utf8');
+const drillSurface = fs.readFileSync('src/features/intelligence/crossFilter/CrossFilterDrillSurface.tsx', 'utf8');
 const app = fs.readFileSync('src/app/App.tsx', 'utf8');
 
 for (const marker of [
@@ -132,19 +140,38 @@ for (const testName of [
   assert.ok(tests.includes(testName), `metric drill access repository test missing: ${testName}`);
 }
 
+for (const marker of [
+  'metricDrillAccessRepository',
+  'repository.readMetricDrillAccess()',
+  'metricDrillAccessFailure(error)',
+]) {
+  assert.ok(statusSurface.includes(marker), `bounded metric drill access surface adoption missing: ${marker}`);
+}
+assert.equal(
+  (statusSurface.match(/repository\.readMetricDrillAccess\(\)/g) ?? []).length,
+  1,
+  'bounded status surface must issue exactly one repository access read per load',
+);
+for (const forbidden of [
+  /\.schema\s*\(/,
+  /\.rpc\s*\(/,
+  /\.from\s*\(/,
+  /get_metric_drill_access/,
+]) {
+  assert.ok(!forbidden.test(statusSurface), `status surface bypasses repository boundary: ${forbidden}`);
+}
+
 for (const forbidden of [
   'metricDrillAccessRepository',
   'readMetricDrillAccess',
   'metricDrillAccessContract',
   'get_metric_drill_access',
 ]) {
-  assert.ok(
-    !dashboard.includes(forbidden)
-      && !pulse.includes(forbidden)
-      && !surface.includes(forbidden)
-      && !app.includes(forbidden),
-    `premature metric drill access page adoption: ${forbidden}`,
-  );
+  assert.ok(!workspace.includes(forbidden), `Analytics workspace directly couples to drill access data: ${forbidden}`);
+  assert.ok(!dashboard.includes(forbidden), `Dashboard directly couples to drill access data: ${forbidden}`);
+  assert.ok(!pulse.includes(forbidden), `Operational Pulse card directly couples to drill access data: ${forbidden}`);
+  assert.ok(!drillSurface.includes(forbidden), `Drill surface directly couples to drill access data: ${forbidden}`);
+  assert.ok(!app.includes(forbidden), `App directly couples to drill access data: ${forbidden}`);
 }
 
 const frontendAudit = packageJson.scripts?.['audit:intel-frontend'];

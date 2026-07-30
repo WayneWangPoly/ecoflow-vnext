@@ -50,3 +50,18 @@ export {
   type MetricDrillProjectionStatus,
   type NormalisedMetricDrillAccess,
 } from './metricDrillAccessContract';
+
+export {
+  formatMetricDrillAccessMoment,
+  metricDrillAccessCapabilityLabel,
+  metricDrillAccessCapabilityTone,
+  metricDrillAccessListLabel,
+  metricDrillAccessSummary,
+  type MetricDrillAccessSummary,
+  type MetricDrillAccessTone,
+} from './metricDrillAccessPresentationContract';
+
+export {
+  MetricDrillAccessStatus,
+  type MetricDrillAccessStatusProps,
+} from './MetricDrillAccessStatus';

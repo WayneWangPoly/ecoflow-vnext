@@ -6,6 +6,7 @@ import {
 import type { AnalyticsReadResult } from './analyticsRepositoryContract';
 import type { AnalyticsMetricReadinessRow } from './metricReadinessContract';
 import { AnalyticsHealthConsole as HealthConsole } from './healthConsole/AnalyticsHealthConsole';
+import { MetricDrillAccessStatus } from '../crossFilter';
 import { OperationalPulseDeck } from '../operationalPulse/OperationalPulse';
 import {
   hasCanonicalOperationalPulseCoverage,
@@ -73,6 +74,7 @@ export function OperationalPulseReadinessWorkspace({
           </>
         )}
       </section>
+      <MetricDrillAccessStatus />
     </div>
   );
 }
