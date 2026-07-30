@@ -62,7 +62,7 @@
 
 .ef-actionable-exceptions__table {
   width: 100%;
-  min-width: 1160px;
+  min-width: 1460px;
   border-collapse: collapse;
   table-layout: fixed;
   color: var(--ef-text-primary);
@@ -90,15 +90,16 @@
   text-transform: uppercase;
 }
 
-.ef-actionable-exceptions__table th:nth-child(1) { width: 25%; }
-.ef-actionable-exceptions__table th:nth-child(2) { width: 13%; }
-.ef-actionable-exceptions__table th:nth-child(3) { width: 13%; }
-.ef-actionable-exceptions__table th:nth-child(4) { width: 8%; }
-.ef-actionable-exceptions__table th:nth-child(5) { width: 8%; }
-.ef-actionable-exceptions__table th:nth-child(6) { width: 8%; }
-.ef-actionable-exceptions__table th:nth-child(7) { width: 8%; }
-.ef-actionable-exceptions__table th:nth-child(8) { width: 11%; }
-.ef-actionable-exceptions__table th:nth-child(9) { width: 6%; }
+.ef-actionable-exceptions__table th:nth-child(1) { width: 22%; }
+.ef-actionable-exceptions__table th:nth-child(2) { width: 11%; }
+.ef-actionable-exceptions__table th:nth-child(3) { width: 10%; }
+.ef-actionable-exceptions__table th:nth-child(4) { width: 11%; }
+.ef-actionable-exceptions__table th:nth-child(5) { width: 7%; }
+.ef-actionable-exceptions__table th:nth-child(6) { width: 7%; }
+.ef-actionable-exceptions__table th:nth-child(7) { width: 9%; }
+.ef-actionable-exceptions__table th:nth-child(8) { width: 8%; }
+.ef-actionable-exceptions__table th:nth-child(9) { width: 7%; }
+.ef-actionable-exceptions__table th:nth-child(10) { width: 8%; }
 
 .ef-actionable-exceptions__table tbody tr {
   background: var(--ef-surface-panel);
@@ -107,6 +108,14 @@
 
 .ef-actionable-exceptions__table tbody tr:hover {
   background: var(--ef-surface-subtle);
+}
+
+.ef-actionable-exceptions__table tbody tr[data-lifecycle="resolved"] {
+  background: color-mix(in srgb, var(--ef-status-success-background) 55%, var(--ef-surface-panel));
+}
+
+.ef-actionable-exceptions__table tbody tr[data-lifecycle="snoozed"] {
+  background: color-mix(in srgb, var(--ef-status-warning-background) 48%, var(--ef-surface-panel));
 }
 
 .ef-actionable-exceptions__table tbody tr:last-child td {
@@ -119,6 +128,10 @@
 
 .ef-actionable-exceptions__table tbody tr[data-tone="warning"] td:first-child {
   box-shadow: inset 3px 0 var(--ef-status-warning-foreground);
+}
+
+.ef-actionable-exceptions__table tbody tr[data-lifecycle="resolved"] td:first-child {
+  box-shadow: inset 3px 0 var(--ef-status-success-foreground);
 }
 
 .ef-actionable-exceptions__table td > strong,
@@ -176,6 +189,14 @@
   -webkit-line-clamp: 2;
 }
 
+.ef-actionable-exceptions__row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--ef-space-1);
+}
+
 .ef-actionable-exceptions__capability {
   display: flex;
   align-items: center;
@@ -210,7 +231,7 @@
   }
 
   .ef-actionable-exceptions__table {
-    min-width: 1040px;
+    min-width: 1320px;
   }
 }
 
