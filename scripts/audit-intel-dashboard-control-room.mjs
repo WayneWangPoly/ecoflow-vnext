@@ -11,6 +11,7 @@ function read(relativePath) {
 
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const css = read('src/features/dashboard/dashboardControlRoom.css');
+const flowCss = read('src/features/dashboard/operationalFlowSurface.css');
 const contract = read('src/features/dashboard/dashboardControlContract.ts');
 const test = read('scripts/intel-dashboard-control-room-contract.test.mjs');
 const packageJson = JSON.parse(read('package.json'));
@@ -38,7 +39,9 @@ for (const required of [
   'ops-control-status-line',
 ]) {
   if (!dashboard.includes(required)) throw new Error(`INTEL_FE_002C_DASHBOARD_STRUCTURE_MISSING: ${required}`);
-  if (!css.includes(`.${required}`)) throw new Error(`INTEL_FE_002C_DASHBOARD_STYLE_MISSING: ${required}`);
+  if (!css.includes(`.${required}`) && !flowCss.includes(`.${required}`)) {
+    throw new Error(`INTEL_FE_002C_DASHBOARD_STYLE_MISSING: ${required}`);
+  }
 }
 
 for (const legacy of [
@@ -67,7 +70,7 @@ for (const preserved of [
   'Refreshing…',
   'Refresh',
   'Needs attention',
-  'Open order stages',
+  'Operational flow',
   'Priority work',
   'View all',
   'No open orders.',
@@ -100,16 +103,19 @@ for (const forbiddenSelector of [
   '.driver-',
   '#root',
 ]) {
-  if (css.includes(forbiddenSelector)) throw new Error(`INTEL_FE_002C_CROSS_PAGE_STYLE_FORBIDDEN: ${forbiddenSelector}`);
+  if (`${css}\n${flowCss}`.includes(forbiddenSelector)) {
+    throw new Error(`INTEL_FE_002C_CROSS_PAGE_STYLE_FORBIDDEN: ${forbiddenSelector}`);
+  }
 }
 
 for (const forbidden of ['!important', 'url(']) {
-  if (css.includes(forbidden)) throw new Error(`INTEL_FE_002C_STYLE_ESCAPE_FORBIDDEN: ${forbidden}`);
+  if (`${css}\n${flowCss}`.includes(forbidden)) throw new Error(`INTEL_FE_002C_STYLE_ESCAPE_FORBIDDEN: ${forbidden}`);
 }
 
 for (const required of [
   "import './fieldReadinessDashboard.css';",
   "import './dashboardControlRoom.css';",
+  "import './operationalFlowSurface.css';",
   'dashboardControlTone',
   'dashboardSourceTone',
 ]) {
@@ -118,6 +124,9 @@ for (const required of [
 
 if (dashboard.indexOf("import './dashboardControlRoom.css';") < dashboard.indexOf("import './fieldReadinessDashboard.css';")) {
   throw new Error('INTEL_FE_002C_CONTROL_ROOM_CSS_PRECEDENCE_INVALID');
+}
+if (dashboard.indexOf("import './operationalFlowSurface.css';") < dashboard.indexOf("import './dashboardControlRoom.css';")) {
+  throw new Error('INTEL_FE_002C_OPERATIONAL_FLOW_CSS_PRECEDENCE_INVALID');
 }
 
 for (const required of ['DashboardOperationalTone', 'dashboardControlTone', 'dashboardSourceTone']) {
