@@ -105,15 +105,22 @@ for (const testName of [
   if (!test.includes(testName)) throw new Error(`INTEL_UI_004A_TEST_MISSING: ${testName}`);
 }
 
+for (const marker of [
+  "from '@/features/intelligence/operationalFlow'",
+  'buildOperationalFlow(orders)',
+  'operationalFlowStages.map((stage)',
+  'flow.assignments',
+  'flow.nodes.map((stage)',
+]) {
+  if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004A_BOUNDED_ADOPTION_MISSING: ${marker}`);
+}
+
 for (const forbidden of [
-  "@/features/intelligence/operationalFlow",
   'operationalFlowContract',
   'buildOperationalFlow',
   'OperationalFlowStage',
 ]) {
-  if (dashboard.includes(forbidden) || app.includes(forbidden)) {
-    throw new Error(`INTEL_UI_004A_PREMATURE_PAGE_ADOPTION: ${forbidden}`);
-  }
+  if (app.includes(forbidden)) throw new Error(`INTEL_UI_004A_APP_ADOPTION_FORBIDDEN: ${forbidden}`);
 }
 
 const frontendAudit = packageJson.scripts?.['audit:intel-frontend'];
