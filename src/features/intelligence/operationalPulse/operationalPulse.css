@@ -1,0 +1,258 @@
+.ef-operational-pulse {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-3);
+  background: var(--ef-border-default);
+  box-shadow: var(--ef-elevation-2);
+}
+
+.ef-operational-pulse__card {
+  --ef-pulse-signal: var(--ef-text-muted);
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 188px;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: var(--ef-space-3);
+  overflow: hidden;
+  padding: 17px 18px 13px;
+  color: var(--ef-text-primary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(247, 250, 248, .97)),
+    var(--ef-surface-panel);
+}
+
+.ef-operational-pulse__card::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(rgba(8, 50, 34, .026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 50, 34, .026) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: .72;
+}
+
+.ef-operational-pulse__card[data-tone="success"] {
+  --ef-pulse-signal: var(--ef-status-success-foreground);
+}
+
+.ef-operational-pulse__card[data-tone="warning"] {
+  --ef-pulse-signal: var(--ef-status-warning-foreground);
+}
+
+.ef-operational-pulse__card[data-tone="danger"] {
+  --ef-pulse-signal: var(--ef-status-danger-foreground);
+}
+
+.ef-operational-pulse__card[data-tone="information"] {
+  --ef-pulse-signal: var(--ef-status-information-foreground);
+}
+
+.ef-operational-pulse__rail {
+  position: absolute;
+  top: 0;
+  left: 18px;
+  width: 62px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ef-pulse-signal), color-mix(in srgb, var(--ef-pulse-signal) 16%, transparent));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--ef-pulse-signal) 22%, transparent);
+}
+
+.ef-operational-pulse__header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ef-space-3);
+}
+
+.ef-operational-pulse__header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ef-operational-pulse__header > div > span {
+  overflow: hidden;
+  color: var(--ef-text-muted);
+  font-size: 9px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .11em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ef-operational-pulse__header h3 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: -.018em;
+  line-height: var(--ef-leading-tight);
+  text-overflow: ellipsis;
+}
+
+.ef-operational-pulse__signal {
+  flex: none;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--ef-pulse-signal) 30%, transparent);
+  border-radius: var(--ef-radius-1);
+  color: var(--ef-pulse-signal);
+  background: color-mix(in srgb, var(--ef-pulse-signal) 8%, transparent);
+  font-size: 9px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .055em;
+  line-height: 1;
+}
+
+.ef-operational-pulse__value {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  align-self: center;
+  gap: var(--ef-space-2);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-operational-pulse__value strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 740;
+  letter-spacing: -.052em;
+  line-height: .94;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-operational-pulse__card:not([data-availability="ready"]) .ef-operational-pulse__value strong {
+  color: color-mix(in srgb, var(--ef-pulse-signal) 62%, var(--ef-text-muted));
+}
+
+.ef-operational-pulse__value span {
+  overflow: hidden;
+  color: var(--ef-text-muted);
+  font-size: 10px;
+  font-weight: var(--ef-weight-semibold);
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ef-operational-pulse__blockers {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ef-operational-pulse__blockers code {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--ef-pulse-signal) 18%, var(--ef-border-default));
+  border-radius: 3px;
+  color: var(--ef-text-secondary);
+  background: color-mix(in srgb, var(--ef-pulse-signal) 5%, var(--ef-surface-subtle));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 8px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-operational-pulse__footer {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--ef-border-default) 86%, transparent);
+  color: var(--ef-text-muted);
+  font-size: 8px;
+  font-weight: var(--ef-weight-semibold);
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.ef-operational-pulse__footer span {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--ef-border-default);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ef-surface-subtle) 84%, transparent);
+}
+
+.ef-operational-pulse__footer time {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-operational-pulse[data-state="empty"] {
+  min-height: 1px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 1280px) {
+  .ef-operational-pulse {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .ef-operational-pulse {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .ef-operational-pulse {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ef-operational-pulse__card {
+    min-height: 158px;
+  }
+
+  .ef-operational-pulse__footer {
+    grid-template-columns: auto auto 1fr;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-operational-pulse,
+  .ef-operational-pulse__signal,
+  .ef-operational-pulse__blockers code,
+  .ef-operational-pulse__footer span {
+    border-width: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-operational-pulse__card,
+  .ef-operational-pulse__signal {
+    transition: none;
+  }
+}
