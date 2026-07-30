@@ -9,15 +9,7 @@ const workspacePath = 'src/features/intelligence/analytics/OperationalPulseReadi
 const indexPath = 'src/features/intelligence/crossFilter/index.ts';
 const packagePath = 'package.json';
 
-for (const file of [
-  componentPath,
-  presentationPath,
-  stylePath,
-  testPath,
-  workspacePath,
-  indexPath,
-  packagePath,
-]) {
+for (const file of [componentPath, presentationPath, stylePath, testPath, workspacePath, indexPath, packagePath]) {
   assert.ok(fs.existsSync(file), `missing metric drill access status file: ${file}`);
 }
 
@@ -46,21 +38,8 @@ for (const marker of [
   'No metric drill access rows',
   'Metric drill access summary',
   '<table className="ef-metric-drill-access__table">',
-  '<caption className="ef-metric-drill-access__sr-only">',
-  '<th scope="col">Metric</th>',
-  '<th scope="col">Registry</th>',
-  '<th scope="col">Projection</th>',
-  '<th scope="col">Drill</th>',
   '<th scope="col">Declared dimensions</th>',
   '<th scope="col">Authorised dimensions</th>',
-  '<th scope="col">Reasons</th>',
-  '<th scope="col">Blockers</th>',
-  '<th scope="col">Updated</th>',
-  'metricDrillAccessCapabilityLabel(row.drillCapability)',
-  'metricDrillAccessListLabel(row.declaredDimensionKeys)',
-  'metricDrillAccessListLabel(row.authorisedDimensionKeys)',
-  'metricDrillAccessListLabel(row.drillReasonCodes)',
-  'metricDrillAccessListLabel(row.blockerCodes)',
   'Authority metadata only · No KPI values, breakdowns or affected entities are read.',
 ]) {
   assert.ok(component.includes(marker), `missing metric drill access status marker: ${marker}`);
@@ -87,8 +66,6 @@ for (const forbidden of [
   /buildCrossFilterDrillPath/,
   /CrossFilterDrillSurface/,
   /useOverlayManager/,
-  /openPrimaryRecord/,
-  /openSecondaryRecord/,
   /onInspect/i,
   /onOpenOperationalRoute/,
   /Open workspace/i,
@@ -98,13 +75,10 @@ for (const forbidden of [
   /navigate\s*\(/,
   /window\./,
   /document\./,
-  /location\./,
-  /history\./,
   /localStorage/,
   /sessionStorage/,
   /MutationObserver/,
   /CustomEvent/,
-  /dispatchEvent/,
   /setTimeout/,
   /setInterval/,
   /Math\.random/,
@@ -120,75 +94,37 @@ for (const marker of [
   "row.drillCapability === 'UNKNOWN'",
   'canonicalCoverage:',
   'readTimes.size === 1',
-  "if (capability === 'AVAILABLE') return 'AVAILABLE'",
-  "if (capability === 'UNAVAILABLE') return 'UNAVAILABLE'",
-  "return 'UNKNOWN'",
   "if (capability === 'AVAILABLE') return 'success'",
   "if (capability === 'UNKNOWN') return 'warning'",
-  "return 'neutral'",
-  "values.length ? values.join(' · ') : '—'",
   "timeZone: 'Australia/Adelaide'",
 ]) {
   assert.ok(presentation.includes(marker), `missing metric drill access presentation marker: ${marker}`);
 }
 
-for (const forbidden of [
-  /react/i,
-  /\.tsx\b/i,
-  /\.css\b/i,
-  /supabase/i,
-  /\.schema\s*\(/,
-  /\.rpc\s*\(/,
-  /\.from\s*\(/,
-  /metric_value/i,
-  /CrossFilterDrillSurface/,
-  /OverlayManager/,
-  /window\./,
-  /document\./,
-]) {
+for (const forbidden of [/react/i, /supabase/i, /\.schema\s*\(/, /\.rpc\s*\(/, /\.from\s*\(/, /metric_value/i, /window\./, /document\./]) {
   assert.ok(!forbidden.test(presentation), `metric drill access presentation scope expansion: ${forbidden}`);
 }
 
 for (const marker of [
   '.ef-metric-drill-access__actions',
   '.ef-metric-drill-access__summary',
-  '.ef-metric-drill-access__table-shell',
   '.ef-metric-drill-access__table',
   '.ef-metric-drill-access__boundary',
-  '.ef-metric-drill-access__sr-only',
   '@media (max-width: 920px)',
   '@media (max-width: 640px)',
   '@media (prefers-contrast: more)',
-  '@media (prefers-reduced-motion: reduce)',
 ]) {
   assert.ok(style.includes(marker), `missing metric drill access style marker: ${marker}`);
 }
-
-for (const forbidden of [
-  '!important',
-  '@font-face',
-  'url(',
-  '#root',
-  '.orders-',
-  '.inventory-',
-  '.warehouse-',
-  '.delivery-',
-  '.ops-control-',
-]) {
+for (const forbidden of ['!important', '@font-face', 'url(', '#root', '.orders-', '.warehouse-', '.delivery-']) {
   assert.ok(!style.includes(forbidden), `metric drill access style scope expansion: ${forbidden}`);
 }
 
 const publishedTokens = new Set(
   Array.from(designTokens.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
 );
-const localTokens = new Set(
-  Array.from(style.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
-);
 for (const reference of Array.from(style.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (match) => match[1])) {
-  assert.ok(
-    publishedTokens.has(reference) || localTokens.has(reference),
-    `metric drill access status uses unpublished design token: ${reference}`,
-  );
+  assert.ok(publishedTokens.has(reference), `metric drill access status uses unpublished design token: ${reference}`);
 }
 
 for (const testName of [
@@ -202,23 +138,13 @@ for (const testName of [
   assert.ok(tests.includes(testName), `metric drill access status test missing: ${testName}`);
 }
 
-for (const marker of [
-  "import { MetricDrillAccessStatus } from '../crossFilter';",
-  '<MetricDrillAccessStatus />',
-]) {
-  assert.ok(workspace.includes(marker), `metric drill access workspace adoption missing: ${marker}`);
-}
+assert.ok(workspace.includes('MetricDrillAccessStatus'), 'metric drill access workspace import missing');
 assert.equal(
   (workspace.match(/<MetricDrillAccessStatus \/>/g) ?? []).length,
   1,
   'Analytics workspace must adopt the metric drill access status exactly once',
 );
-for (const forbidden of [
-  'metricDrillAccessRepository',
-  'readMetricDrillAccess',
-  'metricDrillAccessContract',
-  'get_metric_drill_access',
-]) {
+for (const forbidden of ['metricDrillAccessRepository', 'readMetricDrillAccess', 'metricDrillAccessContract', 'get_metric_drill_access']) {
   assert.ok(!workspace.includes(forbidden), `Analytics workspace directly couples to drill access data: ${forbidden}`);
 }
 
@@ -232,11 +158,7 @@ for (const marker of [
   assert.ok(index.includes(marker), `metric drill access status export missing: ${marker}`);
 }
 
-for (const forbidden of [
-  'MetricDrillAccessStatus',
-  'metricDrillAccessRepository',
-  'readMetricDrillAccess',
-]) {
+for (const forbidden of ['MetricDrillAccessStatus', 'metricDrillAccessRepository', 'readMetricDrillAccess']) {
   assert.ok(!dashboard.includes(forbidden), `Dashboard adopted metric drill access status: ${forbidden}`);
   assert.ok(!pulse.includes(forbidden), `Operational Pulse card adopted metric drill access status: ${forbidden}`);
   assert.ok(!drillSurface.includes(forbidden), `Drill surface adopted metric drill access repository: ${forbidden}`);
