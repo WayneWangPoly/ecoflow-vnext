@@ -166,3 +166,15 @@ test('surface summary counts records and issues without business-impact aggregat
     partialIssueCount: 3,
   });
 });
+
+test('empty presentation remains zero-count without unknown lifecycle or issues', () => {
+  const rows = buildActionableExceptionDisplayRows([], []);
+  assert.deepEqual(rows, []);
+  assert.deepEqual(actionableExceptionSurfaceSummary([], rows, 0, 0), {
+    total: 0,
+    displayed: 0,
+    active: 0,
+    unknownLifecycle: 0,
+    partialIssueCount: 0,
+  });
+});
