@@ -130,10 +130,7 @@ begin
   return query
   with source_rows as (
     select
-      p.metric_key,
-      p.metric_version,
       p.source_order_key,
-      p.source_order_line_key,
       p.metric_date,
       p.commercial_sku_code,
       o.commercial_product_name,
@@ -144,11 +141,11 @@ begin
       p.blocker_code,
       greatest(p.order_as_of_at,p.fulfilment_as_of_at) as row_as_of_at,
       case
-        when v_dimension_key='date' then coalesce(p.metric_date::text,'__missing__')
+        when v_dimension_key='date' then p.metric_date::text
         else p.commercial_sku_code
       end as value_key,
       case
-        when v_dimension_key='date' then coalesce(p.metric_date::text,'Missing date')
+        when v_dimension_key='date' then p.metric_date::text
         else o.commercial_product_name
       end as value_label
     from analytics.v_initial_kpi_line_projection_internal p
@@ -157,10 +154,7 @@ begin
      and o.source_order_line_key=p.source_order_line_key
      and o.is_current
     where p.metric_key=v_metric_key
-      and (
-        p.metric_date between p_date_from and p_date_to
-        or (p.metric_date is null and p_date_from<=p_date_to)
-      )
+      and p.metric_date between p_date_from and p_date_to
   ),
   grouped as (
     select
@@ -204,8 +198,7 @@ begin
       row_number() over(
         partition by e.value_key
         order by e.entity_label,e.entity_id
-      ) as entity_rank,
-      count(*) over(partition by e.value_key)::integer as routeable_entity_count
+      ) as entity_rank
     from entity_candidates e
   ),
   entity_payload as (
@@ -218,8 +211,7 @@ begin
           'label',e.entity_label,
           'subtitle',e.entity_subtitle
         )) order by e.entity_rank
-      ) filter(where e.entity_rank<=p_entity_limit) as entities,
-      max(e.routeable_entity_count)::integer as routeable_entity_count
+      ) filter(where e.entity_rank<=p_entity_limit) as entities
     from ranked_entities e
     group by e.value_key
   )
