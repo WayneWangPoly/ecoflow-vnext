@@ -39,6 +39,11 @@ for (const marker of [
   "fieldKind: 'resolutionNote'",
   "fieldKind: 'note'",
   'The active source exception is not deleted or dismissed.',
+  'Commit acknowledgement',
+  'Commit assignment',
+  'Commit snooze',
+  'Commit resolution',
+  'Commit note',
 ]) {
   if (!presentation.includes(marker)) throw new Error(`INTEL_UI_003C_PRESENTATION_MARKER_MISSING: ${marker}`);
 }
@@ -75,11 +80,6 @@ for (const marker of [
   'onConflict();',
   'Maximum 2,000 characters',
   'immutable audit history',
-  'Commit acknowledgement',
-  'Commit assignment',
-  'Commit snooze',
-  'Commit resolution',
-  'Commit note',
 ]) {
   if (!modal.includes(marker)) throw new Error(`INTEL_UI_003C_MODAL_MARKER_MISSING: ${marker}`);
 }
