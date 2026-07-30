@@ -84,5 +84,5 @@ test('metric catalog sorts active before draft without inventing readiness', () 
 test('analytics timestamps use Adelaide presentation and invalid values remain missing', () => {
   assert.equal(formatAnalyticsMoment(null), '—');
   assert.equal(formatAnalyticsMoment('not-a-date'), '—');
-  assert.match(formatAnalyticsMoment('2026-07-30T00:00:00Z'), /30 Jul 2026/);
+  assert.match(formatAnalyticsMoment('2026-07-30T00:00:00Z'), /30 (?:Jul|July) 2026, 09:30/);
 });
