@@ -77,6 +77,8 @@ function model(state = 'ready', overrides = {}) {
 
 test('metric presentation uses canonical Operational Pulse labels', () => {
   assert.equal(crossFilterDrillMetricLabel(model()), 'Revenue');
+  assert.equal(crossFilterDrillMetricLabel(model('ready', { metricKey: 'gross_margin' })), 'Gross margin');
+  assert.equal(crossFilterDrillMetricLabel(model('ready', { metricKey: 'on_time_delivery_rate' })), 'On-time delivery rate');
   assert.equal(crossFilterDrillMetricLabel(model('invalid', { metricKey: null })), 'Unknown metric');
 });
 
