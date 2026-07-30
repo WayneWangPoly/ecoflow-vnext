@@ -169,6 +169,7 @@ test('repository errors classify forbidden invalid unavailable and failed states
   assert.equal(classifyActionableExceptionError({ code: '42501', message: 'denied' }).state, 'forbidden');
   assert.equal(classifyActionableExceptionError({ code: '22023', message: 'limit' }).state, 'invalid');
   assert.equal(classifyActionableExceptionError({ code: 'PGRST202', message: 'schema cache' }).state, 'unavailable');
+  assert.equal(classifyActionableExceptionError({ code: 'NOT_CONFIGURED', message: 'not configured' }).state, 'unavailable');
   assert.equal(classifyActionableExceptionError({ code: 'XX000', message: 'unexpected' }).state, 'failed');
 });
 
