@@ -391,6 +391,7 @@ export function DashboardPage({
         <ControlPanel
           tone="raised"
           className="ops-control-panel ops-control-attention"
+          eyebrow="Needs attention"
           title="Operational queues"
           actions={(
             <ControlStatus
