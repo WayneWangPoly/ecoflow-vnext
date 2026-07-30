@@ -37,6 +37,7 @@ import { ActionableExceptionQueue } from '@/features/intelligence/attention';
 import { supabase } from '@/lib/supabaseClient';
 import './fieldReadinessDashboard.css';
 import './dashboardControlRoom.css';
+import './operationalFlowSurface.css';
 
 type Props = {
   role: Role;
