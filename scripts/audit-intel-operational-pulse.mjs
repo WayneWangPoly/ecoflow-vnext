@@ -18,6 +18,7 @@ const app = read('src/app/App.tsx');
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const designTokens = read('src/features/intelligence/designSystem/tokens.css');
 const packageJson = JSON.parse(read('package.json'));
+const source = `${component}\n${contract}`;
 
 for (const required of [
   'OperationalPulseDeck',
@@ -32,7 +33,7 @@ for (const required of [
   'data-quality={metric.quality.toLowerCase()}',
   '<time dateTime={metric.asOfAt ?? undefined}>',
 ]) {
-  if (!`${component}\n${contract}`.includes(required)) {
+  if (!source.includes(required)) {
     throw new Error(`INTEL_UI_002A_COMPONENT_CONTRACT_MISSING: ${required}`);
   }
 }
@@ -59,8 +60,8 @@ for (const required of [
   "if (typeof value !== 'string' || !value.trim()) return null",
   "availability: 'EMPTY'",
   "code: 'NON_READY_VALUE_SUPPRESSED'",
-  "value: null",
-  "displayValue: null",
+  'value: null',
+  'displayValue: null',
   "metric.availability === 'READY'",
   "metric.freshness === 'CURRENT'",
   "metric.quality === 'TRUSTED'",
@@ -94,13 +95,12 @@ for (const forbidden of [
   'CustomEvent(',
   'dispatchEvent(',
 ]) {
-  if (`${component}\n${contract}`.includes(forbidden)) {
+  if (source.includes(forbidden)) {
     throw new Error(`INTEL_UI_002A_DATA_OR_WRITE_COUPLING: ${forbidden}`);
   }
 }
 
 for (const forbidden of [
-  'Number(input.value)',
   'value ?? 0',
   'value || 0',
   'displayValue ||',
@@ -110,9 +110,12 @@ for (const forbidden of [
   'sum(',
   'average(',
 ]) {
-  if (`${component}\n${contract}`.includes(forbidden)) {
+  if (source.includes(forbidden)) {
     throw new Error(`INTEL_UI_002A_AGGREGATION_OR_SILENT_ZERO: ${forbidden}`);
   }
+}
+if (/(^|[^A-Za-z0-9_])Number\s*\(\s*input\.value\s*\)/m.test(source)) {
+  throw new Error('INTEL_UI_002A_UNGUARDED_NUMBER_CONVERSION');
 }
 
 for (const metricName of [
@@ -163,15 +166,7 @@ for (const required of [
   }
 }
 
-for (const forbidden of [
-  '!important',
-  'url(',
-  '@font-face',
-  '.dashboard-',
-  '.orders-',
-  '.inventory-',
-  '.delivery-',
-]) {
+for (const forbidden of ['!important', 'url(', '@font-face', '.dashboard-', '.orders-', '.inventory-', '.delivery-']) {
   if (css.includes(forbidden)) {
     throw new Error(`INTEL_UI_002A_VISUAL_SCOPE_EXPANSION: ${forbidden}`);
   }
