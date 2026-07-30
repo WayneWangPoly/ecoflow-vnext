@@ -11,6 +11,7 @@ for (const file of [migrationPath, testPath, workflowPath, packagePath]) {
 }
 
 const migration = fs.readFileSync(migrationPath, 'utf8');
+const migrationSql = migration.replace(/--.*$/gm, '');
 const contract = fs.readFileSync(testPath, 'utf8');
 const workflow = fs.readFileSync(workflowPath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -70,7 +71,7 @@ for (const pattern of [
   /\bexecute\s+format\b/i,
   /\bdynamic\s+sql\b/i,
 ]) {
-  assert.ok(!pattern.test(migration), `forbidden metric drill access pattern: ${pattern}`);
+  assert.ok(!pattern.test(migrationSql), `forbidden metric drill access pattern: ${pattern}`);
 }
 
 for (const marker of [
@@ -92,9 +93,16 @@ for (const marker of [
 for (const marker of [
   'supabase/migrations/20260731070000_metric_drill_access_envelope.sql',
   'scripts/metric-drill-access-contract-test.sql',
+  'Apply metric drill access envelope migration',
   'Execute metric drill access tests',
 ]) {
   assert.ok(workflow.includes(marker), `metric drill access workflow wiring missing: ${marker}`);
+}
+
+const lifecycleAccess = workflow.indexOf('Apply lifecycle access envelope migration');
+const drillAccess = workflow.indexOf('Apply metric drill access envelope migration');
+if (lifecycleAccess < 0 || drillAccess < lifecycleAccess) {
+  throw new Error('metric drill access migration is not applied after earlier lifecycle migrations');
 }
 
 const analyticsAudit = packageJson.scripts?.['audit:analytics'];
