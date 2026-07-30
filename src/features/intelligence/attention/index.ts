@@ -104,6 +104,19 @@ export {
 } from './actionableExceptionLifecycleContract';
 
 export {
+  actionableExceptionLifecycleAccessFailure,
+  actionableExceptionLifecycleAccessRpcName,
+  normaliseActionableExceptionLifecycleAccess,
+  type ActionableExceptionLifecycleAccess,
+  type ActionableExceptionLifecycleAccessFailure,
+  type ActionableExceptionLifecycleAccessIssue,
+  type ActionableExceptionLifecycleAccessIssueCode,
+  type ActionableExceptionLifecycleAccessNormalisation,
+  type ActionableExceptionLifecycleAccessResult,
+  type ActionableExceptionLifecycleAccessSuccess,
+} from './actionableExceptionLifecycleAccessContract';
+
+export {
   actionableExceptionCapabilityLabel,
   actionableExceptionDefaultDisplayLimit,
   actionableExceptionMaximumDisplayLimit,
