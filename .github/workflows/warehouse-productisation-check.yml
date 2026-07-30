@@ -298,6 +298,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/initial-kpi-shadow-drill-evidence-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply Priority Work read-model migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731110000_priority_work_read_model.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute Priority Work read-model tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/priority-work-read-model-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
