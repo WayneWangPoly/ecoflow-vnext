@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -21,6 +21,11 @@ import { loadBarcodeSprintKpis, loadInventoryKpis, type BarcodeSprintKpis, type 
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import { loadOrdermentumMirrorHealth, type OrdermentumMirrorHealthRow } from '@/features/team/ordermentumSync';
 import {
+  buildOperationalFlow,
+  operationalFlowStages,
+  type OperationalFlowStage,
+} from '@/features/intelligence/operationalFlow';
+import {
   ControlBanner,
   ControlButton,
   ControlPanel,
@@ -32,6 +37,7 @@ import { ActionableExceptionQueue } from '@/features/intelligence/attention';
 import { supabase } from '@/lib/supabaseClient';
 import './fieldReadinessDashboard.css';
 import './dashboardControlRoom.css';
+import './operationalFlowSurface.css';
 
 type Props = {
   role: Role;
@@ -45,12 +51,20 @@ type Props = {
   onOpenTab: (tab: DashboardNavigationTab) => void;
 };
 
-type Stage = 'blocked' | 'review' | 'ready' | 'warehouse' | 'route';
 type Action = { id: string; title: string; detail: string; count: number; tone: DashboardOperationalTone; next: string };
 
-const CLOSED = new Set(['DELIVERED', 'CLOSED', 'CANCELLED']);
-const WAREHOUSE = new Set(['RELEASED', 'PICKING', 'PACKED', 'STAGED']);
 const LIMIT = 10;
+const FLOW_LABELS = new Map(operationalFlowStages.map((stage) => [stage.key, stage.label]));
+const FLOW_PRIORITY: Record<OperationalFlowStage, number> = {
+  NEW: 6,
+  NEEDS_ACTION: 8,
+  FINANCE_REVIEW: 7,
+  READY: 5,
+  WAREHOUSE: 4,
+  STAGED: 3,
+  ROUTE: 2,
+  DELIVERED: 1,
+};
 
 function n(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -86,35 +100,26 @@ function storeForOrder(order: ImportedOrder, stores: EcoFlowDataSet['stores']) {
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function isOpen(order: ImportedOrder) {
-  return !CLOSED.has(order.status);
+function stageLabel(stage: OperationalFlowStage | undefined) {
+  return stage ? FLOW_LABELS.get(stage) ?? 'Unknown' : 'Unclassified';
 }
 
-function stageOf(order: ImportedOrder): Stage {
-  if (order.status === 'OUT_FOR_DELIVERY') return 'route';
-  if (WAREHOUSE.has(order.status)) return 'warehouse';
-  if (order.releaseGateStatus === 'READY_TO_RELEASE') return 'ready';
-  if (order.releaseGateStatus === 'REVIEW_PAYMENT') return 'review';
-  return 'blocked';
-}
-
-function stageLabel(stage: Stage) {
-  return stage === 'review'
-    ? 'FINANCE REVIEW'
-    : stage === 'ready'
-      ? 'READY'
-      : stage === 'warehouse'
-        ? 'IN WAREHOUSE'
-        : stage === 'route'
-          ? 'ON ROUTE'
-          : 'NEEDS ACTION';
-}
-
-function stageTone(stage: Stage): DashboardOperationalTone {
-  if (stage === 'blocked') return 'danger';
-  if (stage === 'review') return 'warn';
-  if (stage === 'ready') return 'good';
+function stageTone(stage: OperationalFlowStage): DashboardOperationalTone {
+  if (stage === 'NEEDS_ACTION') return 'danger';
+  if (stage === 'FINANCE_REVIEW') return 'warn';
+  if (stage === 'READY' || stage === 'DELIVERED') return 'good';
   return 'neutral';
+}
+
+function stageIcon(stage: OperationalFlowStage): ReactNode {
+  if (stage === 'NEW') return <ClipboardList />;
+  if (stage === 'NEEDS_ACTION') return <ShieldAlert />;
+  if (stage === 'FINANCE_REVIEW') return <Landmark />;
+  if (stage === 'READY') return <BadgeCheck />;
+  if (stage === 'WAREHOUSE') return <Warehouse />;
+  if (stage === 'STAGED') return <Boxes />;
+  if (stage === 'ROUTE') return <Route />;
+  return <PackageCheck />;
 }
 
 function gateLabel(order: ImportedOrder) {
@@ -193,44 +198,69 @@ export function DashboardPage({
     [locations],
   );
   const firstStocktakeNeeded = n(inventory?.live_on_hand_units) <= 0 && liveLocationCount === 0;
-  const openOrders = useMemo(() => orders.filter(isOpen), [orders]);
+  const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
+  const orderById = useMemo(() => {
+    const value = new Map<string, ImportedOrder>();
+    orders.forEach((order) => {
+      if (!value.has(order.id)) value.set(order.id, order);
+    });
+    return value;
+  }, [orders]);
+  const stageByOrderId = useMemo(
+    () => new Map(flow.assignments.map((assignment) => [assignment.orderId, assignment.stage])),
+    [flow.assignments],
+  );
+  const groups = useMemo(() => {
+    const value = Object.fromEntries(
+      operationalFlowStages.map((stage) => [stage.key, []]),
+    ) as unknown as Record<OperationalFlowStage, ImportedOrder[]>;
+    flow.assignments.forEach((assignment) => {
+      const order = orderById.get(assignment.orderId);
+      if (order) value[assignment.stage].push(order);
+    });
+    return value;
+  }, [flow.assignments, orderById]);
+  const openOrders = useMemo(
+    () => flow.assignments
+      .filter((assignment) => assignment.stage !== 'DELIVERED')
+      .map((assignment) => orderById.get(assignment.orderId))
+      .filter((order): order is ImportedOrder => Boolean(order)),
+    [flow.assignments, orderById],
+  );
   const serverCurrentOrders = operations
     ? n(operations.current_orders) + n(operations.source_review_orders)
     : orders.length;
-  const groups = useMemo(() => {
-    const value: Record<Stage, ImportedOrder[]> = { blocked: [], review: [], ready: [], warehouse: [], route: [] };
-    openOrders.forEach((order) => value[stageOf(order)].push(order));
-    return value;
-  }, [openOrders]);
-  const delivered = orders.filter((order) => order.status === 'DELIVERED' || order.status === 'CLOSED');
+  const delivered = groups.DELIVERED;
   const podMissing = delivered.filter((order) => order.podStatus === 'missing');
-  const decisionCount = groups.blocked.length + groups.review.length;
-  const executionCount = groups.warehouse.length + groups.route.length;
+  const decisionCount = groups.NEEDS_ACTION.length + groups.FINANCE_REVIEW.length;
+  const executionCount = groups.WAREHOUSE.length + groups.STAGED.length + groups.ROUTE.length;
   const mirrorStatus = mirror?.overall_status || (snapshotReady ? 'CHECKING' : 'UNAVAILABLE');
-  const priority: Record<Stage, number> = { blocked: 5, review: 4, ready: 3, warehouse: 2, route: 1 };
   const activeOrders = useMemo(
     () => [...openOrders]
       .sort((left, right) => {
-        const score = (order: ImportedOrder) => priority[stageOf(order)] * 100 + order.openExceptionCount * 10;
+        const score = (order: ImportedOrder) => {
+          const stage = stageByOrderId.get(order.id);
+          return (stage ? FLOW_PRIORITY[stage] : 0) * 100 + order.openExceptionCount * 10;
+        };
         return score(right) - score(left)
           || new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
       })
       .slice(0, LIMIT),
-    [openOrders],
+    [openOrders, stageByOrderId],
   );
 
   const actions: Action[] = role === 'account'
     ? [
-        { id: 'finance', title: 'Finance review', detail: 'Payment status, credit hold or overdue decision.', count: groups.review.length, tone: groups.review.length ? 'warn' : 'good', next: 'Open Reconciliation' },
-        { id: 'blocked', title: 'Commercial or data blockers', detail: 'Mapping, source or stock control requires action.', count: groups.blocked.length, tone: groups.blocked.length ? 'danger' : 'good', next: 'Open Orders' },
+        { id: 'finance', title: 'Finance review', detail: 'Payment status, credit hold or overdue decision.', count: groups.FINANCE_REVIEW.length, tone: groups.FINANCE_REVIEW.length ? 'warn' : 'good', next: 'Open Reconciliation' },
+        { id: 'blocked', title: 'Commercial or data blockers', detail: 'Mapping, source or stock control requires action.', count: groups.NEEDS_ACTION.length, tone: groups.NEEDS_ACTION.length ? 'danger' : 'good', next: 'Open Orders' },
         { id: 'pod', title: 'Delivery proof incomplete', detail: 'Delivered orders without complete POD.', count: podMissing.length, tone: podMissing.length ? 'danger' : 'good', next: 'Open Delivery' },
-        { id: 'ready', title: 'Ready for execution', detail: 'Orders that passed current release controls.', count: groups.ready.length, tone: groups.ready.length ? 'good' : 'neutral', next: 'Open Orders' },
+        { id: 'ready', title: 'Ready for execution', detail: 'Orders that passed current release controls.', count: groups.READY.length, tone: groups.READY.length ? 'good' : 'neutral', next: 'Open Orders' },
       ]
     : [
-        { id: 'blocked', title: 'Orders needing action', detail: 'Mapping, data, source or stock controls are blocking progress.', count: groups.blocked.length, tone: groups.blocked.length ? 'danger' : 'good', next: 'Open Orders' },
-        { id: 'finance', title: 'Finance review', detail: 'Office decision required before release.', count: groups.review.length, tone: groups.review.length ? 'warn' : 'good', next: 'Open Reconciliation' },
+        { id: 'blocked', title: 'Orders needing action', detail: 'Mapping, data, source or stock controls are blocking progress.', count: groups.NEEDS_ACTION.length, tone: groups.NEEDS_ACTION.length ? 'danger' : 'good', next: 'Open Orders' },
+        { id: 'finance', title: 'Finance review', detail: 'Office decision required before release.', count: groups.FINANCE_REVIEW.length, tone: groups.FINANCE_REVIEW.length ? 'warn' : 'good', next: 'Open Reconciliation' },
         { id: 'pod', title: 'Delivery proof incomplete', detail: 'Delivered orders without complete POD.', count: podMissing.length, tone: podMissing.length ? 'danger' : 'good', next: 'Open Delivery' },
-        { id: 'ready', title: 'Ready to release', detail: 'Current controls passed; waiting for execution.', count: groups.ready.length, tone: groups.ready.length ? 'good' : 'neutral', next: 'Open Orders' },
+        { id: 'ready', title: 'Ready to release', detail: 'Current controls passed; waiting for execution.', count: groups.READY.length, tone: groups.READY.length ? 'good' : 'neutral', next: 'Open Orders' },
       ];
 
   const roleName = role === 'admin'
@@ -245,13 +275,10 @@ export function DashboardPage({
     : role === 'viewer'
       ? 'Live operating picture'
       : 'Operations control desk';
-  const stages: Array<{ key: Stage; label: string; count: number; tab: DashboardNavigationTab }> = [
-    { key: 'blocked', label: 'Needs action', count: groups.blocked.length, tab: dashboardStageTarget('blocked', role) },
-    { key: 'review', label: 'Finance review', count: groups.review.length, tab: dashboardStageTarget('review', role) },
-    { key: 'ready', label: 'Ready', count: groups.ready.length, tab: dashboardStageTarget('ready', role) },
-    { key: 'warehouse', label: 'In warehouse', count: groups.warehouse.length, tab: dashboardStageTarget('warehouse', role) },
-    { key: 'route', label: 'On route', count: groups.route.length, tab: dashboardStageTarget('route', role) },
-  ];
+  const stages = flow.nodes.map((stage) => ({
+    ...stage,
+    tab: dashboardStageTarget(stage.key, role),
+  }));
 
   if (loading && !snapshotReady) {
     return (
@@ -294,6 +321,7 @@ export function DashboardPage({
       className="ops-home ops-control-room"
       data-server-current={serverCurrentOrders}
       data-source-status={mirrorStatus.toLowerCase()}
+      data-flow-state={flow.state}
     >
       <header className="ops-control-hero">
         <div className="ops-home-heading">
@@ -356,22 +384,22 @@ export function DashboardPage({
         <article className="ops-control-metric" data-signal="information">
           <div><span>Open orders</span><ClipboardList aria-hidden="true" /></div>
           <strong>{openOrders.length}</strong>
-          <small>five exclusive stages</small>
+          <small>active across the eight-stage flow</small>
         </article>
         <article className="ops-control-metric" data-signal={decisionCount ? 'danger' : 'success'}>
           <div><span>Needs decision</span><ShieldAlert aria-hidden="true" /></div>
           <strong>{decisionCount}</strong>
-          <small>{groups.blocked.length} operational · {groups.review.length} finance</small>
+          <small>{groups.NEEDS_ACTION.length} operational · {groups.FINANCE_REVIEW.length} finance</small>
         </article>
         <article className="ops-control-metric" data-signal="success">
           <div><span>Ready</span><BadgeCheck aria-hidden="true" /></div>
-          <strong>{groups.ready.length}</strong>
+          <strong>{groups.READY.length}</strong>
           <small>release controls passed</small>
         </article>
         <article className="ops-control-metric" data-signal="information">
           <div><span>In execution</span><Route aria-hidden="true" /></div>
           <strong>{executionCount}</strong>
-          <small>{groups.warehouse.length} warehouse · {groups.route.length} route</small>
+          <small>{groups.WAREHOUSE.length} warehouse · {groups.STAGED.length} staged · {groups.ROUTE.length} route</small>
         </article>
         <article className="ops-control-metric" data-signal={liveLocationCount ? 'neutral' : 'warning'}>
           <div><span>Live stock locations</span><Warehouse aria-hidden="true" /></div>
@@ -430,18 +458,25 @@ export function DashboardPage({
         <ControlPanel
           tone="raised"
           className="ops-control-panel ops-control-stage-panel"
-          title="Open order stages"
-          actions={<ControlStatus tone="information" label={String(openOrders.length)} compact />}
+          title="Operational flow"
+          actions={(
+            <ControlStatus
+              tone={flow.state === 'partial' || flow.state === 'invalid' ? 'warning' : 'information'}
+              label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL' : `${flow.classifiedCount} CLASSIFIED`}
+              compact
+            />
+          )}
         >
-          <div className="ops-control-flow">
+          <div className="ops-control-flow" aria-label="Eight-stage operational flow">
             {stages.map((stage) => (
               <button
                 key={stage.key}
                 type="button"
-                data-stage={stage.key}
+                data-stage={stage.key.toLowerCase()}
+                aria-label={`${stage.label}: ${stage.count} orders`}
                 onClick={() => onOpenTab(stage.tab)}
               >
-                <span className="ops-control-stage-icon" aria-hidden="true"><Boxes /></span>
+                <span className="ops-control-stage-icon" aria-hidden="true">{stageIcon(stage.key)}</span>
                 <strong>{stage.count}</strong>
                 <span>{stage.label}</span>
               </button>
@@ -468,7 +503,7 @@ export function DashboardPage({
             <span>Order</span><span>Store</span><span>Stage</span><span>Value</span><span>POD</span>
           </div>
           {activeOrders.map((order) => {
-            const stage = stageOf(order);
+            const stage = stageByOrderId.get(order.id);
             const storeProfile = storeForOrder(order, data.stores);
             return (
               <button
@@ -522,7 +557,11 @@ export function DashboardPage({
                 <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
                 <span><strong>{order.store}</strong><small>{order.suburb} · {order.priceTier}</small></span>
                 <span>
-                  <ControlStatus tone={dashboardControlTone(stageTone(stage))} label={stageLabel(stage)} compact />
+                  <ControlStatus
+                    tone={stage ? dashboardControlTone(stageTone(stage)) : 'warning'}
+                    label={stageLabel(stage).toUpperCase()}
+                    compact
+                  />
                   <small>{order.releaseBlockers || order.changeSummary}</small>
                 </span>
                 <span className="ops-control-order-value">{money(order.amount)}</span>
@@ -544,6 +583,9 @@ export function DashboardPage({
         {openOrders.length === serverCurrentOrders
           ? `${serverCurrentOrders} server-current orders classified`
           : `${openOrders.length} loaded open · ${serverCurrentOrders} server current`}
+        {' · '}{flow.classifiedCount} flow-classified
+        {' · '}{flow.excludedCount} cancelled
+        {' · '}{flow.unknownCount} unknown
         {' · '}{n(barcode?.registered_barcodes)} package codes
         {' · '}{n(inventory?.live_on_hand_units)} live units
         {' · '}source checked {dateTime(mirror?.checked_at)}
