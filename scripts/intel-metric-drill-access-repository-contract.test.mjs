@@ -63,6 +63,25 @@ test('AVAILABLE survives only with ACTIVE READY governed dimensions and no reaso
   assert.deepEqual(revenue?.authorisedDimensionKeys, ['date']);
 });
 
+test('malformed list arrays never retain AVAILABLE authority', () => {
+  const normalised = normaliseMetricDrillAccessRows(fullEnvelope({
+    revenue: {
+      metric_status: 'ACTIVE',
+      projection_status: 'READY',
+      drill_capability: 'AVAILABLE',
+      authorised_dimension_keys: ['date', 'date'],
+      declared_dimension_keys: ['date'],
+      blocker_codes: [],
+      drill_reason_codes: [],
+    },
+  }));
+  const revenue = normalised.rows[0];
+  assert.equal(revenue?.drillCapability, 'UNKNOWN');
+  assert.deepEqual(revenue?.authorisedDimensionKeys, []);
+  assert.equal(normalised.issues.some((issue) => issue.code === 'DUPLICATE_STRING_VALUE'), true);
+  assert.equal(normalised.issues.some((issue) => issue.code === 'AVAILABLE_INVARIANT_MISMATCH'), true);
+});
+
 test('server AVAILABLE with non-ready governance fails closed to UNKNOWN', () => {
   const normalised = normaliseMetricDrillAccessRows(fullEnvelope({
     revenue: {
