@@ -34,9 +34,9 @@ for (const marker of [
   'ORDERING_MISMATCH',
   "priorityCapability !== 'POLICY_GOVERNED'",
   "orderEntityId.includes('/')",
-  "row.lifecycle_status",
+  'raw.lifecycle_status',
   'readTimes.size > 1',
-  'return { rows: [], state: \'partial\', issues }',
+  "return { rows: [], state: 'partial', issues }",
 ]) {
   assert.ok(contract.includes(marker), `missing Priority Work contract marker: ${marker}`);
 }
