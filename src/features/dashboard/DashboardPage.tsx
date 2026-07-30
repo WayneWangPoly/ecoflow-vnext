@@ -213,7 +213,7 @@ export function DashboardPage({
   const groups = useMemo(() => {
     const value = Object.fromEntries(
       operationalFlowStages.map((stage) => [stage.key, []]),
-    ) as Record<OperationalFlowStage, ImportedOrder[]>;
+    ) as unknown as Record<OperationalFlowStage, ImportedOrder[]>;
     flow.assignments.forEach((assignment) => {
       const order = orderById.get(assignment.orderId);
       if (order) value[assignment.stage].push(order);
