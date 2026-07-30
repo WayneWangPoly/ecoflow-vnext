@@ -66,8 +66,9 @@ begin
   end if;
 
   if position('public.app_user_profiles' in v_gate_definition)=0
-     or position('p.is_active = true' in v_gate_definition)=0
-     or position('p.team_status = ''ACTIVE''' in v_gate_definition)=0
+     or position('is_active' in v_gate_definition)=0
+     or position('team_status' in v_gate_definition)=0
+     or position('ACTIVE' in v_gate_definition)=0
      or position('OWNER' in v_gate_definition)=0
      or position('ADMIN' in v_gate_definition)=0
      or position('ACCOUNT' in v_gate_definition)=0
