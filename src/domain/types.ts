@@ -1,5 +1,5 @@
 export type Role = 'owner' | 'admin' | 'account' | 'warehouse' | 'driver' | 'viewer';
-export type DesktopTab = 'dashboard' | 'ordermentum' | 'orders' | 'delivery' | 'inventory' | 'stores' | 'reconciliation' | 'logs' | 'settings';
+export type DesktopTab = 'dashboard' | 'ordermentum' | 'orders' | 'delivery' | 'inventory' | 'stores' | 'reconciliation' | 'analytics' | 'logs' | 'settings';
 export type WarehouseTab = 'receive' | 'pick' | 'stock';
 export type DriverTab = 'today' | 'pick' | 'stops' | 'history' | 'clock';
 export type OrderStatus = 'IMPORTED' | 'MAPPING_EXCEPTION' | 'RELEASE_READY' | 'RELEASED' | 'PICKING' | 'PACKED' | 'STAGED' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CLOSED' | 'CANCELLED';
