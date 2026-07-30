@@ -1,8 +1,12 @@
 \set ON_ERROR_STOP on
 
--- CI-only compatibility fixture for the production active-exception projection.
--- Production must already provide this view; the migration itself keeps a strict
--- preflight and never creates or replaces the operational source.
+-- CI-only compatibility fixture for the production active-exception projection
+-- and Supabase Auth helper grants. Production must already provide both; the
+-- migration itself keeps a strict preflight and never creates or replaces the
+-- operational source or Auth boundary.
+
+grant usage on schema auth to authenticated;
+grant execute on function auth.uid() to authenticated;
 
 do $fixture$
 begin
