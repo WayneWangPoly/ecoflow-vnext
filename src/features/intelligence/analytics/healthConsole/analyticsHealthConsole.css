@@ -48,7 +48,7 @@
   left: 30px;
   width: 104px;
   height: 3px;
-  background: linear-gradient(90deg, var(--ef-accent), transparent);
+  background: linear-gradient(90deg, var(--ef-status-success-foreground), transparent);
   box-shadow: 0 0 20px rgba(47, 191, 127, .34);
 }
 
