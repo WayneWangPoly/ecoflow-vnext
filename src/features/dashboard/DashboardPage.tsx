@@ -229,7 +229,7 @@ export function DashboardPage({
   );
   const serverCurrentOrders = operations
     ? n(operations.current_orders) + n(operations.source_review_orders)
-    : openOrders.length;
+    : orders.length;
   const delivered = groups.DELIVERED;
   const podMissing = delivered.filter((order) => order.podStatus === 'missing');
   const decisionCount = groups.NEEDS_ACTION.length + groups.FINANCE_REVIEW.length;
