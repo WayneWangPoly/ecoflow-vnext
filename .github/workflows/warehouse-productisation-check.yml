@@ -278,6 +278,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-lifecycle-access-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply metric drill access envelope migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731070000_metric_drill_access_envelope.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute metric drill access tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/metric-drill-access-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
