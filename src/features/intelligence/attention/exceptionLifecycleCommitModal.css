@@ -1,0 +1,228 @@
+.ef-lifecycle-commit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: var(--ef-space-4);
+  background: color-mix(in srgb, var(--ef-surface-canvas) 32%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.ef-lifecycle-commit-modal__dialog {
+  width: min(680px, 100%);
+  max-height: min(820px, calc(100vh - var(--ef-space-8)));
+  overflow: auto;
+  border: 1px solid var(--ef-border-emphasis);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-panel);
+  box-shadow: var(--ef-elevation-overlay);
+}
+
+.ef-lifecycle-commit-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ef-space-4);
+  padding: var(--ef-space-5);
+  border-bottom: 1px solid var(--ef-border-default);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ef-status-information-foreground) 10%, transparent), transparent 52%),
+    var(--ef-surface-subtle);
+}
+
+.ef-lifecycle-commit-modal__header > div {
+  min-width: 0;
+}
+
+.ef-lifecycle-commit-modal__eyebrow {
+  display: block;
+  margin-bottom: var(--ef-space-1);
+  color: var(--ef-status-information-foreground);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.ef-lifecycle-commit-modal__header h2 {
+  margin: 0;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-xl);
+  line-height: var(--ef-leading-tight);
+}
+
+.ef-lifecycle-commit-modal__header p {
+  max-width: 62ch;
+  margin: var(--ef-space-2) 0 0;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-lifecycle-commit-modal__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ef-space-2);
+  padding: var(--ef-space-3) var(--ef-space-5);
+  border-bottom: 1px solid var(--ef-border-default);
+  background: var(--ef-surface-canvas);
+}
+
+.ef-lifecycle-commit-modal__form {
+  display: grid;
+  gap: var(--ef-space-4);
+  padding: var(--ef-space-5);
+}
+
+.ef-lifecycle-commit-modal__textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: var(--ef-space-3);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  outline: none;
+  background: var(--ef-surface-canvas);
+  color: var(--ef-text-primary);
+  font: inherit;
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-lifecycle-commit-modal__textarea:focus {
+  border-color: var(--ef-status-information-foreground);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ef-status-information-foreground) 20%, transparent);
+}
+
+.ef-lifecycle-commit-modal__textarea:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.ef-lifecycle-commit-modal__review {
+  display: grid;
+  gap: var(--ef-space-2);
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-left: 3px solid var(--ef-status-information-foreground);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-subtle);
+}
+
+.ef-lifecycle-commit-modal__review[data-tone="warning"] {
+  border-left-color: var(--ef-status-warning-foreground);
+}
+
+.ef-lifecycle-commit-modal__review[data-tone="danger"] {
+  border-left-color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-lifecycle-commit-modal__review strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+}
+
+.ef-lifecycle-commit-modal__review span {
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-lifecycle-commit-modal__review code {
+  display: block;
+  overflow: hidden;
+  padding: var(--ef-space-2);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-status-neutral-background);
+  color: var(--ef-status-neutral-foreground);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--ef-type-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-lifecycle-commit-modal__message {
+  display: grid;
+  gap: var(--ef-space-1);
+  margin: var(--ef-space-5);
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-status-warning-foreground);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-status-warning-background);
+}
+
+.ef-lifecycle-commit-modal__form .ef-lifecycle-commit-modal__message {
+  margin: 0;
+}
+
+.ef-lifecycle-commit-modal__message[data-state="forbidden"],
+.ef-lifecycle-commit-modal__message[data-state="failed"],
+.ef-lifecycle-commit-modal__message[data-state="conflict"] {
+  border-color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-lifecycle-commit-modal__message strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+}
+
+.ef-lifecycle-commit-modal__message span {
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-lifecycle-commit-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ef-space-2);
+  padding-top: var(--ef-space-2);
+  border-top: 1px solid var(--ef-border-default);
+}
+
+@media (max-width: 640px) {
+  .ef-lifecycle-commit-modal {
+    align-items: end;
+    padding: 0;
+  }
+
+  .ef-lifecycle-commit-modal__dialog {
+    width: 100%;
+    max-height: 92vh;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+  }
+
+  .ef-lifecycle-commit-modal__header {
+    padding: var(--ef-space-4);
+  }
+
+  .ef-lifecycle-commit-modal__signals,
+  .ef-lifecycle-commit-modal__form {
+    padding-right: var(--ef-space-4);
+    padding-left: var(--ef-space-4);
+  }
+
+  .ef-lifecycle-commit-modal__footer > * {
+    flex: 1 1 0;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-lifecycle-commit-modal__dialog,
+  .ef-lifecycle-commit-modal__textarea,
+  .ef-lifecycle-commit-modal__review,
+  .ef-lifecycle-commit-modal__message {
+    border-color: var(--ef-border-emphasis);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-lifecycle-commit-modal {
+    backdrop-filter: none;
+  }
+}
