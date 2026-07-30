@@ -45,6 +45,19 @@ function errorMessage(result: ActionableExceptionLifecycleCommandResult | null):
   return `Lifecycle commit failed: ${result.error.message}`;
 }
 
+function thrownCommitFailure(error: unknown): ActionableExceptionLifecycleCommandResult {
+  return {
+    ok: false,
+    data: null,
+    state: 'failed',
+    error: {
+      state: 'failed',
+      code: 'UI_COMMIT_THROWN',
+      message: error instanceof Error ? error.message : 'Unexpected lifecycle commit failure.',
+    },
+  };
+}
+
 export function ExceptionLifecycleCommitModal({
   open,
   exceptionId,
@@ -136,15 +149,20 @@ export function ExceptionLifecycleCommitModal({
     }
 
     setSubmitting(true);
-    const nextResult = await onCommit({
-      commandId,
-      exceptionId,
-      action: selectedOption.action,
-      ownerTeam: selectedOption.fieldKind === 'ownerTeam' ? ownerTeam : undefined,
-      snoozedUntil: snoozeIso,
-      resolutionNote: selectedOption.fieldKind === 'resolutionNote' ? resolutionNote : undefined,
-      note: selectedOption.fieldKind === 'note' ? note : undefined,
-    });
+    let nextResult: ActionableExceptionLifecycleCommandResult;
+    try {
+      nextResult = await onCommit({
+        commandId,
+        exceptionId,
+        action: selectedOption.action,
+        ownerTeam: selectedOption.fieldKind === 'ownerTeam' ? ownerTeam : undefined,
+        snoozedUntil: snoozeIso,
+        resolutionNote: selectedOption.fieldKind === 'resolutionNote' ? resolutionNote : undefined,
+        note: selectedOption.fieldKind === 'note' ? note : undefined,
+      });
+    } catch (error: unknown) {
+      nextResult = thrownCommitFailure(error);
+    }
     setSubmitting(false);
     setResult(nextResult);
     if (nextResult.ok) {
@@ -200,7 +218,7 @@ export function ExceptionLifecycleCommitModal({
         {options.length === 0 ? (
           <div className="ef-lifecycle-commit-modal__message" data-state="read-only">
             <strong>No lifecycle commands available</strong>
-            <span>The server access envelope does not authorise a commit for this item.</span>
+            <span>The server access envelope and lifecycle row do not authorise a commit for this item.</span>
           </div>
         ) : (
           <form className="ef-lifecycle-commit-modal__form" onSubmit={handleSubmit}>
