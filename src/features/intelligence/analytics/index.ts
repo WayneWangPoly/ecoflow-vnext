@@ -40,3 +40,4 @@ export {
   type NormalisedAnalyticsShadowRequest,
 } from './analyticsRepositoryContract';
 export * from './primitives';
+export * from './healthConsole';

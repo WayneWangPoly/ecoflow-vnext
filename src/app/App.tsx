@@ -24,6 +24,7 @@ import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/Orderme
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdersControlPage } from '@/features/orders/OrdersControlPage';
+import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';
 import { useDesktopRouteAdapter } from '@/features/intelligence/navigation/useDesktopRouteAdapter';
 import { hasSupabaseAuthClient, supabase } from '@/lib/supabaseClient';
@@ -87,6 +88,7 @@ const desktopTabs: { id: DesktopTab; label: string }[] = [
   { id: 'inventory', label: 'Inventory' },
   { id: 'stores', label: 'Stores' },
   { id: 'reconciliation', label: 'Reconciliation' },
+  { id: 'analytics', label: 'Analytics' },
   { id: 'logs', label: 'Logs' },
   { id: 'settings', label: 'Settings' }
 ];
@@ -101,8 +103,8 @@ const roleLabels: Record<Role, string> = {
 };
 
 const desktopTabAccess: Partial<Record<Role, ReadonlySet<DesktopTab>>> = {
-  account: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'stores', 'reconciliation', 'settings']),
-  viewer: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'inventory', 'stores', 'reconciliation', 'logs']),
+  account: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'stores', 'reconciliation', 'analytics', 'settings']),
+  viewer: new Set<DesktopTab>(['dashboard', 'orders', 'delivery', 'inventory', 'stores', 'reconciliation', 'analytics', 'logs']),
 };
 
 function availableDesktopTabs(role: Role) {
@@ -961,6 +963,7 @@ function DesktopWorkspace({ role, data, orders, setOrders, stock, stores, logs, 
       {tab === 'inventory' ? <InventoryPanel stock={stock} catalog={data.catalog} /> : null}
       {tab === 'stores' ? <StoresPanel stores={stores} /> : null}
       {tab === 'reconciliation' ? <ReconciliationPanel orders={effectiveOrders} /> : null}
+      {tab === 'analytics' ? <AnalyticsHealthConsole /> : null}
       {tab === 'logs' ? <LogsPanel logs={logs} /> : null}
       {tab === 'settings' ? <SettingsPanel summary={data.summary} dataQuality={data.dataQuality} authProfile={authProfile} /> : null}
     </DesktopShell>

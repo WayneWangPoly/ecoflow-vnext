@@ -10,6 +10,7 @@ export type IntelligenceWorkspaceId =
   | 'delivery'
   | 'returns'
   | 'exceptions'
+  | 'reconciliation'
   | 'analytics'
   | 'logs'
   | 'settings';
@@ -76,7 +77,8 @@ const STATIC_ROUTES: readonly StaticRoute[] = [
   { path: '/delivery', workspace: 'delivery', legacyDesktopTab: 'delivery' },
   { path: '/returns', workspace: 'returns', legacyDesktopTab: null },
   { path: '/exceptions', workspace: 'exceptions', legacyDesktopTab: null },
-  { path: '/analytics', workspace: 'analytics', legacyDesktopTab: 'reconciliation' },
+  { path: '/reconciliation', workspace: 'reconciliation', legacyDesktopTab: 'reconciliation' },
+  { path: '/analytics', workspace: 'analytics', legacyDesktopTab: 'analytics' },
   { path: '/logs', workspace: 'logs', legacyDesktopTab: 'logs' },
   { path: '/settings', workspace: 'settings', legacyDesktopTab: 'settings' },
 ] as const;
@@ -91,8 +93,8 @@ const DYNAMIC_ROUTES: readonly DynamicRoute[] = [
 ] as const;
 
 const OWNER_ADMIN_WORKSPACES = new Set<IntelligenceWorkspaceId>(STATIC_ROUTES.map((route) => route.workspace).concat(['stores']));
-const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'customers', 'stores', 'delivery', 'analytics', 'settings']);
-const VIEWER_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'customers', 'stores', 'delivery', 'analytics', 'logs']);
+const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'settings']);
+const VIEWER_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'logs']);
 
 const LEGACY_TAB_PATHS: Readonly<Record<DesktopTab, string>> = {
   dashboard: '/control-room',
@@ -101,7 +103,8 @@ const LEGACY_TAB_PATHS: Readonly<Record<DesktopTab, string>> = {
   delivery: '/delivery',
   inventory: '/inventory',
   stores: '/customers',
-  reconciliation: '/analytics',
+  reconciliation: '/reconciliation',
+  analytics: '/analytics',
   logs: '/logs',
   settings: '/settings',
 };

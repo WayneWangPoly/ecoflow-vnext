@@ -1,0 +1,384 @@
+.ef-analytics-console {
+  display: grid;
+  gap: var(--ef-space-4);
+  min-width: 0;
+  color: var(--ef-text-primary);
+}
+
+.ef-analytics-console__command {
+  position: relative;
+  isolation: isolate;
+  min-height: 176px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ef-space-6);
+  overflow: hidden;
+  padding: 28px 30px;
+  border: 1px solid rgba(153, 191, 172, .2);
+  border-radius: var(--ef-radius-3);
+  color: #edf7f1;
+  background:
+    linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px),
+    radial-gradient(circle at 82% -20%, rgba(47, 191, 127, .2), transparent 43%),
+    linear-gradient(145deg, #123c2d, #071f17 72%);
+  background-size: 24px 24px, 24px 24px, auto, auto;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .055) inset,
+    0 20px 42px rgba(7, 31, 23, .18);
+}
+
+.ef-analytics-console__command::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: -72px;
+  right: 13%;
+  width: 190px;
+  height: 250px;
+  border: 1px solid rgba(47, 191, 127, .13);
+  transform: skewX(-18deg);
+}
+
+.ef-analytics-console__command::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 30px;
+  width: 104px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ef-status-success-foreground), transparent);
+  box-shadow: 0 0 20px rgba(47, 191, 127, .34);
+}
+
+.ef-analytics-console__heading {
+  display: grid;
+  gap: var(--ef-space-2);
+  min-width: 0;
+}
+
+.ef-analytics-console__heading > span {
+  color: #7fd7aa;
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .16em;
+}
+
+.ef-analytics-console__heading h1 {
+  margin: 0;
+  color: #f4faf6;
+  font-size: clamp(31px, 4vw, 52px);
+  font-weight: 740;
+  letter-spacing: -.052em;
+  line-height: .95;
+}
+
+.ef-analytics-console__command-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ef-space-3);
+  margin-top: var(--ef-space-2);
+  color: rgba(226, 240, 233, .68);
+  font-size: var(--ef-type-sm);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-console__reload {
+  flex: none;
+  min-height: var(--ef-density-standard-row);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ef-space-2);
+  padding: 0 var(--ef-space-4);
+  border: 1px solid rgba(213, 235, 224, .24);
+  border-radius: var(--ef-radius-2);
+  color: #eef8f2;
+  background: rgba(255, 255, 255, .065);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset;
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+  transition:
+    background var(--ef-motion-fast) ease,
+    border-color var(--ef-motion-fast) ease,
+    transform var(--ef-motion-fast) ease;
+}
+
+.ef-analytics-console__reload:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(127, 215, 170, .55);
+  background: rgba(47, 191, 127, .12);
+}
+
+.ef-analytics-console__reload:focus-visible {
+  outline: var(--ef-focus-ring-width) solid var(--ef-focus-ring-color);
+  outline-offset: var(--ef-focus-ring-offset);
+}
+
+.ef-analytics-console__reload:disabled svg {
+  animation: ef-analytics-console-spin .8s linear infinite;
+}
+
+.ef-analytics-console__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-border-default);
+  box-shadow: var(--ef-elevation-1);
+}
+
+.ef-analytics-console__metric {
+  --ef-analytics-console-signal: var(--ef-text-muted);
+  position: relative;
+  min-height: 108px;
+  display: grid;
+  align-content: space-between;
+  gap: var(--ef-space-4);
+  padding: 18px 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .78), rgba(247, 250, 248, .96)),
+    var(--ef-surface-panel);
+}
+
+.ef-analytics-console__metric::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20px;
+  width: 58px;
+  height: 2px;
+  background: var(--ef-analytics-console-signal);
+}
+
+.ef-analytics-console__metric[data-tone="success"],
+.ef-analytics-console__signal[data-tone="success"] {
+  --ef-analytics-console-signal: var(--ef-status-success-foreground);
+}
+
+.ef-analytics-console__metric[data-tone="warning"],
+.ef-analytics-console__signal[data-tone="warning"] {
+  --ef-analytics-console-signal: var(--ef-status-warning-foreground);
+}
+
+.ef-analytics-console__metric[data-tone="danger"],
+.ef-analytics-console__signal[data-tone="danger"] {
+  --ef-analytics-console-signal: var(--ef-status-danger-foreground);
+}
+
+.ef-analytics-console__metric[data-tone="information"],
+.ef-analytics-console__signal[data-tone="information"] {
+  --ef-analytics-console-signal: var(--ef-status-information-foreground);
+}
+
+.ef-analytics-console__metric > span {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.ef-analytics-console__metric > strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 730;
+  letter-spacing: -.045em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-console__status-strip {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-panel);
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-analytics-console__status-strip > span {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ef-space-2);
+  padding: 0 var(--ef-space-4);
+  border-right: 1px solid var(--ef-border-default);
+}
+
+.ef-analytics-console__status-strip strong {
+  color: var(--ef-text-primary);
+  font-weight: var(--ef-weight-semibold);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.ef-analytics-console__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ef-space-4);
+}
+
+.ef-analytics-console__panel {
+  min-width: 0;
+}
+
+.ef-analytics-console__panel .ef-analytics-frame__body {
+  padding: 0;
+}
+
+.ef-analytics-console__panel .ef-analytics-table-shell {
+  max-height: 430px;
+  border: 0;
+  border-radius: 0;
+}
+
+.ef-analytics-console__signal {
+  --ef-analytics-console-signal: var(--ef-text-muted);
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ef-analytics-console-signal) 28%, transparent);
+  border-radius: var(--ef-radius-1);
+  color: var(--ef-analytics-console-signal);
+  background: color-mix(in srgb, var(--ef-analytics-console-signal) 8%, transparent);
+  font-size: 10px;
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .06em;
+  line-height: 1;
+}
+
+.ef-analytics-console__primary-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ef-analytics-console__primary-cell strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-weight: var(--ef-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-analytics-console__primary-cell span {
+  overflow: hidden;
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-analytics-console__resource-state,
+.ef-analytics-console__fatal {
+  min-height: 116px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--ef-space-2);
+  padding: var(--ef-space-6);
+  text-align: center;
+}
+
+.ef-analytics-console__resource-state strong,
+.ef-analytics-console__fatal strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+}
+
+.ef-analytics-console__resource-state span,
+.ef-analytics-console__fatal span {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-sm);
+}
+
+.ef-analytics-console__resource-state[data-state="forbidden"],
+.ef-analytics-console__resource-state[data-state="failed"],
+.ef-analytics-console__fatal {
+  color: var(--ef-status-danger-foreground);
+  background: color-mix(in srgb, var(--ef-status-danger-background) 72%, transparent);
+}
+
+.ef-analytics-console__fatal {
+  min-height: auto;
+  place-content: start;
+  justify-items: start;
+  border: 1px solid color-mix(in srgb, var(--ef-status-danger-foreground) 22%, transparent);
+  border-radius: var(--ef-radius-2);
+  text-align: left;
+}
+
+@keyframes ef-analytics-console-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 980px) {
+  .ef-analytics-console__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .ef-analytics-console__command {
+    min-height: 154px;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 24px 20px;
+  }
+
+  .ef-analytics-console__heading h1 {
+    font-size: clamp(29px, 11vw, 42px);
+  }
+
+  .ef-analytics-console__reload {
+    width: 100%;
+  }
+
+  .ef-analytics-console__metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ef-analytics-console__metric {
+    min-height: 88px;
+  }
+
+  .ef-analytics-console__status-strip {
+    display: grid;
+  }
+
+  .ef-analytics-console__status-strip > span {
+    border-right: 0;
+    border-bottom: 1px solid var(--ef-border-default);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-analytics-console__command,
+  .ef-analytics-console__metrics,
+  .ef-analytics-console__status-strip,
+  .ef-analytics-console__signal {
+    border-width: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-analytics-console__reload,
+  .ef-analytics-console__reload:disabled svg {
+    animation: none;
+    transition: none;
+  }
+}
