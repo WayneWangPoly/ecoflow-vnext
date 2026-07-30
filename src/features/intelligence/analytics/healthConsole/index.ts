@@ -1,6 +1,10 @@
 export {
-  AnalyticsHealthConsole,
-  type AnalyticsHealthConsoleProps,
+  OperationalPulseReadinessWorkspace as AnalyticsHealthConsole,
+  type OperationalPulseReadinessWorkspaceProps as AnalyticsHealthConsoleProps,
+} from '../OperationalPulseReadinessWorkspace';
+export {
+  AnalyticsHealthConsole as AnalyticsHealthConsoleBase,
+  type AnalyticsHealthConsoleProps as AnalyticsHealthConsoleBaseProps,
 } from './AnalyticsHealthConsole';
 export {
   analyticsHealthReadout,
