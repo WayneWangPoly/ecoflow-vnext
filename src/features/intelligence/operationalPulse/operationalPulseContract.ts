@@ -125,6 +125,13 @@ function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function cleanCodeList(value: readonly string[] | null | undefined): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map(cleanText).filter(Boolean))].slice(0, 4);
@@ -241,9 +248,9 @@ export function normaliseOperationalPulseMetric(
 
   const base = metricBase(input, metricKeyCandidate, displayName, unitKind, issues);
   if (availability === 'READY') {
-    const numericValue = typeof input.value === 'number' ? input.value : Number(input.value);
+    const numericValue = finiteNumber(input.value);
     const displayValue = cleanText(input.displayValue);
-    if (!Number.isFinite(numericValue)) {
+    if (numericValue === null) {
       issues.push({
         code: 'READY_VALUE_INVALID',
         metricKey: metricKeyCandidate,
@@ -348,7 +355,7 @@ export function operationalPulseAvailabilityTone(
   availability: OperationalPulseAvailability,
 ): OperationalPulseTone {
   if (availability === 'READY') return 'success';
-  if (availability === 'SHADOW' || availability === 'REFRESHING') return 'information';
+  if (availability === 'SHADOW') return 'information';
   if (availability === 'BLOCKED' || availability === 'EMPTY') return 'warning';
   if (availability === 'FAILED') return 'danger';
   return 'neutral';
