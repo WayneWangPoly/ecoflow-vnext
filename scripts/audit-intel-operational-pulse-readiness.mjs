@@ -9,6 +9,7 @@ const workspace = read('src/features/intelligence/analytics/OperationalPulseRead
 const contract = read('src/features/intelligence/analytics/operationalPulseReadinessContract.ts');
 const css = read('src/features/intelligence/analytics/operationalPulseReadinessWorkspace.css');
 const barrel = read('src/features/intelligence/analytics/index.ts');
+const healthBarrel = read('src/features/intelligence/analytics/healthConsole/index.ts');
 const test = read('scripts/intel-operational-pulse-readiness-contract.test.mjs');
 const packageJson = JSON.parse(read('package.json'));
 
@@ -17,7 +18,7 @@ for (const marker of [
   'readMetricReadiness()',
   'OperationalPulseDeck',
   'readinessRowsToOperationalPulse',
-  'OperationalPulse readiness',
+  'Operational Pulse readiness',
   'GOVERNED OPERATING SIGNALS',
   'Refresh readiness',
 ]) {
@@ -76,7 +77,8 @@ for (const forbidden of ['!important', '@font-face', 'url(', '.dashboard-', '.or
   if (css.includes(forbidden)) throw new Error(`INTEL_FE_006B_STYLE_SCOPE_EXPANSION: ${forbidden}`);
 }
 
-if (!barrel.includes('OperationalPulseReadinessWorkspace as AnalyticsHealthConsole')) {
+if (!barrel.includes("export * from './healthConsole';")
+  || !healthBarrel.includes('OperationalPulseReadinessWorkspace as AnalyticsHealthConsole')) {
   throw new Error('INTEL_FE_006B_APP_ADAPTER_EXPORT_MISSING');
 }
 
