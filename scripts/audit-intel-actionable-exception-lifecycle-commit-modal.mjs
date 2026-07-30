@@ -19,14 +19,16 @@ const modal = read(modalPath);
 const presentation = read(presentationPath);
 const style = read(stylePath);
 const test = read(testPath);
-const dashboard = read('src/features/intelligence/dashboard/IntelligenceDashboard.tsx');
+const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const app = read('src/app/App.tsx');
 const index = read('src/features/intelligence/attention/index.ts');
+const designTokens = read('src/features/intelligence/designSystem/tokens.css');
 const packageJson = JSON.parse(read('package.json'));
 
 for (const marker of [
   'actionableExceptionLifecycleActionOptions',
   "if (!access || access.actionCapability !== 'AVAILABLE') return []",
+  "if (lifecycle && lifecycle.capabilities.action !== 'AVAILABLE') return []",
   "if (state === 'RESOLVED') return ['REOPEN', 'ADD_NOTE']",
   "if (state === 'SNOOZED')",
   "if (state === 'ACKNOWLEDGED')",
@@ -66,7 +68,9 @@ for (const marker of [
   'This does not change the Ordermentum order.',
   'globalThis.crypto?.randomUUID?.()',
   'setCommandId(createCommandId())',
-  'const nextResult = await onCommit({',
+  'nextResult = await onCommit({',
+  'catch (error: unknown)',
+  'nextResult = thrownCommitFailure(error)',
   "nextResult.state === 'conflict'",
   'onConflict();',
   'Maximum 2,000 characters',
@@ -114,12 +118,17 @@ for (const marker of [
   "if (!lifecycle && lifecycleResult.state === 'partial') return false",
   'lifecycleRepository.applyCommand(input)',
   'setReloadVersion((version) => version + 1)',
+  'setManageExceptionId(null)',
   'ExceptionLifecycleCommitModal',
   'LIFECYCLE READ ONLY',
   'Manage lifecycle for',
   'Lifecycle status, owner and audit history are governed separately.',
 ]) {
   if (!queue.includes(marker)) throw new Error(`INTEL_UI_003C_QUEUE_MARKER_MISSING: ${marker}`);
+}
+
+if ((queue.match(/lifecycleRepository\.applyCommand\(/g) ?? []).length !== 1) {
+  throw new Error('INTEL_UI_003C_QUEUE_COMMAND_CALL_COUNT_INVALID');
 }
 
 for (const forbidden of [
@@ -144,7 +153,7 @@ for (const forbidden of [
 for (const marker of [
   '.ef-lifecycle-commit-modal',
   'position: fixed',
-  'role',
+  'z-index: 80',
   '.ef-lifecycle-commit-modal__dialog',
   '.ef-lifecycle-commit-modal__textarea',
   '.ef-lifecycle-commit-modal__review',
@@ -156,9 +165,35 @@ for (const marker of [
   if (!style.includes(marker)) throw new Error(`INTEL_UI_003C_STYLE_MARKER_MISSING: ${marker}`);
 }
 
+for (const forbidden of [
+  '!important',
+  '@font-face',
+  'url(',
+  '.orders-',
+  '.inventory-',
+  '.delivery-',
+  '.warehouse-',
+  '.ops-control-',
+]) {
+  if (style.includes(forbidden)) throw new Error(`INTEL_UI_003C_STYLE_SCOPE_EXPANSION: ${forbidden}`);
+}
+
+const publishedTokens = new Set(
+  Array.from(designTokens.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
+);
+const localTokens = new Set(
+  Array.from(style.matchAll(/(--ef-[a-z0-9-]+)\s*:/gi), (match) => match[1]),
+);
+for (const reference of Array.from(style.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (match) => match[1])) {
+  if (!publishedTokens.has(reference) && !localTokens.has(reference)) {
+    throw new Error(`INTEL_UI_003C_UNPUBLISHED_DESIGN_TOKEN: ${reference}`);
+  }
+}
+
 for (const marker of [
   'Writer can start a lifecycle record only with server-authorised actions',
   'Viewer and unknown access never receive lifecycle commit actions',
+  'existing lifecycle row must independently authorise commands',
   'server command list remains an upper bound on UI actions',
   'resolved state offers only reopen and immutable note actions',
   'unknown lifecycle state fails closed',
