@@ -44,25 +44,30 @@ assert.ok(
   'Priority Work ranking order must be policy, assignment, then oldest detected time',
 );
 
+const functionStart = migration.indexOf(
+  'create or replace function analytics.get_priority_work_queue',
+);
+const functionEnd = migration.indexOf(
+  'revoke all on function analytics.get_priority_work_queue(integer)',
+);
+assert.ok(functionStart >= 0 && functionEnd > functionStart, 'Priority Work function boundary missing');
+const functionDefinition = migration.slice(functionStart, functionEnd);
+
 for (const forbidden of [
   /order by\s+[^;]*detected_at\s+desc/i,
-  /severity/i,
-  /due_at/i,
-  /sla/i,
-  /impact_value/i,
-  /impact_display_value/i,
-  /recommended_action/i,
-  /fact_[a-z_]+/i,
-  /metric_value/i,
-  /ecoflow_delivery_exceptions/i,
-  /data_quality_status/i,
-  /\m(insert|update|delete|merge|truncate|refresh)\M/i,
-  /execute\s+/i,
+  /\bseverity\b/i,
+  /\bdue_at\b/i,
+  /\bsla\b/i,
+  /\bimpact_value\b/i,
+  /\bimpact_display_value\b/i,
+  /\brecommended_action\b/i,
+  /\bfact_[a-z_]+\b/i,
+  /\bmetric_value\b/i,
+  /\becoflow_delivery_exceptions\b/i,
+  /\bdata_quality_status\b/i,
+  /\b(insert|update|delete|merge|truncate|refresh|execute)\b/i,
 ]) {
-  if (/insert|update|delete/.test(forbidden.source)) continue;
-  assert.ok(!forbidden.test(
-    migration.slice(migration.indexOf('create or replace function analytics.get_priority_work_queue')),
-  ), `Priority Work RPC scope expansion: ${forbidden}`);
+  assert.ok(!forbidden.test(functionDefinition), `Priority Work RPC scope expansion: ${forbidden}`);
 }
 
 assert.ok(
