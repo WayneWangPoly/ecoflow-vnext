@@ -101,6 +101,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f scripts/pick-task-claim-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/operational-state-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/order-fulfilment-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-read-model-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
       - name: Apply operational migrations in release order
         shell: bash
         run: |
