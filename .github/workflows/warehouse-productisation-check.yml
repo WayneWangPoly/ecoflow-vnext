@@ -253,11 +253,21 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260730190100_actionable_exception_idempotent_replay_snapshot.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply role-aware lifecycle capability migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260730190200_actionable_exception_role_aware_capability.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute actionable exception lifecycle replay tests
         shell: bash
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-lifecycle-replay-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute actionable exception role capability tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-role-capability-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
