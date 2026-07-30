@@ -9,7 +9,10 @@ import {
   type ActionableExceptionReadResult,
   type ActionableExceptionRecord,
 } from './actionableExceptionReadContract';
-import { buildAttentionQueue } from './attentionQueueContract';
+import {
+  buildAttentionQueue,
+  type AttentionQueue,
+} from './attentionQueueContract';
 import {
   actionableExceptionOrderReference,
   actionableExceptionSurfaceSummary,
@@ -30,6 +33,30 @@ import './actionableExceptionQueue.css';
 export type ActionableExceptionQueueProps = {
   repository?: ActionableExceptionRepository;
   onOpenOrders: () => void;
+};
+
+const EMPTY_ATTENTION_QUEUE: AttentionQueue = {
+  state: 'empty',
+  nowAt: null,
+  items: [],
+  activeItems: [],
+  closedItems: [],
+  otherItems: [],
+  summary: {
+    total: 0,
+    active: 0,
+    closed: 0,
+    other: 0,
+    breached: 0,
+    unassigned: 0,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    information: 0,
+    unknownSeverity: 0,
+  },
+  issues: [],
 };
 
 function identityFields(row: ActionableExceptionDisplayRow) {
@@ -75,7 +102,9 @@ export function ActionableExceptionQueue({
   const records = result?.ok ? result.data : [];
   const nowAt = useMemo(() => latestActionableExceptionReadAt(records), [records]);
   const queue = useMemo(
-    () => buildAttentionQueue(records.map((record) => record.input), nowAt ?? ''),
+    () => records.length
+      ? buildAttentionQueue(records.map((record) => record.input), nowAt ?? '')
+      : EMPTY_ATTENTION_QUEUE,
     [nowAt, records],
   );
   const orderedItems = useMemo(
@@ -127,15 +156,9 @@ export function ActionableExceptionQueue({
     });
   }
 
-  const panelTone = result && !result.ok
-    ? 'default'
-    : summary.unknownLifecycle || issueCount
-      ? 'raised'
-      : 'raised';
-
   return (
     <ControlPanel
-      tone={panelTone}
+      tone="raised"
       className="ef-actionable-exceptions"
       eyebrow="ATTENTION QUEUE"
       title="Current active exceptions"
