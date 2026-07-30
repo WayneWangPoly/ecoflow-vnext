@@ -145,7 +145,8 @@ jobs:
             supabase/migrations/20260729210000_return_inspection_facts.sql \
             supabase/migrations/20260729210100_return_inspection_source_drift_capture.sql \
             supabase/migrations/20260729220000_initial_kpi_projections_reconciliation.sql \
-            supabase/migrations/20260730103000_metric_readiness_read_boundary.sql
+            supabase/migrations/20260730103000_metric_readiness_read_boundary.sql \
+            supabase/migrations/20260730160000_actionable_exception_read_model.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then
@@ -235,6 +236,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/metric-readiness-rpc-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute actionable exception read model tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-read-model-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
