@@ -159,6 +159,7 @@ export function actionableExceptionLifecycleActionOptions(
   lifecycle: ActionableExceptionLifecycleRecord | null,
 ): ActionableExceptionLifecycleActionOption[] {
   if (!access || access.actionCapability !== 'AVAILABLE') return [];
+  if (lifecycle && lifecycle.capabilities.action !== 'AVAILABLE') return [];
   const permitted = new Set(access.commandActions);
   const state = lifecycle?.effectiveStatus ?? 'OPEN';
   const actions = stateActions(state, Boolean(lifecycle?.ownerTeam));
