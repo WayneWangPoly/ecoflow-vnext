@@ -1,9 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { register } from 'node:module';
+
+const aliasLoader = `
+import { pathToFileURL } from 'node:url';
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    return {
+      url: pathToFileURL(\`${process.cwd()}/src/\${specifier.slice(2)}\`).href,
+      shortCircuit: true,
+    };
+  }
+  return nextResolve(specifier, context);
+}
+`;
+register(`data:text/javascript,${encodeURIComponent(aliasLoader)}`, import.meta.url);
+
+const {
   buildCrossFilterDrillModel,
   buildCrossFilterDrillPath,
-} from '../src/features/intelligence/crossFilter/crossFilterDrillContract.ts';
+} = await import('../src/features/intelligence/crossFilter/crossFilterDrillContract.ts');
 
 function entity(kind, id, label, subtitle) {
   return { kind, id, label, subtitle };
