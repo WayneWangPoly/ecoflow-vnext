@@ -57,6 +57,28 @@ begin
 end;
 $preflight$;
 
+create or replace function analytics.ecoflow_can_read_actionable_exceptions()
+returns boolean
+language sql
+stable
+security definer
+set search_path=pg_catalog,public
+as $$
+  select exists(
+    select 1
+    from public.app_user_profiles p
+    where p.user_id=auth.uid()
+      and p.is_active=true
+      and p.team_status='ACTIVE'
+      and p.app_role in ('OWNER','ADMIN','ACCOUNT','VIEWER')
+  )
+$$;
+
+revoke all on function analytics.ecoflow_can_read_actionable_exceptions()
+  from public,anon,authenticated,service_role;
+grant execute on function analytics.ecoflow_can_read_actionable_exceptions()
+  to authenticated;
+
 create or replace function analytics.get_actionable_exception_queue(
   p_limit integer default 100
 )
@@ -107,11 +129,9 @@ security invoker
 set search_path=pg_catalog,analytics,public
 as $$
 declare
-  v_role text := public.ecoflow_active_app_role();
   v_limit integer := coalesce(p_limit,100);
 begin
-  if auth.uid() is null
-     or v_role not in ('OWNER','ADMIN','ACCOUNT','VIEWER') then
+  if not analytics.ecoflow_can_read_actionable_exceptions() then
     raise exception using errcode='42501',
       message='ACTIONABLE_EXCEPTION_DESKTOP_ROLE_REQUIRED';
   end if;
@@ -210,6 +230,8 @@ revoke all on function analytics.get_actionable_exception_queue(integer)
 grant execute on function analytics.get_actionable_exception_queue(integer)
   to authenticated;
 
+comment on function analytics.ecoflow_can_read_actionable_exceptions() is
+  'Active Owner/Admin/Account/Viewer gate for actionable exception reads. Returns eligibility only and exposes no operational rows.';
 comment on function analytics.get_actionable_exception_queue(integer) is
   'Bounded caller-rights read of current Ordermentum active exceptions for desktop roles. Current-active context only; no severity, SLA, ownership, impact, action, resolution or history claims and no operational writes.';
 
