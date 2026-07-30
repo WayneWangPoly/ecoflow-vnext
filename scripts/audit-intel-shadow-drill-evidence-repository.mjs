@@ -3,16 +3,18 @@ import fs from 'node:fs';
 
 const contractPath = 'src/features/intelligence/crossFilter/shadowDrillEvidenceContract.ts';
 const repositoryPath = 'src/data/repositories/shadowDrillEvidenceRepository.ts';
+const reviewPath = 'src/features/intelligence/crossFilter/ShadowDrillEvidenceReview.tsx';
 const indexPath = 'src/features/intelligence/crossFilter/index.ts';
 const testPath = 'scripts/intel-shadow-drill-evidence-repository-contract.test.mjs';
 const packagePath = 'package.json';
 
-for (const file of [contractPath, repositoryPath, indexPath, testPath, packagePath]) {
+for (const file of [contractPath, repositoryPath, reviewPath, indexPath, testPath, packagePath]) {
   assert.ok(fs.existsSync(file), `missing Shadow drill evidence repository file: ${file}`);
 }
 
 const contract = fs.readFileSync(contractPath, 'utf8');
 const repository = fs.readFileSync(repositoryPath, 'utf8');
+const review = fs.readFileSync(reviewPath, 'utf8');
 const index = fs.readFileSync(indexPath, 'utf8');
 const tests = fs.readFileSync(testPath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -148,6 +150,14 @@ for (const testName of [
   assert.ok(tests.includes(testName), `Shadow drill evidence contract test missing: ${testName}`);
 }
 
+for (const marker of [
+  'shadowDrillEvidenceRepository',
+  'readShadowDrillEvidence(request)',
+  'shadowDrillEvidenceFailure(error)',
+]) {
+  assert.ok(review.includes(marker), `bounded Shadow review consumer missing: ${marker}`);
+}
+
 for (const forbidden of [
   'shadowDrillEvidenceRepository',
   'readShadowDrillEvidence',
@@ -161,9 +171,15 @@ for (const forbidden of [
       && !surface.includes(forbidden)
       && !workspace.includes(forbidden)
       && !app.includes(forbidden),
-    `premature Shadow drill evidence page adoption: ${forbidden}`,
+    `Shadow evidence repository leaked outside the bounded review component: ${forbidden}`,
   );
 }
+
+assert.ok(
+  workspace.includes('ShadowDrillEvidenceReview')
+    && !workspace.includes('shadowDrillEvidenceRepository'),
+  'Analytics workspace must adopt only the public Shadow review component',
+);
 
 const frontendAudit = packageJson.scripts?.['audit:intel-frontend'];
 assert.equal(typeof frontendAudit, 'string', 'audit:intel-frontend command missing');
