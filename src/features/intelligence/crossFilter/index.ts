@@ -65,3 +65,26 @@ export {
   MetricDrillAccessStatus,
   type MetricDrillAccessStatusProps,
 } from './MetricDrillAccessStatus';
+
+export {
+  normaliseShadowDrillEvidenceRequest,
+  normaliseShadowDrillEvidenceRows,
+  shadowDrillEvidenceDimensions,
+  shadowDrillEvidenceFailure,
+  shadowDrillEvidenceInvalid,
+  shadowDrillEvidenceRpcName,
+  shadowDrillEvidenceSuccess,
+  type NormalisedShadowDrillEvidence,
+  type ShadowDrillEvidenceDimension,
+  type ShadowDrillEvidenceEntity,
+  type ShadowDrillEvidenceFailure,
+  type ShadowDrillEvidenceIssue,
+  type ShadowDrillEvidenceIssueCode,
+  type ShadowDrillEvidenceReadState,
+  type ShadowDrillEvidenceRecord,
+  type ShadowDrillEvidenceRequest,
+  type ShadowDrillEvidenceRequestInput,
+  type ShadowDrillEvidenceResult,
+  type ShadowDrillEvidenceState,
+  type ShadowDrillEvidenceSuccess,
+} from './shadowDrillEvidenceContract';
