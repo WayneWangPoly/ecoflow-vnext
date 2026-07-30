@@ -33,3 +33,20 @@ export {
   CrossFilterDrillSurface,
   type CrossFilterDrillSurfaceProps,
 } from './CrossFilterDrillSurface';
+
+export {
+  metricDrillAccessFailure,
+  metricDrillAccessRpcName,
+  metricDrillAccessSuccess,
+  normaliseMetricDrillAccessRows,
+  type MetricDrillAccessCapability,
+  type MetricDrillAccessFailure,
+  type MetricDrillAccessIssue,
+  type MetricDrillAccessIssueCode,
+  type MetricDrillAccessReadState,
+  type MetricDrillAccessRecord,
+  type MetricDrillAccessResult,
+  type MetricDrillAccessSuccess,
+  type MetricDrillProjectionStatus,
+  type NormalisedMetricDrillAccess,
+} from './metricDrillAccessContract';
