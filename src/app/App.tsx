@@ -459,7 +459,7 @@ function OrderListItem({ order, selectable, onToggle }: { order: ImportedOrder; 
       <div className="order-main-copy">
         <div className="order-title-line"><strong>{order.orderNo}</strong><StatusPill status={order.status} /><Pill tone={syncTone(order.syncStatus)}>{syncStatusLabel(order.syncStatus)}</Pill>{order.releaseGateStatus ? <Pill tone={releaseGateTone(order.releaseGateStatus)}>{releaseGateLabel(order.releaseGateStatus)}</Pill> : null}</div>
         <span>{order.store} · {order.suburb} · {order.priceTier}</span>
-        <small>{order.lines.map((line) => `${line.sku} × ${line.qty} ${line.unit}`).join(' · ')}</small>
+        <small>{order.lines.map((line) => `${line.sku} 脳 ${line.qty} ${line.unit}`).join(' · ')}</small>
         {order.releaseBlockers ? <small className="release-blockers">{order.releaseBlockers}</small> : null}
       </div>
       <div className="order-side-copy">
