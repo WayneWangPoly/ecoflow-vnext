@@ -1,11 +1,11 @@
-import type { AnalyticsMetricReadinessRow } from './metricReadinessContract';
+import type { AnalyticsMetricReadinessRow } from './metricReadinessContract.ts';
 import {
   buildOperationalPulseDeck,
   operationalPulseMetricKeys,
   type OperationalPulseAvailability,
   type OperationalPulseDeck,
   type OperationalPulseMetricInput,
-} from '../operationalPulse/operationalPulseContract';
+} from '../operationalPulse/operationalPulseContract.ts';
 
 export type OperationalPulseReadinessSummary = {
   total: number;
