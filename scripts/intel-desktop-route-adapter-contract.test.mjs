@@ -22,6 +22,8 @@ test('canonical workspace and entity routes select the matching legacy panel', (
   assert.equal(deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/orders/ORD-1', role: 'owner', legacyTab: 'dashboard' }).tab, 'orders');
   assert.equal(deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/inventory/physical/ITEM-1', role: 'viewer', legacyTab: 'dashboard' }).tab, 'inventory');
   assert.equal(deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/delivery/runs/RUN-A', role: 'account', legacyTab: 'dashboard' }).tab, 'delivery');
+  assert.equal(deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/reconciliation', role: 'account', legacyTab: 'dashboard' }).tab, 'reconciliation');
+  assert.equal(deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/analytics', role: 'viewer', legacyTab: 'dashboard' }).tab, 'analytics');
 });
 
 test('legacy root requests a replace-only canonical redirect', () => {
@@ -78,5 +80,7 @@ test('reserved routes without a migrated legacy panel show a migration boundary'
 test('sidebar navigation writes canonical paths and preserves current query context', () => {
   assert.equal(desktopTabNavigationTarget('orders', '?date=2026-07-29&filter=status%3AREADY'), '/orders?date=2026-07-29&filter=status%3AREADY');
   assert.equal(desktopTabNavigationTarget('inventory', 'date=2026-07-29'), '/inventory?date=2026-07-29');
+  assert.equal(desktopTabNavigationTarget('reconciliation', ''), '/reconciliation');
+  assert.equal(desktopTabNavigationTarget('analytics', ''), '/analytics');
   assert.equal(desktopTabNavigationTarget('dashboard', ''), '/control-room');
 });
