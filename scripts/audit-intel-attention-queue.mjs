@@ -66,6 +66,8 @@ for (const forbidden of [
   'totalImpact',
   'sumImpact',
   'averageImpact',
+  '.css',
+  '.tsx',
 ]) {
   if (contract.includes(forbidden)) throw new Error(`INTEL_UI_003A_DATA_OR_RUNTIME_COUPLING: ${forbidden}`);
 }
@@ -123,17 +125,30 @@ for (const testName of [
   if (!tests.includes(testName)) throw new Error(`INTEL_UI_003A_TEST_MISSING: ${testName}`);
 }
 
-if (dashboard.includes("intelligence/attention") || dashboard.includes('buildAttentionQueue')) {
-  throw new Error('INTEL_UI_003A_DASHBOARD_ADOPTION_NOT_ALLOWED');
-}
-if (app.includes("intelligence/attention") || app.includes('buildAttentionQueue')) {
-  throw new Error('INTEL_UI_003A_APP_ADOPTION_NOT_ALLOWED');
+// Later packages may adopt a bounded public Attention component on a page. The
+// domain contract itself must remain page-agnostic, and pages must not call the
+// queue builder, normaliser or repository directly.
+for (const forbidden of [
+  'buildAttentionQueue',
+  'normaliseAttentionItem',
+  'attentionQueueContract',
+  'actionableExceptionRepository',
+  'readActionableExceptions',
+]) {
+  if (dashboard.includes(forbidden)) {
+    throw new Error(`INTEL_UI_003A_DASHBOARD_DIRECT_CONTRACT_COUPLING: ${forbidden}`);
+  }
 }
 
-const attentionDirectory = path.join(root, 'src/features/intelligence/attention');
-for (const entry of fs.readdirSync(attentionDirectory)) {
-  if (entry.endsWith('.css') || entry.endsWith('.tsx')) {
-    throw new Error(`INTEL_UI_003A_PRESENTATION_FILE_NOT_ALLOWED: ${entry}`);
+for (const forbidden of [
+  "intelligence/attention",
+  'buildAttentionQueue',
+  'normaliseAttentionItem',
+  'actionableExceptionRepository',
+  'readActionableExceptions',
+]) {
+  if (app.includes(forbidden)) {
+    throw new Error(`INTEL_UI_003A_APP_ADOPTION_NOT_ALLOWED: ${forbidden}`);
   }
 }
 

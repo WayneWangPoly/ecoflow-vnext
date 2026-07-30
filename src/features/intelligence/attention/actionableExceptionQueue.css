@@ -1,0 +1,248 @@
+.ef-actionable-exceptions {
+  margin: var(--ef-space-4) 0;
+}
+
+.ef-actionable-exceptions__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--ef-space-2);
+}
+
+.ef-actionable-exceptions__loading {
+  display: grid;
+  gap: var(--ef-space-3);
+  padding: var(--ef-space-4);
+}
+
+.ef-actionable-exceptions__state {
+  min-height: 112px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--ef-space-2);
+  padding: var(--ef-space-6);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-subtle);
+  text-align: center;
+}
+
+.ef-actionable-exceptions__state strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+  font-weight: var(--ef-weight-bold);
+}
+
+.ef-actionable-exceptions__state span {
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.ef-actionable-exceptions__state[data-state="forbidden"],
+.ef-actionable-exceptions__state[data-state="failed"] {
+  border-color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-actionable-exceptions__state[data-state="invalid"],
+.ef-actionable-exceptions__state[data-state="unavailable"] {
+  border-color: var(--ef-status-warning-foreground);
+  background: var(--ef-status-warning-background);
+}
+
+.ef-actionable-exceptions__table-shell {
+  overflow: auto;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-panel);
+}
+
+.ef-actionable-exceptions__table {
+  width: 100%;
+  min-width: 1160px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.ef-actionable-exceptions__table th,
+.ef-actionable-exceptions__table td {
+  border-bottom: 1px solid var(--ef-border-default);
+  padding: var(--ef-space-3);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ef-actionable-exceptions__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ef-surface-subtle);
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ef-actionable-exceptions__table th:nth-child(1) { width: 25%; }
+.ef-actionable-exceptions__table th:nth-child(2) { width: 13%; }
+.ef-actionable-exceptions__table th:nth-child(3) { width: 13%; }
+.ef-actionable-exceptions__table th:nth-child(4) { width: 8%; }
+.ef-actionable-exceptions__table th:nth-child(5) { width: 8%; }
+.ef-actionable-exceptions__table th:nth-child(6) { width: 8%; }
+.ef-actionable-exceptions__table th:nth-child(7) { width: 8%; }
+.ef-actionable-exceptions__table th:nth-child(8) { width: 11%; }
+.ef-actionable-exceptions__table th:nth-child(9) { width: 6%; }
+
+.ef-actionable-exceptions__table tbody tr {
+  background: var(--ef-surface-panel);
+  transition: background var(--ef-motion-fast) ease;
+}
+
+.ef-actionable-exceptions__table tbody tr:hover {
+  background: var(--ef-surface-subtle);
+}
+
+.ef-actionable-exceptions__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ef-actionable-exceptions__table tbody tr td:first-child {
+  box-shadow: inset 3px 0 var(--ef-status-information-foreground);
+}
+
+.ef-actionable-exceptions__table tbody tr[data-tone="warning"] td:first-child {
+  box-shadow: inset 3px 0 var(--ef-status-warning-foreground);
+}
+
+.ef-actionable-exceptions__table td > strong,
+.ef-actionable-exceptions__table td > span {
+  display: block;
+}
+
+.ef-actionable-exceptions__table td > strong {
+  font-weight: var(--ef-weight-semibold);
+}
+
+.ef-actionable-exceptions__table td > span {
+  margin-top: 2px;
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-actionable-exceptions__table code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-status-neutral-background);
+  color: var(--ef-status-neutral-foreground);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--ef-type-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-actionable-exceptions__primary {
+  min-width: 0;
+  display: grid;
+  gap: var(--ef-space-1);
+}
+
+.ef-actionable-exceptions__primary strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-actionable-exceptions__primary span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-xs);
+  line-height: var(--ef-leading-standard);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ef-actionable-exceptions__capability {
+  display: flex;
+  align-items: center;
+  gap: var(--ef-space-2);
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-xs);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-actionable-exceptions__capability svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--ef-status-warning-foreground);
+}
+
+.ef-actionable-exceptions__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 920px) {
+  .ef-actionable-exceptions__actions {
+    justify-content: flex-start;
+  }
+
+  .ef-actionable-exceptions__table {
+    min-width: 1040px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ef-actionable-exceptions {
+    margin: var(--ef-space-3) 0;
+  }
+
+  .ef-actionable-exceptions__actions {
+    width: 100%;
+  }
+
+  .ef-actionable-exceptions__actions > * {
+    flex: 1 1 auto;
+  }
+
+  .ef-actionable-exceptions__capability {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-actionable-exceptions__table-shell,
+  .ef-actionable-exceptions__state,
+  .ef-actionable-exceptions__table th,
+  .ef-actionable-exceptions__table td {
+    border-color: var(--ef-border-emphasis);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-actionable-exceptions__table tbody tr {
+    transition: none;
+  }
+}

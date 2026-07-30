@@ -60,3 +60,24 @@ export {
   type ActionableExceptionSourceIdentity,
   type NormalisedActionableExceptionRows,
 } from './actionableExceptionReadContract';
+
+export {
+  actionableExceptionCapabilityLabel,
+  actionableExceptionDefaultDisplayLimit,
+  actionableExceptionMaximumDisplayLimit,
+  actionableExceptionOrderReference,
+  actionableExceptionSurfaceSummary,
+  actionableExceptionSurfaceTone,
+  buildActionableExceptionDisplayRows,
+  formatActionableExceptionAge,
+  formatActionableExceptionMoment,
+  latestActionableExceptionReadAt,
+  type ActionableExceptionDisplayRow,
+  type ActionableExceptionSurfaceSummary,
+  type ActionableExceptionSurfaceTone,
+} from './actionableExceptionPresentationContract';
+
+export {
+  ActionableExceptionQueue,
+  type ActionableExceptionQueueProps,
+} from './ActionableExceptionQueue';

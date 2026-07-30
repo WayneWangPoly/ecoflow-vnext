@@ -28,6 +28,7 @@ import {
   ControlStatus,
 } from '@/features/intelligence/designSystem/primitives';
 import { useOverlayManager } from '@/features/intelligence/overlays';
+import { ActionableExceptionQueue } from '@/features/intelligence/attention';
 import { supabase } from '@/lib/supabaseClient';
 import './fieldReadinessDashboard.css';
 import './dashboardControlRoom.css';
@@ -384,11 +385,14 @@ export function DashboardPage({
         </article>
       </section>
 
+      <ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />
+
       <section className="ops-control-grid">
         <ControlPanel
           tone="raised"
           className="ops-control-panel ops-control-attention"
-          title="Needs attention"
+          eyebrow="Needs attention"
+          title="Operational queues"
           actions={(
             <ControlStatus
               tone={decisionCount + podMissing.length ? 'danger' : 'success'}

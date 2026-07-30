@@ -58,6 +58,9 @@ for (const forbidden of [
   'MAPPING_EXCEPTION',
   'PAYMENT_REVIEW',
   'STOCK_BLOCKED',
+  'react',
+  '.tsx',
+  '.css',
 ]) {
   if (contract.includes(forbidden)) throw new Error(`INTEL_FE_007A_GUESS_OR_AGGREGATION_PATTERN: ${forbidden}`);
 }
@@ -105,6 +108,9 @@ for (const forbidden of [
   'MutationObserver',
   'CustomEvent(',
   'dispatchEvent(',
+  'react',
+  '.tsx',
+  '.css',
 ]) {
   if (repository.includes(forbidden)) throw new Error(`INTEL_FE_007A_REPOSITORY_SCOPE_EXPANSION: ${forbidden}`);
 }
@@ -134,20 +140,22 @@ for (const testName of [
   if (!tests.includes(testName)) throw new Error(`INTEL_FE_007A_TEST_MISSING: ${testName}`);
 }
 
-for (const pageSource of [dashboard, app]) {
-  if (
-    pageSource.includes('actionableExceptionRepository')
-    || pageSource.includes('readActionableExceptions')
-    || pageSource.includes('actionableExceptionReadContract')
-  ) {
-    throw new Error('INTEL_FE_007A_PAGE_ADOPTION_NOT_ALLOWED');
-  }
-}
-
-const attentionDirectory = path.join(root, 'src/features/intelligence/attention');
-for (const entry of fs.readdirSync(attentionDirectory)) {
-  if (entry.endsWith('.css') || entry.endsWith('.tsx')) {
-    throw new Error(`INTEL_FE_007A_PRESENTATION_FILE_NOT_ALLOWED: ${entry}`);
+// Later packages may render a bounded public component that internally owns the
+// repository. Pages must never import or call the repository/read contract.
+for (const [surfaceName, pageSource] of [
+  ['Dashboard', dashboard],
+  ['App', app],
+]) {
+  for (const forbidden of [
+    'actionableExceptionRepository',
+    'readActionableExceptions',
+    'actionableExceptionReadContract',
+    'normaliseActionableExceptionRows',
+    'normaliseActionableExceptionRequest',
+  ]) {
+    if (pageSource.includes(forbidden)) {
+      throw new Error(`INTEL_FE_007A_${surfaceName.toUpperCase()}_DIRECT_REPOSITORY_COUPLING: ${forbidden}`);
+    }
   }
 }
 
