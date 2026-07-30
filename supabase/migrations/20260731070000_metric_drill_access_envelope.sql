@@ -61,7 +61,7 @@ begin
       and p.team_status='ACTIVE';
   end if;
 
-  if v_user is null or v_role not in ('OWNER','ADMIN') then
+  if v_user is null or v_role is null or v_role not in ('OWNER','ADMIN') then
     raise exception using errcode='42501',
       message='METRIC_DRILL_ACCESS_OWNER_OR_ADMIN_REQUIRED';
   end if;
