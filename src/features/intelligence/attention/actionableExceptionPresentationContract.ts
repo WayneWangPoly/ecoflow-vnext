@@ -4,6 +4,9 @@ import type {
   ActionableExceptionRecord,
 } from './actionableExceptionReadContract';
 
+export const actionableExceptionDefaultDisplayLimit = 12;
+export const actionableExceptionMaximumDisplayLimit = 50;
+
 export type ActionableExceptionSurfaceTone = 'neutral' | 'information' | 'warning';
 
 export type ActionableExceptionDisplayRow = {
@@ -96,9 +99,11 @@ export function actionableExceptionSurfaceTone(
 export function buildActionableExceptionDisplayRows(
   records: readonly ActionableExceptionRecord[],
   orderedItems: readonly AttentionQueueItem[],
-  limit = 12,
+  limit = actionableExceptionDefaultDisplayLimit,
 ): readonly ActionableExceptionDisplayRow[] {
-  const boundedLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 50) : 12;
+  const boundedLimit = Number.isInteger(limit) && limit > 0
+    ? Math.min(limit, actionableExceptionMaximumDisplayLimit)
+    : actionableExceptionDefaultDisplayLimit;
   const byId = new Map(records.map((record) => [record.input.id, record] as const));
   const rows: ActionableExceptionDisplayRow[] = [];
 
