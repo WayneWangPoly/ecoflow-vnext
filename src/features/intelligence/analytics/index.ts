@@ -39,5 +39,6 @@ export {
   type AnalyticsShadowRequest,
   type NormalisedAnalyticsShadowRequest,
 } from './analyticsRepositoryContract';
+export * from './metricReadinessContract';
 export * from './primitives';
 export * from './healthConsole';
