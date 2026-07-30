@@ -36,6 +36,12 @@ function lifecycle(overrides = {}) {
     lifecycleStatus: 'OPEN',
     ownerTeam: null,
     snoozeExpired: false,
+    capabilities: {
+      lifecycle: 'AVAILABLE',
+      ownership: 'AVAILABLE',
+      action: 'AVAILABLE',
+      history: 'AVAILABLE',
+    },
     ...overrides,
   };
 }
@@ -64,6 +70,25 @@ test('Viewer and unknown access never receive lifecycle commit actions', () => {
     actionCapability: 'READ_ONLY',
     commandActions: [],
   })), 'LIFECYCLE READ ONLY');
+});
+
+test('existing lifecycle row must independently authorise commands', () => {
+  assert.deepEqual(actionableExceptionLifecycleActionOptions(access(), lifecycle({
+    capabilities: {
+      lifecycle: 'AVAILABLE',
+      ownership: 'AVAILABLE',
+      action: 'READ_ONLY',
+      history: 'AVAILABLE',
+    },
+  })), []);
+  assert.deepEqual(actionableExceptionLifecycleActionOptions(access(), lifecycle({
+    capabilities: {
+      lifecycle: 'AVAILABLE',
+      ownership: 'AVAILABLE',
+      action: 'UNKNOWN',
+      history: 'AVAILABLE',
+    },
+  })), []);
 });
 
 test('server command list remains an upper bound on UI actions', () => {
