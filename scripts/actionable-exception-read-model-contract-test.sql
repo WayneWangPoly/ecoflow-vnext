@@ -36,7 +36,51 @@ declare
   v_definition text;
   v_result text;
   v_security_definer boolean;
+  v_gate_definition text;
+  v_gate_security_definer boolean;
 begin
+  if to_regprocedure('analytics.ecoflow_can_read_actionable_exceptions()') is null then
+    raise exception 'actionable exception reader gate missing';
+  end if;
+
+  if has_function_privilege(
+       'anon','analytics.ecoflow_can_read_actionable_exceptions()','EXECUTE'
+     )
+     or has_function_privilege(
+       'service_role','analytics.ecoflow_can_read_actionable_exceptions()','EXECUTE'
+     )
+     or not has_function_privilege(
+       'authenticated','analytics.ecoflow_can_read_actionable_exceptions()','EXECUTE'
+     ) then
+    raise exception 'actionable exception reader gate ACL is incorrect';
+  end if;
+
+  select pg_get_functiondef('analytics.ecoflow_can_read_actionable_exceptions()'::regprocedure),
+         p.prosecdef
+  into v_gate_definition,v_gate_security_definer
+  from pg_catalog.pg_proc p
+  where p.oid='analytics.ecoflow_can_read_actionable_exceptions()'::regprocedure;
+
+  if not v_gate_security_definer then
+    raise exception 'actionable exception reader gate must be security definer';
+  end if;
+
+  if position('public.app_user_profiles' in v_gate_definition)=0
+     or position('p.is_active = true' in v_gate_definition)=0
+     or position('p.team_status = ''ACTIVE''' in v_gate_definition)=0
+     or position('OWNER' in v_gate_definition)=0
+     or position('ADMIN' in v_gate_definition)=0
+     or position('ACCOUNT' in v_gate_definition)=0
+     or position('VIEWER' in v_gate_definition)=0 then
+    raise exception 'actionable exception reader gate profile boundary is incomplete';
+  end if;
+
+  if v_gate_definition ~* 'v_ecoflow_ordermentum_ui_active_exceptions'
+     or v_gate_definition ~* '\m(insert|update|delete|merge|truncate|refresh)\M'
+     or v_gate_definition ~* '\mexecute\M' then
+    raise exception 'actionable exception reader gate exceeds eligibility scope';
+  end if;
+
   if to_regprocedure('analytics.get_actionable_exception_queue(integer)') is null then
     raise exception 'actionable exception read RPC missing';
   end if;
@@ -64,10 +108,11 @@ begin
     raise exception 'actionable exception RPC must preserve caller rights';
   end if;
 
-  if position('public.v_ecoflow_ordermentum_ui_active_exceptions' in v_definition)=0
+  if position('analytics.ecoflow_can_read_actionable_exceptions()' in v_definition)=0
+     or position('public.v_ecoflow_ordermentum_ui_active_exceptions' in v_definition)=0
      or position('CURRENT_ACTIVE_ONLY' in v_definition)=0
      or position('UNAVAILABLE' in v_definition)=0 then
-    raise exception 'actionable exception source or capability boundary missing';
+    raise exception 'actionable exception source, reader or capability boundary missing';
   end if;
 
   if v_definition ~* '\m(insert|update|delete|merge|truncate|refresh)\M'
