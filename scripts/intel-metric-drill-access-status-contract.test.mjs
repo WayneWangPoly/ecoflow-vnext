@@ -84,5 +84,8 @@ test('dimension and reason lists preserve exact server order without invention',
 test('Adelaide timestamp formatting rejects invalid or missing timestamps', () => {
   assert.equal(formatMetricDrillAccessMoment(null), '—');
   assert.equal(formatMetricDrillAccessMoment('not-a-date'), '—');
-  assert.match(formatMetricDrillAccessMoment('2026-07-31T00:05:00Z'), /31 Jul 2026/);
+  assert.match(
+    formatMetricDrillAccessMoment('2026-07-31T00:05:00Z'),
+    /31 (?:Jul|July) 2026/,
+  );
 });
