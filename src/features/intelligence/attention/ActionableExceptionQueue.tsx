@@ -202,9 +202,9 @@ export function ActionableExceptionQueue({
     >
       {loading && !result ? (
         <div className="ef-actionable-exceptions__loading" aria-label="Loading current active exceptions">
-          <ControlSkeleton shape="line" width="100%" />
-          <ControlSkeleton shape="line" width="100%" />
-          <ControlSkeleton shape="line" width="100%" />
+          <ControlSkeleton shape="text" width="100%" />
+          <ControlSkeleton shape="text" width="100%" />
+          <ControlSkeleton shape="text" width="100%" />
         </div>
       ) : result && !result.ok ? (
         <div className="ef-actionable-exceptions__state" data-state={result.state} role="status">
