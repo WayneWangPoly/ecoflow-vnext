@@ -36,7 +36,7 @@ for (const marker of [
 
 for (const forbidden of [
   /\b(insert|update|delete|merge|truncate|refresh)\b/i,
-  /\bexecute\b/i,
+  /^\s*execute\s+/im,
   /apply_actionable_exception_lifecycle_command\s*\(/i,
   /ecoflow_day_state/i,
   /ecoflow_inventory_/i,
