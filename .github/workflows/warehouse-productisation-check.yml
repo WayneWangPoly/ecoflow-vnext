@@ -288,6 +288,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/metric-drill-access-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply initial KPI shadow drill evidence migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731083000_initial_kpi_shadow_drill_evidence.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute initial KPI shadow drill evidence tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/initial-kpi-shadow-drill-evidence-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute unknown barcode quarantine tests
         shell: bash
         run: |
