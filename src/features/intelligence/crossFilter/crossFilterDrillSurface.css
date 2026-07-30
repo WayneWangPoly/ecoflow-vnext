@@ -1,0 +1,197 @@
+.ef-cross-filter-drill {
+  min-width: 0;
+}
+
+.ef-cross-filter-drill__workspace {
+  display: grid;
+  gap: var(--ef-space-4);
+}
+
+.ef-cross-filter-drill__selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ef-space-3);
+  padding: var(--ef-space-3) var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-left: 3px solid var(--ef-status-information-foreground);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-subtle);
+}
+
+.ef-cross-filter-drill__selection > div {
+  min-width: 0;
+  display: grid;
+  gap: var(--ef-space-1);
+}
+
+.ef-cross-filter-drill__selection span {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ef-cross-filter-drill__selection strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-cross-filter-drill__entity-list {
+  display: grid;
+  gap: var(--ef-space-2);
+}
+
+.ef-cross-filter-drill__entity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ef-space-4);
+  padding: var(--ef-space-3) var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-panel);
+}
+
+.ef-cross-filter-drill__entity-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ef-cross-filter-drill__entity-copy > span {
+  color: var(--ef-status-information-foreground);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ef-cross-filter-drill__entity-copy > strong {
+  overflow: hidden;
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-cross-filter-drill__entity-copy > small {
+  overflow: hidden;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ef-cross-filter-drill__entity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ef-space-2);
+}
+
+.ef-cross-filter-drill__state {
+  min-height: 144px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--ef-space-2);
+  padding: var(--ef-space-6);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-subtle);
+  text-align: center;
+}
+
+.ef-cross-filter-drill__state > svg {
+  width: 24px;
+  height: 24px;
+  color: var(--ef-status-information-foreground);
+}
+
+.ef-cross-filter-drill__state > strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+}
+
+.ef-cross-filter-drill__state > span {
+  max-width: 62ch;
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-sm);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-cross-filter-drill__state[data-state="blocked"],
+.ef-cross-filter-drill__state[data-state="partial"] {
+  border-color: var(--ef-status-warning-foreground);
+  background: var(--ef-status-warning-background);
+}
+
+.ef-cross-filter-drill__state[data-state="blocked"] > svg,
+.ef-cross-filter-drill__state[data-state="partial"] > svg {
+  color: var(--ef-status-warning-foreground);
+}
+
+.ef-cross-filter-drill__state[data-state="invalid"] {
+  border-color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-cross-filter-drill__state[data-state="invalid"] > svg {
+  color: var(--ef-status-danger-foreground);
+}
+
+.ef-cross-filter-drill__boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ef-space-2);
+  color: var(--ef-text-secondary);
+  font-size: var(--ef-type-xs);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-cross-filter-drill__boundary svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--ef-status-warning-foreground);
+}
+
+@media (max-width: 760px) {
+  .ef-cross-filter-drill__entity {
+    grid-template-columns: 1fr;
+  }
+
+  .ef-cross-filter-drill__entity-actions {
+    justify-content: stretch;
+  }
+
+  .ef-cross-filter-drill__entity-actions > * {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .ef-cross-filter-drill__selection {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-cross-filter-drill__selection,
+  .ef-cross-filter-drill__entity,
+  .ef-cross-filter-drill__state {
+    border-color: var(--ef-border-emphasis);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-cross-filter-drill * {
+    scroll-behavior: auto;
+  }
+}
