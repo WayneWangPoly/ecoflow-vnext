@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   actionableExceptionCapabilityLabel,
+  actionableExceptionDefaultDisplayLimit,
+  actionableExceptionMaximumDisplayLimit,
   actionableExceptionOrderReference,
   actionableExceptionSurfaceSummary,
   actionableExceptionSurfaceTone,
@@ -98,6 +100,18 @@ test('Adelaide moment formatting rejects invalid timestamps', () => {
 test('unavailable capability labels remain explicit', () => {
   assert.equal(actionableExceptionCapabilityLabel('UNAVAILABLE'), 'Unavailable');
   assert.equal(actionableExceptionCapabilityLabel('UNKNOWN'), 'Unknown');
+});
+
+test('display bounds expose twelve default and fifty maximum records', () => {
+  assert.equal(actionableExceptionDefaultDisplayLimit, 12);
+  assert.equal(actionableExceptionMaximumDisplayLimit, 50);
+  const records = Array.from({ length: 60 }, (_, index) => record({
+    input: { ...record().input, id: `exception-${index}` },
+  }));
+  const items = Array.from({ length: 60 }, (_, index) => queueItem(`exception-${index}`));
+  assert.equal(buildActionableExceptionDisplayRows(records, items).length, 12);
+  assert.equal(buildActionableExceptionDisplayRows(records, items, 999).length, 50);
+  assert.equal(buildActionableExceptionDisplayRows(records, items, 0).length, 12);
 });
 
 test('display rows preserve queue order and enforce a bounded limit', () => {
