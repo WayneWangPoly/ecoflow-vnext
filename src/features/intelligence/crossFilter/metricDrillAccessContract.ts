@@ -141,20 +141,23 @@ function stringList(
   }
   const output: string[] = [];
   const seen = new Set<string>();
+  let valid = true;
   value.forEach((item) => {
     const candidate = text(item);
     if (!candidate) {
       issues.push({ code: 'INVALID_STRING_LIST', metricKey, field });
+      valid = false;
       return;
     }
     if (seen.has(candidate)) {
       issues.push({ code: 'DUPLICATE_STRING_VALUE', metricKey, field, value: candidate });
+      valid = false;
       return;
     }
     seen.add(candidate);
     output.push(candidate);
   });
-  return output;
+  return valid ? output : null;
 }
 
 function projectionStatus(
@@ -292,7 +295,9 @@ export function normaliseMetricDrillAccessRows(input: unknown): NormalisedMetric
         && safeAuthorised.length > 0
         && safeReasons.length === 0
         && declared !== null
-        && authorised !== null;
+        && authorised !== null
+        && blockerCodes !== null
+        && drillReasonCodes !== null;
       if (!invariantHolds) {
         issues.push({ code: 'AVAILABLE_INVARIANT_MISMATCH', metricKey });
         capability = 'UNKNOWN';
