@@ -23,6 +23,7 @@ for (const marker of [
   'p.user_id=v_user',
   'p.is_active=true',
   "p.team_status='ACTIVE'",
+  'v_role is null',
   "v_role not in ('OWNER','ADMIN')",
   "message='METRIC_DRILL_ACCESS_OWNER_OR_ADMIN_REQUIRED'",
   'analytics.metric_projection_readiness r',
