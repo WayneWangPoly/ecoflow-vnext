@@ -35,6 +35,7 @@ test('canonical route registry covers the ADR-0008 route families', () => {
     '/delivery/runs/:runCode',
     '/returns',
     '/exceptions',
+    '/reconciliation',
     '/analytics',
     '/settings',
   ]) {
@@ -52,7 +53,16 @@ test('legacy root and tabs map to canonical paths without text lookup', () => {
     },
   });
   assert.equal(pathForLegacyDesktopTab('inventory'), '/inventory');
-  assert.equal(pathForLegacyDesktopTab('reconciliation'), '/analytics');
+  assert.equal(pathForLegacyDesktopTab('reconciliation'), '/reconciliation');
+  assert.equal(pathForLegacyDesktopTab('analytics'), '/analytics');
+  assert.deepEqual(matchIntelligenceRoute('/analytics'), {
+    status: 'READY',
+    route: {
+      workspace: 'analytics',
+      canonicalPath: '/analytics',
+      legacyDesktopTab: 'analytics',
+    },
+  });
 });
 
 test('deep entity routes retain decoded identity and typed legacy adapter', () => {
@@ -94,6 +104,7 @@ test('unknown routes and role violations fail closed without dashboard fallback'
   assert.equal(resolveIntelligenceRoute('/ordermentum', 'viewer').status, 'FORBIDDEN');
   assert.equal(resolveIntelligenceRoute('/inventory', 'viewer').status, 'READY');
   assert.equal(resolveIntelligenceRoute('/analytics', 'account').status, 'READY');
+  assert.equal(resolveIntelligenceRoute('/reconciliation', 'viewer').status, 'READY');
   assert.equal(resolveIntelligenceRoute('/control-room', 'warehouse').status, 'FORBIDDEN');
 });
 
