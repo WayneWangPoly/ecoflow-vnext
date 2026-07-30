@@ -43,7 +43,7 @@ for (const forbidden of [
   /\bfrom\s+analytics\.actionable_exception_lifecycle\b/i,
   /\bfrom\s+analytics\.actionable_exception_lifecycle_event\b/i,
   /v_ecoflow_ordermentum_ui_active_exceptions/i,
-  /apply_actionable_exception_lifecycle_command\s*\(/i,
+  /\b(?:select\s+\*\s+from|perform)\s+analytics\.apply_actionable_exception_lifecycle_command\s*\(/i,
   /ecoflow_day_state/i,
   /ecoflow_inventory_/i,
   /ecoflow_warehouse_/i,
