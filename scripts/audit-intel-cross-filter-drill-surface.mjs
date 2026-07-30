@@ -87,7 +87,18 @@ if ((component.match(/onOpenOperationalRoute\(entity\.operationalRoute, entity\)
 }
 
 for (const marker of [
-  'operationalPulseMetricDefinitions',
+  'OPERATIONAL_PULSE_METRIC_LABELS',
+  'satisfies Record<OperationalPulseMetricKey, string>',
+  "revenue: 'Revenue'",
+  "gross_margin: 'Gross margin'",
+  "fill_rate: 'Fill rate'",
+  "on_time_delivery_rate: 'On-time delivery rate'",
+  "stockout_risk_count: 'Stockout risk count'",
+  "dead_stock_value: 'Dead stock value'",
+  "substitution_rate: 'Substitution rate'",
+  "lines_picked_per_hour: 'Lines picked per hour'",
+  "inventory_days_of_cover: 'Inventory days of cover'",
+  "customer_concentration: 'Customer concentration'",
   'crossFilterDrillMetricLabel',
   'crossFilterDrillStatePresentation',
   'resolveCrossFilterBreakdown',
