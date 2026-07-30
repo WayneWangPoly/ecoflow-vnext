@@ -147,6 +147,7 @@ jobs:
             supabase/migrations/20260729210100_return_inspection_source_drift_capture.sql \
             supabase/migrations/20260729220000_initial_kpi_projections_reconciliation.sql \
             supabase/migrations/20260730103000_metric_readiness_read_boundary.sql \
+            supabase/migrations/20260731070000_metric_drill_access_envelope.sql \
             supabase/migrations/20260730160000_actionable_exception_read_model.sql \
             supabase/migrations/20260730190000_actionable_exception_lifecycle_ledger.sql
           do
@@ -238,6 +239,11 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/metric-readiness-rpc-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute metric drill access tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/metric-drill-access-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Execute actionable exception read model tests
         shell: bash
         run: |
