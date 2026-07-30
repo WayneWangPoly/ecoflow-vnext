@@ -41,4 +41,16 @@ export {
 } from './analyticsRepositoryContract';
 export * from './metricReadinessContract';
 export * from './primitives';
-export * from './healthConsole';
+export {
+  type AnalyticsHealthConsoleProps,
+} from './healthConsole';
+export {
+  OperationalPulseReadinessWorkspace as AnalyticsHealthConsole,
+  type OperationalPulseReadinessWorkspaceProps,
+} from './OperationalPulseReadinessWorkspace';
+export {
+  hasCanonicalOperationalPulseCoverage,
+  operationalPulseReadinessSummary,
+  readinessRowsToOperationalPulse,
+  type OperationalPulseReadinessSummary,
+} from './operationalPulseReadinessContract';
