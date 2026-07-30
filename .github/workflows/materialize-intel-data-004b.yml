@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - agent/data/INTEL-DATA-004B-exception-lifecycle-ledger
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/data/INTEL-DATA-004B-exception-lifecycle-ledger')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
