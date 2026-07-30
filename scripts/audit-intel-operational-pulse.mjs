@@ -205,7 +205,7 @@ for (const testName of [
   'operational pulse registry contains the ten governed initial metric identities',
   'ready metrics preserve confirmed numeric zero and supplied display value',
   'non-ready metrics suppress supplied values instead of presenting shadow data',
-  'ready metrics with invalid or undisplayable values fail closed as empty',
+  'ready metrics with invalid, null or undisplayable values fail closed as empty',
   'operational pulse deck orders metrics canonically and rejects duplicate identity',
   'operational pulse signal tone prioritises invalid quality and stale sources',
   'operational pulse timestamps use Adelaide presentation and invalid values stay missing',
