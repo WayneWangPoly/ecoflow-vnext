@@ -28,9 +28,8 @@ for (const required of [
   'metricReadinessReadState',
   'analyticsReadFailure',
   'analyticsReadSuccess',
-  "projectionStatus: 'SHADOW'",
-  "projectionStatus: 'BLOCKED'",
-  "projectionStatus: 'READY'",
+  "export type AnalyticsMetricProjectionStatus = 'SHADOW' | 'BLOCKED' | 'READY' | 'UNKNOWN';",
+  'const PROJECTION_STATUS_SET',
   "return 'UNKNOWN'",
   "status === 'SHADOW' || status === 'BLOCKED'",
 ]) {
@@ -49,6 +48,7 @@ for (const forbidden of [
   'fact_fulfilment_line',
   '_internal',
   ".from('",
+  '.from("',
   '.insert(',
   '.update(',
   '.upsert(',
@@ -93,8 +93,8 @@ for (const required of [
 
 for (const required of [
   "export * from './metricReadinessContract';",
-  'type AnalyticsMetricReadinessRow',
-  'type AnalyticsMetricProjectionStatus',
+  'export type AnalyticsMetricReadinessRow',
+  'export type AnalyticsMetricProjectionStatus',
   'normaliseMetricReadinessRows',
 ]) {
   if (!`${analyticsBarrel}\n${contract}`.includes(required)) {
