@@ -16,6 +16,8 @@ const barrel = read('src/features/intelligence/attention/index.ts');
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const app = read('src/app/App.tsx');
 const repository = read('src/data/repositories/actionableExceptionRepository.ts');
+const lifecycleRepository = read('src/data/repositories/actionableExceptionLifecycleRepository.ts');
+const accessRepository = read('src/data/repositories/actionableExceptionLifecycleAccessRepository.ts');
 const tests = read('scripts/intel-actionable-exception-surface-contract.test.mjs');
 const designTokens = read('src/features/intelligence/designSystem/tokens.css');
 const packageJson = JSON.parse(read('package.json'));
@@ -23,7 +25,10 @@ const packageJson = JSON.parse(read('package.json'));
 for (const marker of [
   'ActionableExceptionQueue',
   'repository.readActionableExceptions()',
-  'actionableExceptionReadFailure(error)',
+  'Promise.allSettled([',
+  'lifecycleAccessRepository.readAccess()',
+  'lifecycleRepository.readLifecycle(',
+  'actionableExceptionReadFailure(activeOutcome.reason)',
   'const EMPTY_ATTENTION_QUEUE: AttentionQueue',
   'records.length',
   'buildAttentionQueue(records.map((record) => record.input), nowAt ??',
@@ -33,12 +38,14 @@ for (const marker of [
   '<table className="ef-actionable-exceptions__table">',
   '<caption className="ef-actionable-exceptions__sr-only">',
   '<th scope="col">Exception</th>',
+  '<th scope="col">Lifecycle</th>',
   '<th scope="col">Severity</th>',
   '<th scope="col">SLA</th>',
   '<th scope="col">Owner</th>',
   '<th scope="col">Impact</th>',
   'Current active source only',
-  'Governed severity, SLA, owner, impact and recommended action are unavailable.',
+  'Severity, SLA, impact and recommendation remain unavailable.',
+  'Lifecycle status, owner and audit history are governed separately.',
   'Current active exceptions unavailable',
   'No current active exceptions',
   'openPrimaryRecord({',
@@ -76,18 +83,6 @@ for (const forbidden of [
 }
 
 for (const forbidden of [
-  'acknowledgeException',
-  'onAcknowledge',
-  '.acknowledge(',
-  'assignException',
-  'onAssign',
-  '.assign(',
-  'snoozeException',
-  'onSnooze',
-  '.snooze(',
-  'resolveException',
-  'onResolve',
-  '.resolve(',
   'dismissException',
   'onDismiss',
   '.dismiss(',
@@ -118,9 +113,9 @@ for (const marker of [
   'actionableExceptionMaximumDisplayLimit = 50',
   "record.capabilities.lifecycle === 'CURRENT_ACTIVE_ONLY' ? 'information' : 'warning'",
   "severityLabel: item.severity === 'unknown' ? 'Unknown'",
-  "slaLabel: actionableExceptionCapabilityLabel(record.capabilities.sla)",
-  "ownerLabel: actionableExceptionCapabilityLabel(record.capabilities.ownership)",
-  "impactLabel: actionableExceptionCapabilityLabel(record.capabilities.impact)",
+  'slaLabel: actionableExceptionCapabilityLabel(record.capabilities.sla)',
+  'ownerLabel: actionableExceptionCapabilityLabel(record.capabilities.ownership)',
+  'impactLabel: actionableExceptionCapabilityLabel(record.capabilities.impact)',
 ]) {
   if (!presentation.includes(marker)) throw new Error(`INTEL_UI_003B_PRESENTATION_MARKER_MISSING: ${marker}`);
 }
@@ -145,6 +140,7 @@ for (const marker of [
   '.ef-actionable-exceptions__actions',
   '.ef-actionable-exceptions__table-shell',
   '.ef-actionable-exceptions__table',
+  '.ef-actionable-exceptions__row-actions',
   '.ef-actionable-exceptions__capability',
   '@media (max-width: 640px)',
   '@media (prefers-contrast: more)',
@@ -194,7 +190,13 @@ if ((dashboard.match(/<ActionableExceptionQueue /g) ?? []).length !== 1) {
 }
 for (const forbidden of [
   'actionableExceptionRepository',
+  'actionableExceptionLifecycleRepository',
+  'actionableExceptionLifecycleAccessRepository',
+  'ExceptionLifecycleCommitModal',
   'readActionableExceptions',
+  'readLifecycle',
+  'readAccess',
+  'applyCommand',
   'buildAttentionQueue',
   'Current active exceptions"',
 ]) {
@@ -203,13 +205,20 @@ for (const forbidden of [
 if (dashboard.includes('title="Needs attention"')) {
   throw new Error('INTEL_UI_003B_OLD_AGGREGATE_ATTENTION_TITLE_REMAINS');
 }
-if (app.includes('ActionableExceptionQueue') || app.includes('actionableExceptionRepository')) {
+if (app.includes('ActionableExceptionQueue')
+  || app.includes('actionableExceptionRepository')
+  || app.includes('actionableExceptionLifecycleRepository')
+  || app.includes('ExceptionLifecycleCommitModal')) {
   throw new Error('INTEL_UI_003B_APP_SCOPE_EXPANSION');
 }
 
 if ((repository.match(/\.rpc\(/g) ?? []).length !== 1
   || !repository.includes('.rpc(actionableExceptionRpcName, { p_limit: request.request.limit })')) {
   throw new Error('INTEL_UI_003B_REPOSITORY_BOUNDARY_CHANGED');
+}
+if ((lifecycleRepository.match(/\.rpc\(/g) ?? []).length !== 2
+  || (accessRepository.match(/\.rpc\(/g) ?? []).length !== 1) {
+  throw new Error('INTEL_UI_003B_LIFECYCLE_REPOSITORY_BOUNDARY_CHANGED');
 }
 
 for (const marker of [
@@ -220,6 +229,8 @@ for (const marker of [
   'buildActionableExceptionDisplayRows',
   'formatActionableExceptionAge',
   'latestActionableExceptionReadAt',
+  'ExceptionLifecycleCommitModal',
+  'actionableExceptionLifecycleActionOptions',
 ]) {
   if (!barrel.includes(marker)) throw new Error(`INTEL_UI_003B_EXPORT_MISSING: ${marker}`);
 }
