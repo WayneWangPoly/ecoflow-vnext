@@ -18,6 +18,11 @@ const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 
 for (const marker of [
   'create or replace function analytics.get_metric_drill_access()',
+  'v_user uuid := auth.uid()',
+  'from public.app_user_profiles p',
+  'p.user_id=v_user',
+  'p.is_active=true',
+  "p.team_status='ACTIVE'",
   "v_role not in ('OWNER','ADMIN')",
   "message='METRIC_DRILL_ACCESS_OWNER_OR_ADMIN_REQUIRED'",
   'analytics.metric_projection_readiness r',
