@@ -17,3 +17,19 @@ export {
   type CrossFilterDrillState,
   type CrossFilterOperationalRoute,
 } from './crossFilterDrillContract';
+
+export {
+  crossFilterBreakdownMeta,
+  crossFilterDrillMetricLabel,
+  crossFilterDrillStatePresentation,
+  crossFilterEntityKindLabel,
+  crossFilterOperationalRouteLabel,
+  resolveCrossFilterBreakdown,
+  type CrossFilterDrillPresentationTone,
+  type CrossFilterDrillStatePresentation,
+} from './crossFilterDrillPresentationContract';
+
+export {
+  CrossFilterDrillSurface,
+  type CrossFilterDrillSurfaceProps,
+} from './CrossFilterDrillSurface';
