@@ -25,6 +25,8 @@ for (const marker of [
   "metricDrillAccessRpcName = 'get_metric_drill_access'",
   'operationalPulseMetricKeys',
   "MetricDrillAccessCapability = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN'",
+  'let valid = true',
+  'return valid ? output : null',
   "metricStatus === 'ACTIVE'",
   "projection === 'READY'",
   'safeAuthorised.length > 0',
@@ -117,6 +119,7 @@ for (const marker of [
 for (const testName of [
   'current ten-metric access envelope remains ready but fully unavailable',
   'AVAILABLE survives only with ACTIVE READY governed dimensions and no reason codes',
+  'malformed list arrays never retain AVAILABLE authority',
   'server AVAILABLE with non-ready governance fails closed to UNKNOWN',
   'authorised dimensions outside declared governance fail closed',
   'UNAVAILABLE rows cannot leak authorised dimensions',
