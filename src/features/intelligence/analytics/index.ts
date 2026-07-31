@@ -42,6 +42,7 @@ export {
 export * from './metricReadinessContract';
 export * from './primitives';
 export * from './healthConsole';
+export * from './domainIntelligence';
 export {
   OperationalPulseReadinessWorkspace,
   type OperationalPulseReadinessWorkspaceProps,

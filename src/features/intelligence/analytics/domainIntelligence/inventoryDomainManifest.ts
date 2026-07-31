@@ -1,0 +1,135 @@
+import type {
+  Phase4Capability,
+  Phase4DomainManifest,
+} from './domainIntelligenceContract';
+
+const capabilities: readonly Phase4Capability[] = [
+  {
+    key: 'OVERVIEW',
+    label: 'Inventory overview',
+    implementation: 'READY',
+    data: 'SHADOW',
+    evidence: 'Commercial SKU and Physical SKU identities are governed by the Inventory Intelligence contract.',
+    blocker: 'A bounded analytics read repository is not yet authorised for production aggregate inventory values.',
+  },
+  {
+    key: 'FILTERS',
+    label: 'Inventory filters',
+    implementation: 'READY',
+    data: 'READY',
+    evidence: 'Capability and evidence-state filters are native, bounded and URL-independent.',
+  },
+  {
+    key: 'TREND',
+    label: 'Inventory trend',
+    implementation: 'READY',
+    data: 'BLOCKED',
+    evidence: 'The surface preserves null trend values and never derives a history series from current balances.',
+    blocker: 'Governed historical inventory projection is unavailable.',
+  },
+  {
+    key: 'BREAKDOWN',
+    label: 'Inventory breakdown',
+    implementation: 'READY',
+    data: 'SHADOW',
+    evidence: 'Supplier, brand, substitution and location breakdown contracts are visible without client aggregation.',
+  },
+  {
+    key: 'TABLE',
+    label: 'Commercial and Physical SKU tables',
+    implementation: 'READY',
+    data: 'SHADOW',
+    evidence: 'Commercial demand identity remains separate from Physical stock identity and quantity domains remain explicit.',
+  },
+  {
+    key: 'DETAIL_DRAWER',
+    label: 'Inventory detail drawer',
+    implementation: 'READY',
+    data: 'READY',
+    evidence: 'Every capability row opens one bounded native detail plane with evidence and blocker state.',
+  },
+  {
+    key: 'TIMELINE',
+    label: 'Movement timeline',
+    implementation: 'READY',
+    data: 'SHADOW',
+    evidence: 'Receiving, putaway, transfer, allocation, pick, adjustment, return, scrap and stocktake events are reserved.',
+  },
+  {
+    key: 'FRESHNESS',
+    label: 'Inventory freshness',
+    implementation: 'READY',
+    data: 'UNAVAILABLE',
+    evidence: 'The surface exposes source and server timestamps only when supplied by an authorised read model.',
+    blocker: 'No authorised inventory analytics envelope timestamp is available.',
+  },
+  {
+    key: 'EMPTY_DEGRADED_STATES',
+    label: 'Empty and degraded states',
+    implementation: 'READY',
+    data: 'READY',
+    evidence: 'Blocked, unavailable, empty and partial evidence remain distinct and never become a successful zero.',
+  },
+  {
+    key: 'OPERATIONAL_HANDOFF',
+    label: 'Operational handoff',
+    implementation: 'READY',
+    data: 'READY',
+    evidence: 'Canonical Inventory and Orders routes are published without issuing operational commands.',
+  },
+];
+
+export const inventoryDomainManifest: Phase4DomainManifest = {
+  id: 'inventory',
+  eyebrow: 'INVENTORY & SUBSTITUTION INTELLIGENCE',
+  title: 'Inventory intelligence',
+  summary: 'Commercial SKU demand, Physical SKU stock, substitution evidence and warehouse movement remain separate governed domains.',
+  primaryPath: '/inventory',
+  implementation: 'READY',
+  data: 'SHADOW',
+  capabilities,
+  breakdowns: [
+    { key: 'supplier-brand-mix', label: 'Supplier / brand mix', data: 'SHADOW', description: 'Reserved by Physical SKU identity and supplier/brand fields.' },
+    { key: 'substitution-impact', label: 'Substitution impact', data: 'SHADOW', description: 'Commercial-to-Physical coverage exists; aggregate impact remains Shadow.' },
+    { key: 'location-heatmap', label: 'Location heatmap', data: 'BLOCKED', description: 'Mixed global/base and location/package quantities cannot be combined.' },
+    { key: 'stockout-history', label: 'Stockout history', data: 'BLOCKED', description: 'Historical stockout series requires a governed time projection.' },
+  ],
+  trends: [
+    { key: 'days-of-cover', label: 'Inventory days of cover', data: 'BLOCKED', value: null, formattedValue: null, sourceAsOfAt: null },
+    { key: 'stockout-risk', label: 'Stockout risk', data: 'BLOCKED', value: null, formattedValue: null, sourceAsOfAt: null },
+    { key: 'dead-stock-value', label: 'Dead stock value', data: 'BLOCKED', value: null, formattedValue: null, sourceAsOfAt: null },
+  ],
+  tables: [
+    {
+      key: 'commercial-sku',
+      label: 'Commercial SKU coverage',
+      grain: 'one Commercial SKU demand identity',
+      columns: ['Commercial SKU', 'coverage', 'approved Physical SKUs', 'affected Orders', 'days of cover', 'risk'],
+      data: 'SHADOW',
+    },
+    {
+      key: 'physical-sku',
+      label: 'Physical SKU balances',
+      grain: 'one Physical SKU and explicit quantity domain',
+      columns: ['Physical SKU', 'Commercial SKU', 'supplier', 'brand', 'location', 'unit level', 'on hand', 'available', 'reserved'],
+      data: 'SHADOW',
+    },
+  ],
+  handoffs: [
+    { key: 'inventory', label: 'Inventory workspace', pathTemplate: '/inventory', workspace: 'inventory' },
+    { key: 'commercial-sku', label: 'Commercial SKU drawer', pathTemplate: '/inventory/commercial/:skuId', workspace: 'inventory' },
+    { key: 'physical-sku', label: 'Physical SKU drawer', pathTemplate: '/inventory/physical/:itemId', workspace: 'inventory' },
+    { key: 'order', label: 'Affected Order drawer', pathTemplate: '/orders/:orderId', workspace: 'orders' },
+  ],
+  timeline: [
+    { key: 'semantic-foundation', label: 'Inventory semantic facts', state: 'READY', evidence: 'Daily inventory snapshots and movement facts preserve separate quantity domains.' },
+    { key: 'domain-contract', label: 'Inventory domain contract', state: 'READY', evidence: 'INTEL-INV-001A governs identities, states, timestamps and handoffs.' },
+    { key: 'review-surface', label: 'Inventory review surface', state: 'READY', evidence: 'INTEL-INV-001B publishes all required Phase 4 surface capabilities.' },
+  ],
+  freshness: {
+    state: 'UNAVAILABLE',
+    sourceAsOfAt: null,
+    serverReadAt: null,
+    message: 'Inventory aggregate freshness is unavailable until a governed analytics envelope supplies both timestamps.',
+  },
+};
