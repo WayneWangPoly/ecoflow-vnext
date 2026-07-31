@@ -37,7 +37,7 @@ create table analytics.intelligence_release_flag (
   constraint intelligence_release_flag_state check (rollout_state in ('OFF','SHADOW','ON')),
   constraint intelligence_release_flag_version check (version>=1),
   constraint intelligence_release_flag_reason check (
-    change_reason is null or (length(btrim(change_reason)) between 10 and 500)
+    change_reason is null or length(btrim(change_reason)) between 10 and 500
   ),
   constraint intelligence_release_flag_time check (updated_at>=created_at)
 );
@@ -264,7 +264,12 @@ begin
     on v.flag_key=f.flag_key
    and v.business_date=v_date
    and v.check_key=d.check_key
-  order by f.flag_key,d.sort_order;
+  order by
+    array_position(array[
+      'control_room_v2','analytics_inventory_v1','analytics_customer_v1',
+      'analytics_delivery_v1','overlay_navigation_v1'
+    ]::text[],f.flag_key),
+    d.sort_order;
 end;
 $$;
 
@@ -298,6 +303,7 @@ declare
   v_fingerprint text;
   v_existing analytics.intelligence_release_event%rowtype;
   v_flag analytics.intelligence_release_flag%rowtype;
+  v_previous_state jsonb;
   v_now timestamptz := clock_timestamp();
   v_passed integer;
   v_required integer;
@@ -378,6 +384,12 @@ begin
     end if;
   end if;
 
+  v_previous_state := jsonb_build_object(
+    'rollout_state',v_flag.rollout_state,
+    'version',v_flag.version,
+    'updated_at',v_flag.updated_at
+  );
+
   update analytics.intelligence_release_flag f
   set rollout_state=v_next_state,
       version=f.version+1,
@@ -396,12 +408,7 @@ begin
     previous_state,next_state,actor_user_id,actor_role,reason
   ) values(
     p_command_id,v_fingerprint,'SET_FLAG_STATE',v_flag_key,v_business_date,
-    jsonb_build_object(
-      'rollout_state',case when v_next_state=v_flag.rollout_state then
-        case when v_flag.version=2 then 'SHADOW' else null end
-      else null end,
-      'version',p_expected_version
-    ),
+    v_previous_state,
     jsonb_build_object(
       'rollout_state',v_flag.rollout_state,
       'version',v_flag.version,
@@ -511,16 +518,20 @@ begin
     return;
   end if;
 
-  select jsonb_build_object(
-    'check_status',v.check_status,
-    'version',v.version,
-    'updated_at',v.updated_at
-  ) into v_previous
+  select * into v_verification
   from analytics.intelligence_release_verification v
   where v.flag_key=v_flag_key
     and v.business_date=v_date
     and v.check_key=v_check_key
   for update;
+
+  if found then
+    v_previous := jsonb_build_object(
+      'check_status',v_verification.check_status,
+      'version',v_verification.version,
+      'updated_at',v_verification.updated_at
+    );
+  end if;
 
   insert into analytics.intelligence_release_verification(
     flag_key,business_date,check_key,check_status,
@@ -546,7 +557,7 @@ begin
     previous_state,next_state,actor_user_id,actor_role,reason
   ) values(
     p_command_id,v_fingerprint,'RECORD_VERIFICATION',v_flag_key,v_date,v_check_key,
-    coalesce(v_previous,'{}'::jsonb),
+    v_previous,
     jsonb_build_object(
       'check_status',v_verification.check_status,
       'version',v_verification.version,
