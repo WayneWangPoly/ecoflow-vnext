@@ -14,6 +14,8 @@ const contract = read('src/features/intelligence/overlays/overlayManagerContract
 const css = read('src/features/intelligence/overlays/overlayManager.css');
 const barrel = read('src/features/intelligence/overlays/index.ts');
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
+const priorityComponent = read('src/features/intelligence/attention/PriorityWork.tsx');
+const priorityPresentation = read('src/features/intelligence/attention/priorityWorkPresentationContract.ts');
 const test = read('scripts/intel-related-inspector-contract.test.mjs');
 const packageJson = JSON.parse(read('package.json'));
 
@@ -47,21 +49,32 @@ for (const required of [
 }
 
 for (const required of [
-  'function storeForOrder(order: ImportedOrder, stores: EcoFlowDataSet[\'stores\'])',
-  'normalisedIdentity(store.name) === normalisedIdentity(order.store)',
-  'normalisedIdentity(store.account) === normalisedIdentity(order.account)',
-  'return candidates.length === 1 ? candidates[0] : undefined',
-  'const storeProfile = storeForOrder(order, data.stores);',
-  'relatedRecords: storeProfile ? [{',
-  "entity: { kind: 'store', id: storeProfile.id }",
-  "{ label: 'Payment terms', value: storeProfile.paymentTerms }",
-  "{ label: 'Ordermentum ID', value: storeProfile.ordermentumId }",
+  '<PriorityWork />',
+  'priorityWorkOrderRoute(record)',
+  'navigate(route.href)',
 ]) {
-  if (!dashboard.includes(required)) throw new Error(`INTEL_FE_003B_VERIFIED_STORE_LINK_MISSING: ${required}`);
+  if (!`${dashboard}\n${priorityComponent}`.includes(required)) {
+    throw new Error(`INTEL_FE_003B_PRIORITY_WORK_ORDER_HANDOFF_MISSING: ${required}`);
+  }
+}
+
+for (const required of [
+  "matched.route.workspace !== 'orders'",
+  "matched.route.entityKind !== 'order'",
+  "primaryDrawer: `order:${record.orderEntityId}`",
+]) {
+  if (!priorityPresentation.includes(required)) {
+    throw new Error(`INTEL_FE_003B_PRIORITY_WORK_IDENTITY_GUARD_MISSING: ${required}`);
+  }
 }
 
 for (const forbidden of [
+  'function storeForOrder(',
+  'normalisedIdentity(store.name)',
+  'normalisedIdentity(store.account)',
+  'relatedRecords: storeProfile',
   "entity: { kind: 'store', id: order.store }",
+  "entity: { kind: 'store', id: storeProfile.id }",
   'storeProfile.orderCount || 0',
   'storeProfile.totalValue || 0',
   'window.dispatchEvent',
@@ -71,13 +84,13 @@ for (const forbidden of [
   'overlayStack',
   'tertiary',
 ]) {
-  if (`${manager}\n${contract}\n${dashboard}`.includes(forbidden)) {
+  if (`${manager}\n${contract}\n${dashboard}\n${priorityComponent}\n${priorityPresentation}`.includes(forbidden)) {
     throw new Error(`INTEL_FE_003B_UNVERIFIED_OR_UNBOUNDED_PATTERN: ${forbidden}`);
   }
 }
 
 for (const phrase of ['How to', 'Learn more', 'Getting started', 'Click here', 'You should', 'Next step', 'Tip:']) {
-  if (`${manager}\n${css}\n${dashboard}`.includes(phrase)) {
+  if (`${manager}\n${css}\n${dashboard}\n${priorityComponent}`.includes(phrase)) {
     throw new Error(`INTEL_FE_003B_DEFAULT_GUIDANCE_COPY: ${phrase}`);
   }
 }
