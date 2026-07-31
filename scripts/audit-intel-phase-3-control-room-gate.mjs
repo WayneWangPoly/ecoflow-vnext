@@ -91,11 +91,26 @@ for (const forbidden of ['function stageOf(', 'FLOW_PRIORITY', 'five exclusive s
 for (const marker of [
   'buildCrossFilterDrillModel',
   'buildCrossFilterDrillPath',
-  "availability !== 'READY'",
-  "drillCapability !== 'AVAILABLE'",
+  'NON_DRILLABLE_DATA_SUPPRESSED',
+  "state: 'blocked'",
 ]) {
   assert.ok(drillContract.includes(marker), `UI-005 drill contract marker missing: ${marker}`);
 }
+assert.match(
+  drillContract,
+  /const drillable\s*=\s*metric\.availability\s*===\s*'READY'\s*&&\s*drillCapability\s*===\s*'AVAILABLE'/,
+  'UI-005 formal drill must require READY availability and AVAILABLE capability',
+);
+assert.match(
+  drillContract,
+  /model\.drillCapability\s*!==\s*'AVAILABLE'/,
+  'UI-005 drill path must reject unavailable capability',
+);
+assert.match(
+  drillContract,
+  /model\.metricAvailability\s*!==\s*'READY'/,
+  'UI-005 drill path must reject non-ready metrics',
+);
 for (const marker of [
   'Metric drill access',
   'Authority metadata only · No KPI values, breakdowns or affected entities are read.',
