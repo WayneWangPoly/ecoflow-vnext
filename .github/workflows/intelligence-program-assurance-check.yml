@@ -25,6 +25,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      # Audit Phase 8 programme assurance through the permanent completion gate.
       - name: Audit Phase 8 completion gate
         run: node scripts/audit-intel-phase-8-program-assurance-gate.mjs
       - name: Execute programme assurance contract tests
