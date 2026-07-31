@@ -61,7 +61,9 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Load application identity fixture
-        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql
+          psql -v ON_ERROR_STOP=1 -c 'create schema if not exists analytics'
       - name: Apply Saved View migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731160000_intelligence_saved_views.sql
       - name: Execute Saved View privacy and role-default tests
