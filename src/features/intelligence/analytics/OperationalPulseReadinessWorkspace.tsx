@@ -11,6 +11,7 @@ import { OperationalPulseDeck } from '../operationalPulse/OperationalPulse';
 import { Phase4DomainIntelligencePanel } from './domainIntelligence/Phase4DomainIntelligencePanel';
 import { ActionIntegrationPanel } from './actionIntegration/ActionIntegrationPanel';
 import { PersonalisationProductivityPanel } from './productivity';
+import { ReleaseReadinessPanel } from './releaseReadiness';
 import {
   hasCanonicalOperationalPulseCoverage,
   operationalPulseReadinessSummary,
@@ -82,6 +83,7 @@ export function OperationalPulseReadinessWorkspace({
       <Phase4DomainIntelligencePanel />
       <ActionIntegrationPanel />
       <PersonalisationProductivityPanel />
+      <ReleaseReadinessPanel />
     </div>
   );
 }
