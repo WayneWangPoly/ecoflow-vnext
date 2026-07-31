@@ -22,7 +22,9 @@
 
 .ef-action-integration__header span,
 .ef-action-integration__source span,
-.ef-action-integration__card header span {
+.ef-action-integration__card header span,
+.ef-action-integration__inline > header span,
+.ef-action-integration__inline-grid article header span {
   display: block;
   color: var(--ef-text-muted);
   font-size: var(--ef-type-xs);
@@ -31,14 +33,16 @@
 }
 
 .ef-action-integration__header h2,
-.ef-action-integration__source h3 {
+.ef-action-integration__source h3,
+.ef-action-integration__inline h3 {
   margin: var(--ef-space-1) 0 0;
   line-height: var(--ef-leading-tight);
 }
 
 .ef-action-integration__header p,
 .ef-action-integration__source p,
-.ef-action-integration__card p {
+.ef-action-integration__card p,
+.ef-action-integration__inline-grid article > p {
   margin: var(--ef-space-2) 0 0;
   color: var(--ef-text-secondary);
   line-height: var(--ef-leading-standard);
@@ -131,12 +135,14 @@
   border-radius: var(--ef-radius-1);
 }
 
-.ef-action-integration__source dt {
+.ef-action-integration__source dt,
+.ef-action-integration__inline-grid dt {
   color: var(--ef-text-muted);
   font-size: var(--ef-type-xs);
 }
 
-.ef-action-integration__source dd {
+.ef-action-integration__source dd,
+.ef-action-integration__inline-grid dd {
   margin: var(--ef-space-1) 0 0;
   font-weight: var(--ef-weight-bold);
 }
@@ -195,6 +201,86 @@
   color: var(--ef-text-muted);
 }
 
+.ef-action-integration__inline {
+  display: grid;
+  gap: var(--ef-space-3);
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-emphasis);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-subtle);
+}
+
+.ef-action-integration__inline > header,
+.ef-action-integration__inline-grid article header,
+.ef-action-integration__inline-blocker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ef-space-3);
+}
+
+.ef-action-integration__inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ef-space-3);
+}
+
+.ef-action-integration__inline-grid article {
+  display: grid;
+  gap: var(--ef-space-3);
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-left: 3px solid var(--ef-status-danger-foreground);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-surface-panel);
+}
+
+.ef-action-integration__inline-grid article[data-state='available'] {
+  border-left-color: var(--ef-status-success-foreground);
+}
+
+.ef-action-integration__inline-grid article header b {
+  padding: var(--ef-space-1) var(--ef-space-2);
+  border-radius: var(--ef-radius-1);
+  color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-action-integration__inline-grid article[data-state='available'] header b {
+  color: var(--ef-status-success-foreground);
+  background: var(--ef-status-success-background);
+}
+
+.ef-action-integration__inline-grid dl {
+  display: grid;
+  gap: var(--ef-space-2);
+  margin: 0;
+}
+
+.ef-action-integration__inline-grid dl div {
+  padding-top: var(--ef-space-2);
+  border-top: 1px solid var(--ef-border-default);
+}
+
+.ef-action-integration__inline-blocker {
+  align-items: flex-start;
+  flex-direction: column;
+  padding: var(--ef-space-3);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-action-integration__inline-blocker span {
+  color: var(--ef-text-secondary);
+}
+
+.ef-action-integration__inline-blocker a {
+  color: var(--ef-text-primary);
+  font-weight: var(--ef-weight-bold);
+}
+
 .ef-action-integration__footer,
 .ef-action-integration__state {
   padding: var(--ef-space-4);
@@ -226,7 +312,8 @@
 @media (max-width: 820px) {
   .ef-action-integration__header,
   .ef-action-integration__source,
-  .ef-action-integration__footer {
+  .ef-action-integration__footer,
+  .ef-action-integration__inline > header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -235,14 +322,16 @@
     min-width: 0;
   }
 
-  .ef-action-integration__grid {
+  .ef-action-integration__grid,
+  .ef-action-integration__inline-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 560px) {
   .ef-action-integration__source dl,
-  .ef-action-integration__grid {
+  .ef-action-integration__grid,
+  .ef-action-integration__inline-grid {
     grid-template-columns: 1fr;
   }
 }
