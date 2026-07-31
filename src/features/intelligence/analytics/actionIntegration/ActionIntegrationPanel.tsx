@@ -6,13 +6,19 @@ import {
   buildActionHandoff,
   validateActionHandoffRegistry,
 } from './actionHandoffContract';
+import {
+  safeInlineActionRegistry,
+  validateSafeInlineActionRegistry,
+} from './safeInlineActionContract';
 import './actionIntegrationWorkspace.css';
 
 export function ActionIntegrationPanel() {
   const firstDomain = phase4DomainManifests[0];
   const [activeDomainId, setActiveDomainId] = useState<Phase4DomainId>(firstDomain?.id ?? 'inventory');
   const domain = phase4DomainManifests.find((candidate) => candidate.id === activeDomainId) ?? firstDomain;
-  const registryIssues = useMemo(() => validateActionHandoffRegistry(), []);
+  const handoffIssues = useMemo(() => validateActionHandoffRegistry(), []);
+  const inlineIssues = useMemo(() => validateSafeInlineActionRegistry(), []);
+  const registryIssues = handoffIssues.length + inlineIssues.length;
   const handoffs = useMemo(
     () => actionHandoffDefinitions.map((definition) => ({
       definition,
@@ -23,6 +29,7 @@ export function ActionIntegrationPanel() {
     })),
     [activeDomainId, domain?.freshness.sourceAsOfAt],
   );
+  const availableInlineActions = safeInlineActionRegistry.filter((action) => action.eligibility === 'AVAILABLE');
 
   return (
     <section className="ef-action-integration" aria-labelledby="action-integration-title">
@@ -31,13 +38,13 @@ export function ActionIntegrationPanel() {
           <span>PHASE 5 · ACTION INTEGRATION</span>
           <h2 id="action-integration-title">Governed operational handoff</h2>
           <p>
-            Analytics passes bounded context into operational workspaces. The destination domain remains the authority for every command.
+            Analytics passes bounded context into operational workspaces. Inline actions appear only after a server command, revision, idempotency and permission contract is complete.
           </p>
         </div>
-        <div className="ef-action-integration__boundary" data-state={registryIssues.length === 0 ? 'ready' : 'blocked'}>
+        <div className="ef-action-integration__boundary" data-state={registryIssues === 0 ? 'ready' : 'blocked'}>
           <span>Write boundary</span>
-          <strong>READ ONLY</strong>
-          <small>No business table update is issued here.</small>
+          <strong>NO DIRECT WRITES</strong>
+          <small>{availableInlineActions.length} migrated inline command family available.</small>
         </div>
       </header>
 
@@ -55,10 +62,10 @@ export function ActionIntegrationPanel() {
         ))}
       </nav>
 
-      {registryIssues.length > 0 || !domain ? (
+      {registryIssues > 0 || !domain ? (
         <div className="ef-action-integration__state" data-state="blocked" role="status">
-          <strong>Action handoff registry unavailable</strong>
-          <span>{registryIssues.length || 1} governed issue(s)</span>
+          <strong>Action Integration registry unavailable</strong>
+          <span>{registryIssues || 1} governed issue(s)</span>
         </div>
       ) : (
         <>
@@ -98,10 +105,49 @@ export function ActionIntegrationPanel() {
             ))}
           </div>
 
+          <section className="ef-action-integration__inline" aria-labelledby="safe-inline-title">
+            <header>
+              <div>
+                <span>INTEL-ACT-002 · SAFE INLINE ACTIONS</span>
+                <h3 id="safe-inline-title">Command migration eligibility</h3>
+              </div>
+              <strong>{availableInlineActions.length} / {safeInlineActionRegistry.length} available</strong>
+            </header>
+            <div className="ef-action-integration__inline-grid">
+              {safeInlineActionRegistry.map((action) => (
+                <article key={action.key} data-state={action.eligibility.toLowerCase()}>
+                  <header>
+                    <div>
+                      <span>{action.key}</span>
+                      <strong>{action.label}</strong>
+                    </div>
+                    <b>{action.eligibility}</b>
+                  </header>
+                  <p>{action.evidence}</p>
+                  {action.eligibility === 'AVAILABLE' ? (
+                    <dl>
+                      <div><dt>Server command</dt><dd>{action.serverCommand}</dd></div>
+                      <div><dt>Revision</dt><dd>{action.revisionContract}</dd></div>
+                      <div><dt>Idempotency</dt><dd>{action.idempotencyContract}</dd></div>
+                      <div><dt>Permission</dt><dd>{action.permissionContract}</dd></div>
+                      <div><dt>Outcomes</dt><dd>{action.outcomeContract.join(' · ')}</dd></div>
+                    </dl>
+                  ) : (
+                    <div className="ef-action-integration__inline-blocker">
+                      <strong>Inline action blocked</strong>
+                      <span>{action.blocker}</span>
+                      <a href={action.operationalPath}>Open operational workspace</a>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+
           <footer className="ef-action-integration__footer">
             <strong>Destination-owned execution</strong>
             <span>
-              Order release, inventory movement, customer changes, route approval and exception lifecycle updates remain inside their governed domain command paths.
+              Order release, inventory movement, customer changes, route control and return disposition remain blocked inline. The existing Exception lifecycle command is the sole migrated family and preserves accepted, conflict, rejected, replay and network-unknown outcomes.
             </span>
           </footer>
         </>
