@@ -1,0 +1,93 @@
+name: Operational authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/app/serialSyncSession.ts'
+      - 'src/app/usePickSync.ts'
+      - 'src/data/repositories/pickSync.ts'
+      - 'src/domain/driverRun.ts'
+      - 'scripts/serial-sync-session.test.mjs'
+      - 'scripts/pick-sync-cursor.test.mjs'
+      - 'scripts/audit-operational-state-authority.mjs'
+      - 'scripts/operational-state-authority-fixture.sql'
+      - 'scripts/operational-state-authority-contract-test.sql'
+      - 'supabase/migrations/20260801053000_operational_state_authority.sql'
+      - 'supabase/migrations/20260801053100_business_day_carry_over_terminal_filter.sql'
+      - '.github/workflows/operational-authority-check.yml'
+      - 'package.json'
+  push:
+    branches:
+      - main
+      - 'agent/phase9b/**'
+    paths:
+      - 'src/app/serialSyncSession.ts'
+      - 'src/app/usePickSync.ts'
+      - 'src/data/repositories/pickSync.ts'
+      - 'src/domain/driverRun.ts'
+      - 'scripts/serial-sync-session.test.mjs'
+      - 'scripts/pick-sync-cursor.test.mjs'
+      - 'scripts/audit-operational-state-authority.mjs'
+      - 'scripts/operational-state-authority-fixture.sql'
+      - 'scripts/operational-state-authority-contract-test.sql'
+      - 'supabase/migrations/20260801053000_operational_state_authority.sql'
+      - 'supabase/migrations/20260801053100_business_day_carry_over_terminal_filter.sql'
+      - '.github/workflows/operational-authority-check.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operational-authority-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-contract:
+    name: Server authority frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit server authority boundary
+        run: node scripts/audit-operational-state-authority.mjs
+      - name: Test serial sync and cursor contracts
+        run: node --experimental-strip-types --test scripts/serial-sync-session.test.mjs scripts/pick-sync-cursor.test.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build
+
+  database-contract:
+    name: Server authority database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Execute authority migration and SQL contracts
+        run: psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/operational-state-authority-fixture.sql
