@@ -9,6 +9,7 @@ import { AnalyticsHealthConsole as HealthConsole } from './healthConsole/Analyti
 import { MetricDrillAccessStatus, ShadowDrillEvidenceReview } from '../crossFilter';
 import { OperationalPulseDeck } from '../operationalPulse/OperationalPulse';
 import { Phase4DomainIntelligencePanel } from './domainIntelligence/Phase4DomainIntelligencePanel';
+import { ActionIntegrationPanel } from './actionIntegration/ActionIntegrationPanel';
 import {
   hasCanonicalOperationalPulseCoverage,
   operationalPulseReadinessSummary,
@@ -78,6 +79,7 @@ export function OperationalPulseReadinessWorkspace({
       <MetricDrillAccessStatus />
       <ShadowDrillEvidenceReview />
       <Phase4DomainIntelligencePanel />
+      <ActionIntegrationPanel />
     </div>
   );
 }
