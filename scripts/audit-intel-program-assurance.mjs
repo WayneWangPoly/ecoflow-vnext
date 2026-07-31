@@ -46,7 +46,7 @@ const outcomes = [
 for (const outcome of outcomes) {
   assert.ok(contract.includes(`key: '${outcome}'`), `Phase 8 final outcome missing: ${outcome}`);
 }
-assert.equal((contract.match(/engineeringState: 'COMPLETE'/g) ?? []).length, 12, 'Phase 8 must contain twelve completed engineering outcomes');
+assert.equal((contract.match(/engineeringState: 'COMPLETE',/g) ?? []).length, 12, 'Phase 8 must contain twelve completed engineering outcomes');
 for (const marker of [
   "'NONE' | 'SHADOW_EVIDENCE' | 'CUTOVER_PER_FLAG'",
   "'NOT_AVAILABLE'",
