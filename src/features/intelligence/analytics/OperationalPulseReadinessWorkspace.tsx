@@ -8,6 +8,7 @@ import type { AnalyticsMetricReadinessRow } from './metricReadinessContract';
 import { AnalyticsHealthConsole as HealthConsole } from './healthConsole/AnalyticsHealthConsole';
 import { MetricDrillAccessStatus, ShadowDrillEvidenceReview } from '../crossFilter';
 import { OperationalPulseDeck } from '../operationalPulse/OperationalPulse';
+import { Phase4DomainIntelligencePanel } from './domainIntelligence/Phase4DomainIntelligencePanel';
 import {
   hasCanonicalOperationalPulseCoverage,
   operationalPulseReadinessSummary,
@@ -76,6 +77,7 @@ export function OperationalPulseReadinessWorkspace({
       </section>
       <MetricDrillAccessStatus />
       <ShadowDrillEvidenceReview />
+      <Phase4DomainIntelligencePanel />
     </div>
   );
 }
