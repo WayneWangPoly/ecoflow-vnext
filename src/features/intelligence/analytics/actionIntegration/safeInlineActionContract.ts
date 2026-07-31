@@ -167,7 +167,9 @@ export function normaliseExceptionLifecycleOutcome(
   result: ActionableExceptionLifecycleCommandResult,
 ): InlineCommandOutcome {
   if (result.ok) {
-    return result.data.commandStatus === 'REPLAYED' ? 'replay' : 'accepted';
+    if (result.data.commandStatus === 'APPLIED') return 'accepted';
+    if (result.data.commandStatus === 'REPLAYED') return 'replay';
+    return 'network-unknown';
   }
   if (result.state === 'conflict') return 'conflict';
   if (result.state === 'failed') return 'network-unknown';
