@@ -14,7 +14,7 @@ permissions:
 jobs:
   assurance:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 22
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,8 +25,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Audit Phase 8 programme assurance
-        run: node scripts/audit-intel-program-assurance.mjs
+      - name: Audit Phase 8 completion gate
+        run: node scripts/audit-intel-phase-8-program-assurance-gate.mjs
       - name: Execute programme assurance contract tests
         run: node --experimental-strip-types --test scripts/intel-program-assurance-contract.test.mjs
       - name: TypeScript check
