@@ -145,6 +145,31 @@ export {
 } from './actionableExceptionPresentationContract';
 
 export {
+  classifyPriorityWorkError,
+  normalisePriorityWorkRequest,
+  normalisePriorityWorkRows,
+  priorityWorkDefaultLimit,
+  priorityWorkMaximumLimit,
+  priorityWorkReadFailure,
+  priorityWorkReadSuccess,
+  priorityWorkRpcName,
+  type NormalisedPriorityWorkRows,
+  type PriorityWorkCapability,
+  type PriorityWorkFailureState,
+  type PriorityWorkIssue,
+  type PriorityWorkIssueCode,
+  type PriorityWorkLifecycleStatus,
+  type PriorityWorkReadFailure,
+  type PriorityWorkReadResult,
+  type PriorityWorkReadState,
+  type PriorityWorkReadSuccess,
+  type PriorityWorkRecord,
+  type PriorityWorkRepositoryError,
+  type PriorityWorkRequest,
+  type PriorityWorkRequestResult,
+} from './priorityWorkContract';
+
+export {
   ExceptionLifecycleCommitModal,
   type ExceptionLifecycleCommitModalProps,
 } from './ExceptionLifecycleCommitModal';
