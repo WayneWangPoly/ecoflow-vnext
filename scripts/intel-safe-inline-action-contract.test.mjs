@@ -62,6 +62,11 @@ test('exception lifecycle command results normalise into the ARCH-002 outcome co
     issues: [],
   }), 'replay');
   assert.equal(normaliseExceptionLifecycleOutcome({
+    ok: true,
+    data: { commandStatus: 'UNKNOWN' },
+    issues: [],
+  }), 'network-unknown');
+  assert.equal(normaliseExceptionLifecycleOutcome({
     ok: false,
     data: null,
     state: 'conflict',
