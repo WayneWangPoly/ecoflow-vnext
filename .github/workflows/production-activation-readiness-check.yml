@@ -1,0 +1,44 @@
+name: Production activation readiness check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - '.github/workflows/production-activation-readiness-check.yml'
+      - 'scripts/run-transient-supabase-command.mjs'
+      - 'scripts/transient-supabase-command-contract.test.mjs'
+      - 'scripts/audit-production-activation-readiness.mjs'
+      - 'docs/INTEL-PHASE-9A-PRODUCTION-ACTIVATION-READINESS.md'
+  push:
+    branches:
+      - main
+      - 'agent/phase9/**'
+    paths:
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - '.github/workflows/production-activation-readiness-check.yml'
+      - 'scripts/run-transient-supabase-command.mjs'
+      - 'scripts/transient-supabase-command-contract.test.mjs'
+      - 'scripts/audit-production-activation-readiness.mjs'
+      - 'docs/INTEL-PHASE-9A-PRODUCTION-ACTIVATION-READINESS.md'
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit production activation readiness
+        run: node scripts/audit-production-activation-readiness.mjs
+      - name: Execute transient Supabase retry contract tests
+        run: node --test scripts/transient-supabase-command-contract.test.mjs
+      - name: Validate production deployment workflow syntax
+        run: ruby -e "require 'yaml'; YAML.load_file('.github/workflows/deploy-supabase-migrations.yml'); YAML.load_file('.github/workflows/production-activation-readiness-check.yml'); puts 'workflow YAML parsed'"

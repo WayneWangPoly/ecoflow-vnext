@@ -7,6 +7,8 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/functions/**'
+      - 'scripts/run-transient-supabase-command.mjs'
+      - 'scripts/transient-supabase-command-contract.test.mjs'
       - '.github/workflows/deploy-supabase-migrations.yml'
 
 permissions:
@@ -22,13 +24,12 @@ env:
   SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
 
 jobs:
-  # ------------------------------------------------------------------
-  # Gate: apply pending migrations to a copy of the real production
-  # schema before any production write is attempted.
-  # ------------------------------------------------------------------
+  # Apply pending migrations to a copy of the real production schema before
+  # any production write is attempted. The same job verifies the retry runner
+  # used for transient Supabase and Cloudflare control-plane failures.
   shadow-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: production
     env:
       GH_TOKEN: ${{ github.token }}
@@ -61,6 +62,8 @@ jobs:
             -f target_url="$DEPLOYMENT_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Verify transient deployment retry contract
+        run: node --test scripts/transient-supabase-command-contract.test.mjs
       - name: Require production migration credentials
         shell: bash
         run: |
@@ -86,8 +89,6 @@ jobs:
       - name: Construct IPv4 pooler database URL
         shell: bash
         run: |
-          # supabase/.temp is generated local link state and is intentionally not
-          # tracked. Construct the known session-pooler URL from governed config.
           set -euo pipefail
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
           SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
@@ -190,8 +191,6 @@ jobs:
       - name: Load production schema into shadow
         shell: bash
         run: |
-          # Platform-managed role grant/ownership noise is tolerated here. The
-          # hard gate is the pending-migration application below.
           set +e
           psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=0 -f /tmp/prod-schema.sql > /tmp/schema-load.log 2>&1
           errors=$(grep -c '^psql:.*ERROR' /tmp/schema-load.log || true)
@@ -216,7 +215,7 @@ jobs:
   deploy:
     needs: shadow-verify
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     environment: production
     env:
       GH_TOKEN: ${{ github.token }}
@@ -263,11 +262,16 @@ jobs:
         # Pinned: 2.109.x ships a rewritten PgClient that times out against the
         # session pooler even when raw TCP is open. 2.107.0 is proven to connect.
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
-      - name: Link production project
+      - name: Link production project with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee supabase-migration-deploy.log
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Link production project' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 \
+            --base-delay-ms 20000 \
+            --max-delay-ms 120000 \
+            -- supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
       - name: Verify linked production project
         shell: bash
         run: |
@@ -284,8 +288,6 @@ jobs:
       - name: Construct IPv4 pooler database URL
         shell: bash
         run: |
-          # Do not depend on tracked supabase/.temp/pooler-url. That directory is
-          # generated local state and remains excluded from Git.
           set -euo pipefail
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
           SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
@@ -300,9 +302,9 @@ jobs:
               exit 0
             fi
             echo "migration list attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            [ "$attempt" = 3 ] && exit 1
             sleep 20
           done
-          exit 1
       - name: Preview pending migrations
         shell: bash
         run: |
@@ -312,9 +314,9 @@ jobs:
               exit 0
             fi
             echo "db push dry-run attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            [ "$attempt" = 3 ] && exit 1
             sleep 20
           done
-          exit 1
       - name: Apply pending migrations
         shell: bash
         run: |
@@ -324,34 +326,49 @@ jobs:
               exit 0
             fi
             echo "db push attempt $attempt failed; retrying in 20s" | tee -a supabase-migration-deploy.log
+            [ "$attempt" = 3 ] && exit 1
             sleep 20
           done
-          exit 1
-      - name: Deploy Ordermentum sync trigger
+      - name: Deploy Ordermentum sync trigger with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase functions deploy trigger-ordermentum-sync --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
-      - name: Deploy route-start customer notification
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy trigger-ordermentum-sync' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy trigger-ordermentum-sync --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy route-start customer notification with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase functions deploy notify-route-start --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
-      - name: Deploy delivery notification dispatch
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy notify-route-start' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy notify-route-start --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy delivery notification dispatch with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase functions deploy delivery-notification-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
-      - name: Deploy statement dispatch
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy delivery-notification-dispatch' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy delivery-notification-dispatch --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy statement dispatch with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase functions deploy statement-dispatch --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
-      - name: Deploy storage retention
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy statement-dispatch' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy statement-dispatch --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy storage retention with transient retry
         shell: bash
         run: |
-          set -o pipefail
-          supabase functions deploy storage-retention --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a supabase-migration-deploy.log
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy storage-retention' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy storage-retention --project-ref "$SUPABASE_PROJECT_REF"
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
@@ -361,10 +378,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # ------------------------------------------------------------------
-  # Publish final DB state and verify any frontend changed by this commit
+  # Publish final database state and verify any frontend changed by this commit
   # is not behind the database deployment.
-  # ------------------------------------------------------------------
   finalize:
     needs: [shadow-verify, deploy]
     if: always()
