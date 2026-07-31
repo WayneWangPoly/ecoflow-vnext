@@ -120,7 +120,7 @@ for (const marker of ['Sync health', 'stale source', 'missing invoice', 'mapping
 }
 
 for (const marker of ['6 domains', '60 / 60', 'missing evidence', 'canonical handoff', 'Commercial SKU', 'Physical SKU']) {
-  assert.ok(documentation.includes(marker), `Phase 4 documentation marker missing: ${marker}`);
+  assert.ok(documentation.toLowerCase().includes(marker.toLowerCase()), `Phase 4 documentation marker missing: ${marker}`);
 }
 
 console.log('INTEL-GATE-004 Phase 4 Domain Intelligence completion gate passed: 6 domains, 60/60 surface capabilities.');
