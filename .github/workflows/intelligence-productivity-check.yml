@@ -25,8 +25,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Audit Phase 6 productivity contracts
-        run: node scripts/audit-intel-personalisation-productivity.mjs
+      - name: Audit Phase 6 completion gate
+        run: node scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
       - name: TypeScript check
         run: node ./node_modules/typescript/bin/tsc -b --pretty false
       - name: Vite production bundle
