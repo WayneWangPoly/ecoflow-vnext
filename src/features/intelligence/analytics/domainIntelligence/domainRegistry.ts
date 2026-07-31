@@ -3,6 +3,7 @@ import { ordersDomainManifest } from './ordersDomainManifest';
 import { customersDomainManifest } from './customersDomainManifest';
 import { deliveryDomainManifest } from './deliveryDomainManifest';
 import { returnsDomainManifest } from './returnsDomainManifest';
+import { dataQualityDomainManifest } from './dataQualityDomainManifest';
 import type { Phase4DomainManifest } from './domainIntelligenceContract';
 
 export const phase4DomainManifests: readonly Phase4DomainManifest[] = [
@@ -11,4 +12,5 @@ export const phase4DomainManifests: readonly Phase4DomainManifest[] = [
   customersDomainManifest,
   deliveryDomainManifest,
   returnsDomainManifest,
+  dataQualityDomainManifest,
 ];
