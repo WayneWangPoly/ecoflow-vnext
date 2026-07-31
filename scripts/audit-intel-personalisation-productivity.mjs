@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 function read(path) {
   assert.ok(fs.existsSync(path), `Phase 6 prerequisite missing: ${path}`);
@@ -66,5 +67,14 @@ for (const marker of ['@media (max-width: 900px)', '@media (max-width: 640px)', 
 for (const forbidden of ['!important', '@font-face', 'url(', '#root']) {
   assert.ok(!style.includes(forbidden), `Phase 6 style scope expansion: ${forbidden}`);
 }
+
+const testRun = spawnSync(
+  process.execPath,
+  ['--experimental-strip-types', '--test', 'scripts/intel-personalisation-productivity-contract.test.mjs'],
+  { encoding: 'utf8' },
+);
+if (testRun.stdout) process.stdout.write(testRun.stdout);
+if (testRun.stderr) process.stderr.write(testRun.stderr);
+assert.equal(testRun.status, 0, 'Phase 6 productivity contract tests failed');
 
 console.log('INTEL-PER-001 through INTEL-PER-004 personalisation and productivity audit passed.');
