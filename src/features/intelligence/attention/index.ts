@@ -170,6 +170,22 @@ export {
 } from './priorityWorkContract';
 
 export {
+  formatPriorityWorkAge,
+  formatPriorityWorkMoment,
+  priorityWorkLifecycleLabel,
+  priorityWorkOrderRoute,
+  priorityWorkOwnerLabel,
+  priorityWorkSummary,
+  type PriorityWorkOrderRoute,
+  type PriorityWorkSummary,
+} from './priorityWorkPresentationContract';
+
+export {
+  PriorityWork,
+  type PriorityWorkProps,
+} from './PriorityWork';
+
+export {
   ExceptionLifecycleCommitModal,
   type ExceptionLifecycleCommitModalProps,
 } from './ExceptionLifecycleCommitModal';
