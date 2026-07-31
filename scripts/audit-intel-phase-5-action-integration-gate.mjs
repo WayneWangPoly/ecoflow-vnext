@@ -162,3 +162,5 @@ for (const marker of [
 }
 
 console.log('INTEL-GATE-005 Phase 5 Action Integration completion gate passed: 5 handoffs, 6 command families, 1 migrated inline family, no direct business-table writes.');
+
+await import('./audit-intel-personalisation-productivity.mjs');
