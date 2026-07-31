@@ -1,0 +1,258 @@
+.ef-action-integration {
+  display: grid;
+  gap: var(--ef-space-4);
+  color: var(--ef-text-primary);
+}
+
+.ef-action-integration__header,
+.ef-action-integration__source,
+.ef-action-integration__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ef-space-4);
+}
+
+.ef-action-integration__header {
+  padding: var(--ef-space-5);
+  border: 1px solid var(--ef-border-emphasis);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-subtle);
+}
+
+.ef-action-integration__header span,
+.ef-action-integration__source span,
+.ef-action-integration__card header span {
+  display: block;
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  font-weight: var(--ef-weight-bold);
+  letter-spacing: .08em;
+}
+
+.ef-action-integration__header h2,
+.ef-action-integration__source h3 {
+  margin: var(--ef-space-1) 0 0;
+  line-height: var(--ef-leading-tight);
+}
+
+.ef-action-integration__header p,
+.ef-action-integration__source p,
+.ef-action-integration__card p {
+  margin: var(--ef-space-2) 0 0;
+  color: var(--ef-text-secondary);
+  line-height: var(--ef-leading-standard);
+}
+
+.ef-action-integration__boundary {
+  min-width: 190px;
+  padding: var(--ef-space-3);
+  border-left: 3px solid var(--ef-status-success-foreground);
+  background: var(--ef-status-success-background);
+}
+
+.ef-action-integration__boundary[data-state='blocked'] {
+  border-left-color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-action-integration__boundary strong,
+.ef-action-integration__boundary small {
+  display: block;
+}
+
+.ef-action-integration__boundary strong {
+  margin-top: var(--ef-space-1);
+}
+
+.ef-action-integration__boundary small {
+  margin-top: var(--ef-space-1);
+  color: var(--ef-text-secondary);
+}
+
+.ef-action-integration__domains {
+  display: flex;
+  gap: var(--ef-space-2);
+  overflow-x: auto;
+}
+
+.ef-action-integration__domains button {
+  min-width: 190px;
+  min-height: var(--ef-touch-target-min);
+  padding: var(--ef-space-3);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+  color: var(--ef-text-primary);
+  background: var(--ef-surface-panel);
+  text-align: left;
+  transition: border-color var(--ef-motion-fast), background var(--ef-motion-fast), transform var(--ef-motion-fast);
+}
+
+.ef-action-integration__domains button[aria-pressed='true'] {
+  border-color: var(--ef-status-information-foreground);
+  background: var(--ef-status-information-background);
+}
+
+.ef-action-integration__domains button:hover {
+  transform: translateY(-1px);
+}
+
+.ef-action-integration__domains span,
+.ef-action-integration__domains strong {
+  display: block;
+}
+
+.ef-action-integration__domains span {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-action-integration__domains strong {
+  margin-top: var(--ef-space-1);
+}
+
+.ef-action-integration__source {
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-panel);
+}
+
+.ef-action-integration__source dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(100px, 1fr));
+  gap: var(--ef-space-2);
+  margin: 0;
+}
+
+.ef-action-integration__source dl div {
+  padding: var(--ef-space-2);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-1);
+}
+
+.ef-action-integration__source dt {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-action-integration__source dd {
+  margin: var(--ef-space-1) 0 0;
+  font-weight: var(--ef-weight-bold);
+}
+
+.ef-action-integration__grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--ef-space-3);
+}
+
+.ef-action-integration__card {
+  display: grid;
+  align-content: start;
+  gap: var(--ef-space-3);
+  min-height: 250px;
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-panel);
+}
+
+.ef-action-integration__card header strong {
+  display: block;
+  margin-top: var(--ef-space-1);
+  font-size: var(--ef-type-lg);
+}
+
+.ef-action-integration__card a,
+.ef-action-integration__blocked-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--ef-touch-target-min);
+  margin-top: auto;
+  padding: var(--ef-space-2) var(--ef-space-3);
+  border: 1px solid var(--ef-border-emphasis);
+  border-radius: var(--ef-radius-1);
+}
+
+.ef-action-integration__card a {
+  color: var(--ef-text-primary);
+  background: var(--ef-surface-subtle);
+  text-decoration: none;
+}
+
+.ef-action-integration__card a:hover {
+  border-color: var(--ef-status-information-foreground);
+}
+
+.ef-action-integration__blocked-link {
+  color: var(--ef-status-danger-foreground);
+  background: var(--ef-status-danger-background);
+}
+
+.ef-action-integration__card small {
+  color: var(--ef-text-muted);
+}
+
+.ef-action-integration__footer,
+.ef-action-integration__state {
+  padding: var(--ef-space-4);
+  border: 1px solid var(--ef-border-default);
+  border-radius: var(--ef-radius-2);
+  background: var(--ef-surface-subtle);
+}
+
+.ef-action-integration__footer span,
+.ef-action-integration__state span {
+  color: var(--ef-text-secondary);
+}
+
+.ef-action-integration__state strong,
+.ef-action-integration__state span {
+  display: block;
+}
+
+.ef-action-integration__state span {
+  margin-top: var(--ef-space-1);
+}
+
+@media (max-width: 1200px) {
+  .ef-action-integration__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .ef-action-integration__header,
+  .ef-action-integration__source,
+  .ef-action-integration__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ef-action-integration__boundary {
+    min-width: 0;
+  }
+
+  .ef-action-integration__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .ef-action-integration__source dl,
+  .ef-action-integration__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-action-integration__domains button {
+    transition: none;
+  }
+
+  .ef-action-integration__domains button:hover {
+    transform: none;
+  }
+}
