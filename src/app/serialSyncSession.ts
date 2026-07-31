@@ -3,6 +3,7 @@ export type SyncScopeMap = Record<string, string>;
 export type SyncChange = {
   scope: string;
   payload: unknown;
+  expectedRevision?: number;
 };
 
 export type SyncRow = {
@@ -10,6 +11,13 @@ export type SyncRow = {
   scope: string;
   payload: unknown;
   updated_at: string;
+  revision?: number | string | null;
+};
+
+export type SyncPushResult<Row extends SyncRow> = {
+  rows?: Row[];
+  conflict?: boolean;
+  detail?: string;
 };
 
 export type SerialSyncStatus = 'live' | 'error' | 'denied';
@@ -26,9 +34,15 @@ export type SerialSyncSessionOptions<State, Row extends SyncRow> = {
   scopesFromState: (state: State) => SyncScopeMap;
   diffScopes: (previous: SyncScopeMap, current: SyncScopeMap) => SyncChange[];
   mergeRows: (state: State, rows: Row[]) => State;
+  /** First hydration is a full server snapshot and must replace device cache. */
+  replaceStateFromRows?: (state: State, rows: Row[]) => State;
   fetchRows: (businessDay: string, cursor: string) => Promise<Row[]>;
   advanceCursor?: (currentCursor: string, rows: Row[]) => string;
-  pushRows: (businessDay: string, changes: SyncChange[], deviceLabel: string) => Promise<void>;
+  pushRows: (
+    businessDay: string,
+    changes: SyncChange[],
+    deviceLabel: string
+  ) => Promise<void | SyncPushResult<Row>>;
   onStatus: (status: SerialSyncStatus, detail?: string) => void;
 };
 
@@ -43,15 +57,20 @@ function errorStatus(reason: unknown) {
 }
 
 function serializeChanges(changes: SyncChange[]) {
-  return JSON.stringify(changes);
+  return JSON.stringify(changes.map(({ scope, payload }) => ({ scope, payload })));
+}
+
+function revisionValue(value: SyncRow['revision']) {
+  const parsed = Number(value ?? 0);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 /**
  * Serialises polling and writes for one business-day epoch.
  *
- * This is deliberately a client-side safety boundary, not a cross-device
- * concurrency protocol. Server-side revisions and idempotent commands remain
- * the authoritative long-term design.
+ * The server owns the initial snapshot, per-scope revisions and idempotent
+ * command outcome. Device state is only a render/offline cache. A stale device
+ * receives a conflict snapshot and never silently overwrites a newer scope.
  */
 export class SerialSyncSession<State, Row extends SyncRow> {
   readonly businessDay: string;
@@ -59,6 +78,7 @@ export class SerialSyncSession<State, Row extends SyncRow> {
   private readonly options: SerialSyncSessionOptions<State, Row>;
   private cursor: string;
   private lastKnown: SyncScopeMap = {};
+  private knownRevision: Record<string, number> = {};
   private hydrated = false;
   private stopped = false;
   private deniedSignature = '';
@@ -92,6 +112,13 @@ export class SerialSyncSession<State, Row extends SyncRow> {
     return scheduled;
   }
 
+  private rememberRows(rows: Row[]) {
+    for (const row of rows) {
+      this.lastKnown[row.scope] = JSON.stringify(row.payload);
+      this.knownRevision[row.scope] = revisionValue(row.revision);
+    }
+  }
+
   requestPoll(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.pollPromise) return this.pollPromise;
@@ -112,24 +139,32 @@ export class SerialSyncSession<State, Row extends SyncRow> {
             );
         }
 
-        let applicableRows = rows;
-        if (wasHydrated && rows.length > 0) {
-          const local = this.options.normalizeState(this.options.getState(), this.businessDay);
-          const currentScopes = this.options.scopesFromState(local);
-          const dirtyScopes = new Set(
-            this.options.diffScopes(this.lastKnown, currentScopes).map((change) => change.scope)
-          );
-          applicableRows = rows.filter((row) => !dirtyScopes.has(row.scope));
-        }
-
-        for (const row of applicableRows) {
-          this.lastKnown[row.scope] = JSON.stringify(row.payload);
-        }
-        if (applicableRows.length > 0) {
+        if (!wasHydrated && this.options.replaceStateFromRows) {
+          this.lastKnown = {};
+          this.knownRevision = {};
+          this.rememberRows(rows);
           this.options.updateState((current) => {
             const normalised = this.options.normalizeState(current, this.businessDay);
-            return this.options.mergeRows(normalised, applicableRows);
+            return this.options.replaceStateFromRows!(normalised, rows);
           });
+        } else {
+          let applicableRows = rows;
+          if (wasHydrated && rows.length > 0) {
+            const local = this.options.normalizeState(this.options.getState(), this.businessDay);
+            const currentScopes = this.options.scopesFromState(local);
+            const dirtyScopes = new Set(
+              this.options.diffScopes(this.lastKnown, currentScopes).map((change) => change.scope)
+            );
+            applicableRows = rows.filter((row) => !dirtyScopes.has(row.scope));
+          }
+
+          this.rememberRows(applicableRows);
+          if (applicableRows.length > 0) {
+            this.options.updateState((current) => {
+              const normalised = this.options.normalizeState(current, this.businessDay);
+              return this.options.mergeRows(normalised, applicableRows);
+            });
+          }
         }
 
         this.hydrated = true;
@@ -172,16 +207,58 @@ export class SerialSyncSession<State, Row extends SyncRow> {
             continue;
           }
 
+          const versionedChanges = changes.map((change) => ({
+            ...change,
+            expectedRevision: this.knownRevision[change.scope] ?? 0
+          }));
+
           try {
-            await this.options.pushRows(
+            const result = await this.options.pushRows(
               this.businessDay,
-              changes,
+              versionedChanges,
               this.options.getDeviceLabel()
             );
             if (this.stopped) return;
-            for (const change of changes) {
-              this.lastKnown[change.scope] = JSON.stringify(change.payload);
+
+            const returnedRows = result?.rows ?? [];
+            if (result?.conflict) {
+              this.rememberRows(returnedRows);
+              if (returnedRows.length > 0) {
+                this.options.updateState((latest) => {
+                  const normalised = this.options.normalizeState(latest, this.businessDay);
+                  return this.options.mergeRows(normalised, returnedRows);
+                });
+              }
+              this.deniedSignature = '';
+              this.options.onStatus(
+                'error',
+                result.detail || 'A newer server update was kept. Review the latest state and repeat the action if still required.'
+              );
+              break;
             }
+
+            if (returnedRows.length > 0) {
+              this.rememberRows(returnedRows);
+              const sentByScope = new Map(versionedChanges.map((change) => [change.scope, JSON.stringify(change.payload)]));
+              const latestScopes = this.options.scopesFromState(
+                this.options.normalizeState(this.options.getState(), this.businessDay)
+              );
+              const safeToMerge = returnedRows.filter((row) => latestScopes[row.scope] === sentByScope.get(row.scope));
+              if (safeToMerge.length > 0) {
+                this.options.updateState((latest) => {
+                  const normalised = this.options.normalizeState(latest, this.businessDay);
+                  return this.options.mergeRows(normalised, safeToMerge);
+                });
+              }
+            } else {
+              // Backward-compatible fallback for tests or a legacy adapter. The
+              // production adapter always returns authoritative revisions.
+              for (const change of versionedChanges) {
+                this.lastKnown[change.scope] = JSON.stringify(change.payload);
+                this.knownRevision[change.scope] = (change.expectedRevision ?? 0) + 1;
+              }
+            }
+
             this.deniedSignature = '';
             this.options.onStatus('live');
           } catch (reason) {

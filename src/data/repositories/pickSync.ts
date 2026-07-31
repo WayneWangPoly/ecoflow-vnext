@@ -3,8 +3,7 @@ import type { PickState, PickTaskState } from '@/domain/pickPlan';
 import { supabase } from '@/lib/supabaseClient';
 import {
   comparePickSyncRows,
-  sequenceFromPickSyncCursor,
-  timestampFromPickSyncCursor
+  sequenceFromPickSyncCursor
 } from '@/data/pickSyncCursor';
 export {
   advancePickSyncCursor,
@@ -18,15 +17,25 @@ export type PickSyncRow = {
   updated_by: string | null;
   updated_at: string;
   change_seq?: number | string | null;
+  revision?: number | string | null;
+};
+
+export type PickSyncPushResult = {
+  rows: PickSyncRow[];
+  conflict: boolean;
+  detail?: string;
 };
 
 /** scope -> serialized payload; used to diff local state against what the server knows. */
 export type ScopeMap = Record<string, string>;
 
-const TABLE = 'ecoflow_day_state';
 const POD_BUCKET = 'pod-photos';
 const PAGE_SIZE = 500;
 const MAX_SEQUENCE_PAGES = 20;
+const AUTHORITY_READ_RPC = 'rpc/ecoflow_read_day_state';
+const AUTHORITY_SCOPE_RPC = 'rpc/ecoflow_read_day_state_scope';
+const AUTHORITY_WRITE_RPC = 'rpc/ecoflow_apply_day_state_commands';
+const EPOCH = '1970-01-01T00:00:00.000Z';
 
 function envValue(key: string) {
   return (import.meta.env[key] as string | undefined)?.trim() || '';
@@ -67,10 +76,9 @@ async function rest<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-function missingChangeSequence(reason: unknown) {
-  if (!(reason instanceof Error)) return false;
-  const status = (reason as Error & { status?: number }).status;
-  return status === 400 && /change_seq/i.test(reason.message);
+function revisionNumber(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 async function fetchSequencedPickRows(businessDay: string, cursor: string): Promise<PickSyncRow[]> {
@@ -78,10 +86,14 @@ async function fetchSequencedPickRows(businessDay: string, cursor: string): Prom
   const rows: PickSyncRow[] = [];
 
   for (let page = 0; page < MAX_SEQUENCE_PAGES; page += 1) {
-    const filter = `business_day=eq.${encodeURIComponent(businessDay)}&change_seq=gt.${afterSequence.toString()}`;
-    const batch = await rest<PickSyncRow[]>(
-      `${TABLE}?${filter}&order=change_seq.asc&limit=${PAGE_SIZE}&select=*`
-    );
+    const batch = await rest<PickSyncRow[]>(AUTHORITY_READ_RPC, {
+      method: 'POST',
+      body: JSON.stringify({
+        p_business_day: businessDay,
+        p_after_change_seq: afterSequence.toString(),
+        p_limit: PAGE_SIZE
+      })
+    });
     if (batch.length === 0) return rows;
 
     const nextSequence = batch.reduce((latest, row) => {
@@ -102,55 +114,139 @@ async function fetchSequencedPickRows(businessDay: string, cursor: string): Prom
   throw new Error(`Shared-state sync exceeded ${PAGE_SIZE * MAX_SEQUENCE_PAGES} rows in one poll; pagination stopped safely.`);
 }
 
-async function fetchTimestampFallbackRows(businessDay: string, cursor: string) {
-  const afterIso = timestampFromPickSyncCursor(cursor);
-  const filter = `business_day=eq.${encodeURIComponent(businessDay)}&updated_at=gte.${encodeURIComponent(afterIso)}`;
-  const rows: PickSyncRow[] = [];
-
-  for (let page = 0; page < MAX_SEQUENCE_PAGES; page += 1) {
-    const batch = await rest<PickSyncRow[]>(
-      `${TABLE}?${filter}&order=updated_at.asc,scope.asc&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}&select=*`
-    );
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) return rows;
-  }
-
-  throw new Error(`Timestamp fallback sync exceeded ${PAGE_SIZE * MAX_SEQUENCE_PAGES} rows in one poll; pagination stopped safely.`);
+export async function fetchPickRows(businessDay: string, cursor: string): Promise<PickSyncRow[]> {
+  return fetchSequencedPickRows(businessDay, cursor);
 }
 
-export async function fetchPickRows(businessDay: string, cursor: string): Promise<PickSyncRow[]> {
-  try {
-    return await fetchSequencedPickRows(businessDay, cursor);
-  } catch (reason) {
-    if (!missingChangeSequence(reason)) throw reason;
-    return fetchTimestampFallbackRows(businessDay, cursor);
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+}
+
+function fallbackDigest(input: string) {
+  const words = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
+  for (let index = 0; index < input.length; index += 1) {
+    const code = input.charCodeAt(index);
+    for (let word = 0; word < words.length; word += 1) {
+      words[word] ^= code + word * 131;
+      words[word] = Math.imul(words[word], 0x01000193 + word * 2) >>> 0;
+    }
   }
+  return words.flatMap((word) => [word >>> 24, word >>> 16, word >>> 8, word].map((part) => part & 0xff));
+}
+
+/** Stable across retries and reloads for the same intent and server revision. */
+export async function operationalCommandId(input: string): Promise<string> {
+  const encoded = new TextEncoder().encode(input);
+  let bytes: number[];
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded);
+    bytes = Array.from(new Uint8Array(digest).slice(0, 16));
+  } else {
+    bytes = fallbackDigest(input);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.map((value) => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+type DayStateCommandResult = {
+  command_id: string;
+  business_day: string;
+  scope: string;
+  command_status: 'APPLIED' | 'REPLAYED' | 'CONFLICT';
+  revision: number | string;
+  payload: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string | null;
+  change_seq: number | string | null;
+};
+
+function resultRow(result: DayStateCommandResult): PickSyncRow {
+  return {
+    business_day: result.business_day,
+    scope: result.scope,
+    payload: result.payload ?? {},
+    updated_by: result.updated_by,
+    updated_at: result.updated_at || EPOCH,
+    change_seq: result.change_seq ?? 0,
+    revision: result.revision
+  };
 }
 
 export async function pushPickRows(
   businessDay: string,
-  entries: { scope: string; payload: unknown }[],
+  entries: { scope: string; payload: unknown; expectedRevision?: number }[],
   updatedBy: string
-): Promise<void> {
-  if (!entries.length) return;
-  await rest<void>(`${TABLE}?on_conflict=business_day,scope`, {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(entries.map((entry) => ({
-      business_day: businessDay,
+): Promise<PickSyncPushResult> {
+  if (!entries.length) return { rows: [], conflict: false };
+
+  const commands = await Promise.all(entries.map(async (entry) => {
+    const expectedRevision = Math.max(0, Math.floor(entry.expectedRevision ?? 0));
+    const canonical = stableJson(entry.payload);
+    return {
+      commandId: await operationalCommandId(`${businessDay}\n${entry.scope}\n${expectedRevision}\n${canonical}`),
       scope: entry.scope,
-      payload: entry.payload,
-      updated_by: updatedBy
-    })))
+      expectedRevision,
+      payload: entry.payload
+    };
+  }));
+
+  const results = await rest<DayStateCommandResult[]>(AUTHORITY_WRITE_RPC, {
+    method: 'POST',
+    body: JSON.stringify({
+      p_business_day: businessDay,
+      p_commands: commands,
+      p_updated_by: updatedBy
+    })
   });
+
+  const conflict = results.some((result) => result.command_status === 'CONFLICT');
+  const rows = results.map(resultRow);
+  return {
+    rows,
+    conflict,
+    detail: conflict
+      ? `A newer server revision was kept for ${rows.map((row) => row.scope).join(', ')}. Review the refreshed state before repeating the action.`
+      : undefined
+  };
+}
+
+async function readDayScope(businessDay: string, scope: string): Promise<PickSyncRow | null> {
+  const rows = await rest<PickSyncRow[]>(AUTHORITY_SCOPE_RPC, {
+    method: 'POST',
+    body: JSON.stringify({ p_business_day: businessDay, p_scope: scope })
+  });
+  return rows[0] ?? null;
 }
 
 export async function setActiveRunCode(businessDay: string, runCode: string, updatedBy: string): Promise<void> {
-  await rest<void>(`${TABLE}?on_conflict=business_day,scope`, {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify([{ business_day: businessDay, scope: 'run-control', payload: { activeRunCode: runCode }, updated_by: updatedBy }]),
-  });
+  const normalizedRunCode = runCode.trim().toUpperCase() || 'A';
+  const current = await readDayScope(businessDay, 'run-control');
+  const desired = { activeRunCode: normalizedRunCode };
+  let result = await pushPickRows(businessDay, [{
+    scope: 'run-control',
+    payload: desired,
+    expectedRevision: revisionNumber(current?.revision)
+  }], updatedBy);
+
+  if (!result.conflict) return;
+  const authoritative = result.rows[0];
+  if (String(authoritative?.payload?.activeRunCode || '').toUpperCase() === normalizedRunCode) return;
+
+  result = await pushPickRows(businessDay, [{
+    scope: 'run-control',
+    payload: desired,
+    expectedRevision: revisionNumber(authoritative?.revision)
+  }], updatedBy);
+  if (!result.conflict) return;
+
+  const failure = new Error(result.detail || 'Active run changed on another device. Refresh and try again.') as Error & { status?: number };
+  failure.status = 409;
+  throw failure;
 }
 
 /** Uploads a data-URL image to Storage; returns the object path or null on failure. */
@@ -223,7 +319,7 @@ export function scopesFromDay(day: DriverDayState): ScopeMap {
   Object.entries(day.releasedOrders).forEach(([orderId, releasedAt]) => { map[`${prefix}release:${orderId}`] = JSON.stringify({ releasedAt }); });
   Object.entries(day.stopProgress).forEach(([orderId, progress]) => { map[`${prefix}stop:${orderId}`] = serializeStop(progress); });
   if (day.routeStartedAt || day.routeEndedAt) map[`${prefix}route`] = JSON.stringify({ startedAt: day.routeStartedAt ?? null, endedAt: day.routeEndedAt ?? null });
-  if (day.shiftEvents.length) map['shift'] = JSON.stringify({ events: day.shiftEvents });
+  if (day.shiftEvents.length) map.shift = JSON.stringify({ events: day.shiftEvents });
   return map;
 }
 
@@ -263,7 +359,7 @@ export function diffScopes(previous: ScopeMap, current: ScopeMap): { scope: stri
 
 type MetaPayload = { lockedAt?: string | null; stopOrder?: string[]; boxCodes?: Record<string, string> };
 
-/** Applies remote rows (oldest first) onto the local day; per-scope last-write-wins. */
+/** Applies remote rows (oldest first) onto the current server-backed day. */
 export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): DriverDayState {
   if (!rows.length) return day;
   const sorted = [...rows].sort(comparePickSyncRows);
@@ -298,7 +394,7 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
     if (scope.startsWith('run:')) {
       if (!scope.startsWith(prefix)) return;
       scope = scope.slice(prefix.length);
-    } else if (remoteRunCode !== 'A') return; // Unprefixed rows are legacy Run A only.
+    } else if (remoteRunCode !== 'A') return;
 
     if (scope === 'meta') {
       const meta = row.payload as MetaPayload;
@@ -315,7 +411,8 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
       const releasedAt = (row.payload as { releasedAt?: string | null }).releasedAt;
       const next = { ...releasedOrders };
       if (releasedAt) next[orderId] = releasedAt; else delete next[orderId];
-      releasedOrders = next; return;
+      releasedOrders = next;
+      return;
     }
     if (scope.startsWith('stop:')) {
       const orderId = scope.slice('stop:'.length);
@@ -324,22 +421,42 @@ export function mergeRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): Driv
       const pod = incoming.pod && local?.pod && incoming.pod.capturedAt === local.pod.capturedAt
         ? { ...incoming.pod, photo: local.pod.photo, signature: local.pod.signature, pod1Photo: local.pod.pod1Photo, pod2Photo: local.pod.pod2Photo }
         : incoming.pod;
-      stopProgress = { ...stopProgress, [orderId]: { ...incoming, pod } }; return;
+      stopProgress = { ...stopProgress, [orderId]: { ...incoming, pod } };
+      return;
     }
     if (scope === 'route') {
       const route = row.payload as { startedAt?: string | null; endedAt?: string | null };
-      routeStartedAt = route.startedAt ?? undefined; routeEndedAt = route.endedAt ?? undefined; return;
+      routeStartedAt = route.startedAt ?? undefined;
+      routeEndedAt = route.endedAt ?? undefined;
+      return;
     }
     if (!pick) return;
     if (scope.startsWith('task:')) {
-      const sku = scope.slice('task:'.length); pick = { ...pick, taskState: { ...pick.taskState, [sku]: row.payload as PickTaskState } };
+      const sku = scope.slice('task:'.length);
+      pick = { ...pick, taskState: { ...pick.taskState, [sku]: row.payload as PickTaskState } };
     } else if (scope.startsWith('alloc:')) {
-      const key = scope.slice('alloc:'.length); pick = { ...pick, allocDone: { ...pick.allocDone, [key]: Boolean((row.payload as { done?: boolean }).done) } };
+      const key = scope.slice('alloc:'.length);
+      pick = { ...pick, allocDone: { ...pick.allocDone, [key]: Boolean((row.payload as { done?: boolean }).done) } };
     } else if (scope.startsWith('stage:')) {
-      const orderId = scope.slice('stage:'.length); const stagedAt = (row.payload as { stagedAt?: string | null }).stagedAt;
-      const stagedStops = { ...pick.stagedStops }; if (stagedAt) stagedStops[orderId] = stagedAt; else delete stagedStops[orderId];
+      const orderId = scope.slice('stage:'.length);
+      const stagedAt = (row.payload as { stagedAt?: string | null }).stagedAt;
+      const stagedStops = { ...pick.stagedStops };
+      if (stagedAt) stagedStops[orderId] = stagedAt; else delete stagedStops[orderId];
       pick = { ...pick, stagedStops };
     }
   });
   return { ...base, pick, stopOrder, releasedOrders, stopProgress, shiftEvents, routeStartedAt, routeEndedAt };
+}
+
+/** Device cache is discarded on first successful hydration, including empty server days. */
+export function replaceRowsIntoDay(day: DriverDayState, rows: PickSyncRow[]): DriverDayState {
+  const empty: DriverDayState = {
+    version: 1,
+    businessDay: day.businessDay,
+    runCode: 'A',
+    releasedOrders: {},
+    stopProgress: {},
+    shiftEvents: []
+  };
+  return rows.length ? mergeRowsIntoDay(empty, rows) : empty;
 }

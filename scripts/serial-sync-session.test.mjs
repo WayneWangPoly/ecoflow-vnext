@@ -14,12 +14,20 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function row(businessDay, scope, payload, updatedAt) {
+function row(businessDay, scope, payload, updatedAt, revision = 1) {
   return {
     business_day: businessDay,
     scope,
     payload,
-    updated_at: updatedAt
+    updated_at: updatedAt,
+    revision
+  };
+}
+
+function rowsToState(current, rows) {
+  return {
+    businessDay: current.businessDay,
+    scopes: Object.fromEntries(rows.map((item) => [item.scope, JSON.stringify(item.payload)]))
   };
 }
 
@@ -57,6 +65,9 @@ function harness({
           changes.push({ scope, payload: JSON.parse(payload) });
         }
       }
+      for (const scope of Object.keys(previous)) {
+        if (!(scope in current)) changes.push({ scope, payload: {} });
+      }
       return changes;
     },
     mergeRows: (current, rows) => ({
@@ -66,6 +77,7 @@ function harness({
         ...Object.fromEntries(rows.map((item) => [item.scope, JSON.stringify(item.payload)]))
       }
     }),
+    replaceStateFromRows: rowsToState,
     fetchRows,
     advanceCursor,
     pushRows,
@@ -83,7 +95,7 @@ function harness({
   };
 }
 
-test('a failed first fetch never hydrates or blind-pushes local state', async () => {
+test('a failed first fetch never hydrates or blind-pushes device cache', async () => {
   let pushes = 0;
   const sync = harness({
     initialState: {
@@ -104,6 +116,20 @@ test('a failed first fetch never hydrates or blind-pushes local state', async ()
   assert.equal(sync.session.isHydrated(), false);
   assert.equal(pushes, 0);
   assert.deepEqual(sync.statuses, [{ status: 'error', detail: 'offline' }]);
+});
+
+test('the first empty server snapshot clears stale device cache', async () => {
+  const sync = harness({
+    initialState: {
+      businessDay: '2026-07-27',
+      scopes: { 'run:A:task:STALE': '{"status":"PICKED"}' }
+    }
+  });
+
+  await sync.session.requestPoll();
+
+  assert.equal(sync.session.isHydrated(), true);
+  assert.deepEqual(sync.getState(), { businessDay: '2026-07-27', scopes: {} });
 });
 
 test('a stale business-day session cannot apply its late response', async () => {
@@ -153,7 +179,7 @@ test('a custom monotonic cursor is carried into the next poll', async () => {
         ? [row('2026-07-27', 'run:A:task:SKU-1', { status: 'PENDING' }, '2026-07-27T01:00:00Z')]
         : [];
     },
-    advanceCursor: (_cursor, _rows) => 'seq:42'
+    advanceCursor: () => 'seq:42'
   });
 
   await sync.session.requestPoll();
@@ -162,7 +188,7 @@ test('a custom monotonic cursor is carried into the next poll', async () => {
   assert.deepEqual(cursors, ['seq:0', 'seq:42']);
 });
 
-test('a new epoch normalises state before applying remote rows', async () => {
+test('a new epoch normalises state before replacing it with remote rows', async () => {
   const sync = harness({
     businessDay: '2026-07-28',
     initialState: {
@@ -182,7 +208,7 @@ test('a new epoch normalises state before applying remote rows', async () => {
   });
 });
 
-test('poll and push are serial, and a late poll cannot overwrite a dirty local scope', async () => {
+test('a stale dirty scope uses its known revision and server conflict wins', async () => {
   const latePoll = deferred();
   const events = [];
   let fetchCount = 0;
@@ -192,7 +218,7 @@ test('poll and push are serial, and a late poll cannot overwrite a dirty local s
       fetchCount += 1;
       if (fetchCount === 1) {
         return [
-          row('2026-07-27', 'run:A:task:SKU-1', { status: 'PENDING' }, '2026-07-27T01:00:00Z')
+          row('2026-07-27', 'run:A:task:SKU-1', { status: 'PENDING' }, '2026-07-27T01:00:00Z', 1)
         ];
       }
       events.push('poll:start');
@@ -204,6 +230,11 @@ test('poll and push are serial, and a late poll cannot overwrite a dirty local s
       events.push('push:start');
       pushed.push(changes);
       events.push('push:end');
+      return {
+        conflict: true,
+        detail: 'newer server state',
+        rows: [row('2026-07-27', 'run:A:task:SKU-1', { status: 'PACKED' }, '2026-07-27T01:01:00Z', 2)]
+      };
     }
   });
 
@@ -216,27 +247,42 @@ test('poll and push are serial, and a late poll cannot overwrite a dirty local s
   const poll = sync.session.requestPoll();
   const push = sync.session.requestPush();
   latePoll.resolve([
-    row('2026-07-27', 'run:A:task:SKU-1', { status: 'PENDING' }, '2026-07-27T01:01:00Z')
+    row('2026-07-27', 'run:A:task:SKU-1', { status: 'PACKED' }, '2026-07-27T01:01:00Z', 2)
   ]);
   await Promise.all([poll, push]);
 
   assert.deepEqual(events, ['poll:start', 'poll:end', 'push:start', 'push:end']);
-  assert.equal(sync.getState().scopes['run:A:task:SKU-1'], '{"status":"PICKED"}');
   assert.deepEqual(pushed, [[{
     scope: 'run:A:task:SKU-1',
-    payload: { status: 'PICKED' }
+    payload: { status: 'PICKED' },
+    expectedRevision: 1
   }]]);
+  assert.equal(sync.getState().scopes['run:A:task:SKU-1'], '{"status":"PACKED"}');
+  assert.equal(sync.statuses.at(-1).status, 'error');
+  assert.equal(sync.statuses.at(-1).detail, 'newer server state');
 });
 
-test('local changes arriving during a write are sent afterwards in order', async () => {
+test('local changes arriving during a write are sent afterwards with the next revision', async () => {
   const firstPush = deferred();
   const payloads = [];
+  const expectedRevisions = [];
   let pushCount = 0;
   const sync = harness({
-    pushRows: async (_day, changes) => {
+    pushRows: async (businessDay, changes) => {
       pushCount += 1;
       payloads.push(changes[0].payload);
+      expectedRevisions.push(changes[0].expectedRevision);
       if (pushCount === 1) await firstPush.promise;
+      return {
+        conflict: false,
+        rows: [row(
+          businessDay,
+          changes[0].scope,
+          changes[0].payload,
+          `2026-07-27T01:0${pushCount}:00Z`,
+          pushCount
+        )]
+      };
     }
   });
 
@@ -260,6 +306,8 @@ test('local changes arriving during a write are sent afterwards in order', async
     { status: 'PICKING' },
     { status: 'PICKED' }
   ]);
+  assert.deepEqual(expectedRevisions, [0, 1]);
+  assert.equal(sync.getState().scopes['run:A:task:SKU-1'], '{"status":"PICKED"}');
 });
 
 test('an authorisation denial is not retried until the local changeset changes', async () => {

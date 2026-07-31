@@ -9,6 +9,7 @@ import {
   mergeRowsIntoDay,
   pickSyncAvailable,
   pushPickRows,
+  replaceRowsIntoDay,
   scopesFromDay
 } from '@/data/repositories/pickSync';
 import type { PickSyncRow } from '@/data/repositories/pickSync';
@@ -26,15 +27,12 @@ export function getPickSyncErrorDetail() {
 }
 
 /**
- * Keeps the pick slice of the driver day in sync through Supabase.
- * Local actions are pushed as per-scope upserts; remote rows are polled and
- * merged in. Everything degrades to local-only when Supabase is unreachable.
+ * Keeps driver, pick, route and shift scopes aligned with Supabase authority.
  *
- * Authorisation failures (RLS rejects the write for this role) do NOT retry
- * the same payload every poll: the rejected changeset is remembered and only
- * re-attempted once the local state actually changes, and the status surfaces
- * as 'denied' so the operator sees a permissions problem instead of a
- * silently hot-looping "sync error".
+ * The first successful poll replaces device cache with the complete server
+ * snapshot. Subsequent writes use idempotent command IDs and per-scope CAS
+ * revisions. A stale device receives the newer server payload instead of
+ * overwriting it. localStorage remains only a fast/offline render cache.
  */
 export function usePickSync(
   businessDay: string,
@@ -86,6 +84,7 @@ export function usePickSync(
       scopesFromState: scopesFromDay,
       diffScopes,
       mergeRows: mergeRowsIntoDay,
+      replaceStateFromRows: replaceRowsIntoDay,
       fetchRows: fetchPickRows,
       advanceCursor: advancePickSyncCursor,
       pushRows: pushPickRows,
@@ -93,7 +92,7 @@ export function usePickSync(
         if (sessionRef.current !== session) return;
         if (detail) {
           lastSyncErrorDetail = next === 'denied'
-            ? `Your role is not allowed to write this shared state. The change stays on this device; ask the office to check role setup. ${detail}`
+            ? `Your role is not allowed to write this shared state. Ask the office to check role setup. ${detail}`
             : detail;
         }
         setStatus(next);
