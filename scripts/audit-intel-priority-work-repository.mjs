@@ -3,16 +3,18 @@ import fs from 'node:fs';
 
 const contractPath = 'src/features/intelligence/attention/priorityWorkContract.ts';
 const repositoryPath = 'src/data/repositories/priorityWorkRepository.ts';
+const componentPath = 'src/features/intelligence/attention/PriorityWork.tsx';
 const indexPath = 'src/features/intelligence/attention/index.ts';
 const testPath = 'scripts/intel-priority-work-repository-contract.test.mjs';
 const packagePath = 'package.json';
 
-for (const file of [contractPath, repositoryPath, indexPath, testPath, packagePath]) {
+for (const file of [contractPath, repositoryPath, componentPath, indexPath, testPath, packagePath]) {
   assert.ok(fs.existsSync(file), `missing Priority Work repository file: ${file}`);
 }
 
 const contract = fs.readFileSync(contractPath, 'utf8');
 const repository = fs.readFileSync(repositoryPath, 'utf8');
+const component = fs.readFileSync(componentPath, 'utf8');
 const index = fs.readFileSync(indexPath, 'utf8');
 const tests = fs.readFileSync(testPath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -131,16 +133,28 @@ for (const testName of [
   assert.ok(tests.includes(testName), `Priority Work contract test missing: ${testName}`);
 }
 
+for (const marker of [
+  'repository = priorityWorkRepository',
+  'repository.readPriorityWork(limit)',
+  'priorityWorkReadFailure(error)',
+]) {
+  assert.ok(component.includes(marker), `bounded Priority Work consumer missing: ${marker}`);
+}
+
 for (const forbidden of [
   'priorityWorkRepository',
   'readPriorityWork',
   'priorityWorkContract',
   'get_priority_work_queue',
 ]) {
-  assert.ok(!dashboard.includes(forbidden), `premature Dashboard Priority Work adoption: ${forbidden}`);
+  assert.ok(!dashboard.includes(forbidden), `Dashboard directly coupled to Priority Work data: ${forbidden}`);
   assert.ok(!queue.includes(forbidden), `exception queue coupled to Priority Work: ${forbidden}`);
   assert.ok(!app.includes(forbidden), `App coupled to Priority Work: ${forbidden}`);
 }
+assert.ok(
+  dashboard.includes('PriorityWork') && dashboard.includes('<PriorityWork />'),
+  'Dashboard must adopt only the public Priority Work component',
+);
 
 const frontendAudit = packageJson.scripts?.['audit:intel-frontend'];
 assert.equal(typeof frontendAudit, 'string', 'audit:intel-frontend command missing');
