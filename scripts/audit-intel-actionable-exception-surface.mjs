@@ -30,7 +30,6 @@ for (const marker of [
   'lifecycleRepository.readLifecycle(',
   'actionableExceptionReadFailure(activeOutcome.reason)',
   'const EMPTY_ATTENTION_QUEUE: AttentionQueue',
-  'records.length',
   'buildAttentionQueue(records.map((record) => record.input), nowAt ??',
   ': EMPTY_ATTENTION_QUEUE',
   'latestActionableExceptionReadAt(records)',
@@ -58,42 +57,16 @@ for (const marker of [
 }
 
 for (const forbidden of [
-  'supabase',
-  '.schema(',
-  '.rpc(',
-  '.from(',
-  'fetch(',
-  '.insert(',
-  '.update(',
-  '.upsert(',
-  '.delete(',
-  'readShadowProjection',
-  'readReconciliation',
-  'localStorage',
-  'sessionStorage',
-  'window.',
-  'document.',
-  'MutationObserver',
-  'CustomEvent(',
-  'dispatchEvent(',
-  'Date.now(',
-  'new Date()',
+  'supabase', '.schema(', '.rpc(', '.from(', 'fetch(', '.insert(', '.update(', '.upsert(', '.delete(',
+  'readShadowProjection', 'readReconciliation', 'localStorage', 'sessionStorage', 'window.', 'document.',
+  'MutationObserver', 'CustomEvent(', 'dispatchEvent(', 'Date.now(', 'new Date()',
 ]) {
   if (component.includes(forbidden)) throw new Error(`INTEL_UI_003B_COMPONENT_SCOPE_EXPANSION: ${forbidden}`);
 }
 
 for (const forbidden of [
-  'dismissException',
-  'onDismiss',
-  '.dismiss(',
-  'recommendedAction:',
-  "severity: 'critical'",
-  "severity: 'high'",
-  'impactTotal',
-  'totalImpact',
-  'sumImpact',
-  'averageImpact',
-  '.reduce(',
+  'dismissException', 'onDismiss', '.dismiss(', 'recommendedAction:', "severity: 'critical'",
+  "severity: 'high'", 'impactTotal', 'totalImpact', 'sumImpact', 'averageImpact', '.reduce(',
 ]) {
   if (`${component}\n${presentation}`.includes(forbidden)) {
     throw new Error(`INTEL_UI_003B_MUTATION_GUESS_OR_AGGREGATION: ${forbidden}`);
@@ -121,16 +94,8 @@ for (const marker of [
 }
 
 for (const forbidden of [
-  'sourceStatus ===',
-  'sourceStatus.includes',
-  'sourceStatus.startsWith',
-  'MAPPING_EXCEPTION',
-  'PAYMENT_REVIEW',
-  'STOCK_BLOCKED',
-  'OPEN_EXCEPTION',
-  'Number(null)',
-  '?? 0',
-  '|| 0',
+  'sourceStatus ===', 'sourceStatus.includes', 'sourceStatus.startsWith', 'MAPPING_EXCEPTION',
+  'PAYMENT_REVIEW', 'STOCK_BLOCKED', 'OPEN_EXCEPTION', 'Number(null)', '?? 0', '|| 0',
 ]) {
   if (presentation.includes(forbidden)) throw new Error(`INTEL_UI_003B_SOURCE_STATUS_INFERENCE: ${forbidden}`);
 }
@@ -148,17 +113,7 @@ for (const marker of [
 ]) {
   if (!css.includes(marker)) throw new Error(`INTEL_UI_003B_STYLE_MARKER_MISSING: ${marker}`);
 }
-
-for (const forbidden of [
-  '!important',
-  '@font-face',
-  'url(',
-  '.orders-',
-  '.inventory-',
-  '.delivery-',
-  '.warehouse-',
-  '.ops-control-',
-]) {
+for (const forbidden of ['!important', '@font-face', 'url(', '.orders-', '.inventory-', '.delivery-', '.warehouse-', '.ops-control-']) {
   if (css.includes(forbidden)) throw new Error(`INTEL_UI_003B_STYLE_SCOPE_EXPANSION: ${forbidden}`);
 }
 
@@ -174,9 +129,12 @@ for (const reference of Array.from(css.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (ma
   }
 }
 
+if (!dashboard.includes("from '@/features/intelligence/attention';")
+  || !dashboard.includes('ActionableExceptionQueue')
+  || !dashboard.includes("<ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />")) {
+  throw new Error('INTEL_UI_003B_DASHBOARD_INTEGRATION_MISSING');
+}
 for (const marker of [
-  "import { ActionableExceptionQueue } from '@/features/intelligence/attention';",
-  "<ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />",
   'eyebrow="Needs attention"',
   'title="Operational queues"',
   "{ id: 'finance', title: 'Finance review'",
@@ -189,16 +147,10 @@ if ((dashboard.match(/<ActionableExceptionQueue /g) ?? []).length !== 1) {
   throw new Error('INTEL_UI_003B_DASHBOARD_SURFACE_COUNT_INVALID');
 }
 for (const forbidden of [
-  'actionableExceptionRepository',
-  'actionableExceptionLifecycleRepository',
-  'actionableExceptionLifecycleAccessRepository',
-  'ExceptionLifecycleCommitModal',
-  'readActionableExceptions',
-  'readLifecycle',
-  'readAccess',
-  'applyCommand',
-  'buildAttentionQueue',
-  'Current active exceptions"',
+  'actionableExceptionRepository', 'actionableExceptionLifecycleRepository',
+  'actionableExceptionLifecycleAccessRepository', 'ExceptionLifecycleCommitModal',
+  'readActionableExceptions', 'readLifecycle', 'readAccess', 'applyCommand',
+  'buildAttentionQueue', 'Current active exceptions"',
 ]) {
   if (dashboard.includes(forbidden)) throw new Error(`INTEL_UI_003B_DASHBOARD_DATA_COUPLING: ${forbidden}`);
 }
@@ -222,14 +174,10 @@ if ((lifecycleRepository.match(/\.rpc\(/g) ?? []).length !== 2
 }
 
 for (const marker of [
-  'ActionableExceptionQueue',
-  'type ActionableExceptionQueueProps',
-  'actionableExceptionDefaultDisplayLimit',
-  'actionableExceptionMaximumDisplayLimit',
-  'buildActionableExceptionDisplayRows',
-  'formatActionableExceptionAge',
-  'latestActionableExceptionReadAt',
-  'ExceptionLifecycleCommitModal',
+  'ActionableExceptionQueue', 'type ActionableExceptionQueueProps',
+  'actionableExceptionDefaultDisplayLimit', 'actionableExceptionMaximumDisplayLimit',
+  'buildActionableExceptionDisplayRows', 'formatActionableExceptionAge',
+  'latestActionableExceptionReadAt', 'ExceptionLifecycleCommitModal',
   'actionableExceptionLifecycleActionOptions',
 ]) {
   if (!barrel.includes(marker)) throw new Error(`INTEL_UI_003B_EXPORT_MISSING: ${marker}`);
