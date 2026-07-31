@@ -108,7 +108,7 @@ for (const forbidden of ['!important', '@font-face', 'url(', '#root']) {
 }
 
 for (const marker of [
-  'Audit Phase 6 productivity contracts',
+  'Audit Phase 6 completion gate',
   'TypeScript check',
   'Vite production bundle',
   'Apply Saved View migrations',
@@ -128,7 +128,7 @@ for (const marker of [
   'role default belongs to one desktop role',
   'limited to four items',
   'Missing comparison values remain unavailable rather than becoming numeric zero',
-  'maximum 5,000 rows',
+  'limited to 5,000 rows',
   'XLSX is intentionally not included',
   'RPC-only browser access',
 ]) {
