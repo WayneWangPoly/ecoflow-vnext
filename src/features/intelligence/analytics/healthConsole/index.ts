@@ -1,7 +1,7 @@
 export {
-  OperationalPulseReadinessWorkspace as AnalyticsHealthConsole,
-  type OperationalPulseReadinessWorkspaceProps as AnalyticsHealthConsoleProps,
-} from '../OperationalPulseReadinessWorkspace';
+  Phase4DomainIntelligenceWorkspace as AnalyticsHealthConsole,
+  type Phase4DomainIntelligenceWorkspaceProps as AnalyticsHealthConsoleProps,
+} from '../domainIntelligence';
 export {
   AnalyticsHealthConsole as AnalyticsHealthConsoleBase,
   type AnalyticsHealthConsoleProps as AnalyticsHealthConsoleBaseProps,
