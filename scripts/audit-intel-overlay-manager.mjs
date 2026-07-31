@@ -14,6 +14,8 @@ const contract = read('src/features/intelligence/overlays/overlayManagerContract
 const css = read('src/features/intelligence/overlays/overlayManager.css');
 const barrel = read('src/features/intelligence/overlays/index.ts');
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
+const priorityComponent = read('src/features/intelligence/attention/PriorityWork.tsx');
+const priorityPresentation = read('src/features/intelligence/attention/priorityWorkPresentationContract.ts');
 const main = read('src/main.tsx');
 const overlayState = read('src/features/intelligence/navigation/overlayState.ts');
 const test = read('scripts/intel-overlay-manager-contract.test.mjs');
@@ -41,9 +43,9 @@ for (const required of [
 }
 
 for (const required of [
-  "primary: InformationOverlay | null",
-  "secondary: InformationOverlay | null",
-  "commit: CommitModalState | null",
+  'primary: InformationOverlay | null',
+  'secondary: InformationOverlay | null',
+  'commit: CommitModalState | null',
   "case 'OPEN_RELATED'",
   "case 'CLOSE_TOP'",
 ]) {
@@ -60,13 +62,13 @@ for (const banned of [
   'overlayStack',
   'tertiary',
 ]) {
-  if (`${manager}\n${contract}\n${dashboard}`.includes(banned)) {
+  if (`${manager}\n${contract}\n${dashboard}\n${priorityComponent}\n${priorityPresentation}`.includes(banned)) {
     throw new Error(`INTEL_FE_003A_LEGACY_OR_UNBOUNDED_PATTERN: ${banned}`);
   }
 }
 
 for (const phrase of ['How to', 'Learn more', 'Getting started', 'Click here', 'You should', 'Next step', 'Tip:']) {
-  if (`${manager}\n${css}\n${dashboard}`.includes(phrase)) {
+  if (`${manager}\n${css}\n${dashboard}\n${priorityComponent}`.includes(phrase)) {
     throw new Error(`INTEL_FE_003A_DEFAULT_GUIDANCE_COPY: ${phrase}`);
   }
 }
@@ -90,27 +92,60 @@ for (const required of [
   "import { useOverlayManager } from '@/features/intelligence/overlays';",
   'const { openPrimaryRecord } = useOverlayManager();',
   "entity: { kind: 'exception', id: `queue-${item.id}` }",
-  "entity: { kind: 'order', id: order.id }",
   "eyebrow: 'Action queue'",
-  "eyebrow: 'Order'",
+  '<PriorityWork />',
 ]) {
   if (!dashboard.includes(required)) throw new Error(`INTEL_FE_003A_DASHBOARD_DRAWER_MIGRATION_MISSING: ${required}`);
 }
 
+for (const required of [
+  'useNavigate',
+  'priorityWorkOrderRoute(record)',
+  'navigate(route.href)',
+  'Open order',
+]) {
+  if (!priorityComponent.includes(required)) {
+    throw new Error(`INTEL_FE_003A_PRIORITY_WORK_HANDOFF_MISSING: ${required}`);
+  }
+}
+
+for (const required of [
+  "const pathname = `/orders/${encodeURIComponent(record.orderEntityId)}`",
+  "matched.route.workspace !== 'orders'",
+  "matched.route.entityKind !== 'order'",
+  "primaryDrawer: `order:${record.orderEntityId}`",
+  'withWorkspaceQuery(pathname, query)',
+]) {
+  if (!priorityPresentation.includes(required)) {
+    throw new Error(`INTEL_FE_003A_PRIORITY_WORK_ROUTE_CONTRACT_MISSING: ${required}`);
+  }
+}
+
 for (const legacy of ['ecoflow:open-work-item', 'openWorkItem(', 'window.dispatchEvent', 'CustomEvent(']) {
-  if (dashboard.includes(legacy)) throw new Error(`INTEL_FE_003A_DASHBOARD_EVENT_BRIDGE_REMAINS: ${legacy}`);
+  if (`${dashboard}\n${priorityComponent}`.includes(legacy)) {
+    throw new Error(`INTEL_FE_003A_DASHBOARD_EVENT_BRIDGE_REMAINS: ${legacy}`);
+  }
 }
 
 for (const preserved of [
   "{ label: 'Open items', value: String(item.count) }",
   "{ label: 'Role view', value: roleName }",
   "{ label: 'Next action', value: item.next }",
-  "{ label: 'Order', value: order.orderNo }",
-  "{ label: 'Invoice', value: order.invoiceNo || '—' }",
-  "{ label: 'Release gate', value: gateLabel(order) }",
-  "{ label: 'POD', value: order.podStatus }",
 ]) {
   if (!dashboard.includes(preserved)) throw new Error(`INTEL_FE_003A_EXISTING_DETAIL_FIELD_LOST: ${preserved}`);
+}
+
+for (const required of [
+  '<th scope="col">Order</th>',
+  '<th scope="col">Cause</th>',
+  '<th scope="col">Impact</th>',
+  '<th scope="col">Age</th>',
+  '<th scope="col">Owner</th>',
+  '<th scope="col">Next action</th>',
+]) {
+  if (!priorityComponent.includes(required)) {
+    throw new Error(`INTEL_FE_003A_PRIORITY_WORK_FIELD_LOST: ${required}`);
+  }
 }
 
 if (!main.includes("import { OverlayManagerProvider } from './features/intelligence/overlays';")
