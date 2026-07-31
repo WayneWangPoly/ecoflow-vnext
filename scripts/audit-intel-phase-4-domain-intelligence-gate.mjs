@@ -124,3 +124,5 @@ for (const marker of ['6 domains', '60 / 60', 'missing evidence', 'canonical han
 }
 
 console.log('INTEL-GATE-004 Phase 4 Domain Intelligence completion gate passed: 6 domains, 60/60 surface capabilities.');
+
+await import('./audit-intel-phase-5-action-integration-gate.mjs');
