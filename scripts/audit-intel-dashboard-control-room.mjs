@@ -12,6 +12,8 @@ function read(relativePath) {
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const css = read('src/features/dashboard/dashboardControlRoom.css');
 const flowCss = read('src/features/dashboard/operationalFlowSurface.css');
+const priorityCss = read('src/features/intelligence/attention/priorityWork.css');
+const priorityComponent = read('src/features/intelligence/attention/PriorityWork.tsx');
 const contract = read('src/features/dashboard/dashboardControlContract.ts');
 const test = read('scripts/intel-dashboard-control-room-contract.test.mjs');
 const packageJson = JSON.parse(read('package.json'));
@@ -34,8 +36,6 @@ for (const required of [
   'ops-control-grid',
   'ops-control-panel',
   'ops-control-flow',
-  'ops-control-order-table',
-  'ops-control-order-row',
   'ops-control-status-line',
 ]) {
   if (!dashboard.includes(required)) throw new Error(`INTEL_FE_002C_DASHBOARD_STRUCTURE_MISSING: ${required}`);
@@ -71,14 +71,33 @@ for (const preserved of [
   'Refresh',
   'Needs attention',
   'Operational flow',
-  'Priority work',
-  'View all',
-  'No open orders.',
   'Loading live operations…',
   'Live operating data is unavailable',
   'EcoFlow will not show sample figures.',
 ]) {
   if (!dashboard.includes(preserved)) throw new Error(`INTEL_FE_002C_EXISTING_COPY_LOST: ${preserved}`);
+}
+
+if (!dashboard.includes('ActionableExceptionQueue, PriorityWork')
+    || !dashboard.includes('<PriorityWork />')) {
+  throw new Error('INTEL_FE_002C_GOVERNED_PRIORITY_WORK_MISSING');
+}
+if (!priorityComponent.includes('POLICY-RANKED · CURRENT EXCEPTIONS')
+    || !priorityCss.includes('.ef-priority-work__table')) {
+  throw new Error('INTEL_FE_002C_PRIORITY_WORK_PUBLIC_SURFACE_INCOMPLETE');
+}
+
+for (const localPriority of [
+  'FLOW_PRIORITY',
+  'activeOrders',
+  'ops-control-order-table',
+  'ops-control-order-row',
+  'Top {activeOrders.length}',
+  'No open orders.',
+]) {
+  if (dashboard.includes(localPriority)) {
+    throw new Error(`INTEL_FE_002C_LOCAL_PRIORITY_WORK_REMAINS: ${localPriority}`);
+  }
 }
 
 for (const guidance of [
@@ -109,14 +128,15 @@ for (const forbiddenSelector of [
 }
 
 for (const forbidden of ['!important', 'url(']) {
-  if (`${css}\n${flowCss}`.includes(forbidden)) throw new Error(`INTEL_FE_002C_STYLE_ESCAPE_FORBIDDEN: ${forbidden}`);
+  if (`${css}\n${flowCss}\n${priorityCss}`.includes(forbidden)) {
+    throw new Error(`INTEL_FE_002C_STYLE_ESCAPE_FORBIDDEN: ${forbidden}`);
+  }
 }
 
 for (const required of [
   "import './fieldReadinessDashboard.css';",
   "import './dashboardControlRoom.css';",
   "import './operationalFlowSurface.css';",
-  'dashboardControlTone',
   'dashboardSourceTone',
 ]) {
   if (!dashboard.includes(required)) throw new Error(`INTEL_FE_002C_WIRING_MISSING: ${required}`);
