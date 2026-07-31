@@ -66,8 +66,10 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql
           psql -v ON_ERROR_STOP=1 -c 'create schema if not exists analytics'
-      - name: Apply release control migration
-        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731190000_intelligence_release_control.sql
+      - name: Apply release control migrations
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731190000_intelligence_release_control.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731190100_intelligence_release_verification_conflict_fix.sql
       - name: Execute release control contract tests
         run: psql -v ON_ERROR_STOP=1 -f scripts/intelligence-release-control-contract-test.sql
       - name: Audit release control migration
