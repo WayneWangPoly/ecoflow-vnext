@@ -95,7 +95,7 @@ for (const forbidden of ['!important', '@font-face', 'url(', '#root']) {
 }
 
 const inventory = read(`${root}/inventoryDomainManifest.ts`);
-for (const marker of ['Commercial SKU', 'Physical SKU', 'GLOBAL_BASE', 'LOCATION_PACKAGE', 'supplier', 'brand', 'substitution', 'stockout']) {
+for (const marker of ['Commercial SKU', 'Physical SKU', 'global/base', 'location/package', 'supplier', 'brand', 'substitution', 'stockout']) {
   assert.ok(inventory.includes(marker), `Inventory Intelligence evidence missing: ${marker}`);
 }
 const orders = read(`${root}/ordersDomainManifest.ts`);
@@ -115,7 +115,7 @@ for (const marker of ['Return reason', 'inspection', 'Resale / scrap', 'processi
   assert.ok(returns.includes(marker), `Returns Intelligence evidence missing: ${marker}`);
 }
 const dataQuality = read(`${root}/dataQualityDomainManifest.ts`);
-for (const marker of ['Sync health', 'stale source', 'missing invoice', 'mapping', 'cost', 'Barcode', 'Metric unavailable', 'snapshot refresh', 'never becomes numeric zero']) {
+for (const marker of ['Sync health', 'stale source', 'missing invoice', 'mapping', 'cost', 'Barcode', 'unavailable metric', 'snapshot refresh', 'never becomes numeric zero']) {
   assert.ok(dataQuality.toLowerCase().includes(marker.toLowerCase()), `Data Quality Intelligence evidence missing: ${marker}`);
 }
 
