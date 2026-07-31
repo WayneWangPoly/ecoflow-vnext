@@ -10,6 +10,7 @@ import { MetricDrillAccessStatus, ShadowDrillEvidenceReview } from '../crossFilt
 import { OperationalPulseDeck } from '../operationalPulse/OperationalPulse';
 import { Phase4DomainIntelligencePanel } from './domainIntelligence/Phase4DomainIntelligencePanel';
 import { ActionIntegrationPanel } from './actionIntegration/ActionIntegrationPanel';
+import { PersonalisationProductivityPanel } from './productivity';
 import {
   hasCanonicalOperationalPulseCoverage,
   operationalPulseReadinessSummary,
@@ -80,6 +81,7 @@ export function OperationalPulseReadinessWorkspace({
       <ShadowDrillEvidenceReview />
       <Phase4DomainIntelligencePanel />
       <ActionIntegrationPanel />
+      <PersonalisationProductivityPanel />
     </div>
   );
 }
