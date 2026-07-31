@@ -45,7 +45,7 @@ for (const marker of [
   "'OFF'", "'SHADOW'", "'ON'",
   'LEGACY_ONLY', 'LEGACY_PRIMARY_SHADOW_READ', 'INTELLIGENCE_PRIMARY',
   'cutoverAssessment', 'parallelReadAssessment', 'rollbackAssessment',
-  'Missing', 'UNAVAILABLE', 'preservesAnalyticsHistory',
+  'MISSING', 'UNAVAILABLE', 'preservesAnalyticsHistory',
 ]) {
   assert.ok(contract.includes(marker), `Release contract marker missing: ${marker}`);
 }
