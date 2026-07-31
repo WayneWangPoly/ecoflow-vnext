@@ -95,13 +95,31 @@ for (const marker of [
   'priorityWorkOwnerLabel',
   'priorityWorkLifecycleLabel',
   'priorityWorkOrderRoute',
-  "ownerTeam ?? 'Unassigned'",
-  "primaryDrawer: `order:${record.orderEntityId}`",
   'withWorkspaceQuery(pathname, query)',
   "timeZone: 'Australia/Adelaide'",
 ]) {
   assert.ok(presentation.includes(marker), `missing Priority Work presentation marker: ${marker}`);
 }
+assert.match(
+  presentation,
+  /return\s+ownerTeam\s*\?\?\s*['"]Unassigned['"]\s*;/,
+  'Priority Work must label null ownership as Unassigned',
+);
+assert.match(
+  presentation,
+  /primaryDrawer\s*:\s*`order:\$\{record\.orderEntityId\}`/,
+  'Priority Work Order route must select the canonical Order drawer',
+);
+assert.match(
+  presentation,
+  /matched\.route\.workspace\s*!==\s*['"]orders['"]/,
+  'Priority Work Order route must verify the Orders workspace',
+);
+assert.match(
+  presentation,
+  /matched\.route\.entityKind\s*!==\s*['"]order['"]/,
+  'Priority Work Order route must verify the Order entity kind',
+);
 
 for (const forbidden of [
   /react/i,
