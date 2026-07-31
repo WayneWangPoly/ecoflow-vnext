@@ -20,7 +20,11 @@ for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
   "import './operationalFlowSurface.css';",
   'buildOperationalFlow(orders)',
-  'new Map(flow.assignments.map((assignment)',
+  'const orderById = useMemo(() => {',
+  'const value = new Map<string, ImportedOrder>();',
+  'flow.assignments.forEach((assignment) => {',
+  'const order = orderById.get(assignment.orderId);',
+  'if (order) value[assignment.stage].push(order);',
   'operationalFlowStages.map((stage) => [stage.key, []])',
   "assignment.stage !== 'DELIVERED'",
   'groups.NEEDS_ACTION.length',
@@ -44,6 +48,9 @@ for (const marker of [
 
 if ((dashboard.match(/buildOperationalFlow\(orders\)/g) ?? []).length !== 1) {
   throw new Error('INTEL_UI_004B_FLOW_BUILD_COUNT_INVALID');
+}
+if ((dashboard.match(/flow\.assignments\.forEach\(\(assignment\) => \{/g) ?? []).length !== 1) {
+  throw new Error('INTEL_UI_004B_ASSIGNMENT_MAPPING_COUNT_INVALID');
 }
 
 for (const forbidden of [
