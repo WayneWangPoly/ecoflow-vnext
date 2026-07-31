@@ -117,4 +117,5 @@ using (public.ecoflow_can_write_day_scope(scope))
 with check (public.ecoflow_can_write_day_scope(scope));
 
 \i supabase/migrations/20260801053000_operational_state_authority.sql
+\i supabase/migrations/20260801053100_business_day_carry_over_terminal_filter.sql
 \i scripts/operational-state-authority-contract-test.sql
