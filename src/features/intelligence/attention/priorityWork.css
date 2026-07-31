@@ -1,0 +1,177 @@
+.ef-priority-work__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ef-space-2);
+}
+
+.ef-priority-work__loading {
+  display: grid;
+  gap: var(--ef-space-3);
+  padding: var(--ef-space-5);
+}
+
+.ef-priority-work__state {
+  min-height: 132px;
+  display: grid;
+  place-content: center;
+  gap: var(--ef-space-1);
+  padding: var(--ef-space-5);
+  text-align: center;
+  color: var(--ef-text-secondary);
+}
+
+.ef-priority-work__state strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-md);
+}
+
+.ef-priority-work__state span {
+  font-size: var(--ef-type-sm);
+}
+
+.ef-priority-work__state[data-state="forbidden"],
+.ef-priority-work__state[data-state="failed"] {
+  background: var(--ef-status-danger-background);
+  color: var(--ef-status-danger-foreground);
+}
+
+.ef-priority-work__table-shell {
+  min-width: 0;
+  overflow: auto;
+}
+
+.ef-priority-work__table {
+  width: 100%;
+  min-width: 1260px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--ef-type-xs);
+}
+
+.ef-priority-work__table th,
+.ef-priority-work__table td {
+  padding: var(--ef-space-3);
+  border-right: 1px solid var(--ef-border-default);
+  border-bottom: 1px solid var(--ef-border-default);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.ef-priority-work__table th:last-child,
+.ef-priority-work__table td:last-child {
+  border-right: 0;
+}
+
+.ef-priority-work__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ef-surface-subtle);
+  color: var(--ef-text-muted);
+  font-weight: var(--ef-weight-semibold);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.ef-priority-work__table th:nth-child(1) { width: 13%; }
+.ef-priority-work__table th:nth-child(2) { width: 18%; }
+.ef-priority-work__table th:nth-child(3) { width: 20%; }
+.ef-priority-work__table th:nth-child(4) { width: 10%; }
+.ef-priority-work__table th:nth-child(5) { width: 11%; }
+.ef-priority-work__table th:nth-child(6) { width: 21%; }
+.ef-priority-work__table th:nth-child(7) { width: 7%; }
+
+.ef-priority-work__table tbody tr {
+  border-left: 3px solid var(--ef-status-information-foreground);
+  background: var(--ef-surface-panel);
+}
+
+.ef-priority-work__table tbody tr:hover {
+  background: var(--ef-status-information-background);
+}
+
+.ef-priority-work__table td:nth-child(1),
+.ef-priority-work__table td:nth-child(2),
+.ef-priority-work__table td:nth-child(4),
+.ef-priority-work__table td:nth-child(5),
+.ef-priority-work__table td:nth-child(6) {
+  display: grid;
+  gap: var(--ef-space-1);
+}
+
+.ef-priority-work__table td > strong {
+  color: var(--ef-text-primary);
+  font-size: var(--ef-type-sm);
+  font-weight: var(--ef-weight-semibold);
+}
+
+.ef-priority-work__table td > small {
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+  line-height: 1.35;
+}
+
+.ef-priority-work__table td:nth-child(3),
+.ef-priority-work__table td:nth-child(6) > span {
+  color: var(--ef-text-secondary);
+  line-height: 1.45;
+}
+
+.ef-priority-work__table td:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ef-priority-work__boundary {
+  display: flex;
+  align-items: center;
+  gap: var(--ef-space-2);
+  color: var(--ef-text-muted);
+  font-size: var(--ef-type-xs);
+}
+
+.ef-priority-work__boundary svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--ef-status-information-foreground);
+}
+
+.ef-priority-work__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 920px) {
+  .ef-priority-work__table {
+    min-width: 1120px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ef-priority-work__actions {
+    align-items: stretch;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ef-priority-work__table th,
+  .ef-priority-work__table td {
+    border-color: var(--ef-border-emphasis);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-priority-work__table tbody tr {
+    transition: none;
+  }
+}

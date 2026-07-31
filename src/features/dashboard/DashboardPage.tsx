@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import type { EcoFlowDataSet, ImportedOrder, Role } from '@/domain/types';
 import { dashboardStageTarget, type DashboardNavigationTab } from './dashboardNavigationContract';
-import { dashboardControlTone, dashboardSourceTone, type DashboardOperationalTone } from './dashboardControlContract';
+import { dashboardSourceTone, type DashboardOperationalTone } from './dashboardControlContract';
 import { loadOrderOperationsSummary, type OrderOperationsSummary } from '@/data/repositories/orderOperations';
 import { loadBarcodeSprintKpis, loadInventoryKpis, type BarcodeSprintKpis, type InventoryKpis } from '@/data/repositories/inventoryControl';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
@@ -33,7 +33,7 @@ import {
   ControlStatus,
 } from '@/features/intelligence/designSystem/primitives';
 import { useOverlayManager } from '@/features/intelligence/overlays';
-import { ActionableExceptionQueue } from '@/features/intelligence/attention';
+import { ActionableExceptionQueue, PriorityWork } from '@/features/intelligence/attention';
 import { supabase } from '@/lib/supabaseClient';
 import './fieldReadinessDashboard.css';
 import './dashboardControlRoom.css';
@@ -51,28 +51,18 @@ type Props = {
   onOpenTab: (tab: DashboardNavigationTab) => void;
 };
 
-type Action = { id: string; title: string; detail: string; count: number; tone: DashboardOperationalTone; next: string };
-
-const LIMIT = 10;
-const FLOW_LABELS = new Map(operationalFlowStages.map((stage) => [stage.key, stage.label]));
-const FLOW_PRIORITY: Record<OperationalFlowStage, number> = {
-  NEW: 6,
-  NEEDS_ACTION: 8,
-  FINANCE_REVIEW: 7,
-  READY: 5,
-  WAREHOUSE: 4,
-  STAGED: 3,
-  ROUTE: 2,
-  DELIVERED: 1,
+type Action = {
+  id: string;
+  title: string;
+  detail: string;
+  count: number;
+  tone: DashboardOperationalTone;
+  next: string;
 };
 
 function n(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function money(value: number) {
-  return value.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
 }
 
 function dateTime(value?: string | null) {
@@ -88,29 +78,6 @@ function dateTime(value?: string | null) {
   });
 }
 
-function normalisedIdentity(value: string) {
-  return value.trim().toLocaleLowerCase('en-AU');
-}
-
-function storeForOrder(order: ImportedOrder, stores: EcoFlowDataSet['stores']) {
-  const candidates = stores.filter((store) => normalisedIdentity(store.name) === normalisedIdentity(order.store));
-  if (!candidates.length) return undefined;
-  const accountMatch = candidates.find((store) => normalisedIdentity(store.account) === normalisedIdentity(order.account));
-  if (accountMatch) return accountMatch;
-  return candidates.length === 1 ? candidates[0] : undefined;
-}
-
-function stageLabel(stage: OperationalFlowStage | undefined) {
-  return stage ? FLOW_LABELS.get(stage) ?? 'Unknown' : 'Unclassified';
-}
-
-function stageTone(stage: OperationalFlowStage): DashboardOperationalTone {
-  if (stage === 'NEEDS_ACTION') return 'danger';
-  if (stage === 'FINANCE_REVIEW') return 'warn';
-  if (stage === 'READY' || stage === 'DELIVERED') return 'good';
-  return 'neutral';
-}
-
 function stageIcon(stage: OperationalFlowStage): ReactNode {
   if (stage === 'NEW') return <ClipboardList />;
   if (stage === 'NEEDS_ACTION') return <ShieldAlert />;
@@ -120,10 +87,6 @@ function stageIcon(stage: OperationalFlowStage): ReactNode {
   if (stage === 'STAGED') return <Boxes />;
   if (stage === 'ROUTE') return <Route />;
   return <PackageCheck />;
-}
-
-function gateLabel(order: ImportedOrder) {
-  return (order.releaseGateStatus || order.status).replace(/_/g, ' ');
 }
 
 export function DashboardPage({
@@ -206,10 +169,6 @@ export function DashboardPage({
     });
     return value;
   }, [orders]);
-  const stageByOrderId = useMemo(
-    () => new Map(flow.assignments.map((assignment) => [assignment.orderId, assignment.stage])),
-    [flow.assignments],
-  );
   const groups = useMemo(() => {
     const value = Object.fromEntries(
       operationalFlowStages.map((stage) => [stage.key, []]),
@@ -235,19 +194,6 @@ export function DashboardPage({
   const decisionCount = groups.NEEDS_ACTION.length + groups.FINANCE_REVIEW.length;
   const executionCount = groups.WAREHOUSE.length + groups.STAGED.length + groups.ROUTE.length;
   const mirrorStatus = mirror?.overall_status || (snapshotReady ? 'CHECKING' : 'UNAVAILABLE');
-  const activeOrders = useMemo(
-    () => [...openOrders]
-      .sort((left, right) => {
-        const score = (order: ImportedOrder) => {
-          const stage = stageByOrderId.get(order.id);
-          return (stage ? FLOW_PRIORITY[stage] : 0) * 100 + order.openExceptionCount * 10;
-        };
-        return score(right) - score(left)
-          || new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
-      })
-      .slice(0, LIMIT),
-    [openOrders, stageByOrderId],
-  );
 
   const actions: Action[] = role === 'account'
     ? [
@@ -485,99 +431,7 @@ export function DashboardPage({
         </ControlPanel>
       </section>
 
-      <ControlPanel
-        tone="raised"
-        className="ops-control-panel ops-control-priority"
-        title="Priority work"
-        actions={(
-          <div className="ops-panel-actions">
-            <span>Top {activeOrders.length} of {openOrders.length} open orders</span>
-            <ControlButton variant="quiet" size="compact" onClick={() => onOpenTab('orders')}>
-              View all
-            </ControlButton>
-          </div>
-        )}
-      >
-        <div className="ops-control-order-table">
-          <div className="ops-control-order-row head">
-            <span>Order</span><span>Store</span><span>Stage</span><span>Value</span><span>POD</span>
-          </div>
-          {activeOrders.map((order) => {
-            const stage = stageByOrderId.get(order.id);
-            const storeProfile = storeForOrder(order, data.stores);
-            return (
-              <button
-                type="button"
-                className="ops-control-order-row"
-                key={order.id}
-                onClick={() => openPrimaryRecord({
-                  entity: { kind: 'order', id: order.id },
-                  eyebrow: 'Order',
-                  title: order.orderNo,
-                  subtitle: `${order.store} · ${order.suburb}`,
-                  width: 'wide',
-                  fields: [
-                    { label: 'Order', value: order.orderNo },
-                    { label: 'Invoice', value: order.invoiceNo || '—' },
-                    { label: 'Store', value: order.store },
-                    { label: 'Account', value: order.account },
-                    { label: 'Payment', value: order.paymentStatus },
-                    { label: 'Value', value: money(order.amount) },
-                    { label: 'Pipeline stage', value: stageLabel(stage) },
-                    { label: 'Release gate', value: gateLabel(order) },
-                    { label: 'Blockers', value: order.releaseBlockers || order.changeSummary || 'None reported' },
-                    { label: 'POD', value: order.podStatus },
-                  ],
-                  relatedRecords: storeProfile ? [{
-                    label: 'Store',
-                    entity: { kind: 'store', id: storeProfile.id },
-                    eyebrow: 'Store',
-                    title: storeProfile.name,
-                    subtitle: storeProfile.suburb,
-                    fields: [
-                      { label: 'Account', value: storeProfile.account },
-                      { label: 'Suburb', value: storeProfile.suburb },
-                      { label: 'Price tier', value: storeProfile.priceTier },
-                      { label: 'Payment terms', value: storeProfile.paymentTerms },
-                      { label: 'Status', value: storeProfile.status },
-                      { label: 'Address', value: storeProfile.address || '—' },
-                      { label: 'Phone', value: storeProfile.phone || '—' },
-                      { label: 'Ordermentum ID', value: storeProfile.ordermentumId },
-                      { label: 'Statement group', value: storeProfile.statementGroup },
-                      ...(storeProfile.orderCount !== undefined
-                        ? [{ label: 'Order count', value: String(storeProfile.orderCount) }]
-                        : []),
-                      ...(storeProfile.totalValue !== undefined
-                        ? [{ label: 'Total value', value: money(storeProfile.totalValue) }]
-                        : []),
-                    ],
-                  }] : undefined,
-                })}
-              >
-                <span><strong>{order.orderNo}</strong><small>{order.invoiceNo}</small></span>
-                <span><strong>{order.store}</strong><small>{order.suburb} · {order.priceTier}</small></span>
-                <span>
-                  <ControlStatus
-                    tone={stage ? dashboardControlTone(stageTone(stage)) : 'warning'}
-                    label={stageLabel(stage).toUpperCase()}
-                    compact
-                  />
-                  <small>{order.releaseBlockers || order.changeSummary}</small>
-                </span>
-                <span className="ops-control-order-value">{money(order.amount)}</span>
-                <span>
-                  <ControlStatus
-                    tone={order.podStatus === 'captured' ? 'success' : 'warning'}
-                    label={order.podStatus}
-                    compact
-                  />
-                </span>
-              </button>
-            );
-          })}
-          {!activeOrders.length ? <div className="empty-state">No open orders.</div> : null}
-        </div>
-      </ControlPanel>
+      <PriorityWork />
 
       <div className="ops-control-status-line">
         {openOrders.length === serverCurrentOrders
