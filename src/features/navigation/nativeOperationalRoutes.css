@@ -1,0 +1,217 @@
+.native-workspace {
+  min-width: 0;
+}
+
+.native-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.native-workspace-header h1 {
+  margin: 4px 0 6px;
+  font-size: clamp(1.5rem, 2.4vw, 2.25rem);
+  line-height: 1.05;
+}
+
+.native-workspace-header p {
+  margin: 0;
+  color: var(--text-muted, #58635d);
+  max-width: 760px;
+}
+
+.native-workspace-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.native-workspace-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) repeat(3, minmax(130px, 0.7fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.native-workspace-toolbar label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.native-workspace-toolbar label > span {
+  color: var(--text-muted, #66736b);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.native-workspace-toolbar input,
+.native-workspace-toolbar select {
+  width: 100%;
+  min-width: 0;
+}
+
+.native-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.native-workspace-tabs button {
+  border: 1px solid var(--border-subtle, #ccd4cf);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-weight: 700;
+}
+
+.native-workspace-tabs button.active {
+  border-color: var(--accent, #087f5b);
+  background: color-mix(in srgb, var(--accent, #087f5b) 12%, white);
+  color: var(--accent-strong, #065f46);
+}
+
+.native-workspace-notice {
+  position: static;
+}
+
+.native-workspace-notice.tone-information {
+  border-color: #9fc4dd;
+  background: #eef8ff;
+}
+
+.native-workspace-state {
+  display: grid;
+  gap: 8px;
+  min-height: 150px;
+  align-content: center;
+  justify-items: start;
+}
+
+.native-workspace-state strong {
+  font-size: 1.1rem;
+}
+
+.native-workspace-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.native-workspace-pager span {
+  color: var(--text-muted, #66736b);
+  font-size: 0.84rem;
+}
+
+.native-price-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.native-price-tier-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle, #d4dbd7);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+
+.native-price-tier-card header,
+.native-price-tier-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.native-price-tier-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted, #58635d);
+}
+
+.native-workspace-table .table-row,
+.native-workspace-table .table-head {
+  grid-template-columns: minmax(180px, 1.5fr) minmax(150px, 1.2fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(100px, 0.7fr);
+}
+
+.native-ordermentum-table .table-row,
+.native-ordermentum-table .table-head {
+  grid-template-columns: 38px minmax(145px, 1.1fr) minmax(170px, 1.2fr) minmax(105px, 0.7fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
+}
+
+.native-exception-list {
+  display: grid;
+  gap: 10px;
+}
+
+.native-exception-row {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 0.8fr) minmax(220px, 1.5fr) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border-subtle, #d4dbd7);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.native-exception-row small,
+.native-exception-row span {
+  display: block;
+  color: var(--text-muted, #66736b);
+}
+
+@media (max-width: 980px) {
+  .native-workspace-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .native-workspace-table,
+  .native-ordermentum-table {
+    overflow-x: auto;
+  }
+
+  .native-workspace-table .table-row,
+  .native-workspace-table .table-head,
+  .native-ordermentum-table .table-row,
+  .native-ordermentum-table .table-head {
+    min-width: 820px;
+  }
+}
+
+@media (max-width: 640px) {
+  .native-workspace-header {
+    display: grid;
+  }
+
+  .native-workspace-actions {
+    justify-content: flex-start;
+  }
+
+  .native-workspace-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .native-workspace-pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .native-exception-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-workspace * {
+    scroll-behavior: auto;
+  }
+}
