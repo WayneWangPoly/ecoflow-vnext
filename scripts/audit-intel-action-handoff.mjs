@@ -39,7 +39,7 @@ for (const marker of [
 for (const marker of [
   'Governed operational handoff',
   'Write boundary',
-  'READ ONLY',
+  'NO DIRECT WRITES',
   'Context only · no command execution',
   'Destination-owned execution',
   'ActionIntegrationPanel',
@@ -74,7 +74,7 @@ for (const forbidden of [
   /CustomEvent/,
   /dispatchEvent/,
 ]) {
-  assert.ok(!forbidden.test(`${contract}\n${panel}`), `Action Handoff crossed the read-only boundary: ${forbidden}`);
+  assert.ok(!forbidden.test(`${contract}\n${panel}`), `Action Handoff crossed the no-direct-write boundary: ${forbidden}`);
 }
 
 for (const testName of [
