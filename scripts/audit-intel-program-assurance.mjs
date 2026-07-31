@@ -72,7 +72,15 @@ for (const route of [
   '/settings',
 ]) {
   assert.ok(contract.includes(`'${route}'`), `Phase 8 canonical smoke route missing: ${route}`);
-  assert.ok(smoke.includes(route), `Phase 8 route smoke execution missing: ${route}`);
+}
+for (const marker of [
+  'intelligenceCanonicalSmokeRoutes',
+  'for (const route of intelligenceCanonicalSmokeRoutes)',
+  'response.status, 200',
+  'application root',
+  'INTEL-ASSURE-004',
+]) {
+  assert.ok(smoke.includes(marker), `Phase 8 route smoke execution marker missing: ${marker}`);
 }
 
 for (const marker of [
