@@ -64,8 +64,10 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql
           psql -v ON_ERROR_STOP=1 -c 'create schema if not exists analytics'
-      - name: Apply Saved View migration
-        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731160000_intelligence_saved_views.sql
+      - name: Apply Saved View migrations
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731160000_intelligence_saved_views.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260731160100_intelligence_saved_view_schema_access.sql
       - name: Execute Saved View privacy and role-default tests
         run: psql -v ON_ERROR_STOP=1 -f scripts/intelligence-saved-view-contract-test.sql
       - name: Audit Saved View migration
