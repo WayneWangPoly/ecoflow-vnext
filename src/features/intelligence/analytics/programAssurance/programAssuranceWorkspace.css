@@ -1,0 +1,391 @@
+.ef-assurance {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--ef-border, #d7dde5);
+  border-radius: 18px;
+  background: var(--ef-surface, #ffffff);
+  color: var(--ef-text, #17202a);
+}
+
+.ef-assurance__header,
+.ef-assurance__outcomes > header,
+.ef-assurance__quality > header,
+.ef-assurance__production,
+.ef-assurance__outcome-heading,
+.ef-assurance__quality article > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ef-assurance__header span,
+.ef-assurance__outcomes header span,
+.ef-assurance__quality header span,
+.ef-assurance__controls article > span,
+.ef-assurance__production span,
+.ef-assurance__boundary strong {
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ef-muted, #637083);
+}
+
+.ef-assurance h2,
+.ef-assurance h3,
+.ef-assurance h4,
+.ef-assurance p {
+  margin: 0;
+}
+
+.ef-assurance__header h2 {
+  margin-top: 4px;
+  font-size: clamp(1.35rem, 2vw, 2rem);
+  line-height: 1.12;
+}
+
+.ef-assurance__header p {
+  max-width: 780px;
+  margin-top: 8px;
+  color: var(--ef-muted, #637083);
+  line-height: 1.55;
+}
+
+.ef-assurance__header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.ef-assurance button {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--ef-border-strong, #aab4c2);
+  border-radius: 10px;
+  background: var(--ef-surface-raised, #f7f9fb);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ef-assurance button:focus-visible {
+  outline: 3px solid var(--ef-focus, #6aa8ff);
+  outline-offset: 2px;
+}
+
+.ef-assurance__summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border: 1px solid var(--ef-border, #d7dde5);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.ef-assurance__summary span {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border-right: 1px solid var(--ef-border, #d7dde5);
+  color: var(--ef-muted, #637083);
+  font-size: 0.78rem;
+}
+
+.ef-assurance__summary span:last-child {
+  border-right: 0;
+}
+
+.ef-assurance__summary strong {
+  color: var(--ef-text, #17202a);
+  font-size: 1.08rem;
+}
+
+.ef-assurance__state,
+.ef-assurance__production,
+.ef-assurance__boundary {
+  padding: 14px 16px;
+  border: 1px solid var(--ef-border, #d7dde5);
+  border-radius: 13px;
+  background: var(--ef-surface-subtle, #f7f9fb);
+}
+
+.ef-assurance__state {
+  display: grid;
+  gap: 4px;
+}
+
+.ef-assurance__state[data-state="invalid"],
+.ef-assurance__state[data-state="failed"],
+.ef-assurance__state[data-state="forbidden"] {
+  border-color: var(--ef-danger-border, #d38b8b);
+}
+
+.ef-assurance__production {
+  align-items: center;
+}
+
+.ef-assurance__production > div {
+  min-width: 210px;
+}
+
+.ef-assurance__production h3 {
+  margin-top: 4px;
+  font-size: 1.15rem;
+}
+
+.ef-assurance__production p {
+  flex: 1;
+  line-height: 1.45;
+}
+
+.ef-assurance__production small {
+  max-width: 430px;
+  color: var(--ef-muted, #637083);
+  line-height: 1.45;
+}
+
+.ef-assurance__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 0.72fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.ef-assurance__outcomes,
+.ef-assurance__quality,
+.ef-assurance__controls > article {
+  border: 1px solid var(--ef-border, #d7dde5);
+  border-radius: 15px;
+  background: var(--ef-surface-raised, #fbfcfd);
+}
+
+.ef-assurance__outcomes > header,
+.ef-assurance__quality > header {
+  padding: 16px;
+  border-bottom: 1px solid var(--ef-border, #d7dde5);
+}
+
+.ef-assurance__outcomes h3,
+.ef-assurance__quality h3,
+.ef-assurance__controls h3 {
+  margin-top: 4px;
+  font-size: 1.08rem;
+}
+
+.ef-assurance__outcomes header > strong {
+  align-self: center;
+  font-size: 0.78rem;
+}
+
+.ef-assurance__outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ef-assurance__outcome-grid > article {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border-right: 1px solid var(--ef-border, #d7dde5);
+  border-bottom: 1px solid var(--ef-border, #d7dde5);
+}
+
+.ef-assurance__outcome-grid > article:nth-child(2n) {
+  border-right: 0;
+}
+
+.ef-assurance__outcome-grid > article:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.ef-assurance__outcome-heading span {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 26px;
+  border: 1px solid var(--ef-border, #d7dde5);
+  border-radius: 8px;
+  font-size: 0.72rem;
+}
+
+.ef-assurance__outcome-heading strong,
+.ef-assurance__quality article > div span {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+
+.ef-assurance__outcome-grid p,
+.ef-assurance__quality p {
+  color: var(--ef-muted, #637083);
+  line-height: 1.48;
+}
+
+.ef-assurance__outcome-grid dl,
+.ef-assurance__controls dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.ef-assurance__outcome-grid dl > div,
+.ef-assurance__controls dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 5px;
+  border-top: 1px solid var(--ef-border-soft, #e9edf2);
+}
+
+.ef-assurance dt {
+  color: var(--ef-muted, #637083);
+}
+
+.ef-assurance dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 650;
+}
+
+.ef-assurance__outcome-grid small,
+.ef-assurance__quality small {
+  color: var(--ef-muted, #637083);
+  line-height: 1.4;
+}
+
+.ef-assurance__quality article {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ef-border, #d7dde5);
+}
+
+.ef-assurance__quality article:last-child {
+  border-bottom: 0;
+}
+
+.ef-assurance__controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.ef-assurance__controls > article {
+  padding: 16px;
+}
+
+.ef-assurance__controls dl {
+  margin-top: 14px;
+}
+
+.ef-assurance__controls ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ef-assurance__controls li {
+  padding: 8px 10px;
+  border: 1px solid var(--ef-border-soft, #e9edf2);
+  border-radius: 9px;
+  background: var(--ef-surface, #ffffff);
+}
+
+.ef-assurance__controls code {
+  overflow-wrap: anywhere;
+}
+
+.ef-assurance__boundary {
+  display: grid;
+  gap: 5px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1100px) {
+  .ef-assurance__summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ef-assurance__summary span:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .ef-assurance__summary span:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--ef-border, #d7dde5);
+  }
+
+  .ef-assurance__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .ef-assurance {
+    padding: 16px;
+  }
+
+  .ef-assurance__header,
+  .ef-assurance__production {
+    display: grid;
+  }
+
+  .ef-assurance__header-actions {
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .ef-assurance__outcome-grid,
+  .ef-assurance__controls {
+    grid-template-columns: 1fr;
+  }
+
+  .ef-assurance__outcome-grid > article {
+    border-right: 0;
+    border-bottom: 1px solid var(--ef-border, #d7dde5);
+  }
+
+  .ef-assurance__outcome-grid > article:nth-last-child(2) {
+    border-bottom: 1px solid var(--ef-border, #d7dde5);
+  }
+}
+
+@media (max-width: 520px) {
+  .ef-assurance__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ef-assurance__summary span,
+  .ef-assurance__summary span:nth-child(3n) {
+    border-right: 1px solid var(--ef-border, #d7dde5);
+    border-bottom: 1px solid var(--ef-border, #d7dde5);
+  }
+
+  .ef-assurance__summary span:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .ef-assurance__summary span:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .ef-assurance__controls ul {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-assurance *,
+  .ef-assurance *::before,
+  .ef-assurance *::after {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
