@@ -25,8 +25,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Audit release readiness boundaries
-        run: node scripts/audit-intel-release-readiness.mjs
+      - name: Audit Phase 7 completion gate
+        run: node scripts/audit-intel-phase-7-release-verification-gate.mjs
       - name: Execute release readiness contract tests
         run: node --experimental-strip-types --test scripts/intel-release-readiness-contract.test.mjs
       - name: TypeScript check
