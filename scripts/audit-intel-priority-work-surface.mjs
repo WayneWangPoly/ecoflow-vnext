@@ -1,3 +1,4 @@
+import './audit-intel-phase-3-control-room-gate.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
