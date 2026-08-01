@@ -9,6 +9,7 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 
 const main = read('src/main.tsx');
 const shell = read('src/features/operationalRoutes/NativeOperationalRoutes.tsx');
+const stabilityShell = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
 const query = read('src/features/navigation/useWorkspaceQueryState.ts');
 const stores = read('src/features/stores/StoresWorkspacePage.tsx');
 const inventory = read('src/features/inventory/InventoryWorkspacePage.tsx');
@@ -17,12 +18,12 @@ const warehouseRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
 const warehousePage = read('src/features/warehouse/WarehouseMapPage.tsx');
 const documentation = read('docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md');
 
-for (const route of ['/control-room', '/ordermentum', '/inventory/*', '/customers/*', '/stores/*', '/warehouse-map']) {
+for (const route of ['/control-room', '/ordermentum', '/inventory/*', '/customers/*', '/stores/*', '/warehouse-map', '/exceptions']) {
   has(main, `path=\"${route}\"`, `main.tsx owns ${route} through React Router`);
 }
 has(main, 'NativeOperationalRoutes', 'Native route shell is mounted explicitly');
+has(main, 'OperationalStabilityRoute', 'Later native operational workspaces have an explicit route shell');
 has(main, 'WarehouseMapRoute', 'Warehouse Map has an explicit protected route');
-has(main, 'Navigate to="/ordermentum?tab=exceptions"', 'Exceptions has a canonical native route');
 
 for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhancers', 'AccountEnhancers', 'ViewerEnhancers', 'WarehouseMapRouteModules']) {
   lacks(main, legacy, `${legacy} is absent from the production entry point`);
@@ -30,13 +31,15 @@ for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhance
 lacks(main, '.sidebar-brand span', 'Entry point does not infer role from sidebar text');
 lacks(main, 'navLabels', 'Entry point does not infer capability from visible navigation labels');
 
-has(shell, 'data-app-role={role}', 'Authenticated typed role is published by React state');
-has(shell, 'canRoleAccessIntelligenceWorkspace', 'Workspace access uses typed role contracts');
-has(shell, 'v_ecoflow_current_user', 'Role is loaded from the authenticated profile view');
-lacks(shell, 'querySelector', 'Native shell does not locate UI by DOM selector');
-lacks(shell, 'textContent', 'Native shell does not infer capability from visible text');
-lacks(shell, 'createPortal', 'Native shell does not replace panels through portals');
-lacks(shell, 'observeBody', 'Native shell does not depend on MutationObserver mounting');
+for (const [name, source] of [['phase-9c shell', shell], ['stability shell', stabilityShell]]) {
+  has(source, 'data-app-role={role}', `${name} publishes authenticated typed role state`);
+  has(source, 'canRoleAccessIntelligenceWorkspace', `${name} uses typed route capability contracts`);
+  has(source, 'v_ecoflow_current_user', `${name} loads role from the authenticated profile view`);
+  lacks(source, 'querySelector', `${name} does not locate UI by DOM selector`);
+  lacks(source, 'textContent', `${name} does not infer capability from visible text`);
+  lacks(source, 'createPortal', `${name} does not replace panels through portals`);
+  lacks(source, 'observeBody', `${name} does not depend on MutationObserver mounting`);
+}
 
 for (const [name, source] of [['stores', stores], ['inventory', inventory], ['ordermentum', ordermentum]]) {
   has(source, 'useWorkspaceQueryState', `${name} owns URL query state`);
@@ -62,4 +65,4 @@ lacks(warehouseRoute, 'createPortal', 'Warehouse Map route does not portal-repla
 has(documentation, 'Phase 9C — Native Operational Routes', 'Phase documentation exists');
 has(documentation, 'production module graph', 'Runtime removal boundary is documented');
 
-console.log('Native operational route audit passed: 5/5 workspaces, typed role boundary, URL state and explicit data states.');
+console.log('Native operational route audit passed: explicit route ownership, typed role boundaries and URL state remain intact.');
