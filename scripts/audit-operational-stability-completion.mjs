@@ -13,7 +13,9 @@ const workspace = read('src/features/operationalStability/OperationalStabilityWo
 const exceptionWorkspace = read('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx');
 const route = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
 const stocktakeMigration = read('supabase/migrations/20260801163000_stocktake_transfer_controls.sql');
+const stocktakeConflictMigration = read('supabase/migrations/20260801163010_stocktake_variable_conflict_policy.sql');
 const pagingMigration = read('supabase/migrations/20260801163100_operational_paging_preferences_close.sql');
+const operationalConflictMigration = read('supabase/migrations/20260801163110_operational_variable_conflict_policy.sql');
 const contract = read('scripts/operational-stability-contract-test.sql');
 const documentation = read('docs/PHASE-9D-G-OPERATIONAL-STABILITY-COMPLETION.md');
 
@@ -58,6 +60,16 @@ has(pagingMigration, 'ecoflow_complete_business_day_close', 'Business Day Close 
 has(pagingMigration, 'accountsVarianceAcknowledged', 'Accounts variance requires explicit acknowledgement');
 has(pagingMigration, 'cardinality(action_keys) between 0 and 4', 'Quick Actions are capped at four');
 has(pagingMigration, 'user_id uuid primary key', 'Quick Actions are authenticated-user scoped');
+
+for (const [name, migration] of [
+  ['stocktake', stocktakeConflictMigration],
+  ['operational', operationalConflictMigration],
+]) {
+  has(migration, 'pg_get_functiondef', `${name} functions are recompiled from their authoritative definitions`);
+  has(migration, '#variable_conflict use_column', `${name} functions use a per-function compiler directive`);
+  lacks(migration, "set plpgsql.variable_conflict='use_column'", `${name} migration avoids the managed-Supabase superuser-only GUC`);
+  has(migration, 'PLPGSQL_FUNCTION_BODY_MARKER_NOT_FOUND', `${name} migration fails closed when function source cannot be patched safely`);
+}
 
 for (const rpcName of [
   'ecoflow_read_operational_page',
