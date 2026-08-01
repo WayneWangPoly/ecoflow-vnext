@@ -1,0 +1,72 @@
+name: Operational stability completion
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - 'agent/**'
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Audit Phase 9D-G completion
+        run: node scripts/audit-operational-stability-completion.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Load production-shape fixture
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/warehouse-migration-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f scripts/operational-stability-migration-fixture.sql
+      - name: Apply Phase 9D-G migrations
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163000_stocktake_transfer_controls.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163100_operational_paging_preferences_close.sql
+      - name: Execute Phase 9D-G PostgreSQL contracts
+        run: psql -v ON_ERROR_STOP=1 -f scripts/operational-stability-contract-test.sql
