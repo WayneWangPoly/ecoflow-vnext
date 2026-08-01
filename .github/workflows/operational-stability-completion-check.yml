@@ -69,5 +69,6 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163000_stocktake_transfer_controls.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163010_stocktake_variable_conflict_policy.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163100_operational_paging_preferences_close.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801163110_operational_variable_conflict_policy.sql
       - name: Execute Phase 9D-G PostgreSQL contracts
         run: psql -v ON_ERROR_STOP=1 -f scripts/operational-stability-contract-test.sql
