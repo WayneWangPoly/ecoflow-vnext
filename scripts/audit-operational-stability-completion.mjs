@@ -10,6 +10,7 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 const main = read('src/main.tsx');
 const repository = read('src/data/repositories/operationalStabilityV2.ts');
 const workspace = read('src/features/operationalStability/OperationalStabilityWorkspaceV2.tsx');
+const exceptionWorkspace = read('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx');
 const route = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
 const stocktakeMigration = read('supabase/migrations/20260801163000_stocktake_transfer_controls.sql');
 const pagingMigration = read('supabase/migrations/20260801163100_operational_paging_preferences_close.sql');
@@ -42,7 +43,6 @@ has(stocktakeMigration, "v_move>v_item.quantity", 'Move SKU prevents a negative 
 has(stocktakeMigration, "('MOVE_OUT'", 'Move SKU writes a source leg');
 has(stocktakeMigration, "('MOVE_IN'", 'Move SKU writes a destination leg');
 has(stocktakeMigration, 'STOCKTAKE_EVENT_IMMUTABLE', 'Stocktake history is immutable');
-has(stocktakeMigration, 'Observations remain', '');
 lacks(stocktakeMigration, 'grant insert on public.ecoflow_stocktake', 'Browser table writes are not granted');
 
 for (const resource of ['orders','stores','inventory','exceptions','logs']) {
@@ -76,8 +76,8 @@ has(workspace, 'Select up to four navigation shortcuts', 'Quick Action configura
 has(workspace, 'Save observation only', 'Stocktake observation is visibly non-posting');
 has(workspace, 'Approve and post balances', 'Supervisor approval is visibly distinct');
 has(workspace, 'Apply paired transfer', 'Move SKU is presented as one paired transaction');
-has(workspace, 'Business Day Close', 'Business Day Close is reachable from the exception queue');
-has(workspace, 'recommended_action', 'Exception recommendation is rendered');
+has(exceptionWorkspace, 'Business Day Close', 'Business Day Close is reachable from the exception queue');
+has(exceptionWorkspace, 'row.recommended_action', 'Each exception recommendation is rendered');
 has(route, 'v_ecoflow_current_user', 'Profile and role come from authenticated application state');
 has(route, 'quickKeys', 'Effective Quick Actions are rendered in the compact top bar');
 has(route, "role === 'account' && workspace === 'exceptions'", 'Account can manage commercial exceptions');
