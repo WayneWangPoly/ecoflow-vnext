@@ -1,0 +1,66 @@
+name: Native operational routes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/main.tsx'
+      - 'src/features/operationalRoutes/**'
+      - 'src/features/navigation/**'
+      - 'src/features/stores/**'
+      - 'src/features/inventory/**'
+      - 'src/features/ordermentum/**'
+      - 'src/features/warehouse/WarehouseMapRoute.tsx'
+      - 'src/features/warehouse/WarehouseMapPage.tsx'
+      - 'scripts/audit-native-operational-routes.mjs'
+      - 'scripts/native-operational-route-contract.test.mjs'
+      - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
+      - '.github/workflows/native-operational-routes-check.yml'
+  push:
+    branches:
+      - main
+      - 'agent/phase9c/**'
+    paths:
+      - 'src/main.tsx'
+      - 'src/features/operationalRoutes/**'
+      - 'src/features/navigation/**'
+      - 'src/features/stores/**'
+      - 'src/features/inventory/**'
+      - 'src/features/ordermentum/**'
+      - 'src/features/warehouse/WarehouseMapRoute.tsx'
+      - 'src/features/warehouse/WarehouseMapPage.tsx'
+      - 'scripts/audit-native-operational-routes.mjs'
+      - 'scripts/native-operational-route-contract.test.mjs'
+      - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
+      - '.github/workflows/native-operational-routes-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-operational-routes-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-routes:
+    name: Native workspace ownership
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit native route ownership
+        run: node scripts/audit-native-operational-routes.mjs
+      - name: Test route and pagination contracts
+        run: node --experimental-strip-types --test scripts/native-operational-route-contract.test.mjs scripts/intel-desktop-route-adapter-contract.test.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build

@@ -1,13 +1,12 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { App } from './app/App';
 import { OverlayManagerProvider } from './features/intelligence/overlays';
 import { OperationalSessionIdentityBinder } from './OperationalSessionIdentityBinder';
 import { OperationalSafetyCenter } from './OperationalSafetyCenter';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
 import { OperationalDensityEnhancer } from './OperationalDensityEnhancer';
-import { RoleIdentityEnhancer } from './RoleIdentityEnhancer';
 import { observeBody } from './lib/domObserver';
 import { pruneEcoflowStorage } from './domain/driverRun';
 import { hasSupabaseAuthClient } from './lib/supabaseClient';
@@ -23,94 +22,52 @@ import './operationalContinuity.css';
 import './industrialDesktopFoundation.css';
 import './mobileViewportLock.css';
 
-const isWarehouseMapRoute = window.location.pathname === '/warehouse-map';
 const productionConfigurationMissing = import.meta.env.PROD && !hasSupabaseAuthClient();
 
 pruneEcoflowStorage();
 
-// Warehouse Map is a protected route feature, not an authentication role.
-const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((m) => ({ default: m.FieldModeEnhancer })));
-const OwnerEnhancers = lazy(() => import('./enhancers/OwnerEnhancers'));
-const AccountEnhancers = lazy(() => import('./enhancers/AccountEnhancers'));
-const ViewerEnhancers = lazy(() => import('./enhancers/ViewerEnhancers'));
+const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((module) => ({ default: module.FieldModeEnhancer })));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
-const WarehouseMapRouteModules = lazy(() => import('./enhancers/WarehouseMapRouteModules'));
+// Warehouse Map is a protected route feature, not an authentication role.
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
+const NativeOperationalRoutes = lazy(() => import('./features/operationalRoutes/NativeOperationalRoutes'));
 
-type DesktopRole = 'owner' | 'account' | 'viewer' | null;
-type SurfaceGroups = {
-  desktopRole: DesktopRole;
+type MobileSurfaces = {
   driver: boolean;
-  warehouseOps: boolean;
-  warehouseMapRoute: boolean;
+  warehouse: boolean;
 };
 
-function detectDesktopRole(): DesktopRole {
-  const desktop = document.querySelector<HTMLElement>('.desktop-app');
-  if (!desktop) return null;
-
-  const roleText = document.querySelector<HTMLElement>('.sidebar-brand span')?.textContent?.trim().toUpperCase() || '';
-  if (roleText.includes('ACCOUNT')) return 'account';
-  if (roleText.includes('VIEWER')) return 'viewer';
-  if (roleText.includes('OWNER') || roleText.includes('ADMIN')) return 'owner';
-
-  if (desktop.querySelector('select[aria-label="Open workspace"]')) return 'owner';
-
-  const navLabels = new Set(
-    Array.from(desktop.querySelectorAll<HTMLButtonElement>('.sidebar-nav button'))
-      .map((button) => button.textContent?.trim().toUpperCase() || '')
-      .filter(Boolean),
-  );
-  if (navLabels.has('ORDERMENTUM') && navLabels.has('INVENTORY') && navLabels.has('LOGS')) return 'owner';
-  if (navLabels.has('STORES') && navLabels.has('SETTINGS') && !navLabels.has('INVENTORY')) return 'account';
-  if (navLabels.has('INVENTORY') && navLabels.has('LOGS') && !navLabels.has('SETTINGS')) return 'viewer';
-
-  const stored = window.localStorage.getItem('ecoflow-role');
-  if (stored === 'account') return 'account';
-  if (stored === 'viewer') return 'viewer';
-  if (stored === 'owner' || stored === 'admin') return 'owner';
-  return null;
-}
-
-function detectSurfaces(): SurfaceGroups {
-  const desktopPresent = Boolean(document.querySelector('.desktop-app'));
+function detectMobileSurfaces(): MobileSurfaces {
   return {
-    desktopRole: desktopPresent ? detectDesktopRole() : null,
     driver: Boolean(document.querySelector('.driver-shell')),
-    warehouseOps: !isWarehouseMapRoute && Boolean(document.querySelector('.mobile-shell')),
-    warehouseMapRoute: isWarehouseMapRoute,
+    warehouse: Boolean(document.querySelector('.mobile-shell')),
   };
 }
 
-function sameSurfaces(left: SurfaceGroups, right: SurfaceGroups) {
-  return left.desktopRole === right.desktopRole
-    && left.driver === right.driver
-    && left.warehouseOps === right.warehouseOps
-    && left.warehouseMapRoute === right.warehouseMapRoute;
+function sameMobileSurfaces(left: MobileSurfaces, right: MobileSurfaces) {
+  return left.driver === right.driver && left.warehouse === right.warehouse;
 }
 
-function SurfaceModuleGate() {
-  const [groups, setGroups] = useState<SurfaceGroups>(detectSurfaces);
+/**
+ * Driver and Warehouse observer modules remain migration bridges for mobile-only
+ * surfaces. Desktop role and capability are never inferred from visible brand,
+ * sidebar or button text.
+ */
+function MobileSurfaceModuleGate() {
+  const [surfaces, setSurfaces] = useState<MobileSurfaces>(detectMobileSurfaces);
 
-  useEffect(() => {
-    const stopObserving = observeBody(() => {
-      setGroups((previous) => {
-        const next = detectSurfaces();
-        return sameSurfaces(previous, next) ? previous : next;
-      });
+  useEffect(() => observeBody(() => {
+    setSurfaces((current) => {
+      const next = detectMobileSurfaces();
+      return sameMobileSurfaces(current, next) ? current : next;
     });
-    return stopObserving;
-  }, []);
+  }), []);
 
   return (
     <Suspense fallback={null}>
-      {groups.desktopRole === 'owner' ? <OwnerEnhancers /> : null}
-      {groups.desktopRole === 'account' ? <AccountEnhancers /> : null}
-      {groups.desktopRole === 'viewer' ? <ViewerEnhancers /> : null}
-      {groups.driver ? <DriverEnhancers /> : null}
-      {groups.warehouseOps ? <WarehouseOpsEnhancers /> : null}
-      {groups.warehouseMapRoute ? <WarehouseMapRouteModules /> : null}
+      {surfaces.driver ? <DriverEnhancers /> : null}
+      {surfaces.warehouse ? <WarehouseOpsEnhancers /> : null}
     </Suspense>
   );
 }
@@ -129,6 +86,22 @@ function ProductionConfigurationError() {
   );
 }
 
+function ApplicationRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/control-room" replace />} />
+      <Route path="/warehouse-map" element={<Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}><WarehouseMapRoute /></Suspense>} />
+      <Route path="/control-room" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/ordermentum" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/inventory/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/customers/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/stores/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/exceptions" element={<Navigate to="/ordermentum?tab=exceptions" replace />} />
+      <Route path="*" element={<App />} />
+    </Routes>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -140,18 +113,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <OperationalSessionIdentityBinder />
           <OperationalSafetyCenter />
           <OperationalDensityEnhancer />
-          <RoleIdentityEnhancer />
-          <Suspense fallback={null}>
-            <FieldModeEnhancer />
-          </Suspense>
-          <SurfaceModuleGate />
-          {isWarehouseMapRoute ? (
-            <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}>
-              <WarehouseMapRoute />
-            </Suspense>
-          ) : (
-            <App />
-          )}
+          <Suspense fallback={null}><FieldModeEnhancer /></Suspense>
+          <MobileSurfaceModuleGate />
+          <ApplicationRoutes />
         </OverlayManagerProvider>
       )}
     </BrowserRouter>
