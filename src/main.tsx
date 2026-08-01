@@ -32,6 +32,7 @@ const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhance
 // Warehouse Map is a protected route feature, not an authentication role.
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
 const NativeOperationalRoutes = lazy(() => import('./features/operationalRoutes/NativeOperationalRoutes'));
+const OperationalStabilityRoute = lazy(() => import('./features/operationalStability/OperationalStabilityRoute'));
 
 type MobileSurfaces = {
   driver: boolean;
@@ -86,17 +87,25 @@ function ProductionConfigurationError() {
   );
 }
 
+function StabilityRoute() {
+  return <Suspense fallback={null}><OperationalStabilityRoute /></Suspense>;
+}
+
 function ApplicationRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/control-room" replace />} />
       <Route path="/warehouse-map" element={<Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}><WarehouseMapRoute /></Suspense>} />
+      <Route path="/warehouse-control/*" element={<StabilityRoute />} />
       <Route path="/control-room" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
       <Route path="/ordermentum" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/inventory/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/customers/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/stores/*" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/exceptions" element={<Navigate to="/ordermentum?tab=exceptions" replace />} />
+      <Route path="/orders/*" element={<StabilityRoute />} />
+      <Route path="/inventory/*" element={<StabilityRoute />} />
+      <Route path="/customers/*" element={<StabilityRoute />} />
+      <Route path="/stores/*" element={<StabilityRoute />} />
+      <Route path="/exceptions" element={<StabilityRoute />} />
+      <Route path="/logs" element={<StabilityRoute />} />
+      <Route path="/settings" element={<StabilityRoute />} />
       <Route path="*" element={<App />} />
     </Routes>
   );
