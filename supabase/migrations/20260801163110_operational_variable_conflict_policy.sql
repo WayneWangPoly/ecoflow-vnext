@@ -1,6 +1,8 @@
 -- Managed Supabase roles cannot set the superuser-only plpgsql.variable_conflict
 -- GUC with ALTER FUNCTION. Recompile the already-created functions with the
--- equivalent per-function PL/pgSQL compiler directive instead.
+-- equivalent per-function PL/pgSQL compiler directive instead. The legacy
+-- Business Day Close authority is included because the governed wrapper calls
+-- it and function-level GUC inheritance is no longer being relied upon.
 
 begin;
 
@@ -15,6 +17,7 @@ begin
     'public.ecoflow_set_quick_actions(text[],bigint)',
     'public.ecoflow_read_operational_page(text,integer,integer,text,text,text)',
     'public.ecoflow_business_day_close_readiness(date)',
+    'public.ecoflow_close_business_day(date,date,bigint,text,uuid,text)',
     'public.ecoflow_complete_business_day_close(date,date,bigint,text,uuid,jsonb,text,text)'
   ]
   loop
