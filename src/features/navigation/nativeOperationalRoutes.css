@@ -1,3 +1,29 @@
+.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a,
+.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  border-radius: 8px;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a {
+  padding: 9px 12px;
+}
+
+.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a {
+  padding: 8px 11px;
+  white-space: nowrap;
+}
+
+.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a.active,
+.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a.active {
+  background: var(--sidebar-active, rgba(255, 255, 255, 0.12));
+  color: inherit;
+}
+
 .native-workspace {
   min-width: 0;
 }
