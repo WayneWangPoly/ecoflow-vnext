@@ -29,6 +29,7 @@ pruneEcoflowStorage();
 const FieldModeEnhancer = lazy(() => import('./FieldModeEnhancer').then((module) => ({ default: module.FieldModeEnhancer })));
 const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
+// Warehouse Map is a protected route feature, not an authentication role.
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
 const NativeOperationalRoutes = lazy(() => import('./features/operationalRoutes/NativeOperationalRoutes'));
 
