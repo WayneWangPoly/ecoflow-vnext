@@ -95,7 +95,10 @@ function ShellState({ title, detail, actions }: { title: string; detail: string;
   return (
     <main className="login-page">
       <section className="login-card" role="alert">
-        <div className="login-brand-row"><BrandMark large /><div><div className="login-brand-name">EcoFlow</div><div className="login-brand-subtitle">NATIVE OPERATIONAL ROUTE</div></div></div>
+        <div className="login-brand-row">
+          <BrandMark large />
+          <div><div className="login-brand-name">EcoFlow</div><div className="login-brand-subtitle">NATIVE OPERATIONAL ROUTE</div></div>
+        </div>
         <h1>{title}</h1>
         <p>{detail}</p>
         {actions ? <div className="row-actions">{actions}</div> : null}
@@ -111,7 +114,7 @@ function NativeDesktopShell({ role, onLogout, children }: { role: Role; onLogout
       <aside className="sidebar">
         <div className="sidebar-brand"><BrandMark /><div><strong>EcoFlow</strong><span>{roleLabel(role).toUpperCase()}</span></div></div>
         <nav className="sidebar-nav">
-          {items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>{item.label}</NavLink>)}
+          {items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : ''}>{item.label}</NavLink>)}
         </nav>
       </aside>
       <section className="desktop-main">
@@ -123,7 +126,7 @@ function NativeDesktopShell({ role, onLogout, children }: { role: Role; onLogout
           </div>
         </header>
         <nav className="desktop-mobile-nav" aria-label="Sections">
-          {items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>{item.label}</NavLink>)}
+          {items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : ''}>{item.label}</NavLink>)}
         </nav>
         <main className="desktop-content">{children}</main>
       </section>
@@ -149,7 +152,11 @@ export default function NativeOperationalRoutes() {
   const trustedRef = useRef<TrustedLiveSnapshot<EcoFlowDataSet> | null>(null);
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(initialData.businessDay.date));
 
-  const role = profile ? roleFromProfile(profile) : (import.meta.env.DEV ? ((window.localStorage.getItem('ecoflow-role') as Role | null) || 'owner') : null);
+  const role = profile
+    ? roleFromProfile(profile)
+    : import.meta.env.DEV
+      ? ((window.localStorage.getItem('ecoflow-role') as Role | null) || 'owner')
+      : null;
 
   const refreshProfile = useCallback(async () => {
     if (!supabase) return null;
@@ -238,7 +245,7 @@ export default function NativeOperationalRoutes() {
       void import('@/domain/sampleEcoflowData').then(({ buildDevelopmentSampleData }) => {
         if (!active) return;
         const sample = buildDevelopmentSampleData();
-        trustedRef.current = { data: sample, acceptedAt: Date.now() };
+        trustedRef.current = { data: sample, acceptedSequence: Date.now() };
         setData(sample);
         setOrders(sample.orders);
         setSnapshotReady(true);
@@ -268,9 +275,15 @@ export default function NativeOperationalRoutes() {
 
   if (!workspace) return <ShellState title="Route unavailable" detail="This path is not owned by the native operational route shell." />;
   if (authEnabled && !authChecked) return <ShellState title="Checking secure session" detail="EcoFlow is verifying the authenticated user and application role." />;
-  if (authEnabled && !hasSession && supabase) return <EmailLoginScreen supabase={supabase} authError={authError} onSignedIn={refreshProfile} redirectTo={`${location.pathname}${location.search}`} />;
-  if (authEnabled && hasSession && !profile) return <ShellState title="Access profile unavailable" detail={authError || 'The secure session is active, but the application profile could not be read.'} actions={<><button type="button" className="primary-button" onClick={() => void refreshProfile()}>Retry profile</button><button type="button" onClick={() => void logout()}>Logout</button></>} />;
-  if (!role || role === 'warehouse' || role === 'driver') return <ShellState title="Desktop workspace not available for this role" detail="Warehouse and Driver accounts use their dedicated operational surfaces. Branding text cannot change this capability boundary." actions={<button type="button" onClick={() => void logout()}>Logout</button>} />;
+  if (authEnabled && !hasSession && supabase) {
+    return <EmailLoginScreen supabase={supabase} authError={authError} onSignedIn={async () => { await refreshProfile(); }} redirectTo={`${location.pathname}${location.search}`} />;
+  }
+  if (authEnabled && hasSession && !profile) {
+    return <ShellState title="Access profile unavailable" detail={authError || 'The secure session is active, but the application profile could not be read.'} actions={<><button type="button" className="primary-button" onClick={() => void refreshProfile()}>Retry profile</button><button type="button" onClick={() => void logout()}>Logout</button></>} />;
+  }
+  if (!role || role === 'warehouse' || role === 'driver') {
+    return <ShellState title="Desktop workspace not available for this role" detail="Warehouse and Driver accounts use their dedicated operational surfaces. Branding text cannot change this capability boundary." actions={<button type="button" onClick={() => void logout()}>Logout</button>} />;
+  }
 
   const accessWorkspace = intelligenceWorkspace(workspace);
   if (!canRoleAccessIntelligenceWorkspace(role, accessWorkspace)) {
