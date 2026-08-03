@@ -10,6 +10,7 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 const schema = read('supabase/migrations/20260803140000_product_identity_schema.sql');
 const commands = read('supabase/migrations/20260803140100_product_identity_commands.sql');
 const guardrails = read('supabase/migrations/20260803140200_product_identity_operational_guardrails.sql');
+const multiBarcode = read('supabase/migrations/20260803140300_product_identity_multi_barcode_preference.sql');
 const repository = read('src/data/repositories/productIdentityCommissioning.ts');
 const warehouse = read('src/data/repositories/warehouseLocations.ts');
 const route = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
@@ -42,6 +43,11 @@ has(guardrails, 'BARCODE_CAPTURE_CONFLICT', 'Legacy capture cannot silently reas
 has(guardrails, 'STOCKTAKE_HAS_UNPUBLISHED_PRODUCT_IDENTITY', 'Stocktake approval requires published identity');
 has(guardrails, 'ecoflow_read_business_day_close_state', 'Business Day Close exposes authoritative revision');
 
+has(multiBarcode, 'ecoflow_normalise_batch_item_relation_preference', 'Multiple package barcodes share relation-level preference');
+has(multiBarcode, "new.physical_sku = new.physical_sku", 'Multi-barcode comparison remains physical-SKU scoped');
+has(multiBarcode, "array_remove(new.conflict_codes, 'MULTIPLE_PREFERRED_PHYSICAL_SKUS')", 'Same physical item is not treated as two preferred products');
+has(multiBarcode, "new.item_state := 'REVIEW'", 'Automatically corrected multi-barcode evidence remains reviewable');
+
 has(repository, 'p_expected_batch_revision', 'Frontend sends batch revision');
 has(repository, 'p_command_id: commandId()', 'Frontend uses idempotency commands');
 has(repository, 'loadProductIdentityWorkspace', 'One repository loads the commissioning workspace');
@@ -69,4 +75,4 @@ has(close, 'readBusinessDayCloseState', 'Business Day Close reads current server
 has(close, 'expectedRevision:numeric(closeState?.revision)', 'Business Day Close no longer hard-codes revision zero');
 lacks(close, 'expectedRevision:0', 'Hard-coded Business Day Close revision is removed');
 
-console.log('Product identity commissioning audit passed (45 contracts).');
+console.log('Product identity commissioning audit passed (49 contracts).');
