@@ -31,7 +31,6 @@ const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
 // Warehouse Map is a protected route feature, not an authentication role.
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
-const NativeOperationalRoutes = lazy(() => import('./features/operationalRoutes/NativeOperationalRoutes'));
 const OperationalStabilityRoute = lazy(() => import('./features/operationalStability/OperationalStabilityRoute'));
 
 type MobileSurfaces = {
@@ -98,8 +97,8 @@ function ApplicationRoutes() {
       <Route path="/warehouse-map" element={<Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}><WarehouseMapRoute /></Suspense>} />
       <Route path="/warehouse-control/*" element={<StabilityRoute />} />
       <Route path="/commissioning/product-identity" element={<StabilityRoute />} />
-      <Route path="/control-room" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/ordermentum" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
+      <Route path="/control-room" element={<StabilityRoute />} />
+      <Route path="/ordermentum" element={<StabilityRoute />} />
       <Route path="/orders/*" element={<StabilityRoute />} />
       <Route path="/inventory/*" element={<StabilityRoute />} />
       <Route path="/customers/*" element={<StabilityRoute />} />
