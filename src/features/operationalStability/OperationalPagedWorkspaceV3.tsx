@@ -12,7 +12,9 @@ import { actionableExceptionLifecycleRepository } from '@/data/repositories/acti
 import {
   completeBusinessDayClose,
   readBusinessDayCloseReadiness,
+  readBusinessDayCloseState,
   readOperationalPage,
+  type BusinessDayCloseState,
   type OperationalPageResource,
   type OperationalPageResult,
 } from '@/data/repositories/operationalStability';
@@ -32,6 +34,11 @@ type Props = {
 function value(input: unknown) {
   if (input===null || input===undefined || input==='') return '—';
   return String(input);
+}
+
+function numeric(input: unknown) {
+  const parsed=Number(input ?? 0);
+  return Number.isFinite(parsed)?parsed:0;
 }
 
 function adelaide(input: unknown) {
@@ -77,6 +84,7 @@ function ExceptionLifecycleActions({ row, reload }: { row: Row; reload: () => vo
 
 function ClosePanel({ businessDay,role }: { businessDay:string; role:Role }) {
   const [checks,setChecks]=useState<Array<{check_key:string;check_status:string;detail:string;blocking:boolean;read_at:string}>>([]);
+  const [closeState,setCloseState]=useState<BusinessDayCloseState|null>(null);
   const [nextDay,setNextDay]=useState(()=>{const date=new Date(`${businessDay}T12:00:00+09:30`);date.setDate(date.getDate()+1);return date.toISOString().slice(0,10);});
   const [reason,setReason]=useState('Daily operational reconciliation completed');
   const [ack,setAck]=useState('Accounts variance reviewed and acknowledged.');
@@ -84,23 +92,47 @@ function ClosePanel({ businessDay,role }: { businessDay:string; role:Role }) {
   const [busy,setBusy]=useState(false);
   const mayClose=role==='owner'||role==='admin';
 
-  const load=useCallback(async()=>{try{setChecks(await readBusinessDayCloseReadiness(businessDay));setMessage('');}catch(error){setMessage(error instanceof Error?error.message:String(error));}},[businessDay]);
+  const load=useCallback(async()=>{
+    try{
+      const [readiness,state]=await Promise.all([
+        readBusinessDayCloseReadiness(businessDay),
+        readBusinessDayCloseState(businessDay),
+      ]);
+      setChecks(readiness);
+      setCloseState(state);
+      if (state.next_business_day) setNextDay(state.next_business_day);
+      setMessage('');
+    }catch(error){setMessage(error instanceof Error?error.message:String(error));}
+  },[businessDay]);
   useEffect(()=>{void load();},[load]);
-  const blocked=checks.some((check)=>check.blocking&&check.check_key!=='ACCOUNTS_VARIANCE');
+  const closed=closeState?.close_status==='CLOSED';
+  const blocked=closed||checks.some((check)=>check.blocking&&check.check_key!=='ACCOUNTS_VARIANCE');
 
   async function close() {
+    if (closed) return;
     setBusy(true);
     try {
-      const result=await completeBusinessDayClose({businessDay,nextBusinessDay:nextDay,expectedRevision:0,reason,acknowledgementNote:ack});
-      setMessage(`Business Day Close ${value(result?.close_status)} · ${value(result?.carry_over_count)} carry-over records.`);
+      const result=await completeBusinessDayClose({
+        businessDay,
+        nextBusinessDay:nextDay,
+        expectedRevision:numeric(closeState?.revision),
+        reason,
+        acknowledgementNote:ack,
+      });
+      const status=value(result?.close_status);
+      setMessage(status==='CONFLICT'
+        ? 'Business Day Close changed on another device. The latest server state has been loaded.'
+        : `Business Day Close ${status} · ${value(result?.carry_over_count)} carry-over records.`);
       await load();
     } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
     finally { setBusy(false); }
   }
 
   return <section className="native-close-panel"><header><div><span className="eyebrow">ADELAIDE BUSINESS DAY</span><h2>Close readiness</h2></div><button type="button" onClick={()=>void load()}>Refresh checks</button></header>
+    {closed?<div className="native-workspace-notice"><strong>Business day already closed.</strong> Revision {numeric(closeState?.revision)} · {numeric(closeState?.carry_over_count)} carry-over records · {adelaide(closeState?.closed_at)}.</div>:null}
     <div className="native-close-checks">{checks.map((check)=><article key={check.check_key} className={check.blocking?'blocking':''}><strong>{check.check_key.replaceAll('_',' ')}</strong><span>{check.check_status}</span><p>{check.detail}</p></article>)}</div>
-    {mayClose?<div className="native-close-form"><label>Next business day<input type="date" min={businessDay} value={nextDay} onChange={(event)=>setNextDay(event.target.value)}/></label><label>Close reason<input value={reason} onChange={(event)=>setReason(event.target.value)}/></label><label>Accounts variance acknowledgement<textarea value={ack} onChange={(event)=>setAck(event.target.value)}/></label><button className="primary-button" type="button" disabled={busy||blocked||!reason.trim()||!ack.trim()} onClick={()=>void close()}>Close and carry forward</button></div>:<p>Owner or Admin approval is required to close the business day.</p>}
+    {mayClose&&!closed?<div className="native-close-form"><label>Next business day<input type="date" min={businessDay} value={nextDay} onChange={(event)=>setNextDay(event.target.value)}/></label><label>Close reason<input value={reason} onChange={(event)=>setReason(event.target.value)}/></label><label>Accounts variance acknowledgement<textarea value={ack} onChange={(event)=>setAck(event.target.value)}/></label><button className="primary-button" type="button" disabled={busy||blocked||!reason.trim()||!ack.trim()} onClick={()=>void close()}>{busy?'Closing with server revision…':'Close and carry forward'}</button></div>:null}
+    {!mayClose?<p>Owner or Admin approval is required to close the business day.</p>:null}
     {message?<div className="native-workspace-notice">{message}</div>:null}
   </section>;
 }
