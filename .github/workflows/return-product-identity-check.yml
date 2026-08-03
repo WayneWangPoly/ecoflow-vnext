@@ -1,0 +1,58 @@
+name: Return product identity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/features/returns/**'
+      - 'src/data/repositories/returnIdentity.ts'
+      - 'src/features/operationalRoutes/NativeCoreOperationalWorkspace.tsx'
+      - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
+      - 'src/main.tsx'
+      - 'supabase/migrations/20260803140500_return_product_identity_inspection.sql'
+      - 'supabase/migrations/20260803140600_return_command_idempotency.sql'
+      - 'scripts/audit-return-product-identity.mjs'
+      - '.github/workflows/return-product-identity-check.yml'
+  push:
+    branches:
+      - main
+      - 'agent/commissioning-implementation'
+    paths:
+      - 'src/features/returns/**'
+      - 'src/data/repositories/returnIdentity.ts'
+      - 'src/features/operationalRoutes/NativeCoreOperationalWorkspace.tsx'
+      - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
+      - 'src/main.tsx'
+      - 'supabase/migrations/20260803140500_return_product_identity_inspection.sql'
+      - 'supabase/migrations/20260803140600_return_command_idempotency.sql'
+      - 'scripts/audit-return-product-identity.mjs'
+      - '.github/workflows/return-product-identity-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: return-product-identity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  return-contract:
+    name: Return identity contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit controlled returns
+        run: node scripts/audit-return-product-identity.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build
