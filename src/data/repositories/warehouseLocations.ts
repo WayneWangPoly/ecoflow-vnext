@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  productIdentityFriendlyError,
+  validateProductIdentityScan,
+} from './productIdentityCommissioning';
 
 export type WarehouseLocationItemRow = {
   location_id: string;
@@ -44,11 +48,17 @@ export type InventoryLocationSummaryRow = {
 export type ReceivingBarcodeLookupRow = {
   barcode: string;
   sku: string;
+  physical_sku?: string | null;
+  commercial_sku?: string | null;
   product_name: string | null;
-  unit_level: 'carton' | 'sleeve' | 'each' | 'unknown' | string | null;
+  unit_level: 'carton' | 'sleeve' | 'inner' | 'each' | 'unknown' | string | null;
+  units_per_barcode?: number | string | null;
   fixed_location: string | null;
   pick_level: string | null;
   classification: string | null;
+  family_code?: string | null;
+  substitution_policy?: string | null;
+  is_preferred?: boolean | null;
   barcode_status: string | null;
   sku_status: string | null;
 };
@@ -60,13 +70,13 @@ export type ReceiveWarehouseStockInput = {
   note?: string;
   sku?: string;
   productName?: string;
-  unitLevel?: 'carton' | 'sleeve' | 'each' | 'unknown';
+  unitLevel?: 'carton' | 'sleeve' | 'inner' | 'each' | 'unknown';
 };
 
 export type PickWarehouseStockInput = {
   sku: string;
   quantity: number;
-  unitLevel: 'carton' | 'sleeve' | 'each' | 'unknown';
+  unitLevel: 'carton' | 'sleeve' | 'inner' | 'each' | 'unknown';
   barcode?: string;
   note?: string;
 };
@@ -131,6 +141,12 @@ function requireSupabase(client?: SupabaseClient | null) {
   return active;
 }
 
+function lowerUnit(level: string) {
+  const value = level.toLowerCase();
+  if (value === 'carton' || value === 'sleeve' || value === 'inner' || value === 'each') return value;
+  return 'unknown';
+}
+
 export async function loadWarehouseLocationItems(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
@@ -157,7 +173,7 @@ export async function loadInventoryLocationSummaries(client?: SupabaseClient | n
 export async function loadReceivingBarcodeLookup(client?: SupabaseClient | null) {
   const active = requireSupabase(client);
   const { data, error } = await active
-    .from('v_ecoflow_receiving_barcode_lookup')
+    .from('v_ecoflow_product_identity_barcode_lookup')
     .select('*')
     .order('sku', { ascending: true });
 
@@ -180,46 +196,84 @@ export async function loadCustomerOpsQueue(client?: SupabaseClient | null) {
 
 export async function receiveWarehouseStock(input: ReceiveWarehouseStockInput, client?: SupabaseClient | null) {
   const active = requireSupabase(client);
-  const { data, error } = await active.rpc('ecoflow_record_receive_movement', {
-    p_location_code: input.locationCode,
-    p_barcode: input.barcode,
-    p_quantity: input.quantity,
-    p_note: input.note ?? null,
-    p_sku: input.sku ?? null,
-    p_product_name: input.productName ?? null,
-    p_unit_level: input.unitLevel ?? 'carton',
-  });
-
-  if (error) throw error;
-  return data;
+  try {
+    const identity = await validateProductIdentityScan({
+      barcode: input.barcode,
+      operation: 'RECEIVING',
+    }, active);
+    if (input.sku && ![identity.physical_sku, identity.commercial_sku].includes(input.sku.trim().toUpperCase())) {
+      throw new Error('The entered SKU does not match the published barcode identity.');
+    }
+    const { data, error } = await active.rpc('ecoflow_record_receive_movement', {
+      p_location_code: input.locationCode,
+      p_barcode: identity.barcode,
+      p_quantity: input.quantity,
+      p_note: input.note ?? null,
+      p_sku: identity.physical_sku,
+      p_product_name: identity.product_name,
+      p_unit_level: lowerUnit(identity.package_level),
+    });
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    throw new Error(productIdentityFriendlyError(error));
+  }
 }
 
 export async function pickWarehouseStock(input: PickWarehouseStockInput, client?: SupabaseClient | null) {
   const active = requireSupabase(client);
-  const { data, error } = await active.rpc('ecoflow_record_pick_movement', {
-    p_sku: input.sku,
-    p_quantity: input.quantity,
-    p_unit_level: input.unitLevel,
-    p_barcode: input.barcode ?? null,
-    p_note: input.note ?? null,
-  });
-
-  if (error) throw error;
-  return (data ?? []) as PickWarehouseStockResult[];
+  if (!input.barcode?.trim()) {
+    throw new Error('A published package barcode is required before stock can be picked.');
+  }
+  try {
+    const identity = await validateProductIdentityScan({
+      barcode: input.barcode,
+      commercialSku: input.sku,
+      operation: 'PICKING',
+    }, active);
+    const { data, error } = await active.rpc('ecoflow_record_pick_movement', {
+      p_sku: identity.physical_sku,
+      p_quantity: input.quantity,
+      p_unit_level: lowerUnit(identity.package_level),
+      p_barcode: identity.barcode,
+      p_note: [input.note, `Commercial SKU ${input.sku.toUpperCase()}`, `Family ${identity.family_code}`].filter(Boolean).join(' · '),
+    });
+    if (error) throw error;
+    return (data ?? []) as PickWarehouseStockResult[];
+  } catch (error) {
+    throw new Error(productIdentityFriendlyError(error));
+  }
 }
 
 export async function recordCustomerStockDrawdown(input: CustomerStockDrawdownInput, client?: SupabaseClient | null) {
   const active = requireSupabase(client);
+  let sku = input.sku;
+  let productName = input.productName ?? null;
+  let unitLevel = input.unitLevel;
+  let barcode = input.barcode ?? null;
+
+  if (barcode) {
+    const identity = await validateProductIdentityScan({
+      barcode,
+      commercialSku: input.sku,
+      operation: 'PICKING',
+    }, active);
+    sku = identity.physical_sku;
+    productName = identity.product_name;
+    unitLevel = lowerUnit(identity.package_level) as CustomerStockDrawdownInput['unitLevel'];
+    barcode = identity.barcode;
+  }
+
   const { data, error } = await active.rpc('ecoflow_record_customer_stock_issue', {
     p_customer_name: input.customerName,
-    p_sku: input.sku,
+    p_sku: sku,
     p_quantity: input.quantity,
-    p_unit_level: input.unitLevel,
-    p_barcode: input.barcode ?? null,
+    p_unit_level: unitLevel,
+    p_barcode: barcode,
     p_note: input.note ?? null,
     p_location_code: input.locationCode ?? null,
     p_customer_reference: input.customerReference ?? null,
-    p_product_name: input.productName ?? null,
+    p_product_name: productName,
     p_fulfilment_mode: input.fulfilmentMode ?? 'OWNER_ONSITE',
     p_delivery_address: input.deliveryAddress ?? null,
     p_driver_note: input.driverNote ?? null,
