@@ -11,6 +11,7 @@ const schema = read('supabase/migrations/20260803140000_product_identity_schema.
 const commands = read('supabase/migrations/20260803140100_product_identity_commands.sql');
 const guardrails = read('supabase/migrations/20260803140200_product_identity_operational_guardrails.sql');
 const multiBarcode = read('supabase/migrations/20260803140300_product_identity_multi_barcode_preference.sql');
+const masterScope = read('supabase/migrations/20260803140400_product_identity_master_catalog_scope.sql');
 const repository = read('src/data/repositories/productIdentityCommissioning.ts');
 const warehouse = read('src/data/repositories/warehouseLocations.ts');
 const route = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
@@ -48,6 +49,12 @@ has(multiBarcode, 'i.physical_sku = new.physical_sku', 'Multi-barcode comparison
 has(multiBarcode, "array_remove(new.conflict_codes, 'MULTIPLE_PREFERRED_PHYSICAL_SKUS')", 'Same physical item is not treated as two preferred products');
 has(multiBarcode, "new.item_state := 'REVIEW'", 'Automatically corrected multi-barcode evidence remains reviewable');
 
+has(masterScope, 'v_ecoflow_product_identity_commercial_catalog', 'Commissioning has one canonical active Commercial SKU scope');
+has(masterScope, 'from public.v_ecoflow_app_sku_master m', 'Scope comes from Ordermentum SKU master rather than sales velocity');
+has(masterScope, 'coalesce(m.is_service_item, false) = false', 'Service items are excluded from physical mapping');
+has(masterScope, "'inactive', 'retired', 'discontinued'", 'Inactive catalogue states are excluded explicitly');
+has(masterScope, 'PRODUCT_IDENTITY_MASTER_CATALOG_INCOMPLETE', 'Server publication checks the full active master catalog');
+
 has(repository, 'p_expected_batch_revision', 'Frontend sends batch revision');
 has(repository, 'p_command_id: commandId()', 'Frontend uses idempotency commands');
 has(repository, 'loadProductIdentityWorkspace', 'One repository loads the commissioning workspace');
@@ -75,4 +82,4 @@ has(close, 'readBusinessDayCloseState', 'Business Day Close reads current server
 has(close, 'expectedRevision:numeric(closeState?.revision)', 'Business Day Close no longer hard-codes revision zero');
 lacks(close, 'expectedRevision:0', 'Hard-coded Business Day Close revision is removed');
 
-console.log('Product identity commissioning audit passed (49 contracts).');
+console.log('Product identity commissioning audit passed (54 contracts).');
