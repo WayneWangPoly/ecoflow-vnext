@@ -12,6 +12,7 @@ import {
 } from '@/features/intelligence/navigation/routeContract';
 import { readQuickActions } from '@/data/repositories/operationalStability';
 import { ProductIdentityCommissioningWorkspace } from '@/features/commissioning/ProductIdentityCommissioningWorkspace';
+import { NativeCoreOperationalWorkspace } from '@/features/operationalRoutes/NativeCoreOperationalWorkspace';
 import {
   OperationalPagedWorkspace,
   OperationalSettingsWorkspace,
@@ -176,6 +177,8 @@ function DesktopShell({
 }
 
 function workspaceFromPath(pathname: string) {
+  if (pathname === '/control-room') return 'control-room' as const;
+  if (pathname === '/ordermentum') return 'ordermentum' as const;
   if (pathname === '/orders' || pathname.startsWith('/orders/')) return 'orders' as const;
   if (pathname === '/inventory' || pathname.startsWith('/inventory/')) return 'inventory' as const;
   if (pathname === '/customers' || pathname.startsWith('/customers/') || pathname === '/stores' || pathname.startsWith('/stores/')) return 'stores' as const;
@@ -311,6 +314,18 @@ export default function OperationalStabilityRouteV2() {
   const routeWorkspace: IntelligenceWorkspaceId = workspace === 'stores' ? 'customers' : workspace;
   if (!mayAccess(role, routeWorkspace)) {
     return <AccessState title="Workspace not authorised" detail={`${roleLabel(role)} does not have access to ${routeWorkspace}.`} actions={<button type="button" onClick={() => void logout()}>Logout</button>} />;
+  }
+
+  if (workspace === 'control-room' || workspace === 'ordermentum') {
+    return (
+      <DesktopShell role={role} profile={effectiveProfile} onLogout={() => void logout()}>
+        <NativeCoreOperationalWorkspace
+          workspace={workspace === 'control-room' ? 'dashboard' : 'ordermentum'}
+          role={role}
+          profile={effectiveProfile}
+        />
+      </DesktopShell>
+    );
   }
 
   const businessDay = businessDateFromIso(new Date().toISOString());
