@@ -1,0 +1,193 @@
+name: Supabase migration PR shadow
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/supabase-migration-pr-shadow.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-pr-shadow-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  SUPABASE_CLI_VERSION: 2.107.0
+  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+
+jobs:
+  production-schema-shadow:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    services:
+      shadow:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: shadow
+          POSTGRES_DB: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      SHADOW_DB_URL: postgresql://postgres:shadow@localhost:54329/postgres
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@v4
+      - name: Require production schema read credentials
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo 'Missing SUPABASE_PROJECT_REF'; exit 1; }
+      - name: Isolate legacy SQL archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ecoflow-legacy-migrations
+          shopt -s nullglob
+          for file in supabase/migrations/*.sql; do
+            base="$(basename "$file")"
+            if [[ "$base" == '20260624_remote_production_baseline.sql' ]] || [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              continue
+            fi
+            mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
+          done
+      - name: Install Supabase CLI
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+      - name: Construct IPv4 pooler database URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+      - name: Compute pending migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if supabase migration list --db-url "$SUPABASE_DB_URL" > /tmp/migration-list.txt 2>&1; then
+              break
+            fi
+            echo "migration list attempt $attempt failed; retrying in 20s"
+            cat /tmp/migration-list.txt
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          python3 - <<'PY'
+          import re
+          pending = []
+          for line in open('/tmp/migration-list.txt', encoding='utf-8', errors='replace'):
+              cells = [cell.strip() for cell in line.split('|')]
+              if len(cells) >= 2 and re.fullmatch(r'\d{14}', cells[0]) and not cells[1]:
+                  pending.append(cells[0])
+          open('/tmp/pending-versions.txt', 'w').write('\n'.join(pending))
+          print('pending migrations:', pending or 'none')
+          PY
+          test -s /tmp/pending-versions.txt || {
+            echo 'This PR changes migrations but no pending migration was detected.'
+            exit 1
+          }
+      - name: Prepare shadow database shims
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r text;
+          begin
+            foreach r in array array['anon','authenticated','service_role','authenticator','supabase_admin','supabase_auth_admin','supabase_storage_admin','supabase_read_only_user','dashboard_user','pgbouncer'] loop
+              if not exists (select 1 from pg_roles where rolname = r) then
+                execute format('create role %I nologin', r);
+              end if;
+            end loop;
+          end $$;
+          create extension if not exists pgcrypto;
+          create extension if not exists "uuid-ossp";
+          create schema if not exists extensions;
+          create schema if not exists auth;
+          create schema if not exists storage;
+          create schema if not exists vault;
+          create schema if not exists graphql_public;
+          create table if not exists auth.users (
+            id uuid primary key default gen_random_uuid(),
+            email text,
+            raw_user_meta_data jsonb,
+            created_at timestamptz default now()
+          );
+          create or replace function auth.uid() returns uuid language sql stable
+            as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          create or replace function auth.role() returns text language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon') $$;
+          create or replace function auth.jwt() returns jsonb language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
+          create table if not exists storage.buckets (
+            id text primary key,
+            name text,
+            public boolean default false,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now()
+          );
+          create table if not exists storage.objects (
+            id uuid primary key default gen_random_uuid(),
+            bucket_id text,
+            name text,
+            owner uuid,
+            owner_id text,
+            version text,
+            metadata jsonb,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now(),
+            last_accessed_at timestamptz,
+            path_tokens text[] generated always as (string_to_array(name, '/')) stored
+          );
+          create or replace function storage.foldername(name text) returns text[] language sql immutable
+            as $$ select (string_to_array(name, '/'))[1:coalesce(array_length(string_to_array(name, '/'), 1), 1) - 1] $$;
+          grant usage on schema auth, storage, extensions to anon, authenticated, service_role;
+          alter table storage.objects enable row level security;
+          SQL
+      - name: Dump production schema
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if supabase db dump --db-url "$SUPABASE_DB_URL" -f /tmp/prod-schema.sql; then
+              break
+            fi
+            echo "schema dump attempt $attempt failed; retrying in 20s"
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          wc -c /tmp/prod-schema.sql
+      - name: Load production schema into shadow
+        shell: bash
+        run: |
+          set +e
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=0 -f /tmp/prod-schema.sql > /tmp/schema-load.log 2>&1
+          errors=$(grep -c '^psql:.*ERROR' /tmp/schema-load.log || true)
+          echo "schema load completed with $errors tolerated platform-managed error line(s)"
+          grep '^psql:.*ERROR' /tmp/schema-load.log | sort | uniq -c | sort -rn | head -15 || true
+          exit 0
+      - name: Apply pending migrations to production schema copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r version; do
+            file=$(ls supabase/migrations/"$version"_*.sql)
+            echo "=== applying $file to shadow ==="
+            psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$file"
+          done < /tmp/pending-versions.txt
+          echo 'All pending migrations applied cleanly against the production schema copy.'
