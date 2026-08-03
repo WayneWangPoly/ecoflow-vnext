@@ -1,0 +1,152 @@
+name: Commissioning PR 244 release gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: commissioning-pr244-release
+  cancel-in-progress: true
+
+jobs:
+  validate-and-merge:
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 244)
+      && github.ref_name == '244/merge'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.number == 244
+          && github.event.pull_request.head.ref == 'agent/commissioning-implementation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: '244'
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact implementation head
+        uses: actions/checkout@v5
+        with:
+          ref: agent/commissioning-implementation
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_HEAD=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')
+          LOCAL_HEAD=$(git rev-parse HEAD)
+          test "$CURRENT_HEAD" = "$LOCAL_HEAD" || {
+            echo "PR head moved: current=$CURRENT_HEAD local=$LOCAL_HEAD"
+            exit 1
+          }
+          echo "VALIDATED_HEAD_SHA=$CURRENT_HEAD" >> "$GITHUB_ENV"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Product identity contract
+        run: node scripts/audit-product-identity-commissioning.mjs
+
+      - name: Return identity contract
+        run: node scripts/audit-return-product-identity.mjs
+
+      - name: Return replay contract
+        run: node scripts/audit-return-command-concurrency.mjs
+
+      - name: Unified native route contract
+        run: node scripts/audit-native-operational-routes.mjs
+
+      - name: Existing repository audit suite
+        run: npm run audit:all
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Vite production build
+        run: npm run build
+
+      - name: Wait for production-schema shadow and Vercel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+
+          repo = os.environ['REPOSITORY']
+          sha = os.environ['VALIDATED_HEAD_SHA']
+
+          def gh_json(path):
+              raw = subprocess.check_output(['gh', 'api', path], text=True)
+              return json.loads(raw)
+
+          deadline = time.time() + 25 * 60
+          last = None
+          while time.time() < deadline:
+              checks = gh_json(f'repos/{repo}/commits/{sha}/check-runs?per_page=100').get('check_runs', [])
+              shadow = [c for c in checks if 'production-schema-shadow' in c.get('name', '').lower()]
+              statuses = gh_json(f'repos/{repo}/commits/{sha}/status')
+              vercel = [s for s in statuses.get('statuses', []) if s.get('context') == 'Vercel']
+
+              snapshot = {
+                  'shadow': [(c.get('status'), c.get('conclusion'), c.get('details_url')) for c in shadow],
+                  'vercel': [(s.get('state'), s.get('target_url')) for s in vercel],
+              }
+              if snapshot != last:
+                  print(json.dumps(snapshot, indent=2))
+                  last = snapshot
+
+              if shadow and any(c.get('status') == 'completed' and c.get('conclusion') not in ('success', 'neutral', 'skipped') for c in shadow):
+                  raise SystemExit('Production-schema shadow failed.')
+              if vercel and any(s.get('state') in ('error', 'failure') for s in vercel):
+                  raise SystemExit('Vercel deployment failed.')
+
+              shadow_green = bool(shadow) and all(c.get('status') == 'completed' and c.get('conclusion') == 'success' for c in shadow)
+              vercel_green = bool(vercel) and vercel[0].get('state') == 'success'
+              if shadow_green and vercel_green:
+                  print('Production-schema shadow and Vercel are green.')
+                  break
+              time.sleep(20)
+          else:
+              raise SystemExit('Timed out waiting for production-schema shadow and Vercel.')
+          PY
+
+      - name: Reconfirm PR head before merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_HEAD=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')
+          test "$CURRENT_HEAD" = "$VALIDATED_HEAD_SHA" || {
+            echo "PR changed after validation: expected=$VALIDATED_HEAD_SHA current=$CURRENT_HEAD"
+            exit 1
+          }
+
+      - name: Mark ready and squash merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr ready "$PR_NUMBER" --repo "$REPOSITORY" || true
+          gh api \
+            --method PUT \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/merge" \
+            -f merge_method='squash' \
+            -f commit_title='[COMMISSION] Production-ready product identity, returns and unified UI' \
+            -f commit_message='Complete pre-site product identity commissioning, controlled operational barcode enforcement, reverse-logistics inspection, Business Day Close concurrency and unified core application routes.' \
+            --jq '{merged, message, sha}'
