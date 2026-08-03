@@ -97,6 +97,7 @@ function ApplicationRoutes() {
       <Route path="/" element={<Navigate to="/control-room" replace />} />
       <Route path="/warehouse-map" element={<Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}><WarehouseMapRoute /></Suspense>} />
       <Route path="/warehouse-control/*" element={<StabilityRoute />} />
+      <Route path="/commissioning/product-identity" element={<StabilityRoute />} />
       <Route path="/control-room" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
       <Route path="/ordermentum" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
       <Route path="/orders/*" element={<StabilityRoute />} />
