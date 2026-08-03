@@ -44,7 +44,7 @@ has(guardrails, 'STOCKTAKE_HAS_UNPUBLISHED_PRODUCT_IDENTITY', 'Stocktake approva
 has(guardrails, 'ecoflow_read_business_day_close_state', 'Business Day Close exposes authoritative revision');
 
 has(multiBarcode, 'ecoflow_normalise_batch_item_relation_preference', 'Multiple package barcodes share relation-level preference');
-has(multiBarcode, "new.physical_sku = new.physical_sku", 'Multi-barcode comparison remains physical-SKU scoped');
+has(multiBarcode, 'i.physical_sku = new.physical_sku', 'Multi-barcode comparison remains physical-SKU scoped');
 has(multiBarcode, "array_remove(new.conflict_codes, 'MULTIPLE_PREFERRED_PHYSICAL_SKUS')", 'Same physical item is not treated as two preferred products');
 has(multiBarcode, "new.item_state := 'REVIEW'", 'Automatically corrected multi-barcode evidence remains reviewable');
 
