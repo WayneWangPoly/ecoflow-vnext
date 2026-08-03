@@ -12,9 +12,7 @@ on:
       - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
       - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
       - 'src/main.tsx'
-      - 'supabase/migrations/20260803140000_product_identity_schema.sql'
-      - 'supabase/migrations/20260803140100_product_identity_commands.sql'
-      - 'supabase/migrations/20260803140200_product_identity_operational_guardrails.sql'
+      - 'supabase/migrations/20260803140*_product_identity_*.sql'
       - 'scripts/audit-product-identity-commissioning.mjs'
       - '.github/workflows/product-identity-commissioning-check.yml'
   push:
@@ -30,9 +28,7 @@ on:
       - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
       - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
       - 'src/main.tsx'
-      - 'supabase/migrations/20260803140000_product_identity_schema.sql'
-      - 'supabase/migrations/20260803140100_product_identity_commands.sql'
-      - 'supabase/migrations/20260803140200_product_identity_operational_guardrails.sql'
+      - 'supabase/migrations/20260803140*_product_identity_*.sql'
       - 'scripts/audit-product-identity-commissioning.mjs'
       - '.github/workflows/product-identity-commissioning-check.yml'
 
