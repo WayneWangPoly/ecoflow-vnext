@@ -104,6 +104,9 @@ function ApplicationRoutes() {
       <Route path="/customers/*" element={<StabilityRoute />} />
       <Route path="/stores/*" element={<StabilityRoute />} />
       <Route path="/exceptions" element={<StabilityRoute />} />
+      <Route path="/delivery" element={<StabilityRoute />} />
+      <Route path="/reconciliation" element={<StabilityRoute />} />
+      <Route path="/analytics" element={<StabilityRoute />} />
       <Route path="/logs" element={<StabilityRoute />} />
       <Route path="/settings" element={<StabilityRoute />} />
       <Route path="*" element={<App />} />
