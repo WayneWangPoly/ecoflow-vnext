@@ -8,13 +8,17 @@ import type { DesktopTab, EcoFlowDataSet, Role } from '@/domain/types';
 import { usePickSync } from '@/app/usePickSync';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
+import { NativeDeliveryWorkspace } from '@/features/delivery/NativeDeliveryWorkspace';
+import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
+import { NativeReconciliationWorkspace } from '@/features/reconciliation/NativeReconciliationWorkspace';
 import { pathForLegacyDesktopTab } from '@/features/intelligence/navigation/routeContract';
+import { NativeWorkspaceUnavailable } from '@/features/navigation/NativeWorkspaceFrame';
 import { hasSupabaseAuthClient } from '@/lib/supabaseClient';
 
 const initialData = buildProductionEmptyData();
 
-type NativeCoreWorkspace = 'dashboard' | 'ordermentum';
+type NativeCoreWorkspace = 'dashboard' | 'ordermentum' | 'delivery' | 'reconciliation' | 'analytics';
 
 type Props = {
   workspace: NativeCoreWorkspace;
@@ -104,6 +108,12 @@ export function NativeCoreOperationalWorkspace({ workspace, role, profile }: Pro
   const effectiveOrders = useMemo(() => applyDayStateToOrders(orders, day), [day, orders]);
   const openTab = (tab: DesktopTab) => navigate(pathForLegacyDesktopTab(tab));
 
+  if (workspace === 'analytics') return <AnalyticsHealthConsole role={role} />;
+
+  if (loadError && !snapshotReady && workspace !== 'dashboard' && workspace !== 'ordermentum') {
+    return <NativeWorkspaceUnavailable label={workspace} detail={loadError} onRetry={() => void reloadViews()} />;
+  }
+
   if (workspace === 'dashboard') {
     return (
       <DashboardPage
@@ -120,19 +130,35 @@ export function NativeCoreOperationalWorkspace({ workspace, role, profile }: Pro
     );
   }
 
-  return (
-    <OrdermentumWorkspacePage
-      orders={effectiveOrders}
-      setOrders={setOrders}
-      data={data}
-      mappingExceptions={data.mappingExceptions}
-      day={day}
-      setDay={setDay}
-      loading={snapshotLoading}
-      available={snapshotReady}
-      loadError={loadError || undefined}
-      healthNotice={healthNotice || undefined}
-      onReload={reloadViews}
-    />
-  );
+  if (workspace === 'ordermentum') {
+    return (
+      <OrdermentumWorkspacePage
+        orders={effectiveOrders}
+        setOrders={setOrders}
+        data={data}
+        mappingExceptions={data.mappingExceptions}
+        day={day}
+        setDay={setDay}
+        loading={snapshotLoading}
+        available={snapshotReady}
+        loadError={loadError || undefined}
+        healthNotice={healthNotice || undefined}
+        onReload={reloadViews}
+      />
+    );
+  }
+
+  if (workspace === 'delivery') {
+    return (
+      <NativeDeliveryWorkspace
+        orders={effectiveOrders}
+        day={day}
+        setDay={setDay}
+        businessDay={data.businessDay}
+        canPlan={role === 'owner' || role === 'admin'}
+      />
+    );
+  }
+
+  return <NativeReconciliationWorkspace orders={effectiveOrders} businessDay={data.businessDay.date} />;
 }
