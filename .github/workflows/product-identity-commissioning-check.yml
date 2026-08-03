@@ -1,0 +1,66 @@
+name: Product identity commissioning
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/features/commissioning/**'
+      - 'src/data/repositories/productIdentityCommissioning.ts'
+      - 'src/data/repositories/warehouseLocations.ts'
+      - 'src/data/repositories/businessDayCloseState.ts'
+      - 'src/data/repositories/operationalStability.ts'
+      - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
+      - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
+      - 'src/main.tsx'
+      - 'supabase/migrations/20260803140000_product_identity_schema.sql'
+      - 'supabase/migrations/20260803140100_product_identity_commands.sql'
+      - 'supabase/migrations/20260803140200_product_identity_operational_guardrails.sql'
+      - 'scripts/audit-product-identity-commissioning.mjs'
+      - '.github/workflows/product-identity-commissioning-check.yml'
+  push:
+    branches:
+      - main
+      - 'agent/commissioning-implementation'
+    paths:
+      - 'src/features/commissioning/**'
+      - 'src/data/repositories/productIdentityCommissioning.ts'
+      - 'src/data/repositories/warehouseLocations.ts'
+      - 'src/data/repositories/businessDayCloseState.ts'
+      - 'src/data/repositories/operationalStability.ts'
+      - 'src/features/operationalStability/OperationalStabilityRouteV2.tsx'
+      - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
+      - 'src/main.tsx'
+      - 'supabase/migrations/20260803140000_product_identity_schema.sql'
+      - 'supabase/migrations/20260803140100_product_identity_commands.sql'
+      - 'supabase/migrations/20260803140200_product_identity_operational_guardrails.sql'
+      - 'scripts/audit-product-identity-commissioning.mjs'
+      - '.github/workflows/product-identity-commissioning-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-identity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application-contract:
+    name: Product identity application contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit product identity authority
+        run: node scripts/audit-product-identity-commissioning.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build
