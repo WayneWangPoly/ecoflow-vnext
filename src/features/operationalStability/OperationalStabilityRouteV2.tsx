@@ -11,6 +11,7 @@ import {
   type IntelligenceWorkspaceId,
 } from '@/features/intelligence/navigation/routeContract';
 import { readQuickActions } from '@/data/repositories/operationalStability';
+import { ProductIdentityCommissioningWorkspace } from '@/features/commissioning/ProductIdentityCommissioningWorkspace';
 import {
   OperationalPagedWorkspace,
   OperationalSettingsWorkspace,
@@ -24,6 +25,7 @@ type NavigationItem = {
   label: string;
   path: string;
   workspace: IntelligenceWorkspaceId;
+  roles?: readonly Role[];
 };
 
 const ACTION_PATHS: Readonly<Record<string, NavigationItem>> = {
@@ -44,6 +46,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { label: 'Ordermentum', path: '/ordermentum', workspace: 'ordermentum' },
   ACTION_PATHS.ORDERS,
   ACTION_PATHS.INVENTORY,
+  { label: 'Product Setup', path: '/commissioning/product-identity', workspace: 'inventory', roles: ['owner', 'admin'] },
   ACTION_PATHS.CUSTOMERS,
   ACTION_PATHS.EXCEPTIONS,
   ACTION_PATHS.DELIVERY,
@@ -94,6 +97,11 @@ function mayAccess(role: Role, workspace: IntelligenceWorkspaceId) {
   return canRoleAccessIntelligenceWorkspace(role, workspace);
 }
 
+function mayAccessNavigation(role: Role, item: NavigationItem) {
+  if (item.roles && !item.roles.includes(role)) return false;
+  return mayAccess(role, item.workspace);
+}
+
 function AccessState({ title, detail, actions }: { title: string; detail: string; actions?: ReactNode }) {
   return (
     <main className="login-page">
@@ -104,6 +112,20 @@ function AccessState({ title, detail, actions }: { title: string; detail: string
         {actions ? <div className="row-actions">{actions}</div> : null}
       </section>
     </main>
+  );
+}
+
+function StandaloneWarehouseShell({ profile, onLogout, children }: { profile: EcoFlowAuthProfile; onLogout: () => void; children: ReactNode }) {
+  return (
+    <div className="warehouse-control-standalone" data-app-role="warehouse">
+      <header className="warehouse-control-standalone-header">
+        <BrandMark />
+        <div><strong>EcoFlow Warehouse</strong><span>{profile.display_name || profile.email}</span></div>
+        <nav><NavLink to="/warehouse-control">Warehouse Control</NavLink><NavLink to="/commissioning/product-identity">Product Setup</NavLink></nav>
+        <button type="button" onClick={onLogout}>Logout</button>
+      </header>
+      <main>{children}</main>
+    </div>
   );
 }
 
@@ -126,10 +148,10 @@ function DesktopShell({
       .catch(() => setQuickKeys([]));
   }, [profile.user_id]);
 
-  const navigation = NAVIGATION.filter((item) => mayAccess(role, item.workspace));
+  const navigation = NAVIGATION.filter((item) => mayAccessNavigation(role, item));
   const quickActions = quickKeys
     .map((key) => ACTION_PATHS[key])
-    .filter((item): item is NavigationItem => Boolean(item) && mayAccess(role, item.workspace));
+    .filter((item): item is NavigationItem => Boolean(item) && mayAccessNavigation(role, item));
 
   return (
     <div className="desktop-app" data-app-role={role} data-navigation-owner="react-router">
@@ -142,7 +164,7 @@ function DesktopShell({
           <div className="topbar-title"><BrandMark /><div><strong>{profile.display_name || profile.email}</strong><span>{roleLabel(role).toUpperCase()} OPERATIONS</span></div></div>
           <div className="topbar-actions">
             {quickActions.map((item) => <NavLink key={item.path} className="soft-button" to={item.path}>{item.label}</NavLink>)}
-            {(role === 'owner' || role === 'admin') ? <a className="soft-button" href="/warehouse-control">Warehouse Control</a> : null}
+            {(role === 'owner' || role === 'admin') ? <NavLink className="soft-button" to="/warehouse-control">Warehouse Control</NavLink> : null}
             <button type="button" onClick={onLogout}>Logout</button>
           </div>
         </header>
@@ -161,6 +183,7 @@ function workspaceFromPath(pathname: string) {
   if (pathname === '/logs') return 'logs' as const;
   if (pathname === '/settings') return 'settings' as const;
   if (pathname === '/warehouse-control' || pathname.startsWith('/warehouse-control/')) return 'warehouse-control' as const;
+  if (pathname === '/commissioning/product-identity') return 'product-identity' as const;
   return null;
 }
 
@@ -270,14 +293,19 @@ export default function OperationalStabilityRouteV2() {
       return <AccessState title="Warehouse Control not authorised" detail="Only Owner, Admin and Warehouse roles can use physical inventory commands." actions={<button type="button" onClick={() => void logout()}>Logout</button>} />;
     }
     if (role === 'warehouse') {
-      return (
-        <div className="warehouse-control-standalone">
-          <header className="warehouse-control-standalone-header"><BrandMark /><strong>EcoFlow Warehouse Control</strong><button type="button" onClick={() => void logout()}>Logout</button></header>
-          <main><WarehouseControlWorkspace role={role} /></main>
-        </div>
-      );
+      return <StandaloneWarehouseShell profile={effectiveProfile} onLogout={() => void logout()}><WarehouseControlWorkspace role={role} /></StandaloneWarehouseShell>;
     }
     return <DesktopShell role={role} profile={effectiveProfile} onLogout={() => void logout()}><WarehouseControlWorkspace role={role} /></DesktopShell>;
+  }
+
+  if (workspace === 'product-identity') {
+    if (!['owner', 'admin', 'warehouse'].includes(role)) {
+      return <AccessState title="Product Setup not authorised" detail="Only Owner, Admin and Warehouse roles can capture physical product evidence. Only Owner and Admin can verify or publish it." actions={<button type="button" onClick={() => void logout()}>Logout</button>} />;
+    }
+    if (role === 'warehouse') {
+      return <StandaloneWarehouseShell profile={effectiveProfile} onLogout={() => void logout()}><ProductIdentityCommissioningWorkspace role={role} profile={effectiveProfile} /></StandaloneWarehouseShell>;
+    }
+    return <DesktopShell role={role} profile={effectiveProfile} onLogout={() => void logout()}><ProductIdentityCommissioningWorkspace role={role} profile={effectiveProfile} /></DesktopShell>;
   }
 
   const routeWorkspace: IntelligenceWorkspaceId = workspace === 'stores' ? 'customers' : workspace;
