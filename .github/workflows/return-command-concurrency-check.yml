@@ -1,0 +1,35 @@
+name: Return command concurrency
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260803140800_return_command_concurrency.sql'
+      - 'scripts/audit-return-command-concurrency.mjs'
+      - '.github/workflows/return-command-concurrency-check.yml'
+  push:
+    branches:
+      - main
+      - 'agent/commissioning-implementation'
+    paths:
+      - 'supabase/migrations/20260803140800_return_command_concurrency.sql'
+      - 'scripts/audit-return-command-concurrency.mjs'
+      - '.github/workflows/return-command-concurrency-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  concurrency-contract:
+    name: Return replay contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit return command locks
+        run: node scripts/audit-return-command-concurrency.mjs
