@@ -8,7 +8,7 @@ const has = (source, text, message) => assert.ok(source.includes(text), message)
 const lacks = (source, text, message) => assert.ok(!source.includes(text), message);
 
 const main = read('src/main.tsx');
-const shell = read('src/features/operationalRoutes/NativeOperationalRoutes.tsx');
+const core = read('src/features/operationalRoutes/NativeCoreOperationalWorkspace.tsx');
 const stabilityShell = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
 const query = read('src/features/navigation/useWorkspaceQueryState.ts');
 const stores = read('src/features/stores/StoresWorkspacePage.tsx');
@@ -21,9 +21,10 @@ const documentation = read('docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md');
 for (const route of ['/control-room', '/ordermentum', '/inventory/*', '/customers/*', '/stores/*', '/warehouse-map', '/exceptions']) {
   has(main, `path=\"${route}\"`, `main.tsx owns ${route} through React Router`);
 }
-has(main, 'NativeOperationalRoutes', 'Native route shell is mounted explicitly');
-has(main, 'OperationalStabilityRoute', 'Later native operational workspaces have an explicit route shell');
+has(main, 'OperationalStabilityRoute', 'One authenticated operational route shell is mounted explicitly');
 has(main, 'WarehouseMapRoute', 'Warehouse Map has an explicit protected route');
+lacks(main, 'NativeOperationalRoutes', 'The retired duplicate desktop shell is absent from the production entry point');
+has(stabilityShell, 'NativeCoreOperationalWorkspace', 'Dashboard and Ordermentum content are embedded in the unified shell');
 
 for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhancers', 'AccountEnhancers', 'ViewerEnhancers', 'WarehouseMapRouteModules']) {
   lacks(main, legacy, `${legacy} is absent from the production entry point`);
@@ -31,15 +32,22 @@ for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhance
 lacks(main, '.sidebar-brand span', 'Entry point does not infer role from sidebar text');
 lacks(main, 'navLabels', 'Entry point does not infer capability from visible navigation labels');
 
-for (const [name, source] of [['phase-9c shell', shell], ['stability shell', stabilityShell]]) {
-  has(source, 'data-app-role={role}', `${name} publishes authenticated typed role state`);
-  has(source, 'canRoleAccessIntelligenceWorkspace', `${name} uses typed route capability contracts`);
-  has(source, 'v_ecoflow_current_user', `${name} loads role from the authenticated profile view`);
-  lacks(source, 'querySelector', `${name} does not locate UI by DOM selector`);
-  lacks(source, 'textContent', `${name} does not infer capability from visible text`);
-  lacks(source, 'createPortal', `${name} does not replace panels through portals`);
-  lacks(source, 'observeBody', `${name} does not depend on MutationObserver mounting`);
-}
+has(stabilityShell, 'data-app-role={role}', 'Unified shell publishes authenticated typed role state');
+has(stabilityShell, 'canRoleAccessIntelligenceWorkspace', 'Unified shell uses typed route capability contracts');
+has(stabilityShell, 'v_ecoflow_current_user', 'Unified shell loads role from the authenticated profile view');
+lacks(stabilityShell, 'querySelector', 'Unified shell does not locate UI by DOM selector');
+lacks(stabilityShell, 'textContent', 'Unified shell does not infer capability from visible text');
+lacks(stabilityShell, 'createPortal', 'Unified shell does not replace panels through portals');
+lacks(stabilityShell, 'observeBody', 'Unified shell does not depend on MutationObserver mounting');
+
+has(core, 'Native business content without authentication or navigation ownership.', 'Core route content documents its embedded boundary');
+has(core, 'DashboardPage', 'Unified core owns the native Dashboard page');
+has(core, 'OrdermentumWorkspacePage', 'Unified core owns the native Ordermentum page');
+lacks(core, 'EmailLoginScreen', 'Embedded content does not create another login flow');
+lacks(core, 'NavLink', 'Embedded content does not create another navigation shell');
+lacks(core, 'v_ecoflow_current_user', 'Embedded content does not load a second access profile');
+lacks(core, 'querySelector', 'Embedded content has no DOM selector ownership');
+lacks(core, 'observeBody', 'Embedded content has no DOM observer ownership');
 
 for (const [name, source] of [['stores', stores], ['inventory', inventory], ['ordermentum', ordermentum]]) {
   has(source, 'useWorkspaceQueryState', `${name} owns URL query state`);
@@ -65,4 +73,4 @@ lacks(warehouseRoute, 'createPortal', 'Warehouse Map route does not portal-repla
 has(documentation, 'Phase 9C — Native Operational Routes', 'Phase documentation exists');
 has(documentation, 'production module graph', 'Runtime removal boundary is documented');
 
-console.log('Native operational route audit passed: explicit route ownership, typed role boundaries and URL state remain intact.');
+console.log('Native operational route audit passed: one shell, typed role boundaries and URL state remain intact.');
