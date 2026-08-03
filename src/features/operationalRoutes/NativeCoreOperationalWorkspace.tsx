@@ -12,13 +12,14 @@ import { NativeDeliveryWorkspace } from '@/features/delivery/NativeDeliveryWorks
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
 import { NativeReconciliationWorkspace } from '@/features/reconciliation/NativeReconciliationWorkspace';
+import { NativeReturnsWorkspace } from '@/features/returns/NativeReturnsWorkspace';
 import { pathForLegacyDesktopTab } from '@/features/intelligence/navigation/routeContract';
 import { NativeWorkspaceUnavailable } from '@/features/navigation/NativeWorkspaceFrame';
 import { hasSupabaseAuthClient } from '@/lib/supabaseClient';
 
 const initialData = buildProductionEmptyData();
 
-type NativeCoreWorkspace = 'dashboard' | 'ordermentum' | 'delivery' | 'reconciliation' | 'analytics';
+type NativeCoreWorkspace = 'dashboard' | 'ordermentum' | 'delivery' | 'returns' | 'reconciliation' | 'analytics';
 
 type Props = {
   workspace: NativeCoreWorkspace;
@@ -109,6 +110,7 @@ export function NativeCoreOperationalWorkspace({ workspace, role, profile }: Pro
   const openTab = (tab: DesktopTab) => navigate(pathForLegacyDesktopTab(tab));
 
   if (workspace === 'analytics') return <AnalyticsHealthConsole role={role} />;
+  if (workspace === 'returns') return <NativeReturnsWorkspace />;
 
   if (loadError && !snapshotReady && workspace !== 'dashboard' && workspace !== 'ordermentum') {
     return <NativeWorkspaceUnavailable label={workspace} detail={loadError} onRetry={() => void reloadViews()} />;
