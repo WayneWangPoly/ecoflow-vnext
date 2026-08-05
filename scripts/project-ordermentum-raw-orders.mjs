@@ -7,6 +7,10 @@ import {
 
 const args = parseArgs();
 const cfg = config();
+const dashboardRefreshCfg = {
+  ...cfg,
+  supabaseTimeoutMs: Math.max(cfg.supabaseTimeoutMs, 210000),
+};
 
 function positiveInteger(value, fallback, minimum = 1) {
   const parsed = Number(value);
@@ -157,7 +161,11 @@ try {
 
 if (dashboardRefreshMarked) {
   try {
-    const refreshed = await supabaseRpc(cfg, 'ecoflow_refresh_dashboard_read_models', {});
+    const refreshed = await supabaseRpc(
+      dashboardRefreshCfg,
+      'ecoflow_refresh_dashboard_read_models',
+      {},
+    );
     console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
   } catch (error) {
     console.warn(JSON.stringify({
