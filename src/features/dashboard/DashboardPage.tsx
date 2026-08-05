@@ -16,8 +16,7 @@ import {
 import type { EcoFlowDataSet, ImportedOrder, Role } from '@/domain/types';
 import { dashboardStageTarget, type DashboardNavigationTab } from './dashboardNavigationContract';
 import { dashboardSourceTone, type DashboardOperationalTone } from './dashboardControlContract';
-import { loadOrderOperationsSummary, type OrderOperationsSummary } from '@/data/repositories/orderOperations';
-import { loadBarcodeSprintKpis, loadInventoryKpis, type BarcodeSprintKpis, type InventoryKpis } from '@/data/repositories/inventoryControl';
+import { loadDashboardReadiness, type DashboardReadiness } from '@/data/repositories/dashboardReadiness';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import { loadOrdermentumMirrorHealth, type OrdermentumMirrorHealthRow } from '@/features/team/ordermentumSync';
 import {
@@ -101,10 +100,8 @@ export function DashboardPage({
   onOpenTab,
 }: Props) {
   const { openPrimaryRecord } = useOverlayManager();
-  const [operations, setOperations] = useState<OrderOperationsSummary | null>(null);
+  const [readiness, setReadiness] = useState<DashboardReadiness | null>(null);
   const [mirror, setMirror] = useState<OrdermentumMirrorHealthRow | null>(null);
-  const [inventory, setInventory] = useState<InventoryKpis | null>(null);
-  const [barcode, setBarcode] = useState<BarcodeSprintKpis | null>(null);
   const [locations, setLocations] = useState<WarehouseLocationItemRow[]>([]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusNotice, setStatusNotice] = useState('');
@@ -113,28 +110,22 @@ export function DashboardPage({
     setStatusLoading(true);
     setStatusNotice('');
     const checks = await Promise.allSettled([
-      loadOrderOperationsSummary(),
+      loadDashboardReadiness(),
       supabase
         ? loadOrdermentumMirrorHealth(supabase)
         : Promise.resolve({ mirrorHealth: null, mirrorError: 'Supabase is unavailable.' }),
-      loadInventoryKpis(),
-      loadBarcodeSprintKpis(),
       loadWarehouseLocationItems(),
     ]);
-    const [operationResult, mirrorResult, inventoryResult, barcodeResult, locationResult] = checks;
-    if (operationResult.status === 'fulfilled') setOperations(operationResult.value);
+    const [readinessResult, mirrorResult, locationResult] = checks;
+    if (readinessResult.status === 'fulfilled') setReadiness(readinessResult.value);
     if (mirrorResult.status === 'fulfilled') {
       setMirror(mirrorResult.value.mirrorHealth);
       if (mirrorResult.value.mirrorError) setStatusNotice(mirrorResult.value.mirrorError);
     }
-    if (inventoryResult.status === 'fulfilled') setInventory(inventoryResult.value);
-    if (barcodeResult.status === 'fulfilled') setBarcode(barcodeResult.value);
     if (locationResult.status === 'fulfilled') setLocations(locationResult.value);
     const unavailable = [
-      operationResult.status === 'rejected' ? 'server order summary' : '',
+      readinessResult.status === 'rejected' ? 'dashboard readiness' : '',
       mirrorResult.status === 'rejected' ? 'source verification' : '',
-      inventoryResult.status === 'rejected' ? 'inventory summary' : '',
-      barcodeResult.status === 'rejected' ? 'barcode coverage count' : '',
       locationResult.status === 'rejected' ? 'warehouse location summary' : '',
     ].filter(Boolean);
     if (unavailable.length) {
@@ -160,7 +151,7 @@ export function DashboardPage({
     ).size,
     [locations],
   );
-  const firstStocktakeNeeded = n(inventory?.live_on_hand_units) <= 0 && liveLocationCount === 0;
+  const firstStocktakeNeeded = n(readiness?.live_on_hand_units) <= 0 && liveLocationCount === 0;
   const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
   const orderById = useMemo(() => {
     const value = new Map<string, ImportedOrder>();
@@ -186,8 +177,8 @@ export function DashboardPage({
       .filter((order): order is ImportedOrder => Boolean(order)),
     [flow.assignments, orderById],
   );
-  const serverCurrentOrders = operations
-    ? n(operations.current_orders) + n(operations.source_review_orders)
+  const serverCurrentOrders = readiness
+    ? n(readiness.server_current_orders)
     : orders.length;
   const delivered = groups.DELIVERED;
   const podMissing = delivered.filter((order) => order.podStatus === 'missing');
@@ -440,8 +431,8 @@ export function DashboardPage({
         {' · '}{flow.classifiedCount} flow-classified
         {' · '}{flow.excludedCount} cancelled
         {' · '}{flow.unknownCount} unknown
-        {' · '}{n(barcode?.registered_barcodes)} package codes
-        {' · '}{n(inventory?.live_on_hand_units)} live units
+        {' · '}{n(readiness?.registered_barcodes)} package codes
+        {' · '}{n(readiness?.live_on_hand_units)} live units
         {' · '}source checked {dateTime(mirror?.checked_at)}
       </div>
     </section>
