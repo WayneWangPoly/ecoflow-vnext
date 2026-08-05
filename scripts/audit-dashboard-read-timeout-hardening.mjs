@@ -87,8 +87,10 @@ assert.ok(!dashboard.includes('loadBarcodeSprintKpis()'),
   'DashboardPage must not execute the historical barcode KPI view');
 
 includesAll(projection, [
+  'supabaseTimeoutMs: Math.max(cfg.supabaseTimeoutMs, 210000)',
   "supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {})",
-  "supabaseRpc(cfg, 'ecoflow_refresh_dashboard_read_models', {})",
+  "'ecoflow_refresh_dashboard_read_models'",
+  'dashboardRefreshCfg',
   "action: 'refresh_dashboard_read_models_deferred'",
   'blocking: false',
   'fail_closed: true',
@@ -98,4 +100,4 @@ includesAll(projection, [
 assert.ok(!projection.includes('Dashboard read-model refresh failed after successful projection'),
   'derived dashboard refresh must not invalidate authoritative Ordermentum reconciliation');
 
-console.log('Dashboard read-timeout hardening and stale-snapshot fail-closed audit passed.');
+console.log('Dashboard read-timeout hardening, refresh budget and stale-snapshot fail-closed audit passed.');
