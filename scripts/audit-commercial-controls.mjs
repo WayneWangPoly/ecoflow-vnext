@@ -9,7 +9,10 @@ has('src/enhancers/OwnerEnhancers.tsx', 'CommercialSourceBoundary', 'Owner sourc
 has('src/enhancers/AccountEnhancers.tsx', 'CommercialSourceBoundary', 'Accounts source boundary missing.');
 lacks('src/enhancers/OwnerEnhancers.tsx', 'AuthoritativeDashboard', 'Owner must use the native Today dashboard rather than a second portal dashboard.');
 has('src/enhancers/AccountEnhancers.tsx', 'AuthoritativeDashboard', 'Accounts authoritative dashboard missing.');
-has('src/features/dashboard/DashboardPage.tsx', 'loadOrderOperationsSummary', 'Native Today dashboard must use the exact server order summary.');
+has('src/features/dashboard/DashboardPage.tsx', 'loadDashboardReadiness', 'Native Today dashboard must use the bounded server-authority readiness read.');
+has('src/data/repositories/dashboardReadiness.ts', "rpc('ecoflow_get_dashboard_readiness_v1')", 'Native Today dashboard readiness RPC missing.');
+has('supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql', 'from public.om_orders o', 'Dashboard current-order count must remain grounded in authoritative om_orders.');
+lacks('src/features/dashboard/DashboardPage.tsx', 'loadOrderOperationsSummary', 'Native Today dashboard must not restore the timeout-prone historical order summary.');
 has('src/features/dashboard/DashboardPage.tsx', 'loadOrdermentumMirrorHealth', 'Native Today dashboard must retain verified mirror readiness.');
 has('src/features/dashboard/DashboardPage.tsx', 'Start first stocktake', 'Owner Today dashboard must lead to the current warehouse preparation task.');
 lacks('src/enhancers/OwnerEnhancers.tsx', 'PriceMatrixWorkbench', 'Owner must not edit prices locally.');
@@ -42,4 +45,4 @@ has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'active sou
 has('src/features/settings/OrdermentumIntegrationSettingsPanel.tsx', 'retained source-missing', 'Settings must show retained source-missing history.');
 has('src/DeliveryRunHistory.tsx', 'Run history and replay', 'Delivery history missing.');
 has('src/data/repositories/runHistory.ts', 'v_ecoflow_delivery_run_catalog', 'Run catalog missing.');
-console.log('Commercial source ownership, native Today dashboard, resilient Accounts loading, strict release, statements, resumable mirror and run-history audit passed.');
+console.log('Commercial source ownership, bounded native Today dashboard, resilient Accounts loading, strict release, statements, resumable mirror and run-history audit passed.');

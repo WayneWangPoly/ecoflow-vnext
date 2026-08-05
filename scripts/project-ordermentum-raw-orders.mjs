@@ -7,6 +7,10 @@ import {
 
 const args = parseArgs();
 const cfg = config();
+const dashboardRefreshCfg = {
+  ...cfg,
+  supabaseTimeoutMs: Math.max(cfg.supabaseTimeoutMs, 210000),
+};
 
 function positiveInteger(value, fallback, minimum = 1) {
   const parsed = Number(value);
@@ -16,6 +20,13 @@ function positiveInteger(value, fallback, minimum = 1) {
 function isStatementTimeout(error) {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('57014') || /statement timeout|canceling statement due to statement timeout/i.test(message);
+}
+
+function isMissingDashboardRefreshRpc(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('PGRST202')
+    || /ecoflow_(mark|refresh)_dashboard_read_models.*schema cache/i.test(message)
+    || /could not find the function.*ecoflow_(mark|refresh)_dashboard_read_models/i.test(message);
 }
 
 const requestedBatchLimit = positiveInteger(args['batch-limit'], 100);
@@ -107,19 +118,68 @@ if (!converged) {
   );
 }
 
-// Active-order keys are only a derived acceleration cache for legacy UI views.
-// They are not part of the commercial mirror completeness contract, so a cache
-// timeout must never invalidate successfully mirrored orders and invoices.
+// Mark the dashboard projections stale in a separate committed transaction,
+// then attempt their bounded refresh. A refresh failure must never invalidate
+// authoritative Ordermentum reconciliation; the database freshness gate makes
+// dashboard and exception reads fail closed until a later refresh succeeds.
+let dashboardRefreshMarked = false;
 try {
-  const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
-  console.log(JSON.stringify({ action: 'refresh_ui_active_order_keys', keys: refreshedKeys }));
+  const requiredAt = await supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {});
+  dashboardRefreshMarked = true;
+  console.log(JSON.stringify({ action: 'mark_dashboard_read_models_required', required_at: requiredAt }));
 } catch (error) {
-  console.warn(JSON.stringify({
-    action: 'refresh_ui_active_order_keys_deferred',
-    blocking: false,
-    reason: isStatementTimeout(error) ? 'SUPABASE_STATEMENT_TIMEOUT' : 'DERIVED_CACHE_REFRESH_FAILED',
-    message: error instanceof Error ? error.message : String(error),
-  }));
+  if (isMissingDashboardRefreshRpc(error)) {
+    try {
+      const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+      console.warn(JSON.stringify({
+        action: 'refresh_ui_active_order_keys_deferred',
+        blocking: false,
+        reason: 'DASHBOARD_RPCS_NOT_DEPLOYED_YET',
+        active_order_keys: refreshedKeys,
+      }));
+    } catch (fallbackError) {
+      console.warn(JSON.stringify({
+        action: 'refresh_ui_active_order_keys_deferred',
+        blocking: false,
+        reason: isStatementTimeout(fallbackError)
+          ? 'SUPABASE_STATEMENT_TIMEOUT'
+          : 'DERIVED_CACHE_REFRESH_FAILED',
+        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      }));
+    }
+  } else {
+    console.warn(JSON.stringify({
+      action: 'mark_dashboard_read_models_deferred',
+      blocking: false,
+      reason: isStatementTimeout(error)
+        ? 'SUPABASE_STATEMENT_TIMEOUT'
+        : 'DERIVED_READ_MODEL_MARK_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+if (dashboardRefreshMarked) {
+  try {
+    const refreshed = await supabaseRpc(
+      dashboardRefreshCfg,
+      'ecoflow_refresh_dashboard_read_models',
+      {},
+    );
+    console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
+  } catch (error) {
+    console.warn(JSON.stringify({
+      action: 'refresh_dashboard_read_models_deferred',
+      blocking: false,
+      fail_closed: true,
+      reason: isStatementTimeout(error)
+        ? 'SUPABASE_STATEMENT_TIMEOUT'
+        : isMissingDashboardRefreshRpc(error)
+          ? 'RPC_SCHEMA_CACHE_PENDING'
+          : 'DERIVED_READ_MODEL_REFRESH_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+    }));
+  }
 }
 
 if (totals.failed_orders > 0) {
