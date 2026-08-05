@@ -1,0 +1,95 @@
+name: PGRST106 analytics exposure hotfix
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260805215000_expose_analytics_schema_to_postgrest.sql'
+      - 'src/main.tsx'
+      - '.github/workflows/pgrst106-hotfix-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Supabase role and schema fixture
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create role authenticator noinherit login;
+          create role authenticated noinherit;
+          create role service_role noinherit;
+          create schema analytics;
+          create schema graphql_public;
+          alter role authenticator in database postgres
+            set pgrst.db_schemas = 'public,graphql_public';
+          SQL
+
+      - name: Apply hotfix twice
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 \
+            -f supabase/migrations/20260805215000_expose_analytics_schema_to_postgrest.sql
+          psql -v ON_ERROR_STOP=1 \
+            -f supabase/migrations/20260805215000_expose_analytics_schema_to_postgrest.sql
+
+      - name: Verify effective database-specific schema list
+        run: |
+          set -euo pipefail
+          value=$(psql -At -v ON_ERROR_STOP=1 <<'SQL'
+          select substring(setting from length('pgrst.db_schemas=') + 1)
+          from pg_catalog.pg_db_role_setting role_setting
+          join pg_catalog.pg_roles role_row
+            on role_row.oid = role_setting.setrole
+          cross join lateral unnest(role_setting.setconfig) as config(setting)
+          where role_row.rolname = 'authenticator'
+            and role_setting.setdatabase = (
+              select oid from pg_catalog.pg_database where datname = current_database()
+            )
+            and setting like 'pgrst.db_schemas=%';
+          SQL
+          )
+          echo "effective schemas: $value"
+          test "$value" = 'public,graphql_public,analytics'
+
+      - name: Verify privileges remain bounded
+        run: |
+          set -euo pipefail
+          psql -At -v ON_ERROR_STOP=1 <<'SQL' | grep -qx 't|t|f'
+          select
+            has_schema_privilege('authenticated','analytics','USAGE'),
+            has_schema_privilege('service_role','analytics','USAGE'),
+            has_schema_privilege('public','analytics','USAGE');
+          SQL
+
+      - name: Verify cross-surface first-click bridge contract
+        run: |
+          set -euo pipefail
+          grep -q 'function CrossSurfaceNavigationBridge' src/main.tsx
+          grep -q "document.addEventListener('click', handleClick, true)" src/main.tsx
+          grep -q "window.location.assign" src/main.tsx
+          grep -q '<Route path="/delivery/\*" element={<App />} />' src/main.tsx
+          grep -q '<Route path="/analytics" element={<App />} />' src/main.tsx

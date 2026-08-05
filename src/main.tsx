@@ -39,6 +39,8 @@ type MobileSurfaces = {
   warehouse: boolean;
 };
 
+type RouteSurface = 'native' | 'stability' | 'legacy' | 'warehouse-map';
+
 function detectMobileSurfaces(): MobileSurfaces {
   return {
     driver: Boolean(document.querySelector('.driver-shell')),
@@ -48,6 +50,73 @@ function detectMobileSurfaces(): MobileSurfaces {
 
 function sameMobileSurfaces(left: MobileSurfaces, right: MobileSurfaces) {
   return left.driver === right.driver && left.warehouse === right.warehouse;
+}
+
+function routeSurface(pathname: string): RouteSurface {
+  if (pathname === '/warehouse-map') return 'warehouse-map';
+  if (pathname === '/control-room' || pathname === '/ordermentum') return 'native';
+  if (
+    pathname === '/exceptions'
+    || pathname === '/logs'
+    || pathname === '/settings'
+    || pathname === '/warehouse-control'
+    || pathname.startsWith('/warehouse-control/')
+    || pathname === '/orders'
+    || pathname.startsWith('/orders/')
+    || pathname === '/inventory'
+    || pathname.startsWith('/inventory/')
+    || pathname === '/customers'
+    || pathname.startsWith('/customers/')
+    || pathname === '/stores'
+    || pathname.startsWith('/stores/')
+  ) return 'stability';
+  return 'legacy';
+}
+
+/**
+ * The migration to one authenticated shell is still in progress. Until that
+ * release is complete, crossing between the native, stability and legacy root
+ * applications must use one deterministic document navigation. React Router
+ * otherwise unmounts one complete auth/data root while another root is handling
+ * the same click, which can leave the user on the old surface until a retry.
+ */
+function CrossSurfaceNavigationBridge() {
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (
+        event.defaultPrevented
+        || event.button !== 0
+        || event.metaKey
+        || event.ctrlKey
+        || event.shiftKey
+        || event.altKey
+      ) return;
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest<HTMLAnchorElement>('a[href]');
+      if (!anchor || anchor.hasAttribute('download')) return;
+      if (anchor.target && anchor.target !== '_self') return;
+
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin !== window.location.origin) return;
+      if (
+        destination.pathname === window.location.pathname
+        && destination.search === window.location.search
+        && destination.hash === window.location.hash
+      ) return;
+      if (routeSurface(destination.pathname) === routeSurface(window.location.pathname)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.assign(`${destination.pathname}${destination.search}${destination.hash}`);
+    }
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, []);
+
+  return null;
 }
 
 /**
@@ -106,6 +175,9 @@ function ApplicationRoutes() {
       <Route path="/exceptions" element={<StabilityRoute />} />
       <Route path="/logs" element={<StabilityRoute />} />
       <Route path="/settings" element={<StabilityRoute />} />
+      <Route path="/delivery/*" element={<App />} />
+      <Route path="/reconciliation" element={<App />} />
+      <Route path="/analytics" element={<App />} />
       <Route path="*" element={<App />} />
     </Routes>
   );
@@ -124,6 +196,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <OperationalDensityEnhancer />
           <Suspense fallback={null}><FieldModeEnhancer /></Suspense>
           <MobileSurfaceModuleGate />
+          <CrossSurfaceNavigationBridge />
           <ApplicationRoutes />
         </OverlayManagerProvider>
       )}
