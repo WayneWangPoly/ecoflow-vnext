@@ -95,6 +95,70 @@ create policy ecoflow_read_model_refresh_state_desktop_read
   for select to authenticated
   using (public.ecoflow_active_app_role() in ('OWNER', 'ADMIN', 'ACCOUNT', 'VIEWER'));
 
+create or replace function public.ecoflow_mark_dashboard_read_models_required()
+returns timestamptz
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_required_at timestamptz := clock_timestamp();
+begin
+  insert into public.ecoflow_read_model_refresh_state(read_model, refreshed_at, row_count)
+  values ('DASHBOARD_SOURCE_REQUIRED', v_required_at, 0)
+  on conflict(read_model) do update set
+    refreshed_at=greatest(
+      public.ecoflow_read_model_refresh_state.refreshed_at,
+      excluded.refreshed_at
+    ),
+    row_count=0;
+
+  return v_required_at;
+end;
+$$;
+
+revoke all on function public.ecoflow_mark_dashboard_read_models_required()
+  from public, anon, authenticated;
+grant execute on function public.ecoflow_mark_dashboard_read_models_required()
+  to service_role;
+
+create or replace function public.ecoflow_assert_current_exception_snapshot()
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_required_at timestamptz;
+  v_refreshed_at timestamptz;
+begin
+  select s.refreshed_at into v_required_at
+  from public.ecoflow_read_model_refresh_state s
+  where s.read_model='DASHBOARD_SOURCE_REQUIRED';
+
+  select s.refreshed_at into v_refreshed_at
+  from public.ecoflow_read_model_refresh_state s
+  where s.read_model='CURRENT_EXCEPTIONS';
+
+  if v_required_at is null
+     or v_refreshed_at is null
+     or v_refreshed_at < v_required_at then
+    raise exception using errcode='55000',
+      message='ACTIONABLE_EXCEPTION_SNAPSHOT_STALE',
+      detail='Current exceptions were not refreshed after the latest Ordermentum projection.',
+      hint='Run ecoflow_refresh_dashboard_read_models with the service role.';
+  end if;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.ecoflow_assert_current_exception_snapshot()
+  from public, anon, authenticated, service_role;
+grant execute on function public.ecoflow_assert_current_exception_snapshot()
+  to authenticated;
+
 -- Preserve the expensive source projection under an explicit background-only
 -- name. The public operational name is recreated below as the fast snapshot.
 alter view public.v_ecoflow_ordermentum_ui_active_exceptions
@@ -198,13 +262,12 @@ revoke all on function public.ecoflow_refresh_current_exception_snapshot()
 grant execute on function public.ecoflow_refresh_current_exception_snapshot()
   to service_role;
 
--- Build the first snapshot before restoring the operational relation name. A
--- failure rolls the migration back and leaves the previous live view untouched.
-select public.ecoflow_refresh_current_exception_snapshot();
-
 create view public.v_ecoflow_ordermentum_ui_active_exceptions
 with (security_invoker=true)
 as
+with freshness as materialized (
+  select public.ecoflow_assert_current_exception_snapshot() as current
+)
 select
   s.raw_order_id,
   s.external_order_id,
@@ -216,20 +279,26 @@ select
   s.message,
   s.status,
   s.detected_at
-from public.ecoflow_current_exception_snapshot s;
+from freshness f
+left join public.ecoflow_current_exception_snapshot s on true
+where f.current
+  and s.exception_id is not null;
 
 grant select on public.v_ecoflow_ordermentum_ui_active_exceptions to authenticated;
 revoke all on public.v_ecoflow_ordermentum_ui_active_exceptions from anon;
 
 -- Recompile the two PL/pgSQL functions that previously expanded the live view.
 -- pg_get_functiondef preserves the complete established lifecycle behaviour;
--- only its source relation is replaced with the indexed snapshot table.
+-- only its source relation is replaced with the indexed snapshot table, and a
+-- freshness assertion is added before any read or lifecycle command proceeds.
 do $recompile$
 declare
   v_signature text;
   v_definition text;
   v_source text := 'from public.v_ecoflow_ordermentum_ui_active_exceptions e';
   v_replacement text := 'from public.ecoflow_current_exception_snapshot e';
+  v_begin_source text := E'begin\n  if not analytics.';
+  v_begin_replacement text := E'begin\n  perform public.ecoflow_assert_current_exception_snapshot();\n  if not analytics.';
 begin
   foreach v_signature in array array[
     'analytics.get_actionable_exception_queue(integer)',
@@ -241,8 +310,13 @@ begin
     if position(v_source in v_definition) = 0 then
       raise exception 'DASHBOARD_TIMEOUT_FUNCTION_SOURCE_NOT_FOUND: %', v_signature;
     end if;
+    if position(v_begin_source in v_definition) = 0 then
+      raise exception 'DASHBOARD_TIMEOUT_FUNCTION_BEGIN_NOT_FOUND: %', v_signature;
+    end if;
 
-    execute replace(v_definition, v_source, v_replacement);
+    v_definition := replace(v_definition, v_source, v_replacement);
+    v_definition := replace(v_definition, v_begin_source, v_begin_replacement);
+    execute v_definition;
   end loop;
 end;
 $recompile$;
@@ -267,6 +341,8 @@ begin
     raise exception using errcode='42501',
       message='DASHBOARD_DESKTOP_ROLE_REQUIRED';
   end if;
+
+  perform public.ecoflow_assert_current_exception_snapshot();
 
   return query
   with current_orders as (
@@ -352,8 +428,10 @@ revoke all on function public.ecoflow_refresh_dashboard_read_models()
 grant execute on function public.ecoflow_refresh_dashboard_read_models()
   to service_role;
 
--- Refresh once more with the active-key set and exception snapshot in the same
--- transaction, matching the post-sync execution path.
+-- Establish the first freshness checkpoint and populate the snapshot in one
+-- migration transaction. Failure rolls everything back to the previous live
+-- exception view and leaves all operational records unchanged.
+select public.ecoflow_mark_dashboard_read_models_required();
 select public.ecoflow_refresh_dashboard_read_models();
 
 do $verify$
@@ -365,6 +443,8 @@ begin
   end if;
 
   if to_regprocedure('public.ecoflow_get_dashboard_readiness_v1()') is null
+     or to_regprocedure('public.ecoflow_mark_dashboard_read_models_required()') is null
+     or to_regprocedure('public.ecoflow_assert_current_exception_snapshot()') is null
      or to_regprocedure('public.ecoflow_refresh_dashboard_read_models()') is null then
     raise exception 'DASHBOARD_TIMEOUT_HARDENING_FUNCTION_VERIFY_FAILED';
   end if;
