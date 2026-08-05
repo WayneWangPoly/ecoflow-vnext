@@ -35,10 +35,20 @@ begin
   if to_regprocedure('analytics.get_actionable_exception_queue(integer)') is null then
     v_missing := array_append(v_missing, 'analytics.get_actionable_exception_queue(integer)');
   end if;
-  if to_regprocedure('analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)') is null then
+  if to_regprocedure(
+    'analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)'
+  ) is null then
     v_missing := array_append(
       v_missing,
       'analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)'
+    );
+  end if;
+  if to_regprocedure(
+    'analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(uuid,text,text,text,timestamptz,text,text)'
+  ) is null then
+    v_missing := array_append(
+      v_missing,
+      'analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(uuid,text,text,text,timestamptz,text,text)'
     );
   end if;
 
@@ -287,11 +297,12 @@ where f.current
 grant select on public.v_ecoflow_ordermentum_ui_active_exceptions to authenticated;
 revoke all on public.v_ecoflow_ordermentum_ui_active_exceptions from anon;
 
--- Recompile the two PL/pgSQL functions that previously expanded the live view.
--- pg_get_functiondef preserves the complete established lifecycle behaviour;
--- only its source relation is replaced with the indexed snapshot table, and a
--- freshness assertion is added before any read or lifecycle command proceeds.
-do $recompile$
+-- The queue RPC and the unsnapshotted lifecycle delegate are the two functions
+-- that actually expand the live exception source. The public lifecycle command
+-- is an idempotent replay wrapper and intentionally remains unchanged: new
+-- commands reach the guarded delegate, while immutable replay results do not
+-- depend on current source freshness.
+do $recompile_source_consumers$
 declare
   v_signature text;
   v_definition text;
@@ -302,16 +313,16 @@ declare
 begin
   foreach v_signature in array array[
     'analytics.get_actionable_exception_queue(integer)',
-    'analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)'
+    'analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(uuid,text,text,text,timestamptz,text,text)'
   ] loop
     select pg_get_functiondef(v_signature::regprocedure)
       into v_definition;
 
     if position(v_source in v_definition) = 0 then
-      raise exception 'DASHBOARD_TIMEOUT_FUNCTION_SOURCE_NOT_FOUND: %', v_signature;
+      raise exception 'DASHBOARD_TIMEOUT_SOURCE_CONSUMER_NOT_FOUND: %', v_signature;
     end if;
     if position(v_begin_source in v_definition) = 0 then
-      raise exception 'DASHBOARD_TIMEOUT_FUNCTION_BEGIN_NOT_FOUND: %', v_signature;
+      raise exception 'DASHBOARD_TIMEOUT_SOURCE_CONSUMER_BEGIN_NOT_FOUND: %', v_signature;
     end if;
 
     v_definition := replace(v_definition, v_source, v_replacement);
@@ -319,7 +330,7 @@ begin
     execute v_definition;
   end loop;
 end;
-$recompile$;
+$recompile_source_consumers$;
 
 create or replace function public.ecoflow_get_dashboard_readiness_v1()
 returns table(
