@@ -18,6 +18,13 @@ function isStatementTimeout(error) {
   return message.includes('57014') || /statement timeout|canceling statement due to statement timeout/i.test(message);
 }
 
+function isMissingDashboardRefreshRpc(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('PGRST202')
+    || /ecoflow_refresh_dashboard_read_models.*schema cache/i.test(message)
+    || /could not find the function.*ecoflow_refresh_dashboard_read_models/i.test(message);
+}
+
 const requestedBatchLimit = positiveInteger(args['batch-limit'], 100);
 const minBatchLimit = Math.min(
   requestedBatchLimit,
@@ -107,19 +114,29 @@ if (!converged) {
   );
 }
 
-// Active-order keys are only a derived acceleration cache for legacy UI views.
-// They are not part of the commercial mirror completeness contract, so a cache
-// timeout must never invalidate successfully mirrored orders and invoices.
+// Refresh the indexed active-order key set and the current-exception snapshot
+// only after projection converges. This keeps browser reads bounded while the
+// commercial order and inventory tables remain authoritative.
 try {
-  const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
-  console.log(JSON.stringify({ action: 'refresh_ui_active_order_keys', keys: refreshedKeys }));
+  const refreshed = await supabaseRpc(cfg, 'ecoflow_refresh_dashboard_read_models', {});
+  console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
 } catch (error) {
-  console.warn(JSON.stringify({
-    action: 'refresh_ui_active_order_keys_deferred',
-    blocking: false,
-    reason: isStatementTimeout(error) ? 'SUPABASE_STATEMENT_TIMEOUT' : 'DERIVED_CACHE_REFRESH_FAILED',
-    message: error instanceof Error ? error.message : String(error),
-  }));
+  // During the short rollout window where workflow code reaches main before the
+  // migration, retain the previous active-key refresh. Every other refresh
+  // failure is blocking: a successful sync must not publish a stale exception queue.
+  if (isMissingDashboardRefreshRpc(error)) {
+    const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+    console.warn(JSON.stringify({
+      action: 'refresh_dashboard_read_models_deferred',
+      reason: 'RPC_NOT_DEPLOYED_YET',
+      active_order_keys: refreshedKeys,
+    }));
+  } else {
+    throw new Error(
+      `Dashboard read-model refresh failed after successful projection: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 if (totals.failed_orders > 0) {
