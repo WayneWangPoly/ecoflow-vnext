@@ -21,8 +21,8 @@ function isStatementTimeout(error) {
 function isMissingDashboardRefreshRpc(error) {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('PGRST202')
-    || /ecoflow_refresh_dashboard_read_models.*schema cache/i.test(message)
-    || /could not find the function.*ecoflow_refresh_dashboard_read_models/i.test(message);
+    || /ecoflow_(mark|refresh)_dashboard_read_models.*schema cache/i.test(message)
+    || /could not find the function.*ecoflow_(mark|refresh)_dashboard_read_models/i.test(message);
 }
 
 const requestedBatchLimit = positiveInteger(args['batch-limit'], 100);
@@ -114,28 +114,63 @@ if (!converged) {
   );
 }
 
-// Refresh the indexed active-order key set and the current-exception snapshot
-// only after projection converges. This keeps browser reads bounded while the
-// commercial order and inventory tables remain authoritative.
+// Mark the dashboard projections stale in a separate committed transaction,
+// then attempt their bounded refresh. A refresh failure must never invalidate
+// authoritative Ordermentum reconciliation; the database freshness gate makes
+// dashboard and exception reads fail closed until a later refresh succeeds.
+let dashboardRefreshMarked = false;
 try {
-  const refreshed = await supabaseRpc(cfg, 'ecoflow_refresh_dashboard_read_models', {});
-  console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
+  const requiredAt = await supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {});
+  dashboardRefreshMarked = true;
+  console.log(JSON.stringify({ action: 'mark_dashboard_read_models_required', required_at: requiredAt }));
 } catch (error) {
-  // During the short rollout window where workflow code reaches main before the
-  // migration, retain the previous active-key refresh. Every other refresh
-  // failure is blocking: a successful sync must not publish a stale exception queue.
   if (isMissingDashboardRefreshRpc(error)) {
-    const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+    try {
+      const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
+      console.warn(JSON.stringify({
+        action: 'refresh_ui_active_order_keys_deferred',
+        blocking: false,
+        reason: 'DASHBOARD_RPCS_NOT_DEPLOYED_YET',
+        active_order_keys: refreshedKeys,
+      }));
+    } catch (fallbackError) {
+      console.warn(JSON.stringify({
+        action: 'refresh_ui_active_order_keys_deferred',
+        blocking: false,
+        reason: isStatementTimeout(fallbackError)
+          ? 'SUPABASE_STATEMENT_TIMEOUT'
+          : 'DERIVED_CACHE_REFRESH_FAILED',
+        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      }));
+    }
+  } else {
+    console.warn(JSON.stringify({
+      action: 'mark_dashboard_read_models_deferred',
+      blocking: false,
+      reason: isStatementTimeout(error)
+        ? 'SUPABASE_STATEMENT_TIMEOUT'
+        : 'DERIVED_READ_MODEL_MARK_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+if (dashboardRefreshMarked) {
+  try {
+    const refreshed = await supabaseRpc(cfg, 'ecoflow_refresh_dashboard_read_models', {});
+    console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
+  } catch (error) {
     console.warn(JSON.stringify({
       action: 'refresh_dashboard_read_models_deferred',
-      reason: 'RPC_NOT_DEPLOYED_YET',
-      active_order_keys: refreshedKeys,
+      blocking: false,
+      fail_closed: true,
+      reason: isStatementTimeout(error)
+        ? 'SUPABASE_STATEMENT_TIMEOUT'
+        : isMissingDashboardRefreshRpc(error)
+          ? 'RPC_SCHEMA_CACHE_PENDING'
+          : 'DERIVED_READ_MODEL_REFRESH_FAILED',
+      message: error instanceof Error ? error.message : String(error),
     }));
-  } else {
-    throw new Error(
-      `Dashboard read-model refresh failed after successful projection: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
   }
 }
 
