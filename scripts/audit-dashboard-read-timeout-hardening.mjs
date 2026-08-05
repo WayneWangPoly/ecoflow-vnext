@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migrationPath = 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql';
+const replayMigrationPath = 'supabase/migrations/20260730190100_actionable_exception_idempotent_replay_snapshot.sql';
 const dashboardPath = 'src/features/dashboard/DashboardPage.tsx';
 const repositoryPath = 'src/data/repositories/dashboardReadiness.ts';
 const projectionPath = 'scripts/project-ordermentum-raw-orders.mjs';
 
-const [migration, dashboard, repository, projection] = await Promise.all([
+const [migration, replayMigration, dashboard, repository, projection] = await Promise.all([
   readFile(migrationPath, 'utf8'),
+  readFile(replayMigrationPath, 'utf8'),
   readFile(dashboardPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(projectionPath, 'utf8'),
@@ -34,11 +36,27 @@ includesAll(migration, [
   "set statement_timeout='8s'",
   'from public.ecoflow_inventory_movements m',
   'from public.ecoflow_sku_barcode_registry',
-  "analytics.get_actionable_exception_queue(integer)",
-  "analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)",
+  'analytics.get_actionable_exception_queue(integer)',
+  'analytics.apply_actionable_exception_lifecycle_command(uuid,text,text,text,timestamptz,text,text)',
+  'analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(uuid,text,text,text,timestamptz,text,text)',
   'perform public.ecoflow_assert_current_exception_snapshot()',
+  'The public lifecycle command',
+  'is an idempotent replay wrapper and intentionally remains unchanged',
 ], 'timeout-hardening migration');
 
+includesAll(replayMigration, [
+  'rename to apply_actionable_exception_lifecycle_command_unsnapshotted_20260730',
+  'from analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(',
+], 'idempotent lifecycle wrapper migration');
+
+assert.ok(
+  !migration.includes('DASHBOARD_TIMEOUT_FUNCTION_SOURCE_NOT_FOUND'),
+  'The migration must not require the idempotent public wrapper to contain the live exception source.',
+);
+assert.ok(
+  migration.includes("'analytics.get_actionable_exception_queue(integer)',\n    'analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730"),
+  'Only the queue RPC and the real source-consuming lifecycle delegate may be source-rewritten.',
+);
 assert.ok(
   migration.includes("grant execute on function public.ecoflow_get_dashboard_readiness_v1()\n  to authenticated"),
   'interactive readiness RPC must be granted only through its function boundary',
@@ -100,4 +118,4 @@ includesAll(projection, [
 assert.ok(!projection.includes('Dashboard read-model refresh failed after successful projection'),
   'derived dashboard refresh must not invalidate authoritative Ordermentum reconciliation');
 
-console.log('Dashboard read-timeout hardening, refresh budget and stale-snapshot fail-closed audit passed.');
+console.log('Dashboard read-timeout hardening, production lifecycle shape, refresh budget and stale-snapshot fail-closed audit passed.');
