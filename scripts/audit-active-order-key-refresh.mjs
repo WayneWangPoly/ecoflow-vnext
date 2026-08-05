@@ -5,6 +5,10 @@ const migration = fs.readFileSync(
   'supabase/migrations/20260715003000_active_order_keys_lightweight_refresh.sql',
   'utf8',
 );
+const dashboardMigration = fs.readFileSync(
+  'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql',
+  'utf8',
+);
 const projection = fs.readFileSync('scripts/project-ordermentum-raw-orders.mjs', 'utf8');
 
 assert.ok(
@@ -31,15 +35,36 @@ assert.ok(
 );
 assert.ok(
   !migration.includes('\nselect public.ecoflow_refresh_ui_active_order_keys();'),
-  'The cache refresh must not execute inside the migration transaction.',
+  'The cache refresh must not execute inside the original migration transaction.',
+);
+
+assert.ok(
+  dashboardMigration.includes('ecoflow_mark_dashboard_read_models_required'),
+  'A committed freshness checkpoint must precede derived dashboard refresh.',
 );
 assert.ok(
-  projection.includes("action: 'refresh_ui_active_order_keys_deferred'"),
-  'Projection must report a deferred derived-cache refresh without failing authoritative data reconciliation.',
+  dashboardMigration.includes('ACTIONABLE_EXCEPTION_SNAPSHOT_STALE'),
+  'A failed snapshot refresh must make exception reads fail closed.',
+);
+assert.ok(
+  projection.includes("supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {})"),
+  'Projection must mark dashboard read models stale before refresh.',
+);
+assert.ok(
+  projection.includes("action: 'refresh_dashboard_read_models_deferred'"),
+  'Projection must report a deferred dashboard read-model refresh.',
 );
 assert.ok(
   projection.includes('blocking: false'),
-  'The derived cache must be explicitly non-blocking.',
+  'Derived dashboard caches must remain explicitly non-blocking for authoritative reconciliation.',
+);
+assert.ok(
+  projection.includes('fail_closed: true'),
+  'Deferred exception refresh must be explicitly fail-closed for interactive reads.',
+);
+assert.ok(
+  projection.includes("action: 'refresh_ui_active_order_keys_deferred'"),
+  'The rollout fallback must retain a non-blocking active-key refresh report.',
 );
 
-console.log('Lightweight non-blocking active-order key refresh contract passed.');
+console.log('Lightweight non-blocking active-order and fail-closed dashboard refresh contract passed.');
