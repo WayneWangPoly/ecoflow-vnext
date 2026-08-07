@@ -13,6 +13,7 @@ const dashboard = read('src/features/dashboard/DashboardPage.tsx');
 const route = read('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
 const css = read('src/features/dashboard/dashboardControlRoom.css');
 const flowCss = read('src/features/dashboard/operationalFlowSurface.css');
+const vnextCss = read('src/features/dashboard/controlRoomVNext.css');
 const priorityCss = read('src/features/intelligence/attention/priorityWork.css');
 const priorityComponent = read('src/features/intelligence/attention/PriorityWork.tsx');
 const contract = read('src/features/dashboard/dashboardControlContract.ts');
@@ -29,38 +30,72 @@ for (const primitive of [
   if (!dashboard.includes(primitive)) throw new Error(`INTEL_FE_002C_PRIMITIVE_NOT_ADOPTED: ${primitive}`);
 }
 
+// TRANSFORM-003 is a product hierarchy contract, not a card-presence audit.
 for (const required of [
-  'ops-control-room',
-  'ops-control-hero',
-  'ops-control-metrics',
-  'ops-control-metric',
-  'ops-control-grid',
-  'ops-control-panel',
-  'ops-control-flow',
-  'ops-control-status-line',
+  'ops-control-room--vnext',
+  'ops-vnext-hero',
+  'ops-vnext-live-strip',
+  'ops-vnext-today',
+  'ops-vnext-progress-track',
+  'ops-vnext-command-grid',
+  'ops-vnext-flow-panel',
+  'ops-vnext-priority-slot',
+  'ops-vnext-live-grid',
+  'ops-vnext-live-panel',
+  'ops-vnext-decision-grid',
+  'ops-vnext-close-panel',
+  'ops-vnext-exception-detail',
+  'ops-vnext-source-footnote',
 ]) {
-  if (!dashboard.includes(required)) throw new Error(`INTEL_FE_002C_DASHBOARD_STRUCTURE_MISSING: ${required}`);
-  if (!css.includes(`.${required}`) && !flowCss.includes(`.${required}`)) {
-    throw new Error(`INTEL_FE_002C_DASHBOARD_STYLE_MISSING: ${required}`);
-  }
+  if (!dashboard.includes(required)) throw new Error(`TRANSFORM_003_COMMAND_CENTER_STRUCTURE_MISSING: ${required}`);
+  if (!vnextCss.includes(`.${required}`)) throw new Error(`TRANSFORM_003_COMMAND_CENTER_STYLE_MISSING: ${required}`);
 }
 
-for (const legacy of [
-  'ops-home-header',
-  'ops-metric"',
-  'ops-home-panel',
-  'ops-action-row',
-  'ops-stage-panel',
-  'ops-flow-exclusive',
-  'ops-order-table',
-  'ops-order-row',
-  'ops-chip',
-  'field-readiness-warning',
-  'field-readiness-note',
-  'field-readiness-unavailable',
-  'field-readiness-loading',
+for (const copy of [
+  'Run today from one operating picture.',
+  'Current workload',
+  'Active exceptions',
+  'Physical inventory',
+  'Execution progress',
+  'CURRENT WORKLOAD',
+  'WAREHOUSE LIVE',
+  'Physical execution',
+  'DELIVERY LIVE',
+  'Route execution',
+  'Pre-close control',
+  'Full current exception register',
+  'Final Business Day Close remains server-authoritative',
 ]) {
-  if (dashboard.includes(legacy)) throw new Error(`INTEL_FE_002C_LEGACY_DASHBOARD_VISUAL_REMAINS: ${legacy}`);
+  if (!dashboard.includes(copy)) throw new Error(`TRANSFORM_003_PRODUCT_COPY_MISSING: ${copy}`);
+}
+
+// Today is allowed to include only an explicitly current business-day scope.
+for (const marker of [
+  'matchesBusinessDay',
+  'order.requestedDeliveryBusinessDay === businessDay',
+  'deliveryDate === businessDay',
+  'buildOperationalFlow(todayOrders)',
+  "stageCount(todayFlow, 'DELIVERED')",
+  'todayDelivered / todayTotal',
+]) {
+  if (!dashboard.includes(marker)) throw new Error(`TRANSFORM_003_TODAY_AUTHORITY_MISSING: ${marker}`);
+}
+if (dashboard.includes('serverCurrentOrders} Today') || dashboard.includes('server_current_orders) as today')) {
+  throw new Error('TRANSFORM_003_CURRENT_WORKLOAD_MISREPRESENTED_AS_TODAY');
+}
+
+// Do not manufacture driver identity, route delay or close authority that does
+// not exist in the current production model.
+for (const forbidden of [
+  '3 drivers',
+  'drivers on road',
+  'South 01',
+  'East 02',
+  '+12 min',
+  'closeBlockers === 0 ? \'Ready to close\'',
+  'Final close complete',
+]) {
+  if (dashboard.includes(forbidden)) throw new Error(`TRANSFORM_003_FABRICATED_OPERATING_FACT: ${forbidden}`);
 }
 
 for (const preserved of [
@@ -80,12 +115,19 @@ for (const preserved of [
 }
 
 if (!dashboard.includes('ActionableExceptionQueue, PriorityWork')
-    || !dashboard.includes('<PriorityWork />')) {
-  throw new Error('INTEL_FE_002C_GOVERNED_PRIORITY_WORK_MISSING');
+    || !dashboard.includes('<PriorityWork />')
+    || !dashboard.includes("<ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />")) {
+  throw new Error('TRANSFORM_003_GOVERNED_ATTENTION_SURFACES_MISSING');
 }
 if (!priorityComponent.includes('POLICY-RANKED · CURRENT EXCEPTIONS')
     || !priorityCss.includes('.ef-priority-work__table')) {
   throw new Error('INTEL_FE_002C_PRIORITY_WORK_PUBLIC_SURFACE_INCOMPLETE');
+}
+if (dashboard.indexOf('<PriorityWork />') > dashboard.indexOf('ops-vnext-live-grid')) {
+  throw new Error('TRANSFORM_003_PRIORITY_WORK_NOT_IN_PRIMARY_COMMAND_TIER');
+}
+if (dashboard.indexOf('<ActionableExceptionQueue') < dashboard.indexOf('ops-vnext-exception-detail')) {
+  throw new Error('TRANSFORM_003_FULL_EXCEPTION_REGISTER_DOMINATES_PRIMARY_SURFACE');
 }
 
 for (const localPriority of [
@@ -123,13 +165,12 @@ for (const forbiddenSelector of [
   '.driver-',
   '#root',
 ]) {
-  if (`${css}\n${flowCss}`.includes(forbiddenSelector)) {
+  if (`${css}\n${flowCss}\n${vnextCss}`.includes(forbiddenSelector)) {
     throw new Error(`INTEL_FE_002C_CROSS_PAGE_STYLE_FORBIDDEN: ${forbiddenSelector}`);
   }
 }
-
 for (const forbidden of ['!important', 'url(']) {
-  if (`${css}\n${flowCss}\n${priorityCss}`.includes(forbidden)) {
+  if (`${css}\n${flowCss}\n${vnextCss}\n${priorityCss}`.includes(forbidden)) {
     throw new Error(`INTEL_FE_002C_STYLE_ESCAPE_FORBIDDEN: ${forbidden}`);
   }
 }
@@ -138,11 +179,12 @@ for (const required of [
   "import './fieldReadinessDashboard.css';",
   "import './dashboardControlRoom.css';",
   "import './operationalFlowSurface.css';",
+  "@import './controlRoomVNext.css';",
   'dashboardSourceTone',
 ]) {
-  if (!dashboard.includes(required)) throw new Error(`INTEL_FE_002C_WIRING_MISSING: ${required}`);
+  const source = required.startsWith('@import') ? flowCss : dashboard;
+  if (!source.includes(required)) throw new Error(`INTEL_FE_002C_WIRING_MISSING: ${required}`);
 }
-
 if (dashboard.indexOf("import './dashboardControlRoom.css';") < dashboard.indexOf("import './fieldReadinessDashboard.css';")) {
   throw new Error('INTEL_FE_002C_CONTROL_ROOM_CSS_PRECEDENCE_INVALID');
 }
@@ -150,9 +192,20 @@ if (dashboard.indexOf("import './operationalFlowSurface.css';") < dashboard.inde
   throw new Error('INTEL_FE_002C_OPERATIONAL_FLOW_CSS_PRECEDENCE_INVALID');
 }
 
-// TRANSFORM-001: the Control Room must reach first useful paint from the
-// bounded readiness RPC. The aggregate operational snapshot is secondary
-// detail and cannot be an authentication/profile side effect for this route.
+// VNext desktop/tablet/phone hierarchy must be designed, not a squeezed grid.
+for (const responsive of [
+  '@media (max-width: 1280px)',
+  '@media (max-width: 960px)',
+  '@media (max-width: 700px)',
+  '.ops-vnext-live-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }',
+  '.ops-vnext-live-grid,',
+  '.ops-vnext-decision-grid { grid-template-columns: 1fr; }',
+  '.ops-vnext-close-checks { grid-template-columns: 1fr; }',
+]) {
+  if (!vnextCss.includes(responsive)) throw new Error(`TRANSFORM_003_RESPONSIVE_CONTRACT_MISSING: ${responsive}`);
+}
+
+// TRANSFORM-001 remains non-negotiable beneath the visual transformation.
 for (const required of [
   'loadDashboardReadiness',
   'reloadPrimary',
@@ -188,7 +241,6 @@ if (route.includes("if (workspace === 'dashboard') void reloadViews();")) {
 for (const required of ['DashboardOperationalTone', 'dashboardControlTone', 'dashboardSourceTone']) {
   if (!contract.includes(required)) throw new Error(`INTEL_FE_002C_TYPED_CONTRACT_MISSING: ${required}`);
 }
-
 for (const testName of [
   'Dashboard operational tones map to semantic status tones',
   'healthy source states resolve to success',
@@ -205,4 +257,4 @@ if (typeof auditCommand !== 'string'
   throw new Error('INTEL_FE_002C_PACKAGE_AUDIT_WIRING_MISSING');
 }
 
-console.log('INTEL-FE-002C Dashboard control-room + TRANSFORM-001 bounded bootstrap audit passed.');
+console.log('Control Room VNext audit passed: bounded bootstrap, commercial command hierarchy and truthful current-day semantics are enforced.');
