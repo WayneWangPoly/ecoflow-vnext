@@ -15,7 +15,8 @@ function args(values) {
     if (!current.startsWith('--')) continue;
     const keyName = current.slice(2);
     const next = values[index + 1];
-    result[keyName] = next && !next.startsWith('--') ? values[++index] : 'true';
+    const hasExplicitValue = next !== undefined && !next.startsWith('--');
+    result[keyName] = hasExplicitValue ? values[++index] : 'true';
   }
   return result;
 }
