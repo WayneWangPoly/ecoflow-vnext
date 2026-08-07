@@ -1,8 +1,9 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { App } from './app/App';
 import { OverlayManagerProvider } from './features/intelligence/overlays';
+import { OperationalSessionProvider } from './features/navigation/OperationalSessionContext';
 import { OperationalSessionIdentityBinder } from './OperationalSessionIdentityBinder';
 import { OperationalSafetyCenter } from './OperationalSafetyCenter';
 import { ProductionWriteSafety } from './ProductionWriteSafety';
@@ -31,15 +32,14 @@ const DriverEnhancers = lazy(() => import('./enhancers/DriverEnhancers'));
 const WarehouseOpsEnhancers = lazy(() => import('./enhancers/WarehouseOpsEnhancers'));
 // Warehouse Map is a protected route feature, not an authentication role.
 const WarehouseMapRoute = lazy(() => import('./features/warehouse/WarehouseMapRoute'));
-const NativeOperationalRoutes = lazy(() => import('./features/operationalRoutes/NativeOperationalRoutes'));
-const OperationalStabilityRoute = lazy(() => import('./features/operationalStability/OperationalStabilityRoute'));
+const UnifiedOperationalRoutes = lazy(() => import('./features/operationalRoutes/UnifiedOperationalRoutes'));
 
 type MobileSurfaces = {
   driver: boolean;
   warehouse: boolean;
 };
 
-type RouteSurface = 'native' | 'stability' | 'legacy' | 'warehouse-map';
+type RouteSurface = 'unified' | 'legacy' | 'warehouse-map';
 
 function detectMobileSurfaces(): MobileSurfaces {
   return {
@@ -52,11 +52,10 @@ function sameMobileSurfaces(left: MobileSurfaces, right: MobileSurfaces) {
   return left.driver === right.driver && left.warehouse === right.warehouse;
 }
 
-function routeSurface(pathname: string): RouteSurface {
-  if (pathname === '/warehouse-map') return 'warehouse-map';
-  if (pathname === '/control-room' || pathname === '/ordermentum') return 'native';
-  if (
-    pathname === '/exceptions'
+export function isUnifiedOperationalPath(pathname: string) {
+  return pathname === '/control-room'
+    || pathname === '/ordermentum'
+    || pathname === '/exceptions'
     || pathname === '/logs'
     || pathname === '/settings'
     || pathname === '/warehouse-control'
@@ -68,17 +67,20 @@ function routeSurface(pathname: string): RouteSurface {
     || pathname === '/customers'
     || pathname.startsWith('/customers/')
     || pathname === '/stores'
-    || pathname.startsWith('/stores/')
-  ) return 'stability';
+    || pathname.startsWith('/stores/');
+}
+
+function routeSurface(pathname: string): RouteSurface {
+  if (pathname === '/warehouse-map') return 'warehouse-map';
+  if (isUnifiedOperationalPath(pathname)) return 'unified';
   return 'legacy';
 }
 
 /**
- * The migration to one authenticated shell is still in progress. Until that
- * release is complete, crossing between the native, stability and legacy root
- * applications must use one deterministic document navigation. React Router
- * otherwise unmounts one complete auth/data root while another root is handling
- * the same click, which can leave the user on the old surface until a retry.
+ * The unified operational root now owns migrated desktop workspaces. A hard
+ * document navigation is retained only when crossing into a still-legacy root
+ * or the separately protected Warehouse Map. It must never fire between two
+ * migrated operational routes.
  */
 function CrossSurfaceNavigationBridge() {
   useEffect(() => {
@@ -156,29 +158,33 @@ function ProductionConfigurationError() {
   );
 }
 
-function StabilityRoute() {
-  return <Suspense fallback={null}><OperationalStabilityRoute /></Suspense>;
+function ApplicationSurfaceRouter() {
+  const location = useLocation();
+  if (location.pathname === '/') return <Navigate to="/control-room" replace />;
+  if (location.pathname === '/warehouse-map') {
+    return (
+      <Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}>
+        <WarehouseMapRoute />
+      </Suspense>
+    );
+  }
+  if (isUnifiedOperationalPath(location.pathname)) {
+    return (
+      <OperationalSessionProvider>
+        <Suspense fallback={null}><UnifiedOperationalRoutes /></Suspense>
+      </OperationalSessionProvider>
+    );
+  }
+  return <App />;
 }
 
 function ApplicationRoutes() {
+  // A single route element keeps ApplicationSurfaceRouter mounted as the URL
+  // changes. Inside the unified surface, React therefore preserves the shared
+  // session authority and AppShell across workspace navigation.
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/control-room" replace />} />
-      <Route path="/warehouse-map" element={<Suspense fallback={<main className="warehouse-map-page"><div className="warehouse-map-card">Checking Warehouse Map access…</div></main>}><WarehouseMapRoute /></Suspense>} />
-      <Route path="/warehouse-control/*" element={<StabilityRoute />} />
-      <Route path="/control-room" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/ordermentum" element={<Suspense fallback={null}><NativeOperationalRoutes /></Suspense>} />
-      <Route path="/orders/*" element={<StabilityRoute />} />
-      <Route path="/inventory/*" element={<StabilityRoute />} />
-      <Route path="/customers/*" element={<StabilityRoute />} />
-      <Route path="/stores/*" element={<StabilityRoute />} />
-      <Route path="/exceptions" element={<StabilityRoute />} />
-      <Route path="/logs" element={<StabilityRoute />} />
-      <Route path="/settings" element={<StabilityRoute />} />
-      <Route path="/delivery/*" element={<App />} />
-      <Route path="/reconciliation" element={<App />} />
-      <Route path="/analytics" element={<App />} />
-      <Route path="*" element={<App />} />
+      <Route path="*" element={<ApplicationSurfaceRouter />} />
     </Routes>
   );
 }
