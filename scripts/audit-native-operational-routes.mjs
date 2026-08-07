@@ -8,8 +8,9 @@ const has = (source, text, message) => assert.ok(source.includes(text), message)
 const lacks = (source, text, message) => assert.ok(!source.includes(text), message);
 
 const main = read('src/main.tsx');
-const shell = read('src/features/operationalRoutes/NativeOperationalRoutes.tsx');
-const stabilityShell = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
+const unified = read('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+const session = read('src/features/navigation/OperationalSessionContext.tsx');
+const appShell = read('src/features/navigation/OperationalAppShell.tsx');
 const query = read('src/features/navigation/useWorkspaceQueryState.ts');
 const stores = read('src/features/stores/StoresWorkspacePage.tsx');
 const inventory = read('src/features/inventory/InventoryWorkspacePage.tsx');
@@ -18,12 +19,18 @@ const warehouseRoute = read('src/features/warehouse/WarehouseMapRoute.tsx');
 const warehousePage = read('src/features/warehouse/WarehouseMapPage.tsx');
 const documentation = read('docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md');
 
-for (const route of ['/control-room', '/ordermentum', '/inventory/*', '/customers/*', '/stores/*', '/warehouse-map', '/exceptions']) {
-  has(main, `path=\"${route}\"`, `main.tsx owns ${route} through React Router`);
+// TRANSFORM-002: migrated routes are dispatched inside one persistent route
+// element rather than each mounting a separate authenticated application root.
+has(main, 'const UnifiedOperationalRoutes', 'Unified operational route root is lazy-loaded explicitly');
+has(main, '<OperationalSessionProvider>', 'Migrated routes share one session provider');
+has(main, '<Route path="*" element={<ApplicationSurfaceRouter />} />', 'A single router element remains mounted across workspace navigation');
+has(main, 'isUnifiedOperationalPath', 'Production entry point owns an explicit unified-route boundary');
+for (const route of ['/control-room', '/ordermentum', '/orders', '/inventory', '/customers', '/stores', '/exceptions', '/logs', '/settings', '/warehouse-control']) {
+  has(main, `pathname === '${route}'`, `Unified route boundary includes ${route}`);
 }
-has(main, 'NativeOperationalRoutes', 'Native route shell is mounted explicitly');
-has(main, 'OperationalStabilityRoute', 'Later native operational workspaces have an explicit route shell');
-has(main, 'WarehouseMapRoute', 'Warehouse Map has an explicit protected route');
+has(main, 'WarehouseMapRoute', 'Warehouse Map remains a separately protected route feature');
+lacks(main, "import('./features/operationalRoutes/NativeOperationalRoutes')", 'Old NativeOperationalRoutes root is not mounted in production');
+lacks(main, "import('./features/operationalStability/OperationalStabilityRoute')", 'Old OperationalStabilityRoute root is not mounted in production');
 
 for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhancers', 'AccountEnhancers', 'ViewerEnhancers', 'WarehouseMapRouteModules']) {
   lacks(main, legacy, `${legacy} is absent from the production entry point`);
@@ -31,15 +38,39 @@ for (const legacy of ['detectDesktopRole', 'RoleIdentityEnhancer', 'OwnerEnhance
 lacks(main, '.sidebar-brand span', 'Entry point does not infer role from sidebar text');
 lacks(main, 'navLabels', 'Entry point does not infer capability from visible navigation labels');
 
-for (const [name, source] of [['phase-9c shell', shell], ['stability shell', stabilityShell]]) {
-  has(source, 'data-app-role={role}', `${name} publishes authenticated typed role state`);
-  has(source, 'canRoleAccessIntelligenceWorkspace', `${name} uses typed route capability contracts`);
-  has(source, 'v_ecoflow_current_user', `${name} loads role from the authenticated profile view`);
+has(session, 'OperationalSessionProvider', 'Shared operational session authority exists');
+has(session, 'v_ecoflow_current_user', 'Shared session authority loads role from authenticated profile view');
+has(session, 'roleFromOperationalProfile', 'Authenticated app role is converted to typed domain role once');
+has(session, 'onAuthStateChange', 'Shared session authority owns auth subscription');
+lacks(unified, 'v_ecoflow_current_user', 'Workspace dispatcher does not create a second profile authority');
+
+has(appShell, 'data-app-role={role}', 'Shared AppShell publishes authenticated typed role state');
+has(appShell, 'mayAccessOperationalWorkspace', 'Shared AppShell uses typed capability contracts');
+has(appShell, 'data-navigation-owner="unified-operational-shell"', 'Shared AppShell declares navigation ownership');
+for (const [name, source] of [['unified route', unified], ['session authority', session], ['shared AppShell', appShell]]) {
   lacks(source, 'querySelector', `${name} does not locate UI by DOM selector`);
   lacks(source, 'textContent', `${name} does not infer capability from visible text`);
   lacks(source, 'createPortal', `${name} does not replace panels through portals`);
   lacks(source, 'observeBody', `${name} does not depend on MutationObserver mounting`);
 }
+
+for (const marker of [
+  "pathname === '/control-room'",
+  "pathname === '/ordermentum'",
+  "pathname === '/orders' || pathname.startsWith('/orders/')",
+  "pathname === '/inventory' || pathname.startsWith('/inventory/')",
+  "pathname === '/customers' || pathname.startsWith('/customers/')",
+  "pathname === '/exceptions'",
+  "pathname === '/logs'",
+  "pathname === '/settings'",
+  "pathname === '/warehouse-control' || pathname.startsWith('/warehouse-control/')",
+]) {
+  has(unified, marker, `Unified workspace dispatcher owns ${marker}`);
+}
+has(unified, '<OperationalAppShell', 'All desktop migrated workspaces render through the shared AppShell');
+has(unified, '<OperationalPagedWorkspace', 'Stability business workspaces are retained inside unified route ownership');
+has(unified, '<DashboardPage', 'Control Room remains a native workspace inside unified route ownership');
+has(unified, '<OrdermentumWorkspacePage', 'Ordermentum remains a native workspace inside unified route ownership');
 
 for (const [name, source] of [['stores', stores], ['inventory', inventory], ['ordermentum', ordermentum]]) {
   has(source, 'useWorkspaceQueryState', `${name} owns URL query state`);
@@ -62,7 +93,7 @@ has(warehouseRoute, '<WarehouseMapPage />', 'Warehouse Map route owns its page d
 has(warehousePage, "type LoadState = 'loading' | 'live' | 'empty' | 'offline'", 'Warehouse Map has explicit data states');
 lacks(warehouseRoute, 'createPortal', 'Warehouse Map route does not portal-replace a native page');
 
-has(documentation, 'Phase 9C — Native Operational Routes', 'Phase documentation exists');
+has(documentation, 'Phase 9C — Native Operational Routes', 'Prior route migration documentation remains available');
 has(documentation, 'production module graph', 'Runtime removal boundary is documented');
 
-console.log('Native operational route audit passed: explicit route ownership, typed role boundaries and URL state remain intact.');
+console.log('Native operational route audit passed: one shared session/AppShell owns migrated workspaces with typed role and URL boundaries.');

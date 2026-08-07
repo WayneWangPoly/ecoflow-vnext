@@ -91,5 +91,7 @@ jobs:
           grep -q 'function CrossSurfaceNavigationBridge' src/main.tsx
           grep -q "document.addEventListener('click', handleClick, true)" src/main.tsx
           grep -q "window.location.assign" src/main.tsx
-          grep -q '<Route path="/delivery/\*" element={<App />} />' src/main.tsx
-          grep -q '<Route path="/analytics" element={<App />} />' src/main.tsx
+          grep -q 'if (isUnifiedOperationalPath(location.pathname))' src/main.tsx
+          grep -q 'return <App />;' src/main.tsx
+          ! grep -q "pathname === '/delivery'" src/main.tsx
+          ! grep -q "pathname === '/analytics'" src/main.tsx

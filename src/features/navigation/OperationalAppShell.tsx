@@ -1,0 +1,144 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import { NavLink } from 'react-router-dom';
+import { BrandMark } from '@/app/Brand';
+import type { Role } from '@/domain/types';
+import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
+import { readQuickActions } from '@/data/repositories/operationalStability';
+import {
+  canRoleAccessIntelligenceWorkspace,
+  type IntelligenceWorkspaceId,
+} from '@/features/intelligence/navigation/routeContract';
+import '@/features/navigation/nativeOperationalRoutes.css';
+
+type NavigationItem = {
+  label: string;
+  path: string;
+  workspace: IntelligenceWorkspaceId;
+};
+
+const ACTION_PATHS: Readonly<Record<string, NavigationItem>> = {
+  CONTROL_ROOM: { label: 'Control Room', path: '/control-room', workspace: 'control-room' },
+  ORDERS: { label: 'Orders', path: '/orders', workspace: 'orders' },
+  INVENTORY: { label: 'Inventory', path: '/inventory', workspace: 'inventory' },
+  CUSTOMERS: { label: 'Customers', path: '/customers', workspace: 'customers' },
+  DELIVERY: { label: 'Delivery', path: '/delivery', workspace: 'delivery' },
+  RETURNS: { label: 'Returns', path: '/returns', workspace: 'returns' },
+  ANALYTICS: { label: 'Analytics', path: '/analytics', workspace: 'analytics' },
+  EXCEPTIONS: { label: 'Exceptions', path: '/exceptions', workspace: 'exceptions' },
+  LOGS: { label: 'Logs', path: '/logs', workspace: 'logs' },
+  SETTINGS: { label: 'Settings', path: '/settings', workspace: 'settings' },
+};
+
+export const OPERATIONAL_NAVIGATION: readonly NavigationItem[] = [
+  ACTION_PATHS.CONTROL_ROOM,
+  { label: 'Ordermentum', path: '/ordermentum', workspace: 'ordermentum' },
+  ACTION_PATHS.ORDERS,
+  ACTION_PATHS.INVENTORY,
+  ACTION_PATHS.CUSTOMERS,
+  ACTION_PATHS.EXCEPTIONS,
+  ACTION_PATHS.DELIVERY,
+  { label: 'Reconciliation', path: '/reconciliation', workspace: 'reconciliation' },
+  ACTION_PATHS.ANALYTICS,
+  ACTION_PATHS.LOGS,
+  ACTION_PATHS.SETTINGS,
+] as const;
+
+export function roleLabel(role: Role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'account') return 'Accounts';
+  if (role === 'warehouse') return 'Warehouse';
+  if (role === 'driver') return 'Driver';
+  if (role === 'viewer') return 'Viewer';
+  return 'Owner';
+}
+
+export function mayAccessOperationalWorkspace(role: Role, workspace: IntelligenceWorkspaceId) {
+  // Accounts already operate the governed exception queue in the stability
+  // surface. Keep that capability while the central route contract catches up.
+  if (role === 'account' && workspace === 'exceptions') return true;
+  return canRoleAccessIntelligenceWorkspace(role, workspace);
+}
+
+export function OperationalAccessState({ title, detail, actions }: { title: string; detail: string; actions?: ReactNode }) {
+  return (
+    <main className="login-page">
+      <section className="login-card" role="alert">
+        <div className="login-brand-row">
+          <BrandMark large />
+          <div><div className="login-brand-name">EcoFlow</div><div className="login-brand-subtitle">CONTROLLED OPERATIONS</div></div>
+        </div>
+        <h1>{title}</h1>
+        <p>{detail}</p>
+        {actions ? <div className="row-actions">{actions}</div> : null}
+      </section>
+    </main>
+  );
+}
+
+export function OperationalAppShell({
+  role,
+  profile,
+  onLogout,
+  children,
+}: {
+  role: Role;
+  profile: EcoFlowAuthProfile;
+  onLogout: () => void;
+  children: ReactNode;
+}) {
+  const [quickKeys, setQuickKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    void readQuickActions()
+      .then((result) => setQuickKeys(result.actionKeys))
+      .catch(() => setQuickKeys([]));
+  }, [profile.user_id]);
+
+  const navigation = OPERATIONAL_NAVIGATION.filter((item) => mayAccessOperationalWorkspace(role, item.workspace));
+  const quickActions = quickKeys
+    .map((key) => ACTION_PATHS[key])
+    .filter((item): item is NavigationItem => Boolean(item) && mayAccessOperationalWorkspace(role, item.workspace));
+
+  return (
+    <div className="desktop-app" data-app-role={role} data-navigation-owner="unified-operational-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <BrandMark />
+          <div><strong>EcoFlow</strong><span>{roleLabel(role).toUpperCase()}</span></div>
+        </div>
+        <nav className="sidebar-nav">
+          {navigation.map((item) => (
+            <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+      <section className="desktop-main">
+        <header className="desktop-topbar">
+          <div className="topbar-title">
+            <BrandMark />
+            <div>
+              <strong>{profile.display_name || profile.email}</strong>
+              <span>{roleLabel(role).toUpperCase()} OPERATIONS</span>
+            </div>
+          </div>
+          <div className="topbar-actions">
+            {quickActions.map((item) => <NavLink key={item.path} className="soft-button" to={item.path}>{item.label}</NavLink>)}
+            {(role === 'owner' || role === 'admin') ? <NavLink className="soft-button" to="/warehouse-control">Warehouse Control</NavLink> : null}
+            {(role === 'owner' || role === 'admin') ? <a className="soft-button" href="/warehouse-map">Warehouse Map</a> : null}
+            <button type="button" onClick={onLogout}>Logout</button>
+          </div>
+        </header>
+        <nav className="desktop-mobile-nav" aria-label="Sections">
+          {navigation.map((item) => (
+            <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <main className="desktop-content">{children}</main>
+      </section>
+    </div>
+  );
+}
