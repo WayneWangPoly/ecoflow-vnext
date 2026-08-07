@@ -177,7 +177,8 @@ for (const forbidden of [
 if (!route.includes("if (workspace === 'ordermentum') void reloadViews();")) {
   throw new Error('TRANSFORM_001_ORDERMENTUM_AGGREGATE_BOUNDARY_MISSING');
 }
-if (!route.includes('Control Room owns the bounded bootstrap introduced by TRANSFORM-001')) {
+if (!route.includes('bounded bootstrap introduced by TRANSFORM-001')
+    || !route.includes('reloadViews only as secondary flow enrichment')) {
   throw new Error('TRANSFORM_001_ROUTE_BOUNDARY_NOT_DOCUMENTED');
 }
 if (route.includes("if (workspace === 'dashboard') void reloadViews();")) {
