@@ -108,8 +108,10 @@ includesAll(repository, [
 includesAll(dashboard, [
   "from '@/data/repositories/dashboardReadiness'",
   'loadDashboardReadiness()',
-  'readiness?.registered_barcodes',
+  'readiness.registered_barcodes',
   'readiness?.live_on_hand_units',
+  'readiness.active_exception_count',
+  'readiness.server_current_orders',
 ], 'dashboard surface');
 
 assert.ok(!dashboard.includes("from '@/data/repositories/orderOperations'"),
