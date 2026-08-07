@@ -16,6 +16,7 @@ import {
   type OperationalPageResource,
   type OperationalPageResult,
 } from '@/data/repositories/operationalStability';
+import { OrdersCommandWorkspace } from '@/features/orders/OrdersCommandWorkspace';
 import { OperationalPagedWorkspace as BaseOperationalPagedWorkspace } from './OperationalStabilityWorkspaceV2';
 
 const PAGE_SIZES = [10,20,25,50,100] as const;
@@ -129,6 +130,7 @@ function ExceptionQueue({ role,profile,businessDay }: Omit<Props,'resource'>) {
 }
 
 export function OperationalPagedWorkspace(props: Props) {
+  if (props.resource==='orders') return <OrdersCommandWorkspace role={props.role} profile={props.profile} businessDay={props.businessDay}/>;
   if (props.resource==='exceptions') return <ExceptionQueue role={props.role} profile={props.profile} businessDay={props.businessDay}/>;
   return <BaseOperationalPagedWorkspace {...props}/>;
 }
