@@ -3,17 +3,21 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migrationPath = 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql';
+const safeRefreshMigrationPath = 'supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql';
 const replayMigrationPath = 'supabase/migrations/20260730190100_actionable_exception_idempotent_replay_snapshot.sql';
 const dashboardPath = 'src/features/dashboard/DashboardPage.tsx';
 const repositoryPath = 'src/data/repositories/dashboardReadiness.ts';
 const projectionPath = 'scripts/project-ordermentum-raw-orders.mjs';
+const operationalJobPath = 'scripts/operational-sync-job.mjs';
 
-const [migration, replayMigration, dashboard, repository, projection] = await Promise.all([
+const [migration, safeRefreshMigration, replayMigration, dashboard, repository, projection, operationalJob] = await Promise.all([
   readFile(migrationPath, 'utf8'),
+  readFile(safeRefreshMigrationPath, 'utf8'),
   readFile(replayMigrationPath, 'utf8'),
   readFile(dashboardPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(projectionPath, 'utf8'),
+  readFile(operationalJobPath, 'utf8'),
 ]);
 
 function includesAll(source, values, label) {
@@ -43,6 +47,21 @@ includesAll(migration, [
   'The public lifecycle command',
   'is an idempotent replay wrapper and intentionally remains unchanged',
 ], 'timeout-hardening migration');
+
+includesAll(safeRefreshMigration, [
+  'CONTROL_ROOM_SNAPSHOT_SAFE_REFRESH_PREREQUISITES_MISSING',
+  'create or replace function public.ecoflow_refresh_current_exception_snapshot()',
+  'delete from public.ecoflow_current_exception_snapshot s',
+  'where s.exception_id is not null',
+  'select public.ecoflow_refresh_dashboard_read_models()',
+  'perform public.ecoflow_assert_current_exception_snapshot()',
+  'CONTROL_ROOM_SNAPSHOT_SAFE_REFRESH_VERIFY_FAILED',
+], 'managed-Supabase safe refresh migration');
+
+assert.ok(
+  !safeRefreshMigration.includes('delete from public.ecoflow_current_exception_snapshot;'),
+  'current-exception refresh must never use an unconditional DELETE on managed Supabase',
+);
 
 includesAll(replayMigration, [
   'rename to apply_actionable_exception_lifecycle_command_unsnapshotted_20260730',
@@ -106,16 +125,32 @@ assert.ok(!dashboard.includes('loadBarcodeSprintKpis()'),
 
 includesAll(projection, [
   'supabaseTimeoutMs: Math.max(cfg.supabaseTimeoutMs, 210000)',
+  'const projectedMutationCount = totals.projected_orders + totals.projected_invoices + totals.projected_lines',
+  "action: 'dashboard_read_models_refresh_skipped'",
+  "reason: 'NO_PROJECTED_OPERATIONAL_CHANGES'",
   "supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {})",
   "'ecoflow_refresh_dashboard_read_models'",
   'dashboardRefreshCfg',
-  "action: 'refresh_dashboard_read_models_deferred'",
-  'blocking: false',
-  'fail_closed: true',
-  'isMissingDashboardRefreshRpc',
+  "action: 'refresh_dashboard_read_models_retry'",
+  "action: 'control_room_read_models_stale'",
+  'blocking: true',
+  'authoritative_projection_committed: true',
+  'Control Room read-model refresh failed after authoritative projection committed',
 ], 'Ordermentum projection refresh hook');
 
-assert.ok(!projection.includes('Dashboard read-model refresh failed after successful projection'),
-  'derived dashboard refresh must not invalidate authoritative Ordermentum reconciliation');
+assert.ok(!projection.includes("action: 'refresh_dashboard_read_models_deferred'"),
+  'a stale Control Room may not be hidden behind a non-blocking successful sync');
+assert.ok(!projection.includes('blocking: false'),
+  'Control Room refresh failures may not be reported as non-blocking after the stale checkpoint advances');
 
-console.log('Dashboard read-timeout hardening, production lifecycle shape, refresh budget and stale-snapshot fail-closed audit passed.');
+includesAll(operationalJob, [
+  "const hasExplicitValue = next !== undefined && !next.startsWith('--')",
+  "result[keyName] = hasExplicitValue ? values[++index] : 'true'",
+], 'operational sync job argument parser');
+
+assert.ok(
+  !operationalJob.includes("const next = values[index + 1];\n    result[keyName] = next && !next.startsWith('--') ? values[++index] : 'true';"),
+  'empty explicit values such as --job-id "" must not be converted to the string true',
+);
+
+console.log('Dashboard read-timeout, managed-Supabase snapshot refresh and operational sync observability audit passed.');
