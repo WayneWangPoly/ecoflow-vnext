@@ -11,7 +11,10 @@ const main = read('src/main.tsx');
 const repository = read('src/data/repositories/operationalStabilityV2.ts');
 const workspace = read('src/features/operationalStability/OperationalStabilityWorkspaceV2.tsx');
 const exceptionWorkspace = read('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx');
-const route = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
+const unifiedRoute = read('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+const session = read('src/features/navigation/OperationalSessionContext.tsx');
+const appShell = read('src/features/navigation/OperationalAppShell.tsx');
+const compatibilityRoute = read('src/features/operationalStability/OperationalStabilityRouteV2.tsx');
 const stocktakeMigration = read('supabase/migrations/20260801163000_stocktake_transfer_controls.sql');
 const stocktakeConflictMigration = read('supabase/migrations/20260801163010_stocktake_variable_conflict_policy.sql');
 const pagingMigration = read('supabase/migrations/20260801163100_operational_paging_preferences_close.sql');
@@ -19,10 +22,23 @@ const operationalConflictMigration = read('supabase/migrations/20260801163110_op
 const contract = read('scripts/operational-stability-contract-test.sql');
 const documentation = read('docs/PHASE-9D-G-OPERATIONAL-STABILITY-COMPLETION.md');
 
-for (const path of ['/warehouse-control/*','/orders/*','/inventory/*','/customers/*','/stores/*','/exceptions','/logs','/settings']) {
-  has(main, `path=\"${path}\"`, `React Router owns ${path}`);
+// TRANSFORM-002 keeps the stability workspaces and all server contracts while
+// moving route/session/shell ownership into one persistent operational root.
+has(main, 'isUnifiedOperationalPath', 'Production entry point declares the unified route boundary');
+has(main, '<OperationalSessionProvider>', 'Operational workspaces share one authenticated session authority');
+has(main, '<Route path="*" element={<ApplicationSurfaceRouter />} />', 'One route element persists across migrated workspace navigation');
+for (const path of ['/warehouse-control','/orders','/inventory','/customers','/stores','/exceptions','/logs','/settings']) {
+  has(main, `pathname === '${path}'`, `Unified route boundary owns ${path}`);
 }
-has(main, 'OperationalStabilityRoute', 'Operational stability route shell is mounted');
+has(unifiedRoute, '<OperationalPagedWorkspace', 'Operational paged workspaces are mounted inside the unified route');
+has(unifiedRoute, '<OperationalSettingsWorkspace', 'Settings workspace is mounted inside the unified route');
+has(unifiedRoute, '<WarehouseControlWorkspace', 'Warehouse Control is mounted inside the unified route');
+has(session, 'v_ecoflow_current_user', 'Profile and role come from one authenticated application state');
+has(appShell, 'quickKeys', 'Effective Quick Actions are rendered in the shared compact top bar');
+has(appShell, "role === 'account' && workspace === 'exceptions'", 'Account can manage commercial exceptions');
+has(compatibilityRoute, "export { default } from '@/features/operationalRoutes/UnifiedOperationalRoutes';", 'Legacy stability route cannot resurrect a duplicate auth or shell root');
+lacks(compatibilityRoute, 'v_ecoflow_current_user', 'Legacy stability route no longer owns profile loading');
+lacks(compatibilityRoute, 'onAuthStateChange', 'Legacy stability route no longer owns an auth subscription');
 
 for (const functionName of [
   'ecoflow_start_stocktake_session',
@@ -90,11 +106,8 @@ has(workspace, 'Approve and post balances', 'Supervisor approval is visibly dist
 has(workspace, 'Apply paired transfer', 'Move SKU is presented as one paired transaction');
 has(exceptionWorkspace, 'Business Day Close', 'Business Day Close is reachable from the exception queue');
 has(exceptionWorkspace, 'row.recommended_action', 'Each exception recommendation is rendered');
-has(route, 'v_ecoflow_current_user', 'Profile and role come from authenticated application state');
-has(route, 'quickKeys', 'Effective Quick Actions are rendered in the compact top bar');
-has(route, "role === 'account' && workspace === 'exceptions'", 'Account can manage commercial exceptions');
-lacks(route, 'querySelector', 'Route access is not inferred from DOM text');
-lacks(route, 'createPortal', 'Operational pages are not portal replacements');
+lacks(unifiedRoute, 'querySelector', 'Route access is not inferred from DOM text');
+lacks(unifiedRoute, 'createPortal', 'Operational pages are not portal replacements');
 
 for (const testMarker of [
   'observation posted stock before approval',
@@ -114,4 +127,4 @@ has(documentation, 'Observation rows are evidence only', 'Non-posting evidence b
 has(documentation, 'one transfer reference', 'Paired transfer boundary is documented');
 has(documentation, 'server-authoritative carry-over', 'Business Day Close authority is documented');
 
-console.log('Operational stability completion audit passed: Issues #38–#41 are covered by governed UI, RPC and PostgreSQL contracts.');
+console.log('Operational stability completion audit passed: governed UI/RPC/PostgreSQL contracts remain intact under the unified AppShell.');
