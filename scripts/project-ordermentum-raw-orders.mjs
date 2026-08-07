@@ -118,67 +118,86 @@ if (!converged) {
   );
 }
 
-// Mark the dashboard projections stale in a separate committed transaction,
-// then attempt their bounded refresh. A refresh failure must never invalidate
-// authoritative Ordermentum reconciliation; the database freshness gate makes
-// dashboard and exception reads fail closed until a later refresh succeeds.
-let dashboardRefreshMarked = false;
-try {
-  const requiredAt = await supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {});
-  dashboardRefreshMarked = true;
-  console.log(JSON.stringify({ action: 'mark_dashboard_read_models_required', required_at: requiredAt }));
-} catch (error) {
-  if (isMissingDashboardRefreshRpc(error)) {
-    try {
+const projectedMutationCount = totals.projected_orders + totals.projected_invoices + totals.projected_lines;
+
+// Do not invalidate the Control Room on a no-op sync. Before this guard, every
+// twice-hourly poll advanced DASHBOARD_SOURCE_REQUIRED even when projection
+// changed nothing, forcing an expensive exception refresh and making a transient
+// refresh fault visible as stale operating data.
+if (projectedMutationCount === 0) {
+  console.log(JSON.stringify({
+    action: 'dashboard_read_models_refresh_skipped',
+    reason: 'NO_PROJECTED_OPERATIONAL_CHANGES',
+  }));
+} else {
+  let dashboardRefreshMarked = false;
+  try {
+    const requiredAt = await supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {});
+    dashboardRefreshMarked = true;
+    console.log(JSON.stringify({ action: 'mark_dashboard_read_models_required', required_at: requiredAt }));
+  } catch (error) {
+    if (isMissingDashboardRefreshRpc(error)) {
       const refreshedKeys = await supabaseRpc(cfg, 'ecoflow_refresh_ui_active_order_keys', {});
       console.warn(JSON.stringify({
-        action: 'refresh_ui_active_order_keys_deferred',
-        blocking: false,
+        action: 'refresh_ui_active_order_keys_rollout_fallback',
         reason: 'DASHBOARD_RPCS_NOT_DEPLOYED_YET',
         active_order_keys: refreshedKeys,
       }));
-    } catch (fallbackError) {
-      console.warn(JSON.stringify({
-        action: 'refresh_ui_active_order_keys_deferred',
-        blocking: false,
-        reason: isStatementTimeout(fallbackError)
-          ? 'SUPABASE_STATEMENT_TIMEOUT'
-          : 'DERIVED_CACHE_REFRESH_FAILED',
-        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-      }));
+    } else {
+      throw new Error(
+        `Control Room read-model checkpoint failed after authoritative projection committed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
-  } else {
-    console.warn(JSON.stringify({
-      action: 'mark_dashboard_read_models_deferred',
-      blocking: false,
-      reason: isStatementTimeout(error)
-        ? 'SUPABASE_STATEMENT_TIMEOUT'
-        : 'DERIVED_READ_MODEL_MARK_FAILED',
-      message: error instanceof Error ? error.message : String(error),
-    }));
   }
-}
 
-if (dashboardRefreshMarked) {
-  try {
-    const refreshed = await supabaseRpc(
-      dashboardRefreshCfg,
-      'ecoflow_refresh_dashboard_read_models',
-      {},
-    );
-    console.log(JSON.stringify({ action: 'refresh_dashboard_read_models', result: refreshed }));
-  } catch (error) {
-    console.warn(JSON.stringify({
-      action: 'refresh_dashboard_read_models_deferred',
-      blocking: false,
-      fail_closed: true,
-      reason: isStatementTimeout(error)
-        ? 'SUPABASE_STATEMENT_TIMEOUT'
-        : isMissingDashboardRefreshRpc(error)
-          ? 'RPC_SCHEMA_CACHE_PENDING'
-          : 'DERIVED_READ_MODEL_REFRESH_FAILED',
-      message: error instanceof Error ? error.message : String(error),
-    }));
+  if (dashboardRefreshMarked) {
+    let refreshed = false;
+    let lastRefreshError;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const result = await supabaseRpc(
+          dashboardRefreshCfg,
+          'ecoflow_refresh_dashboard_read_models',
+          {},
+        );
+        console.log(JSON.stringify({
+          action: 'refresh_dashboard_read_models',
+          attempt,
+          result,
+        }));
+        refreshed = true;
+        break;
+      } catch (error) {
+        lastRefreshError = error;
+        console.warn(JSON.stringify({
+          action: 'refresh_dashboard_read_models_retry',
+          attempt,
+          max_attempts: 2,
+          reason: isStatementTimeout(error)
+            ? 'SUPABASE_STATEMENT_TIMEOUT'
+            : isMissingDashboardRefreshRpc(error)
+              ? 'RPC_SCHEMA_CACHE_PENDING'
+              : 'DERIVED_READ_MODEL_REFRESH_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        }));
+        if (attempt < 2) await sleep(5000);
+      }
+    }
+
+    if (!refreshed) {
+      const message = lastRefreshError instanceof Error
+        ? lastRefreshError.message
+        : String(lastRefreshError ?? 'unknown refresh failure');
+      console.error(JSON.stringify({
+        action: 'control_room_read_models_stale',
+        blocking: true,
+        authoritative_projection_committed: true,
+        message,
+      }));
+      throw new Error(
+        `Control Room read-model refresh failed after authoritative projection committed: ${message}`,
+      );
+    }
   }
 }
 
