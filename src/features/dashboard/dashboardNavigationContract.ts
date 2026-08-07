@@ -1,7 +1,7 @@
 import type { Role } from '@/domain/types';
 import type { OperationalFlowStage } from '@/features/intelligence/operationalFlow';
 
-export type DashboardNavigationTab = 'orders' | 'delivery' | 'reconciliation';
+export type DashboardNavigationTab = 'orders' | 'inventory' | 'delivery' | 'reconciliation';
 export type DashboardStage = OperationalFlowStage;
 
 export function dashboardStageTarget(stage: DashboardStage, role: Role): DashboardNavigationTab {
