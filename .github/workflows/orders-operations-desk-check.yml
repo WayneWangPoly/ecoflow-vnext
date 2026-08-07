@@ -1,0 +1,183 @@
+name: Orders operations desk check
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/orders/**'
+      - 'src/data/repositories/ordersOperationsDesk.ts'
+      - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
+      - 'supabase/migrations/20260807234000_orders_operations_desk.sql'
+      - 'supabase/migrations/20260807234100_orders_operations_exception_key_guard.sql'
+      - 'scripts/audit-orders-operations-desk.mjs'
+      - '.github/workflows/orders-operations-desk-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static product and authority audit
+        run: node scripts/audit-orders-operations-desk.mjs
+
+      - name: Prepare minimal production-shaped fixture
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema auth;
+          create schema analytics;
+          create role authenticated noinherit;
+          create role service_role noinherit;
+          create role anon noinherit;
+          create or replace function auth.uid() returns uuid language sql stable as $$ select '11111111-1111-4111-8111-111111111111'::uuid $$;
+          create or replace function public.ecoflow_active_app_role() returns text language sql stable as $$ select 'OWNER'::text $$;
+
+          create table public.fixture_inbox(
+            raw_order_id text, external_order_id text, external_order_number text, external_invoice_number text,
+            om_order_id text, order_number text, invoice_number text, order_status text, payment_status text,
+            invoice_payment_status text, invoice_total numeric, order_items_total numeric, line_count integer,
+            total_units numeric, invoice_detail_missing boolean, line_items_missing boolean, invoice_due_at timestamptz,
+            invoice_date date, updated_business_day date, order_updated_at timestamptz, invoice_status text,
+            last_synced_at timestamptz
+          );
+          create view public.v_ecoflow_ordermentum_ui_active_inbox as select * from public.fixture_inbox;
+
+          create table public.fixture_om_orders(
+            id text, order_number text, retailer_id text, retailer_name text, delivery_date date,
+            due_at timestamptz, total_quantity numeric
+          );
+          create view public.v_ecoflow_ordermentum_ui_active_om_orders as select * from public.fixture_om_orders;
+
+          create table public.fixture_drafts(
+            raw_order_id text, external_order_id text, external_order_number text, order_number text, invoice_number text,
+            internalisation_status text, account_release_status text, warehouse_gate_status text,
+            unmapped_line_count integer, barcode_blocked_line_count integer, barcode_confirmed_line_count integer,
+            service_line_count integer, internal_order_id text
+          );
+          create view public.v_ecoflow_ordermentum_ui_active_drafts as select * from public.fixture_drafts;
+
+          create table public.fixture_lines(
+            source_line_id text, source_order_id text, order_number text, invoice_number text,
+            external_sku_code text, external_product_name text, quantity numeric, unit text,
+            price numeric, subtotal numeric, total numeric
+          );
+          create view public.v_ecoflow_ordermentum_ui_active_order_lines as select * from public.fixture_lines;
+
+          create table public.ecoflow_store_sites(
+            retailer_id text, store_name text, suburb text, formatted_address text, price_group_id text
+          );
+          create table public.ecoflow_read_model_refresh_state(read_model text primary key, refreshed_at timestamptz not null);
+          create table public.ecoflow_current_exception_snapshot(
+            exception_id text primary key, raw_order_id text, external_order_id text, external_order_number text,
+            external_invoice_number text, order_number text, invoice_number text, exception_type text,
+            message text, status text, detected_at timestamptz
+          );
+          create table analytics.actionable_exception_lifecycle(
+            exception_id text primary key, lifecycle_status text, owner_team text, snoozed_until timestamptz,
+            resolution_note text, version integer
+          );
+
+          insert into public.ecoflow_read_model_refresh_state values
+            ('DASHBOARD_SOURCE_REQUIRED', now() - interval '1 minute'),
+            ('CURRENT_EXCEPTIONS', now());
+
+          insert into public.fixture_inbox values
+            (null,'EXT-A','A-100','INV-A','OM-A','A-100','INV-A','open','paid','paid',100,100,1,2,false,false,now()+interval '1 day',current_date,current_date,now(),'open',now()),
+            (null,'EXT-B','B-200','INV-B','OM-B','B-200','INV-B','open','paid','paid',200,200,1,4,false,false,now()+interval '2 days',current_date,current_date,now(),'open',now());
+          insert into public.fixture_om_orders values
+            ('EXT-A','A-100','R-A','Store A',current_date,now()+interval '1 day',2),
+            ('EXT-B','B-200','R-B','Store B',current_date,now()+interval '2 days',4);
+          insert into public.fixture_drafts values
+            (null,'EXT-A','A-100','A-100','INV-A','READY','CLEAR','READY',0,0,1,0,'INT-A'),
+            (null,'EXT-B','B-200','B-200','INV-B','READY','CLEAR','READY',0,0,1,0,'INT-B');
+          insert into public.ecoflow_store_sites values
+            ('R-A','Store A','Adelaide','1 A Street','PG1'),('R-B','Store B','Burnside','2 B Street','PG1');
+          insert into public.fixture_lines values
+            ('L-A','EXT-A','A-100','INV-A','SKU-A','Product A',2,'ea',10,20,20),
+            ('L-B','EXT-B','B-200','INV-B','SKU-B','Product B',4,'ea',20,80,80);
+          insert into public.ecoflow_current_exception_snapshot values
+            ('EX-A',null,'EXT-A','A-100','INV-A','A-100','INV-A','MAPPING','A problem','OPEN',now()),
+            ('EX-B',null,'EXT-B','B-200','INV-B','B-200','INV-B','BARCODE','B problem','OPEN',now());
+          insert into analytics.actionable_exception_lifecycle values
+            ('EX-A','OPEN','Operations queue',null,null,0),('EX-B','OPEN','Operations queue',null,null,0);
+          SQL
+
+      - name: Apply Orders desk migrations
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260807234000_orders_operations_desk.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260807234100_orders_operations_exception_key_guard.sql
+
+      - name: Verify exact paging and null-key isolation
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare
+            v_total bigint;
+            v_a_count integer;
+            v_b_count integer;
+            v_a_detail jsonb;
+            v_b_detail jsonb;
+          begin
+            select max(total_count), max(case when row_data->>'order_number'='A-100' then (row_data->>'active_exception_count')::integer end),
+              max(case when row_data->>'order_number'='B-200' then (row_data->>'active_exception_count')::integer end)
+            into v_total, v_a_count, v_b_count
+            from public.ecoflow_read_orders_operations_v1(1,25,null,'current','operations');
+            if v_total <> 2 then raise exception 'orders total expected 2 got %', v_total; end if;
+            if v_a_count <> 1 or v_b_count <> 1 then raise exception 'null-key exception isolation failed A=% B=%', v_a_count, v_b_count; end if;
+
+            v_a_detail := public.ecoflow_read_order_operations_detail_v1('A-100');
+            v_b_detail := public.ecoflow_read_order_operations_detail_v1('B-200');
+            if jsonb_array_length(v_a_detail->'exceptions') <> 1 or v_a_detail->'exceptions'->0->>'exception_id' <> 'EX-A' then
+              raise exception 'A detail exception isolation failed: %', v_a_detail->'exceptions';
+            end if;
+            if jsonb_array_length(v_b_detail->'exceptions') <> 1 or v_b_detail->'exceptions'->0->>'exception_id' <> 'EX-B' then
+              raise exception 'B detail exception isolation failed: %', v_b_detail->'exceptions';
+            end if;
+            if jsonb_array_length(v_a_detail->'lines') <> 1 then raise exception 'detail line bound fixture failed'; end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Verify stale exception snapshot fails closed without hiding orders
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          update public.ecoflow_read_model_refresh_state set refreshed_at=now()-interval '10 minutes' where read_model='CURRENT_EXCEPTIONS';
+          update public.ecoflow_read_model_refresh_state set refreshed_at=now() where read_model='DASHBOARD_SOURCE_REQUIRED';
+          do $verify$
+          declare v_rows integer; v_nonnull integer; v_detail jsonb;
+          begin
+            select count(*), count(*) filter(where row_data ? 'active_exception_count' and row_data->'active_exception_count' <> 'null'::jsonb)
+              into v_rows,v_nonnull from public.ecoflow_read_orders_operations_v1(1,25,null,'current','operations') where row_data is not null;
+            if v_rows <> 2 then raise exception 'stale snapshot unexpectedly hid orders'; end if;
+            if v_nonnull <> 0 then raise exception 'stale exception counts were presented as current'; end if;
+            v_detail := public.ecoflow_read_order_operations_detail_v1('A-100');
+            if v_detail->'exceptions' <> 'null'::jsonb then raise exception 'stale detail exceptions must be null'; end if;
+            if (v_detail->>'exception_snapshot_fresh')::boolean then raise exception 'stale detail freshness flag incorrect'; end if;
+          end;
+          $verify$;
+          SQL
