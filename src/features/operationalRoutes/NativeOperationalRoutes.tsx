@@ -252,9 +252,13 @@ export default function NativeOperationalRoutes() {
       }).catch((error) => setLoadError(error instanceof Error ? error.message : String(error)));
       return () => { active = false; };
     }
-    if (authEnabled && profile?.user_id) void reloadViews();
+    // Control Room has its own bounded bootstrap. Loading the aggregate
+    // operational snapshot here made the homepage wait for thousands of rows.
+    // Other native workspaces keep the legacy aggregate loader until their
+    // transformation phases move them to bounded read models too.
+    if (authEnabled && profile?.user_id && workspace !== 'dashboard') void reloadViews();
     return undefined;
-  }, [authEnabled, profile?.user_id, reloadViews]);
+  }, [authEnabled, profile?.user_id, reloadViews, workspace]);
 
   useEffect(() => {
     setDay(loadDriverDayState(data.businessDay.date));

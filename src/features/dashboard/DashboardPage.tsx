@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -59,9 +59,24 @@ type Action = {
   next: string;
 };
 
+const PERF_SHELL = 'ecoflow:control-room:shell';
+const PERF_PRIMARY = 'ecoflow:control-room:primary-summary-ready';
+const PERF_MODULES = 'ecoflow:control-room:modules-ready';
+const PERF_FLOW = 'ecoflow:control-room:flow-ready';
+const PERF_FULL = 'ecoflow:control-room:full-ready';
+
 function n(value: unknown) {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function markPerformance(name: string) {
+  if (typeof window === 'undefined' || typeof window.performance?.mark !== 'function') return;
+  try {
+    window.performance.mark(name);
+  } catch {
+    // Performance telemetry must never affect the operating surface.
+  }
 }
 
 function dateTime(value?: string | null) {
@@ -103,40 +118,79 @@ export function DashboardPage({
   const [readiness, setReadiness] = useState<DashboardReadiness | null>(null);
   const [mirror, setMirror] = useState<OrdermentumMirrorHealthRow | null>(null);
   const [locations, setLocations] = useState<WarehouseLocationItemRow[]>([]);
-  const [statusLoading, setStatusLoading] = useState(true);
+  const [primaryLoading, setPrimaryLoading] = useState(true);
+  const [secondaryLoading, setSecondaryLoading] = useState(true);
+  const [primaryError, setPrimaryError] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
+  const detailRequestedRef = useRef(false);
 
-  const reloadReadiness = useCallback(async () => {
-    setStatusLoading(true);
+  const reloadPrimary = useCallback(async () => {
+    setPrimaryLoading(true);
+    setPrimaryError('');
+    try {
+      const next = await loadDashboardReadiness();
+      if (!next) throw new Error('Dashboard readiness returned no current row.');
+      setReadiness(next);
+      markPerformance(PERF_PRIMARY);
+    } catch (error) {
+      setPrimaryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPrimaryLoading(false);
+    }
+  }, []);
+
+  const reloadSecondary = useCallback(async () => {
+    setSecondaryLoading(true);
     setStatusNotice('');
     const checks = await Promise.allSettled([
-      loadDashboardReadiness(),
       supabase
         ? loadOrdermentumMirrorHealth(supabase)
         : Promise.resolve({ mirrorHealth: null, mirrorError: 'Supabase is unavailable.' }),
       loadWarehouseLocationItems(),
     ]);
-    const [readinessResult, mirrorResult, locationResult] = checks;
-    if (readinessResult.status === 'fulfilled') setReadiness(readinessResult.value);
+    const [mirrorResult, locationResult] = checks;
+    const notices: string[] = [];
     if (mirrorResult.status === 'fulfilled') {
       setMirror(mirrorResult.value.mirrorHealth);
-      if (mirrorResult.value.mirrorError) setStatusNotice(mirrorResult.value.mirrorError);
+      if (mirrorResult.value.mirrorError) notices.push(mirrorResult.value.mirrorError);
+    } else {
+      notices.push('Source verification is temporarily unavailable.');
     }
     if (locationResult.status === 'fulfilled') setLocations(locationResult.value);
-    const unavailable = [
-      readinessResult.status === 'rejected' ? 'dashboard readiness' : '',
-      mirrorResult.status === 'rejected' ? 'source verification' : '',
-      locationResult.status === 'rejected' ? 'warehouse location summary' : '',
-    ].filter(Boolean);
-    if (unavailable.length) {
-      setStatusNotice(`Summary unavailable: ${unavailable.join(', ')}. Operational records remain unchanged.`);
-    }
-    setStatusLoading(false);
+    else notices.push('Warehouse location summary is temporarily unavailable.');
+    setStatusNotice(notices.join(' '));
+    setSecondaryLoading(false);
+    markPerformance(PERF_MODULES);
   }, []);
 
+  const reloadControlRoom = useCallback(async () => {
+    detailRequestedRef.current = true;
+    await Promise.allSettled([reloadPrimary(), reloadSecondary(), onReload()]);
+  }, [onReload, reloadPrimary, reloadSecondary]);
+
   useEffect(() => {
-    if (snapshotReady) void reloadReadiness();
-  }, [reloadReadiness, snapshotReady, data.syncBatch.completedAt]);
+    markPerformance(PERF_SHELL);
+    void reloadPrimary();
+    void reloadSecondary();
+  }, [reloadPrimary, reloadSecondary]);
+
+  // The aggregate operational snapshot is legacy detail data. It starts only
+  // after the bounded primary summary has resolved, so it can enrich the flow
+  // without controlling first useful paint.
+  useEffect(() => {
+    if (!readiness || snapshotReady || loading || detailRequestedRef.current) return;
+    detailRequestedRef.current = true;
+    const timer = window.setTimeout(() => void onReload(), 250);
+    return () => window.clearTimeout(timer);
+  }, [loading, onReload, readiness, snapshotReady]);
+
+  useEffect(() => {
+    if (snapshotReady) markPerformance(PERF_FLOW);
+  }, [snapshotReady]);
+
+  useEffect(() => {
+    if (readiness && snapshotReady && !primaryLoading && !secondaryLoading) markPerformance(PERF_FULL);
+  }, [primaryLoading, readiness, secondaryLoading, snapshotReady]);
 
   const locationCount = useMemo(
     () => new Set(locations.map((row) => row.location_code).filter(Boolean)).size,
@@ -151,7 +205,10 @@ export function DashboardPage({
     ).size,
     [locations],
   );
-  const firstStocktakeNeeded = n(readiness?.live_on_hand_units) <= 0 && liveLocationCount === 0;
+  const firstStocktakeNeeded = Boolean(readiness)
+    && !secondaryLoading
+    && n(readiness?.live_on_hand_units) <= 0
+    && liveLocationCount === 0;
   const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
   const orderById = useMemo(() => {
     const value = new Map<string, ImportedOrder>();
@@ -179,12 +236,13 @@ export function DashboardPage({
   );
   const serverCurrentOrders = readiness
     ? n(readiness.server_current_orders)
-    : orders.length;
+    : 0;
   const delivered = groups.DELIVERED;
   const podMissing = delivered.filter((order) => order.podStatus === 'missing');
   const decisionCount = groups.NEEDS_ACTION.length + groups.FINANCE_REVIEW.length;
   const executionCount = groups.WAREHOUSE.length + groups.STAGED.length + groups.ROUTE.length;
-  const mirrorStatus = mirror?.overall_status || (snapshotReady ? 'CHECKING' : 'UNAVAILABLE');
+  const mirrorStatus = mirror?.overall_status || (secondaryLoading ? 'CHECKING' : 'UNAVAILABLE');
+  const detailReady = snapshotReady;
 
   const actions: Action[] = role === 'account'
     ? [
@@ -216,49 +274,15 @@ export function DashboardPage({
     ...stage,
     tab: dashboardStageTarget(stage.key, role),
   }));
-
-  if (loading && !snapshotReady) {
-    return (
-      <section className="ops-control-loading" aria-live="polite">
-        <ControlPanel tone="dark" title="Loading live operations…">
-          <ControlSkeleton shape="block" width="100%" />
-        </ControlPanel>
-      </section>
-    );
-  }
-
-  if (!snapshotReady) {
-    return (
-      <section className="ops-control-unavailable">
-        <ControlBanner
-          tone="danger"
-          role="alert"
-          icon={<AlertTriangle />}
-          title="Live operating data is unavailable"
-          actions={(
-            <ControlButton
-              variant="danger"
-              onClick={() => void onReload()}
-              disabled={loading}
-              busy={loading}
-              leading={<RefreshCw />}
-            >
-              {loading ? 'Retrying…' : 'Retry live data'}
-            </ControlButton>
-          )}
-        >
-          {loadError || 'EcoFlow will not show sample figures.'}
-        </ControlBanner>
-      </section>
-    );
-  }
+  const refreshBusy = primaryLoading || secondaryLoading || loading;
 
   return (
     <section
       className="ops-home ops-control-room"
-      data-server-current={serverCurrentOrders}
+      data-server-current={readiness ? serverCurrentOrders : undefined}
       data-source-status={mirrorStatus.toLowerCase()}
-      data-flow-state={flow.state}
+      data-flow-state={detailReady ? flow.state : 'loading'}
+      data-primary-ready={Boolean(readiness)}
     >
       <header className="ops-control-hero">
         <div className="ops-home-heading">
@@ -297,18 +321,38 @@ export function DashboardPage({
           <ControlButton
             variant="quiet"
             leading={<RefreshCw />}
-            onClick={() => void Promise.all([onReload(), reloadReadiness()])}
-            disabled={loading || statusLoading}
-            busy={loading || statusLoading}
+            onClick={() => void reloadControlRoom()}
+            disabled={refreshBusy}
+            busy={refreshBusy}
           >
-            {loading || statusLoading ? 'Refreshing…' : 'Refresh'}
+            {refreshBusy ? 'Refreshing…' : 'Refresh'}
           </ControlButton>
         </div>
       </header>
 
-      {loadError ? (
-        <ControlBanner tone="danger" icon={<AlertTriangle />}>
-          Last loaded records retained · {loadError}
+      {!readiness && primaryLoading ? (
+        <ControlPanel tone="dark" title="Connecting to current operations…" className="ops-control-loading" aria-live="polite">
+          <ControlSkeleton shape="block" width="100%" />
+        </ControlPanel>
+      ) : null}
+      {!readiness && primaryError ? (
+        <ControlBanner
+          tone="danger"
+          role="alert"
+          icon={<AlertTriangle />}
+          title="Current operating summary is unavailable"
+          actions={(
+            <ControlButton variant="danger" onClick={() => void reloadPrimary()} disabled={primaryLoading} busy={primaryLoading} leading={<RefreshCw />}>
+              Retry summary
+            </ControlButton>
+          )}
+        >
+          {primaryError}
+        </ControlBanner>
+      ) : null}
+      {readiness && loadError ? (
+        <ControlBanner tone="warning" icon={<ShieldAlert />}>
+          Detailed order classification is unavailable. The live primary summary remains authoritative. · {loadError}
         </ControlBanner>
       ) : null}
       {healthNotice || statusNotice ? (
@@ -320,33 +364,33 @@ export function DashboardPage({
       <section className="ops-control-metrics" aria-label="Current operating summary">
         <article className="ops-control-metric" data-signal="information">
           <div><span>Open orders</span><ClipboardList aria-hidden="true" /></div>
-          <strong>{openOrders.length}</strong>
-          <small>active across the eight-stage flow</small>
+          <strong>{readiness ? serverCurrentOrders : '—'}</strong>
+          <small>{readiness ? 'server-current operating orders' : 'loading bounded summary…'}</small>
         </article>
-        <article className="ops-control-metric" data-signal={decisionCount ? 'danger' : 'success'}>
+        <article className="ops-control-metric" data-signal={detailReady && decisionCount ? 'danger' : 'neutral'}>
           <div><span>Needs decision</span><ShieldAlert aria-hidden="true" /></div>
-          <strong>{decisionCount}</strong>
-          <small>{groups.NEEDS_ACTION.length} operational · {groups.FINANCE_REVIEW.length} finance</small>
+          <strong>{detailReady ? decisionCount : '—'}</strong>
+          <small>{detailReady ? `${groups.NEEDS_ACTION.length} operational · ${groups.FINANCE_REVIEW.length} finance` : 'classifying detailed flow in background…'}</small>
         </article>
         <article className="ops-control-metric" data-signal="success">
           <div><span>Ready</span><BadgeCheck aria-hidden="true" /></div>
-          <strong>{groups.READY.length}</strong>
-          <small>release controls passed</small>
+          <strong>{detailReady ? groups.READY.length : '—'}</strong>
+          <small>{detailReady ? 'release controls passed' : 'detail loads without blocking this page'}</small>
         </article>
         <article className="ops-control-metric" data-signal="information">
           <div><span>In execution</span><Route aria-hidden="true" /></div>
-          <strong>{executionCount}</strong>
-          <small>{groups.WAREHOUSE.length} warehouse · {groups.STAGED.length} staged · {groups.ROUTE.length} route</small>
+          <strong>{detailReady ? executionCount : '—'}</strong>
+          <small>{detailReady ? `${groups.WAREHOUSE.length} warehouse · ${groups.STAGED.length} staged · ${groups.ROUTE.length} route` : 'warehouse and route detail pending…'}</small>
         </article>
-        <article className="ops-control-metric" data-signal={liveLocationCount ? 'neutral' : 'warning'}>
+        <article className="ops-control-metric" data-signal={secondaryLoading ? 'neutral' : liveLocationCount ? 'neutral' : 'warning'}>
           <div><span>Live stock locations</span><Warehouse aria-hidden="true" /></div>
-          <strong>{liveLocationCount}</strong>
-          <small>{locationCount} mapped locations</small>
+          <strong>{secondaryLoading ? '—' : liveLocationCount}</strong>
+          <small>{secondaryLoading ? 'loading location module…' : `${locationCount} mapped locations`}</small>
         </article>
-        <article className="ops-control-metric" data-signal={podMissing.length ? 'warning' : 'success'}>
+        <article className="ops-control-metric" data-signal={detailReady && podMissing.length ? 'warning' : 'neutral'}>
           <div><span>Delivered retained</span><PackageCheck aria-hidden="true" /></div>
-          <strong>{delivered.length}</strong>
-          <small>{podMissing.length} missing POD</small>
+          <strong>{detailReady ? delivered.length : '—'}</strong>
+          <small>{detailReady ? `${podMissing.length} missing POD` : 'delivery detail pending…'}</small>
         </article>
       </section>
 
@@ -358,79 +402,89 @@ export function DashboardPage({
           className="ops-control-panel ops-control-attention"
           eyebrow="Needs attention"
           title="Operational queues"
-          actions={(
+          actions={detailReady ? (
             <ControlStatus
               tone={decisionCount + podMissing.length ? 'danger' : 'success'}
               label={String(decisionCount + podMissing.length)}
               compact
             />
-          )}
+          ) : <ControlStatus tone="neutral" label="LOADING DETAIL" compact />}
         >
-          <div className="ops-control-action-list">
-            {actions.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`ops-control-action-row ${item.tone}`}
-                onClick={() => openPrimaryRecord({
-                  entity: { kind: 'exception', id: `queue-${item.id}` },
-                  eyebrow: 'Action queue',
-                  title: item.title,
-                  subtitle: item.detail,
-                  fields: [
-                    { label: 'Open items', value: String(item.count) },
-                    { label: 'Role view', value: roleName },
-                    { label: 'Next action', value: item.next },
-                  ],
-                })}
-              >
-                <i aria-hidden="true" />
-                <div><strong>{item.title}</strong><small>{item.detail}</small></div>
-                <b>{item.count}</b>
-              </button>
-            ))}
-          </div>
+          {detailReady ? (
+            <div className="ops-control-action-list">
+              {actions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`ops-control-action-row ${item.tone}`}
+                  onClick={() => openPrimaryRecord({
+                    entity: { kind: 'exception', id: `queue-${item.id}` },
+                    eyebrow: 'Action queue',
+                    title: item.title,
+                    subtitle: item.detail,
+                    fields: [
+                      { label: 'Open items', value: String(item.count) },
+                      { label: 'Role view', value: roleName },
+                      { label: 'Next action', value: item.next },
+                    ],
+                  })}
+                >
+                  <i aria-hidden="true" />
+                  <div><strong>{item.title}</strong><small>{item.detail}</small></div>
+                  <b>{item.count}</b>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="ops-control-action-list" aria-label="Operational queue detail loading">
+              <ControlSkeleton shape="block" width="100%" />
+              <p className="ops-control-status-line">Current exceptions above remain independently available while detailed order classification loads.</p>
+            </div>
+          )}
         </ControlPanel>
 
         <ControlPanel
           tone="raised"
           className="ops-control-panel ops-control-stage-panel"
           title="Operational flow"
-          actions={(
+          actions={detailReady ? (
             <ControlStatus
               tone={flow.state === 'partial' || flow.state === 'invalid' ? 'warning' : 'information'}
               label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL' : `${flow.classifiedCount} CLASSIFIED`}
               compact
             />
-          )}
+          ) : <ControlStatus tone="neutral" label="STREAMING" compact />}
         >
-          <div className="ops-control-flow" aria-label="Eight-stage operational flow">
-            {stages.map((stage) => (
-              <button
-                key={stage.key}
-                type="button"
-                data-stage={stage.key.toLowerCase()}
-                aria-label={`${stage.label}: ${stage.count} orders`}
-                onClick={() => onOpenTab(stage.tab)}
-              >
-                <span className="ops-control-stage-icon" aria-hidden="true">{stageIcon(stage.key)}</span>
-                <strong>{stage.count}</strong>
-                <span>{stage.label}</span>
-              </button>
-            ))}
-          </div>
+          {detailReady ? (
+            <div className="ops-control-flow" aria-label="Eight-stage operational flow">
+              {stages.map((stage) => (
+                <button
+                  key={stage.key}
+                  type="button"
+                  data-stage={stage.key.toLowerCase()}
+                  aria-label={`${stage.label}: ${stage.count} orders`}
+                  onClick={() => onOpenTab(stage.tab)}
+                >
+                  <span className="ops-control-stage-icon" aria-hidden="true">{stageIcon(stage.key)}</span>
+                  <strong>{stage.count}</strong>
+                  <span>{stage.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div aria-live="polite">
+              <ControlSkeleton shape="block" width="100%" />
+              <p className="ops-control-status-line">Eight-stage classification is loading as secondary detail; it no longer blocks the Control Room.</p>
+            </div>
+          )}
         </ControlPanel>
       </section>
 
       <PriorityWork />
 
       <div className="ops-control-status-line">
-        {openOrders.length === serverCurrentOrders
-          ? `${serverCurrentOrders} server-current orders classified`
-          : `${openOrders.length} loaded open · ${serverCurrentOrders} server current`}
-        {' · '}{flow.classifiedCount} flow-classified
-        {' · '}{flow.excludedCount} cancelled
-        {' · '}{flow.unknownCount} unknown
+        {readiness ? `${serverCurrentOrders} server-current orders` : 'Primary summary pending'}
+        {detailReady ? ` · ${openOrders.length} loaded open · ${flow.classifiedCount} flow-classified · ${flow.excludedCount} cancelled · ${flow.unknownCount} unknown` : ' · detailed flow loading independently'}
         {' · '}{n(readiness?.registered_barcodes)} package codes
         {' · '}{n(readiness?.live_on_hand_units)} live units
         {' · '}source checked {dateTime(mirror?.checked_at)}

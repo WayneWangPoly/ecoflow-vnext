@@ -95,8 +95,14 @@ assert.ok(
   'Dashboard must render the bounded server-current total.',
 );
 assert.ok(
-  dashboard.includes(': orders.length'),
-  'Dashboard may use the loaded current slice only as a fallback when readiness is unavailable.',
+  dashboard.includes("const serverCurrentOrders = readiness\n    ? n(readiness.server_current_orders)\n    : 0")
+    && dashboard.includes("<strong>{readiness ? serverCurrentOrders : '—'}</strong>"),
+  'Dashboard must fail visibly when server readiness is unavailable rather than substituting a partial client slice as the authoritative total.',
+);
+assert.ok(
+  !dashboard.includes('readiness ? n(readiness.server_current_orders) : orders.length')
+    && !dashboard.includes(': orders.length'),
+  'A loaded client slice must not masquerade as the server-current order total.',
 );
 assert.ok(
   !dashboard.includes('loadOrderOperationsSummary'),

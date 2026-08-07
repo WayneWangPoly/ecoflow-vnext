@@ -40,8 +40,10 @@ for (const marker of [
   'aria-label="Eight-stage operational flow"',
   'data-stage={stage.key.toLowerCase()}',
   "label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL'",
-  "{' · '}{flow.excludedCount} cancelled",
-  "{' · '}{flow.unknownCount} unknown",
+  'flow.excludedCount',
+  'flow.unknownCount',
+  'const detailReady = snapshotReady',
+  'Eight-stage classification is loading as secondary detail',
 ]) {
   if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004B_DASHBOARD_MARKER_MISSING: ${marker}`);
 }
