@@ -10,7 +10,7 @@ function read(relativePath) {
 }
 
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
-const route = read('src/features/operationalRoutes/NativeOperationalRoutes.tsx');
+const route = read('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
 const css = read('src/features/dashboard/dashboardControlRoom.css');
 const flowCss = read('src/features/dashboard/operationalFlowSurface.css');
 const priorityCss = read('src/features/intelligence/attention/priorityWork.css');
@@ -174,11 +174,14 @@ for (const forbidden of [
 ]) {
   if (dashboard.includes(forbidden)) throw new Error(`TRANSFORM_001_GLOBAL_LOADING_GATE_REMAINS: ${forbidden}`);
 }
-if (!route.includes("workspace !== 'dashboard'")) {
-  throw new Error('TRANSFORM_001_CONTROL_ROOM_EAGER_AGGREGATE_ROUTE_REMAINS');
+if (!route.includes("if (workspace === 'ordermentum') void reloadViews();")) {
+  throw new Error('TRANSFORM_001_ORDERMENTUM_AGGREGATE_BOUNDARY_MISSING');
 }
-if (!route.includes('Control Room has its own bounded bootstrap')) {
+if (!route.includes('Control Room owns the bounded bootstrap introduced by TRANSFORM-001')) {
   throw new Error('TRANSFORM_001_ROUTE_BOUNDARY_NOT_DOCUMENTED');
+}
+if (route.includes("if (workspace === 'dashboard') void reloadViews();")) {
+  throw new Error('TRANSFORM_001_CONTROL_ROOM_EAGER_AGGREGATE_ROUTE_REMAINS');
 }
 
 for (const required of ['DashboardOperationalTone', 'dashboardControlTone', 'dashboardSourceTone']) {
