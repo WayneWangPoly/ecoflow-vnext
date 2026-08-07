@@ -9,6 +9,10 @@ const dashboardMigration = fs.readFileSync(
   'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql',
   'utf8',
 );
+const safeRefreshMigration = fs.readFileSync(
+  'supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql',
+  'utf8',
+);
 const projection = fs.readFileSync('scripts/project-ordermentum-raw-orders.mjs', 'utf8');
 
 assert.ok(
@@ -40,31 +44,54 @@ assert.ok(
 
 assert.ok(
   dashboardMigration.includes('ecoflow_mark_dashboard_read_models_required'),
-  'A committed freshness checkpoint must precede derived dashboard refresh.',
+  'A committed freshness checkpoint must precede a changed-data dashboard refresh.',
 );
 assert.ok(
   dashboardMigration.includes('ACTIONABLE_EXCEPTION_SNAPSHOT_STALE'),
-  'A failed snapshot refresh must make exception reads fail closed.',
+  'A failed snapshot refresh must make exception reads fail closed until repair succeeds.',
+);
+assert.ok(
+  safeRefreshMigration.includes('where s.exception_id is not null'),
+  'Managed Supabase snapshot replacement must satisfy the production safe-update guard.',
+);
+assert.ok(
+  projection.includes('const projectedMutationCount = totals.projected_orders + totals.projected_invoices + totals.projected_lines'),
+  'Projection must distinguish no-op syncs from real operational mutations.',
+);
+assert.ok(
+  projection.includes("action: 'dashboard_read_models_refresh_skipped'")
+    && projection.includes("reason: 'NO_PROJECTED_OPERATIONAL_CHANGES'"),
+  'No-op syncs must not advance the Control Room stale checkpoint.',
 );
 assert.ok(
   projection.includes("supabaseRpc(cfg, 'ecoflow_mark_dashboard_read_models_required', {})"),
-  'Projection must mark dashboard read models stale before refresh.',
+  'Changed projection must mark dashboard read models stale before refresh.',
 );
 assert.ok(
-  projection.includes("action: 'refresh_dashboard_read_models_deferred'"),
-  'Projection must report a deferred dashboard read-model refresh.',
+  projection.includes("action: 'refresh_dashboard_read_models_retry'"),
+  'Changed projection must retry a transient dashboard read-model refresh failure.',
 );
 assert.ok(
-  projection.includes('blocking: false'),
-  'Derived dashboard caches must remain explicitly non-blocking for authoritative reconciliation.',
+  projection.includes("action: 'control_room_read_models_stale'")
+    && projection.includes('blocking: true')
+    && projection.includes('authoritative_projection_committed: true'),
+  'A stale Control Room must be visible as an operational workflow failure without implying commercial rollback.',
 );
 assert.ok(
-  projection.includes('fail_closed: true'),
-  'Deferred exception refresh must be explicitly fail-closed for interactive reads.',
+  projection.includes('Control Room read-model refresh failed after authoritative projection committed'),
+  'The workflow failure must distinguish committed commercial projection from degraded operating read models.',
 );
 assert.ok(
-  projection.includes("action: 'refresh_ui_active_order_keys_deferred'"),
-  'The rollout fallback must retain a non-blocking active-key refresh report.',
+  !projection.includes("action: 'refresh_dashboard_read_models_deferred'"),
+  'The workflow must not publish a false green state after the stale checkpoint advances.',
+);
+assert.ok(
+  !projection.includes('blocking: false'),
+  'Dashboard read-model failure must not be silently classified as non-blocking.',
+);
+assert.ok(
+  projection.includes("action: 'refresh_ui_active_order_keys_rollout_fallback'"),
+  'The pre-RPC rollout fallback must retain the lightweight active-key refresh path.',
 );
 
-console.log('Lightweight non-blocking active-order and fail-closed dashboard refresh contract passed.');
+console.log('Lightweight active-order cache and observable self-healing Control Room refresh contract passed.');

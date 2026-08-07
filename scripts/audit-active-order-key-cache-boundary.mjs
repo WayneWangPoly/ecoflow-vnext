@@ -5,17 +5,38 @@ const projection = fs.readFileSync('scripts/project-ordermentum-raw-orders.mjs',
 const verifier = fs.readFileSync('scripts/verify-ordermentum-complete-mirror.mjs', 'utf8');
 const currentScopeMigration = fs.readFileSync('supabase/migrations/20260717010000_current_order_cache_scope.sql', 'utf8');
 const dashboardMigration = fs.readFileSync('supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql', 'utf8');
+const safeRefreshMigration = fs.readFileSync('supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql', 'utf8');
 const timeoutSafeRepository = fs.readFileSync('src/data/repositories/resilientOrdermentumViewsTimeoutSafe.ts', 'utf8');
 const dashboardRepository = fs.readFileSync('src/data/repositories/dashboardReadiness.ts', 'utf8');
 const dashboard = fs.readFileSync('src/features/dashboard/DashboardPage.tsx', 'utf8');
 
 assert.ok(
-  projection.includes("action: 'refresh_ui_active_order_keys_deferred'"),
-  'Derived cache refresh failure must be reported explicitly.',
+  projection.includes("action: 'refresh_ui_active_order_keys_rollout_fallback'"),
+  'Pre-dashboard-RPC rollout must retain an explicit active-key fallback report.',
 );
 assert.ok(
-  projection.includes('blocking: false'),
-  'Derived cache refresh must be non-blocking.',
+  projection.includes("action: 'dashboard_read_models_refresh_skipped'")
+    && projection.includes("reason: 'NO_PROJECTED_OPERATIONAL_CHANGES'"),
+  'A no-op commercial sync must not invalidate current operational caches.',
+);
+assert.ok(
+  projection.includes("action: 'control_room_read_models_stale'")
+    && projection.includes('blocking: true')
+    && projection.includes('authoritative_projection_committed: true'),
+  'A changed-data refresh failure must be operationally visible without claiming the commercial write rolled back.',
+);
+assert.ok(
+  !projection.includes("action: 'refresh_ui_active_order_keys_deferred'"),
+  'The old silent deferred-cache status must not return.',
+);
+assert.ok(
+  !projection.includes('blocking: false'),
+  'A stale Control Room must not be hidden behind a green sync result.',
+);
+assert.ok(
+  safeRefreshMigration.includes('delete from public.ecoflow_current_exception_snapshot s')
+    && safeRefreshMigration.includes('where s.exception_id is not null'),
+  'Current-exception replacement must remain compatible with managed-Supabase safe-update protection.',
 );
 assert.ok(
   !verifier.includes('ecoflow_ui_active_order_keys'),
@@ -82,4 +103,4 @@ assert.ok(
   'Dashboard must not restore the timeout-prone multi-join server summary.',
 );
 
-console.log('Active-order key cache and bounded dashboard readiness boundary contract passed.');
+console.log('Active-order cache, bounded dashboard readiness and observable Control Room health boundary contract passed.');
