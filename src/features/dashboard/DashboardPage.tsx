@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
+  ArrowRight,
   BadgeCheck,
   Boxes,
+  CheckCircle2,
   ClipboardList,
+  Clock3,
   Landmark,
   MapPinned,
   PackageCheck,
+  PackageOpen,
   RefreshCw,
   Route,
   ScanLine,
   ShieldAlert,
+  Truck,
   Warehouse,
+  Zap,
 } from 'lucide-react';
 import type { EcoFlowDataSet, ImportedOrder, Role } from '@/domain/types';
 import { dashboardStageTarget, type DashboardNavigationTab } from './dashboardNavigationContract';
@@ -75,7 +81,7 @@ function markPerformance(name: string) {
   try {
     window.performance.mark(name);
   } catch {
-    // Performance telemetry must never affect the operating surface.
+    // Telemetry must never affect the operating surface.
   }
 }
 
@@ -92,6 +98,17 @@ function dateTime(value?: string | null) {
   });
 }
 
+function shortTime(value?: string | null) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleTimeString('en-AU', {
+    timeZone: 'Australia/Adelaide',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function stageIcon(stage: OperationalFlowStage): ReactNode {
   if (stage === 'NEW') return <ClipboardList />;
   if (stage === 'NEEDS_ACTION') return <ShieldAlert />;
@@ -101,6 +118,23 @@ function stageIcon(stage: OperationalFlowStage): ReactNode {
   if (stage === 'STAGED') return <Boxes />;
   if (stage === 'ROUTE') return <Route />;
   return <PackageCheck />;
+}
+
+function matchesBusinessDay(order: ImportedOrder, businessDay: string) {
+  const deliveryDate = order.deliveryDate?.slice(0, 10);
+  if (order.requestedDeliveryBusinessDay === businessDay) return true;
+  if (deliveryDate === businessDay) return true;
+  return !order.requestedDeliveryBusinessDay && !deliveryDate && order.businessDay === businessDay;
+}
+
+function dueOrderSort(left: ImportedOrder, right: ImportedOrder) {
+  const leftDue = left.dueAt || left.deliveryDate || left.eta || '';
+  const rightDue = right.dueAt || right.deliveryDate || right.eta || '';
+  return leftDue.localeCompare(rightDue) || left.sequence - right.sequence;
+}
+
+function stageCount(flow: ReturnType<typeof buildOperationalFlow>, stage: OperationalFlowStage) {
+  return flow.nodes.find((node) => node.key === stage)?.count ?? 0;
 }
 
 export function DashboardPage({
@@ -174,9 +208,6 @@ export function DashboardPage({
     void reloadSecondary();
   }, [reloadPrimary, reloadSecondary]);
 
-  // The aggregate operational snapshot is legacy detail data. It starts only
-  // after the bounded primary summary has resolved, so it can enrich the flow
-  // without controlling first useful paint.
   useEffect(() => {
     if (!readiness || snapshotReady || loading || detailRequestedRef.current) return;
     detailRequestedRef.current = true;
@@ -209,6 +240,7 @@ export function DashboardPage({
     && !secondaryLoading
     && n(readiness?.live_on_hand_units) <= 0
     && liveLocationCount === 0;
+
   const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
   const orderById = useMemo(() => {
     const value = new Map<string, ImportedOrder>();
@@ -234,15 +266,44 @@ export function DashboardPage({
       .filter((order): order is ImportedOrder => Boolean(order)),
     [flow.assignments, orderById],
   );
-  const serverCurrentOrders = readiness
-    ? n(readiness.server_current_orders)
-    : 0;
+
+  const businessDay = data.businessDay.date;
+  const todayOrders = useMemo(
+    () => orders.filter((order) => matchesBusinessDay(order, businessDay)),
+    [businessDay, orders],
+  );
+  const todayFlow = useMemo(() => buildOperationalFlow(todayOrders), [todayOrders]);
+  const todayTotal = todayFlow.classifiedCount;
+  const todayDelivered = stageCount(todayFlow, 'DELIVERED');
+  const todayCompletion = todayTotal > 0 ? Math.round((todayDelivered / todayTotal) * 100) : 0;
+  const todayNeedsDecision = stageCount(todayFlow, 'NEEDS_ACTION') + stageCount(todayFlow, 'FINANCE_REVIEW');
+  const todayReady = stageCount(todayFlow, 'READY');
+  const todayWarehouse = stageCount(todayFlow, 'WAREHOUSE');
+  const todayStaged = stageCount(todayFlow, 'STAGED');
+  const todayRoute = stageCount(todayFlow, 'ROUTE');
+  const todayPodMissing = todayOrders.filter((order) => order.status === 'DELIVERED' && order.podStatus === 'missing').length;
+
+  const serverCurrentOrders = readiness ? n(readiness.server_current_orders) : 0;
+  const serverExceptions = readiness ? n(readiness.active_exception_count) : 0;
   const delivered = groups.DELIVERED;
   const podMissing = delivered.filter((order) => order.podStatus === 'missing');
   const decisionCount = groups.NEEDS_ACTION.length + groups.FINANCE_REVIEW.length;
-  const executionCount = groups.WAREHOUSE.length + groups.STAGED.length + groups.ROUTE.length;
   const mirrorStatus = mirror?.overall_status || (secondaryLoading ? 'CHECKING' : 'UNAVAILABLE');
   const detailReady = snapshotReady;
+
+  const warehouseWork = useMemo(
+    () => [...groups.WAREHOUSE, ...groups.STAGED].sort(dueOrderSort).slice(0, 4),
+    [groups.STAGED, groups.WAREHOUSE],
+  );
+  const routeWork = useMemo(
+    () => [...groups.ROUTE, ...groups.DELIVERED].sort(dueOrderSort).slice(0, 4),
+    [groups.DELIVERED, groups.ROUTE],
+  );
+  const geocodedRouteStops = groups.ROUTE.filter((order) => typeof order.lat === 'number' && typeof order.lng === 'number').length;
+
+  const closeBlockers = detailReady
+    ? todayNeedsDecision + todayWarehouse + todayStaged + todayRoute + todayPodMissing + serverExceptions
+    : null;
 
   const actions: Action[] = role === 'account'
     ? [
@@ -265,29 +326,41 @@ export function DashboardPage({
       : role === 'account'
         ? 'Accounts'
         : 'Viewer';
-  const deskTitle = role === 'account'
-    ? 'Finance and fulfilment desk'
-    : role === 'viewer'
-      ? 'Live operating picture'
-      : 'Operations control desk';
   const stages = flow.nodes.map((stage) => ({
     ...stage,
     tab: dashboardStageTarget(stage.key, role),
   }));
   const refreshBusy = primaryLoading || secondaryLoading || loading;
 
+  function inspectOrder(order: ImportedOrder, eyebrow: string) {
+    openPrimaryRecord({
+      entity: { kind: 'order', id: order.id },
+      eyebrow,
+      title: order.store || order.orderNo,
+      subtitle: `${order.orderNo} · ${order.suburb || 'Suburb unavailable'}`,
+      fields: [
+        { label: 'Status', value: order.status },
+        { label: 'Release gate', value: order.releaseGateStatus || '—' },
+        { label: 'ETA', value: order.eta || '—' },
+        { label: 'Packages', value: String(order.packageCount || 0) },
+        { label: 'POD', value: order.podStatus },
+        { label: 'Exceptions', value: String(order.openExceptionCount || 0) },
+      ],
+    });
+  }
+
   return (
     <section
-      className="ops-home ops-control-room"
+      className="ops-home ops-control-room ops-control-room--vnext"
       data-server-current={readiness ? serverCurrentOrders : undefined}
       data-source-status={mirrorStatus.toLowerCase()}
       data-flow-state={detailReady ? flow.state : 'loading'}
       data-primary-ready={Boolean(readiness)}
     >
-      <header className="ops-control-hero">
-        <div className="ops-home-heading">
+      <header className="ops-control-hero ops-vnext-hero">
+        <div className="ops-vnext-hero__main">
           <div className="ops-control-kicker">
-            <span>{roleName.toUpperCase()} · {data.businessDay.label.toUpperCase()}</span>
+            <span>OPERATIONS CONTROL · {data.businessDay.label.toUpperCase()}</span>
             <ControlStatus
               tone={dashboardSourceTone(mirrorStatus)}
               label={`SOURCE ${mirrorStatus}`}
@@ -295,9 +368,10 @@ export function DashboardPage({
               pulse={mirrorStatus === 'CHECKING'}
             />
           </div>
-          <h1>{deskTitle}</h1>
+          <h1>Run today from one operating picture.</h1>
+          <p>Current workload, physical execution, delivery progress and the decisions that can stop the day.</p>
         </div>
-        <div className="ops-home-actions">
+        <div className="ops-home-actions ops-vnext-hero__actions">
           <ControlButton variant="primary" leading={<ClipboardList />} onClick={() => onOpenTab('orders')}>
             Review orders
           </ControlButton>
@@ -327,6 +401,29 @@ export function DashboardPage({
           >
             {refreshBusy ? 'Refreshing…' : 'Refresh'}
           </ControlButton>
+        </div>
+
+        <div className="ops-vnext-live-strip" aria-label="Live operating signals">
+          <div>
+            <span>Source freshness</span>
+            <strong>{mirrorStatus}</strong>
+            <small>{secondaryLoading ? 'checking…' : `checked ${dateTime(mirror?.checked_at)}`}</small>
+          </div>
+          <div>
+            <span>Current workload</span>
+            <strong>{readiness ? serverCurrentOrders : '—'}</strong>
+            <small>server-current orders</small>
+          </div>
+          <div data-alert={serverExceptions > 0 ? 'true' : undefined}>
+            <span>Active exceptions</span>
+            <strong>{readiness ? serverExceptions : '—'}</strong>
+            <small>current governed queue</small>
+          </div>
+          <div>
+            <span>Physical inventory</span>
+            <strong>{readiness ? n(readiness.live_on_hand_units).toLocaleString('en-AU') : '—'}</strong>
+            <small>{readiness ? `${n(readiness.registered_barcodes)} registered package codes` : 'bounded summary loading'}</small>
+          </div>
         </div>
       </header>
 
@@ -361,45 +458,161 @@ export function DashboardPage({
         </ControlBanner>
       ) : null}
 
-      <section className="ops-control-metrics" aria-label="Current operating summary">
-        <article className="ops-control-metric" data-signal="information">
-          <div><span>Open orders</span><ClipboardList aria-hidden="true" /></div>
-          <strong>{readiness ? serverCurrentOrders : '—'}</strong>
-          <small>{readiness ? 'server-current operating orders' : 'loading bounded summary…'}</small>
-        </article>
-        <article className="ops-control-metric" data-signal={detailReady && decisionCount ? 'danger' : 'neutral'}>
-          <div><span>Needs decision</span><ShieldAlert aria-hidden="true" /></div>
-          <strong>{detailReady ? decisionCount : '—'}</strong>
-          <small>{detailReady ? `${groups.NEEDS_ACTION.length} operational · ${groups.FINANCE_REVIEW.length} finance` : 'classifying detailed flow in background…'}</small>
-        </article>
-        <article className="ops-control-metric" data-signal="success">
-          <div><span>Ready</span><BadgeCheck aria-hidden="true" /></div>
-          <strong>{detailReady ? groups.READY.length : '—'}</strong>
-          <small>{detailReady ? 'release controls passed' : 'detail loads without blocking this page'}</small>
-        </article>
-        <article className="ops-control-metric" data-signal="information">
-          <div><span>In execution</span><Route aria-hidden="true" /></div>
-          <strong>{detailReady ? executionCount : '—'}</strong>
-          <small>{detailReady ? `${groups.WAREHOUSE.length} warehouse · ${groups.STAGED.length} staged · ${groups.ROUTE.length} route` : 'warehouse and route detail pending…'}</small>
-        </article>
-        <article className="ops-control-metric" data-signal={secondaryLoading ? 'neutral' : liveLocationCount ? 'neutral' : 'warning'}>
-          <div><span>Live stock locations</span><Warehouse aria-hidden="true" /></div>
-          <strong>{secondaryLoading ? '—' : liveLocationCount}</strong>
-          <small>{secondaryLoading ? 'loading location module…' : `${locationCount} mapped locations`}</small>
-        </article>
-        <article className="ops-control-metric" data-signal={detailReady && podMissing.length ? 'warning' : 'neutral'}>
-          <div><span>Delivered retained</span><PackageCheck aria-hidden="true" /></div>
-          <strong>{detailReady ? delivered.length : '—'}</strong>
-          <small>{detailReady ? `${podMissing.length} missing POD` : 'delivery detail pending…'}</small>
-        </article>
+      <section className="ops-vnext-today" aria-labelledby="ops-vnext-today-title">
+        <div className="ops-vnext-section-heading">
+          <div>
+            <span>TODAY · ADELAIDE BUSINESS DAY</span>
+            <h2 id="ops-vnext-today-title">Execution progress</h2>
+          </div>
+          {detailReady ? (
+            <div className="ops-vnext-completion">
+              <strong>{todayCompletion}%</strong>
+              <span>delivered</span>
+            </div>
+          ) : <ControlStatus tone="neutral" label="CLASSIFYING" compact />}
+        </div>
+
+        <div className="ops-vnext-progress-track" aria-label={detailReady ? `${todayCompletion}% of today's classified workload delivered` : 'Today progress loading'}>
+          <span style={{ width: `${detailReady ? todayCompletion : 0}%` }} />
+        </div>
+
+        <div className="ops-control-metrics ops-vnext-today-metrics">
+          <article className="ops-control-metric" data-signal="information">
+            <div><span>Today orders</span><ClipboardList aria-hidden="true" /></div>
+            <strong>{detailReady ? todayTotal : '—'}</strong>
+            <small>business-day classified</small>
+          </article>
+          <article className="ops-control-metric" data-signal={detailReady && todayNeedsDecision ? 'danger' : 'neutral'}>
+            <div><span>Needs decision</span><ShieldAlert aria-hidden="true" /></div>
+            <strong>{detailReady ? todayNeedsDecision : '—'}</strong>
+            <small>operational + finance</small>
+          </article>
+          <article className="ops-control-metric" data-signal="success">
+            <div><span>Ready</span><BadgeCheck aria-hidden="true" /></div>
+            <strong>{detailReady ? todayReady : '—'}</strong>
+            <small>release controls passed</small>
+          </article>
+          <article className="ops-control-metric" data-signal="information">
+            <div><span>Warehouse</span><Warehouse aria-hidden="true" /></div>
+            <strong>{detailReady ? todayWarehouse + todayStaged : '—'}</strong>
+            <small>{detailReady ? `${todayWarehouse} active · ${todayStaged} staged` : 'detail loads without blocking this page'}</small>
+          </article>
+          <article className="ops-control-metric" data-signal="information">
+            <div><span>On route</span><Truck aria-hidden="true" /></div>
+            <strong>{detailReady ? todayRoute : '—'}</strong>
+            <small>current delivery execution</small>
+          </article>
+          <article className="ops-control-metric" data-signal={detailReady && todayPodMissing ? 'warning' : 'success'}>
+            <div><span>Delivered</span><PackageCheck aria-hidden="true" /></div>
+            <strong>{detailReady ? todayDelivered : '—'}</strong>
+            <small>{detailReady ? `${todayPodMissing} missing POD` : 'delivery detail pending…'}</small>
+          </article>
+        </div>
       </section>
 
-      <ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />
-
-      <section className="ops-control-grid">
+      <section className="ops-vnext-command-grid">
         <ControlPanel
           tone="raised"
-          className="ops-control-panel ops-control-attention"
+          className="ops-control-panel ops-control-stage-panel ops-vnext-flow-panel"
+          eyebrow="CURRENT WORKLOAD"
+          title="Operational flow"
+          actions={detailReady ? (
+            <ControlStatus
+              tone={flow.state === 'partial' || flow.state === 'invalid' ? 'warning' : 'information'}
+              label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL' : `${flow.classifiedCount} CLASSIFIED`}
+              compact
+            />
+          ) : <ControlStatus tone="neutral" label="STREAMING" compact />}
+        >
+          {detailReady ? (
+            <div className="ops-control-flow" aria-label="Eight-stage operational flow">
+              {stages.map((stage, index) => (
+                <div className="ops-vnext-flow-node" key={stage.key}>
+                  <button
+                    type="button"
+                    data-stage={stage.key.toLowerCase()}
+                    aria-label={`${stage.label}: ${stage.count} orders`}
+                    onClick={() => onOpenTab(stage.tab)}
+                  >
+                    <span className="ops-control-stage-icon" aria-hidden="true">{stageIcon(stage.key)}</span>
+                    <strong>{stage.count}</strong>
+                    <span>{stage.label}</span>
+                  </button>
+                  {index < stages.length - 1 ? <ArrowRight className="ops-vnext-flow-arrow" aria-hidden="true" /> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ops-vnext-flow-loading" aria-live="polite">
+              <ControlSkeleton shape="block" width="100%" />
+              <p className="ops-control-status-line">Eight-stage classification is loading as secondary detail; it no longer blocks the Control Room.</p>
+            </div>
+          )}
+          <div className="ops-vnext-flow-footer">
+            <span>{readiness ? `${serverCurrentOrders} server-current orders` : 'Primary summary pending'}</span>
+            <span>{detailReady ? `${openOrders.length} loaded open · ${flow.excludedCount} cancelled · ${flow.unknownCount} unknown` : 'detailed flow loading independently'}</span>
+          </div>
+        </ControlPanel>
+
+        <div className="ops-vnext-priority-slot">
+          <PriorityWork />
+        </div>
+      </section>
+
+      <section className="ops-vnext-live-grid">
+        <ControlPanel
+          tone="raised"
+          className="ops-control-panel ops-vnext-live-panel"
+          eyebrow="WAREHOUSE LIVE"
+          title="Physical execution"
+          actions={<ControlButton variant="quiet" onClick={() => onOpenTab('inventory')}>Open inventory <ArrowRight /></ControlButton>}
+        >
+          <div className="ops-vnext-live-summary">
+            <div><Warehouse /><span>Picking</span><strong>{detailReady ? groups.WAREHOUSE.length : '—'}</strong></div>
+            <div><Boxes /><span>Staged</span><strong>{detailReady ? groups.STAGED.length : '—'}</strong></div>
+            <div><MapPinned /><span>Live locations</span><strong>{secondaryLoading ? '—' : liveLocationCount}</strong></div>
+          </div>
+          <div className="ops-vnext-work-list">
+            {!detailReady ? <ControlSkeleton shape="block" width="100%" /> : warehouseWork.length ? warehouseWork.map((order) => (
+              <button type="button" key={order.id} onClick={() => inspectOrder(order, 'Warehouse execution')}>
+                <span className="ops-vnext-work-icon"><PackageOpen /></span>
+                <span><strong>{order.store}</strong><small>{order.orderNo} · {order.suburb || 'Location unavailable'}</small></span>
+                <span><b>{order.status}</b><small>{order.eta || 'ETA —'}</small></span>
+              </button>
+            )) : <div className="ops-vnext-empty-line"><CheckCircle2 /> No current warehouse execution rows.</div>}
+          </div>
+          <footer>{locationCount} mapped locations · {n(readiness?.live_on_hand_units).toLocaleString('en-AU')} live units</footer>
+        </ControlPanel>
+
+        <ControlPanel
+          tone="raised"
+          className="ops-control-panel ops-vnext-live-panel"
+          eyebrow="DELIVERY LIVE"
+          title="Route execution"
+          actions={<ControlButton variant="quiet" onClick={() => onOpenTab('delivery')}>Open delivery <ArrowRight /></ControlButton>}
+        >
+          <div className="ops-vnext-live-summary">
+            <div><Truck /><span>On route</span><strong>{detailReady ? groups.ROUTE.length : '—'}</strong></div>
+            <div><PackageCheck /><span>Delivered</span><strong>{detailReady ? groups.DELIVERED.length : '—'}</strong></div>
+            <div><MapPinned /><span>Geocoded active</span><strong>{detailReady ? geocodedRouteStops : '—'}</strong></div>
+          </div>
+          <div className="ops-vnext-work-list">
+            {!detailReady ? <ControlSkeleton shape="block" width="100%" /> : routeWork.length ? routeWork.map((order) => (
+              <button type="button" key={order.id} onClick={() => inspectOrder(order, 'Delivery execution')}>
+                <span className="ops-vnext-work-icon"><Truck /></span>
+                <span><strong>{order.store}</strong><small>{order.suburb || 'Location unavailable'} · {order.orderNo}</small></span>
+                <span><b>{order.status}</b><small>{order.eta || (order.podStatus === 'captured' ? 'POD captured' : 'POD pending')}</small></span>
+              </button>
+            )) : <div className="ops-vnext-empty-line"><CheckCircle2 /> No current route execution rows.</div>}
+          </div>
+          <footer>{detailReady ? `${podMissing.length} delivered records missing POD` : 'Delivery detail streaming independently'}</footer>
+        </ControlPanel>
+      </section>
+
+      <section className="ops-vnext-decision-grid">
+        <ControlPanel
+          tone="raised"
+          className="ops-control-panel ops-control-attention ops-vnext-decision-panel"
           eyebrow="Needs attention"
           title="Operational queues"
           actions={detailReady ? (
@@ -438,56 +651,52 @@ export function DashboardPage({
           ) : (
             <div className="ops-control-action-list" aria-label="Operational queue detail loading">
               <ControlSkeleton shape="block" width="100%" />
-              <p className="ops-control-status-line">Current exceptions above remain independently available while detailed order classification loads.</p>
+              <p className="ops-control-status-line">Current exceptions remain independently available while detailed order classification loads.</p>
             </div>
           )}
         </ControlPanel>
 
         <ControlPanel
-          tone="raised"
-          className="ops-control-panel ops-control-stage-panel"
-          title="Operational flow"
-          actions={detailReady ? (
-            <ControlStatus
-              tone={flow.state === 'partial' || flow.state === 'invalid' ? 'warning' : 'information'}
-              label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL' : `${flow.classifiedCount} CLASSIFIED`}
-              compact
-            />
-          ) : <ControlStatus tone="neutral" label="STREAMING" compact />}
+          tone={closeBlockers === 0 ? 'raised' : 'dark'}
+          className="ops-control-panel ops-vnext-close-panel"
+          eyebrow="BUSINESS DAY"
+          title="Pre-close control"
+          actions={closeBlockers === null
+            ? <ControlStatus tone="neutral" label="WAITING FOR DETAIL" compact />
+            : <ControlStatus tone={closeBlockers === 0 ? 'success' : 'warning'} label={closeBlockers === 0 ? 'CLEAR' : `${closeBlockers} OPEN SIGNALS`} compact />}
         >
-          {detailReady ? (
-            <div className="ops-control-flow" aria-label="Eight-stage operational flow">
-              {stages.map((stage) => (
-                <button
-                  key={stage.key}
-                  type="button"
-                  data-stage={stage.key.toLowerCase()}
-                  aria-label={`${stage.label}: ${stage.count} orders`}
-                  onClick={() => onOpenTab(stage.tab)}
-                >
-                  <span className="ops-control-stage-icon" aria-hidden="true">{stageIcon(stage.key)}</span>
-                  <strong>{stage.count}</strong>
-                  <span>{stage.label}</span>
-                </button>
-              ))}
+          <div className="ops-vnext-close-copy">
+            <div className="ops-vnext-close-icon">{closeBlockers === 0 ? <CheckCircle2 /> : <Clock3 />}</div>
+            <div>
+              <strong>{closeBlockers === 0 ? 'No pre-close blockers detected in the current view.' : 'Finish the operating day with known work visible.'}</strong>
+              <p>This is a pre-close operating view. Final Business Day Close remains server-authoritative in the governed exception workspace.</p>
             </div>
-          ) : (
-            <div aria-live="polite">
-              <ControlSkeleton shape="block" width="100%" />
-              <p className="ops-control-status-line">Eight-stage classification is loading as secondary detail; it no longer blocks the Control Room.</p>
-            </div>
-          )}
+          </div>
+          <div className="ops-vnext-close-checks">
+            <span data-state={detailReady && todayNeedsDecision === 0 ? 'good' : 'attention'}><i />Today decisions <b>{detailReady ? todayNeedsDecision : '—'}</b></span>
+            <span data-state={detailReady && todayWarehouse + todayStaged + todayRoute === 0 ? 'good' : 'attention'}><i />Today execution open <b>{detailReady ? todayWarehouse + todayStaged + todayRoute : '—'}</b></span>
+            <span data-state={detailReady && todayPodMissing === 0 ? 'good' : 'attention'}><i />Missing POD <b>{detailReady ? todayPodMissing : '—'}</b></span>
+            <span data-state={readiness && serverExceptions === 0 ? 'good' : 'attention'}><i />Active exceptions <b>{readiness ? serverExceptions : '—'}</b></span>
+          </div>
+          <ControlButton variant="primary" leading={<Zap />} onClick={() => onOpenTab('orders')}>
+            Continue operating work
+          </ControlButton>
         </ControlPanel>
       </section>
 
-      <PriorityWork />
+      <details className="ops-vnext-exception-detail">
+        <summary>
+          <span><ShieldAlert /> Full current exception register</span>
+          <span>{readiness ? serverExceptions : '—'} active <ArrowRight /></span>
+        </summary>
+        <ActionableExceptionQueue onOpenOrders={() => onOpenTab('orders')} />
+      </details>
 
-      <div className="ops-control-status-line">
-        {readiness ? `${serverCurrentOrders} server-current orders` : 'Primary summary pending'}
-        {detailReady ? ` · ${openOrders.length} loaded open · ${flow.classifiedCount} flow-classified · ${flow.excludedCount} cancelled · ${flow.unknownCount} unknown` : ' · detailed flow loading independently'}
-        {' · '}{n(readiness?.registered_barcodes)} package codes
-        {' · '}{n(readiness?.live_on_hand_units)} live units
-        {' · '}source checked {dateTime(mirror?.checked_at)}
+      <div className="ops-control-status-line ops-vnext-source-footnote">
+        <span><Clock3 /> Control Room summary calculated {dateTime(readiness?.calculated_at)}</span>
+        <span>Exception snapshot {dateTime(readiness?.exception_snapshot_refreshed_at)}</span>
+        <span>Source mirror checked {dateTime(mirror?.checked_at)}</span>
+        <span>Latest source time {shortTime(mirror?.checked_at)}</span>
       </div>
     </section>
   );

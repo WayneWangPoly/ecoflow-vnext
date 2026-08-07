@@ -91,13 +91,11 @@ assert.ok(
   'Dashboard readiness must exclude terminal source states.',
 );
 assert.ok(
-  dashboard.includes('readiness.server_current_orders'),
-  'Dashboard must render the bounded server-current total.',
-);
-assert.ok(
-  dashboard.includes("const serverCurrentOrders = readiness\n    ? n(readiness.server_current_orders)\n    : 0")
-    && dashboard.includes("<strong>{readiness ? serverCurrentOrders : '—'}</strong>"),
-  'Dashboard must fail visibly when server readiness is unavailable rather than substituting a partial client slice as the authoritative total.',
+  dashboard.includes('readiness.server_current_orders')
+    && dashboard.includes('const serverCurrentOrders = readiness')
+    && dashboard.includes("<strong>{readiness ? serverCurrentOrders : '—'}</strong>")
+    && dashboard.includes('<span>Current workload</span>'),
+  'Dashboard must render the bounded server-current total and fail visibly when readiness is unavailable.',
 );
 assert.ok(
   !dashboard.includes('readiness ? n(readiness.server_current_orders) : orders.length')

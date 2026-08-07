@@ -1,79 +1,54 @@
-.ops-control-room .ops-control-grid {
-  grid-template-columns: minmax(300px, .72fr) minmax(720px, 1.28fr);
-}
+@import './controlRoomVNext.css';
 
-.ops-control-room .ops-control-stage-panel > .ef-control-panel__body {
-  overflow-x: auto;
-}
-
-.ops-control-room .ops-control-flow {
-  grid-template-columns: repeat(8, minmax(88px, 1fr));
-  min-width: 720px;
-}
-
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button {
-  min-height: 156px;
-  padding-right: 10px;
-  padding-left: 10px;
-}
-
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='new'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='new'] {
   --ops-stage-signal: var(--ops-control-information);
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='needs_action'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='needs_action'] {
   --ops-stage-signal: var(--ops-control-danger);
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='finance_review'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='finance_review'] {
   --ops-stage-signal: var(--ops-control-warning);
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='ready'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='ready'] {
   --ops-stage-signal: var(--ops-control-success);
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='warehouse'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='warehouse'] {
   --ops-stage-signal: #4d7eaa;
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='staged'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='staged'] {
   --ops-stage-signal: #7567a8;
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='route'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='route'] {
   --ops-stage-signal: #526b8d;
 }
 
-body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button[data-stage='delivered'] {
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button[data-stage='delivered'] {
   --ops-stage-signal: var(--ops-control-success);
 }
 
-@media (max-width: 1180px) {
-  .ops-control-room .ops-control-grid {
-    grid-template-columns: 1fr;
-  }
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button {
+  border-top-color: color-mix(in srgb, var(--ops-stage-signal) 32%, #dbe3de);
 }
 
-@media (max-width: 760px) {
-  .ops-control-room .ops-control-flow {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-width: 0;
-  }
-
-  body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button:last-child {
-    grid-column: auto;
-  }
+body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node .ops-control-stage-icon {
+  color: var(--ops-stage-signal);
+  background: color-mix(in srgb, var(--ops-stage-signal) 8%, #f4f8f5);
 }
 
 @media (prefers-contrast: more) {
-  .ops-control-room .ops-control-flow > button {
-    border-color: var(--ops-control-line-strong);
+  body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button {
+    border-color: var(--ops-stage-signal);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.industrial-desktop-v2 .ops-control-room .ops-control-flow > button {
+  body.industrial-desktop-v2 .ops-control-room--vnext .ops-vnext-flow-node > button {
     transition: none;
   }
 }
