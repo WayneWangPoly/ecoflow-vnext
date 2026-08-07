@@ -10,6 +10,7 @@ function read(relativePath) {
 }
 
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
+const route = read('src/features/operationalRoutes/NativeOperationalRoutes.tsx');
 const css = read('src/features/dashboard/dashboardControlRoom.css');
 const flowCss = read('src/features/dashboard/operationalFlowSurface.css');
 const priorityCss = read('src/features/intelligence/attention/priorityWork.css');
@@ -71,9 +72,9 @@ for (const preserved of [
   'Refresh',
   'Needs attention',
   'Operational flow',
-  'Loading live operations…',
-  'Live operating data is unavailable',
-  'EcoFlow will not show sample figures.',
+  'Connecting to current operations…',
+  'Current operating summary is unavailable',
+  'Detailed order classification is unavailable',
 ]) {
   if (!dashboard.includes(preserved)) throw new Error(`INTEL_FE_002C_EXISTING_COPY_LOST: ${preserved}`);
 }
@@ -149,6 +150,37 @@ if (dashboard.indexOf("import './operationalFlowSurface.css';") < dashboard.inde
   throw new Error('INTEL_FE_002C_OPERATIONAL_FLOW_CSS_PRECEDENCE_INVALID');
 }
 
+// TRANSFORM-001: the Control Room must reach first useful paint from the
+// bounded readiness RPC. The aggregate operational snapshot is secondary
+// detail and cannot be an authentication/profile side effect for this route.
+for (const required of [
+  'loadDashboardReadiness',
+  'reloadPrimary',
+  'reloadSecondary',
+  'data-primary-ready',
+  'detail loads without blocking this page',
+  'ecoflow:control-room:shell',
+  'ecoflow:control-room:primary-summary-ready',
+  'ecoflow:control-room:modules-ready',
+  'ecoflow:control-room:flow-ready',
+  'ecoflow:control-room:full-ready',
+]) {
+  if (!dashboard.includes(required)) throw new Error(`TRANSFORM_001_BOUNDED_BOOTSTRAP_MISSING: ${required}`);
+}
+for (const forbidden of [
+  'if (loading && !snapshotReady)',
+  'if (!snapshotReady) {',
+  'if (snapshotReady) void reloadReadiness()',
+]) {
+  if (dashboard.includes(forbidden)) throw new Error(`TRANSFORM_001_GLOBAL_LOADING_GATE_REMAINS: ${forbidden}`);
+}
+if (!route.includes("workspace !== 'dashboard'")) {
+  throw new Error('TRANSFORM_001_CONTROL_ROOM_EAGER_AGGREGATE_ROUTE_REMAINS');
+}
+if (!route.includes('Control Room has its own bounded bootstrap')) {
+  throw new Error('TRANSFORM_001_ROUTE_BOUNDARY_NOT_DOCUMENTED');
+}
+
 for (const required of ['DashboardOperationalTone', 'dashboardControlTone', 'dashboardSourceTone']) {
   if (!contract.includes(required)) throw new Error(`INTEL_FE_002C_TYPED_CONTRACT_MISSING: ${required}`);
 }
@@ -169,4 +201,4 @@ if (typeof auditCommand !== 'string'
   throw new Error('INTEL_FE_002C_PACKAGE_AUDIT_WIRING_MISSING');
 }
 
-console.log('INTEL-FE-002C Dashboard control-room audit passed.');
+console.log('INTEL-FE-002C Dashboard control-room + TRANSFORM-001 bounded bootstrap audit passed.');
