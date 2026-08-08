@@ -16,6 +16,7 @@ const contract = read(contractPath);
 const index = read(indexPath);
 const test = read(testPath);
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
+const commissioningView = read('src/features/dashboard/controlRoomCommissioningView.ts');
 const app = read('src/app/App.tsx');
 const packageJson = JSON.parse(read('package.json'));
 
@@ -76,6 +77,8 @@ for (const forbidden of [
   /businessImpact/,
   /severity/,
   /\bsla\b/i,
+  /inventoryQuantityCommissioned/,
+  /COMMISSIONING_DEFERRED_GATES/,
 ]) {
   if (forbidden.test(contract)) throw new Error(`INTEL_UI_004A_CONTRACT_SCOPE_EXPANSION: ${forbidden}`);
 }
@@ -108,11 +111,27 @@ for (const testName of [
 for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
   'buildOperationalFlow(orders)',
+  'buildOperationalFlow(todayOrders)',
   'operationalFlowStages.map((stage)',
-  'flow.assignments',
-  'flow.nodes.map((stage)',
+  'buildControlRoomCommissioningView',
+  'commissioningView.assignments',
+  'commissioningView.nodes.map((stage)',
 ]) {
   if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004A_BOUNDED_ADOPTION_MISSING: ${marker}`);
+}
+
+for (const marker of [
+  "import type {",
+  "from '@/features/intelligence/operationalFlow'",
+  'flow.assignments.map((assignment)',
+  "assignment.stage !== 'NEEDS_ACTION'",
+  "stage: 'NEW' as const",
+]) {
+  if (!commissioningView.includes(marker)) throw new Error(`INTEL_UI_004A_PRESENTATION_ADAPTER_MISSING: ${marker}`);
+}
+
+if (/buildOperationalFlow\s*\(/.test(commissioningView)) {
+  throw new Error('INTEL_UI_004A_PRESENTATION_ADAPTER_MUST_NOT_RECLASSIFY');
 }
 
 for (const forbidden of [
