@@ -48,13 +48,10 @@ jobs:
             1,
           )
           s = s.replace("  const todayNeedsDecision = stageCount(todayFlow, 'NEEDS_ACTION') + stageCount(todayFlow, 'FINANCE_REVIEW');", "  const todayNeedsDecision = stageCount(todayCommissioningView, 'NEEDS_ACTION') + stageCount(todayCommissioningView, 'FINANCE_REVIEW');", 1)
-          for stage in ['READY','WAREHOUSE','STAGED','ROUTE']:
-            s = s.replace(f"  const today{stage.title().replace('_','')} = stageCount(todayFlow, '{stage}');", f"  const today{stage.title().replace('_','')} = stageCount(todayCommissioningView, '{stage}');", 1)
-          # Explicit replacements for camel-cased existing names.
-          s = s.replace("  const todayReady = stageCount(todayFlow, 'READY');", "  const todayReady = stageCount(todayCommissioningView, 'READY');")
-          s = s.replace("  const todayWarehouse = stageCount(todayFlow, 'WAREHOUSE');", "  const todayWarehouse = stageCount(todayCommissioningView, 'WAREHOUSE');")
-          s = s.replace("  const todayStaged = stageCount(todayFlow, 'STAGED');", "  const todayStaged = stageCount(todayCommissioningView, 'STAGED');")
-          s = s.replace("  const todayRoute = stageCount(todayFlow, 'ROUTE');", "  const todayRoute = stageCount(todayCommissioningView, 'ROUTE');")
+          s = s.replace("  const todayReady = stageCount(todayFlow, 'READY');", "  const todayReady = stageCount(todayCommissioningView, 'READY');", 1)
+          s = s.replace("  const todayWarehouse = stageCount(todayFlow, 'WAREHOUSE');", "  const todayWarehouse = stageCount(todayCommissioningView, 'WAREHOUSE');", 1)
+          s = s.replace("  const todayStaged = stageCount(todayFlow, 'STAGED');", "  const todayStaged = stageCount(todayCommissioningView, 'STAGED');", 1)
+          s = s.replace("  const todayRoute = stageCount(todayFlow, 'ROUTE');", "  const todayRoute = stageCount(todayCommissioningView, 'ROUTE');", 1)
           s = s.replace(
             "  const closeBlockers = detailReady\n    ? todayNeedsDecision + todayWarehouse + todayStaged + todayRoute + todayPodMissing + serverExceptions\n",
             "  const closeBlockers = detailReady\n    ? todayNeedsDecision + todayWarehouse + todayStaged + todayRoute + todayPodMissing + serverExceptions + (firstStocktakeNeeded ? 1 : 0)\n",
@@ -106,6 +103,8 @@ jobs:
           )
           routes.write_text(r)
           PY
+      - name: Fetch canonical main baseline
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
       - name: Verify canonical classifier untouched
         run: git diff --exit-code origin/main -- src/features/intelligence/operationalFlow/operationalFlowContract.ts src/features/intelligence/operationalFlow/index.ts
       - name: Commit product integration
@@ -114,9 +113,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/features/dashboard/DashboardPage.tsx src/features/operationalRoutes/UnifiedOperationalRoutes.tsx
           git commit -m "[COMMISSION-SAFE] Integrate presentation-only commissioning mode"
-          git push origin HEAD:agent/commissioning-presentation-safe-v2
-      - name: Remove one-shot workflow
-        run: |
-          git rm .github/workflows/agent-apply-safe-commissioning-v2.yml
-          git commit -m "[AGENT] Remove one-shot commissioning patch workflow"
           git push origin HEAD:agent/commissioning-presentation-safe-v2
