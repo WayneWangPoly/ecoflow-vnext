@@ -32,6 +32,8 @@ export type PriorityWorkProps = {
   onOpenOrder?: (record: PriorityWorkRecord) => void;
 };
 
+const priorityWorkColumnSemantics = 'Order · cause · impact · age · owner · next action';
+
 export function PriorityWork({
   repository = priorityWorkRepository,
   limit = 20,
@@ -137,10 +139,10 @@ export function PriorityWork({
           <span>No current exception matches an enabled Priority Work policy.</span>
         </div>
       ) : (
-        <div className="ef-priority-work__table-shell">
+        <div className="ef-priority-work__table-shell" aria-label={priorityWorkColumnSemantics}>
           <table className="ef-priority-work__table">
             <caption className="ef-priority-work__sr-only">
-              Policy-ranked Priority Work with Order, cause, impact, age, owner and next action
+              Policy-ranked Priority Work · {priorityWorkColumnSemantics}
             </caption>
             <thead>
               <tr>
