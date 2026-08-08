@@ -28,6 +28,7 @@ import {
   roleLabel,
 } from '@/features/navigation/OperationalAppShell';
 import { useOperationalSession } from '@/features/navigation/OperationalSessionContext';
+import { WorkspaceRuntimeBoundary } from '@/features/navigation/WorkspaceRuntimeBoundary';
 import { supabase } from '@/lib/supabaseClient';
 
 const initialData = buildProductionEmptyData();
@@ -271,7 +272,9 @@ export default function UnifiedOperationalRoutes() {
 
   return (
     <OperationalAppShell role={role} profile={profile} onLogout={() => void logout()}>
-      {content}
+      <WorkspaceRuntimeBoundary workspace={workspace}>
+        {content}
+      </WorkspaceRuntimeBoundary>
     </OperationalAppShell>
   );
 }
