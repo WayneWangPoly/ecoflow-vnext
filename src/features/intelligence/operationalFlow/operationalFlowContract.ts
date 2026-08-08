@@ -13,6 +13,10 @@ export const operationalFlowStages = [
 
 export type OperationalFlowStage = (typeof operationalFlowStages)[number]['key'];
 export type OperationalFlowOrderInput = Pick<ImportedOrder, 'id' | 'status' | 'releaseGateStatus'>;
+export type OperationalFlowContext = {
+  /** False means the first APPROVED INITIAL stocktake has not established quantity authority yet. */
+  inventoryQuantityCommissioned?: boolean;
+};
 export type OperationalFlowState = 'ready' | 'partial' | 'empty' | 'invalid';
 
 export type OperationalFlowIssueCode =
@@ -119,6 +123,11 @@ const BLOCKED_GATES = new Set<ReleaseGateStatus>([
   'BLOCKED_STOCK',
 ]);
 
+const COMMISSIONING_DEFERRED_GATES = new Set<ReleaseGateStatus>([
+  'BLOCKED_MAPPING',
+  'BLOCKED_STOCK',
+]);
+
 const EXECUTION_STAGE_BY_STATUS: Partial<Record<OrderStatus, OperationalFlowStage>> = {
   RELEASED: 'WAREHOUSE',
   PICKING: 'WAREHOUSE',
@@ -173,7 +182,10 @@ function conflictIssue(orderId: string, value: string): OperationalFlowIssue {
   };
 }
 
-export function classifyOperationalFlowOrder(input: OperationalFlowOrderInput): OperationalFlowClassification {
+export function classifyOperationalFlowOrder(
+  input: OperationalFlowOrderInput,
+  context: OperationalFlowContext = {},
+): OperationalFlowClassification {
   const orderId = text(input.id);
   const statusCandidate = text(input.status).toUpperCase();
   const status = knownStatus(input.status);
@@ -209,6 +221,18 @@ export function classifyOperationalFlowOrder(input: OperationalFlowOrderInput): 
     return { kind: 'classified', orderId, stage: executionStage, issues };
   }
 
+  const commissioningDeferred = context.inventoryQuantityCommissioned === false
+    && gate.kind === 'known'
+    && COMMISSIONING_DEFERRED_GATES.has(gate.value)
+    && status !== 'FAILED';
+
+  // Before the first APPROVED INITIAL stocktake, mapping/stock-dependent orders
+  // are held behind one warehouse commissioning gate. They remain fail-closed,
+  // but must not be multiplied into thousands of order-level action items.
+  if (status === 'MAPPING_EXCEPTION' && commissioningDeferred) {
+    return { kind: 'classified', orderId, stage: 'NEW', issues };
+  }
+
   if (status === 'MAPPING_EXCEPTION' || status === 'FAILED') {
     if (gate.kind === 'unknown') {
       issues.push({
@@ -234,6 +258,9 @@ export function classifyOperationalFlowOrder(input: OperationalFlowOrderInput): 
   }
 
   if (gate.kind === 'known') {
+    if (commissioningDeferred && BLOCKED_GATES.has(gate.value)) {
+      return { kind: 'classified', orderId, stage: 'NEW', issues };
+    }
     if (BLOCKED_GATES.has(gate.value)) {
       if (status === 'RELEASE_READY') issues.push(conflictIssue(orderId, gate.value));
       return { kind: 'classified', orderId, stage: 'NEEDS_ACTION', issues };
@@ -256,7 +283,10 @@ export function classifyOperationalFlowOrder(input: OperationalFlowOrderInput): 
   return { kind: 'unknown', orderId, issues };
 }
 
-export function buildOperationalFlow(input: unknown): OperationalFlow {
+export function buildOperationalFlow(
+  input: unknown,
+  context: OperationalFlowContext = {},
+): OperationalFlow {
   if (!Array.isArray(input)) {
     return {
       state: 'invalid',
@@ -309,7 +339,7 @@ export function buildOperationalFlow(input: unknown): OperationalFlow {
       id: orderId,
       status: record.status as OrderStatus,
       releaseGateStatus: record.releaseGateStatus as ReleaseGateStatus | undefined,
-    });
+    }, context);
     issues.push(...classification.issues.map((issue) => ({ ...issue, row })));
     if (classification.kind === 'classified') {
       assignments.push({ orderId, stage: classification.stage });
