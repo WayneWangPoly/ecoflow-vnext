@@ -1,0 +1,49 @@
+name: Agent integrate Orders Desk v2
+on:
+  push:
+    branches: [agent/transform-004-orders-desk-v2]
+    paths:
+      - '.github/workflows/agent-integrate-orders-desk-v2.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/transform-004-orders-desk-v2
+      - name: Patch current Stability route only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx')
+          s = p.read_text()
+          import_anchor = "import { useWorkspaceQueryState } from '@/features/navigation/useWorkspaceQueryState';\n"
+          if "OrdersCommandWorkspace" not in s:
+            if import_anchor not in s:
+              raise SystemExit('import anchor missing')
+            s = s.replace(import_anchor, import_anchor + "import { OrdersCommandWorkspace } from '@/features/orders/OrdersCommandWorkspace';\n", 1)
+          function_anchor = "export function OperationalPagedWorkspace(props: Props) {\n"
+          if "props.resource==='orders'" not in s:
+            if function_anchor not in s:
+              raise SystemExit('workspace function anchor missing')
+            s = s.replace(function_anchor, function_anchor + "  if (props.resource==='orders') return <OrdersCommandWorkspace role={props.role} profile={props.profile} businessDay={props.businessDay} />;\n", 1)
+          p.write_text(s)
+          PY
+      - name: Verify bounded patch
+        run: |
+          git diff -- src/features/operationalStability/OperationalPagedWorkspaceV3.tsx
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx').read_text()
+          assert s.count("OrdersCommandWorkspace") == 2
+          assert "if (props.resource==='exceptions') return <ExceptionQueue" in s
+          PY
+      - name: Commit route integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/operationalStability/OperationalPagedWorkspaceV3.tsx
+          git commit -m "[TRANSFORM-004] Route Orders through command workspace"
+          git push origin HEAD:agent/transform-004-orders-desk-v2
