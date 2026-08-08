@@ -22,22 +22,25 @@ function includesAll(source, values, label) {
 includesAll(migration, [
   'create or replace function public.ecoflow_refresh_ui_active_order_keys()',
   "set search_path=pg_catalog,public",
-  "pg_advisory_xact_lock",
-  "ecoflow_refresh_ui_active_order_keys",
-  'create temporary table ecoflow_desired_active_order_keys',
-  'primary key (order_key)',
+  'pg_advisory_xact_lock',
+  'ecoflow_refresh_ui_active_order_keys',
+  'with desired_keys as materialized',
+  'inserted as (',
+  'deleted as (',
   "presence.domain='ORDER'",
   "coalesce(presence.source_status, 'PRESENT') <> 'SOURCE_MISSING'",
   'coalesce(o.cancelled, false)=false',
   "'cancelled', 'canceled', 'void', 'voided'",
   "'completed', 'complete', 'closed', 'delivered', 'fulfilled'",
+  "'finalised', 'finalized'",
   "now() - interval '60 days'",
+  'insert into public.ecoflow_ui_active_order_keys(order_key)',
   'on conflict(order_key) do nothing',
   'delete from public.ecoflow_ui_active_order_keys existing',
   'where existing.order_key is not null',
   'not exists (',
   'select count(*)::integer',
-  'from public.ecoflow_ui_active_order_keys',
+  'from desired_keys',
   'grant execute on function public.ecoflow_refresh_ui_active_order_keys() to service_role',
   'select public.ecoflow_refresh_ui_active_order_keys()',
 ], 'active-order-key delta refresh migration');
@@ -57,6 +60,7 @@ assert.ok(
 
 includesAll(cloudSync, [
   "runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '100'])",
+  'loops to a zero-result convergence probe',
 ], 'Ordermentum cloud sync');
 assert.ok(
   !cloudSync.includes("runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '500'])"),
