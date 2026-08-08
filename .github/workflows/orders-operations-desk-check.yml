@@ -6,8 +6,8 @@ on:
       - 'src/features/orders/**'
       - 'src/data/repositories/ordersOperationsDesk.ts'
       - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
-      - 'supabase/migrations/20260807234000_orders_operations_desk.sql'
-      - 'supabase/migrations/20260807234100_orders_operations_exception_key_guard.sql'
+      - 'supabase/migrations/20260808161000_orders_operations_desk.sql'
+      - 'supabase/migrations/20260808161100_orders_operations_exception_key_guard.sql'
       - 'scripts/audit-orders-operations-desk.mjs'
       - '.github/workflows/orders-operations-desk-check.yml'
   workflow_dispatch:
@@ -127,8 +127,8 @@ jobs:
       - name: Apply Orders desk migrations
         run: |
           set -euo pipefail
-          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260807234000_orders_operations_desk.sql
-          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260807234100_orders_operations_exception_key_guard.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808161000_orders_operations_desk.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808161100_orders_operations_exception_key_guard.sql
 
       - name: Verify exact paging and null-key isolation
         run: |
