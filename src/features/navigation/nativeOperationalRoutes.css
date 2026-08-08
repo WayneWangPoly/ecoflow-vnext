@@ -1,27 +1,53 @@
-.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a,
-.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a {
+.desktop-app[data-navigation-owner="unified-operational-shell"] .sidebar-nav a,
+.desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav a {
   display: flex;
   align-items: center;
   min-height: 38px;
-  border-radius: 8px;
+  border-radius: 9px;
   color: inherit;
-  font-weight: 700;
+  font-weight: 750;
   text-decoration: none;
+  text-underline-offset: 0;
 }
 
-.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a {
+.desktop-app[data-navigation-owner="unified-operational-shell"] .sidebar-nav a {
   padding: 9px 12px;
 }
 
-.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a {
-  padding: 8px 11px;
-  white-space: nowrap;
+.desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav {
+  display: none;
 }
 
-.desktop-app[data-navigation-owner="react-router"] .sidebar-nav a.active,
-.desktop-app[data-navigation-owner="react-router"] .desktop-mobile-nav a.active {
+.desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav a {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.desktop-app[data-navigation-owner="unified-operational-shell"] .sidebar-nav a.active,
+.desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav a.active {
   background: var(--sidebar-active, rgba(255, 255, 255, 0.12));
   color: inherit;
+}
+
+.desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav a.active {
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0b513f;
+  box-shadow: 0 1px 4px rgba(8, 51, 40, 0.08);
+}
+
+.desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-utility-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-utility-actions a,
+.desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-utility-actions button {
+  text-decoration: none;
 }
 
 .native-workspace {
@@ -195,6 +221,81 @@
   color: var(--text-muted, #66736b);
 }
 
+@media (max-width: 1180px) {
+  .desktop-app[data-navigation-owner="unified-operational-shell"] {
+    display: block;
+    min-width: 0;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] > .sidebar {
+    display: none;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-main {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-topbar {
+    min-height: 58px;
+    padding: 8px 14px;
+    gap: 12px;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-title {
+    min-width: 0;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-title > svg,
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-title .brand-mark {
+    display: none;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-title strong {
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-owner-tool {
+    display: none;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-logout {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    padding: 7px 10px 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(8, 69, 53, 0.14);
+    background: #0b4c3a;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav a {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    letter-spacing: 0.005em;
+  }
+}
+
 @media (max-width: 980px) {
   .native-workspace-toolbar {
     grid-template-columns: 1fr 1fr;
@@ -214,6 +315,19 @@
 }
 
 @media (max-width: 640px) {
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-topbar {
+    min-height: 54px;
+    padding-inline: 10px;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .topbar-title span {
+    font-size: 0.66rem;
+  }
+
+  .desktop-app[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav {
+    padding-inline: 7px;
+  }
+
   .native-workspace-header {
     display: grid;
   }
