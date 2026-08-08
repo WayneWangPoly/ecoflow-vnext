@@ -57,8 +57,8 @@ if ((contract.match(/\{ key: '[A-Z_]+'/g) ?? []).length !== 8) {
 
 for (const forbidden of [
   /react/i,
-  /\.tsx['"]/,
-  /\.css['"]/,
+  /\.tsx['"]/, 
+  /\.css['"]/, 
   /supabase/i,
   /\.schema\s*\(/,
   /\.rpc\s*\(/,
@@ -107,12 +107,16 @@ for (const testName of [
 
 for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
-  'buildOperationalFlow(orders)',
+  'buildOperationalFlow(orders, {',
+  'inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined',
   'operationalFlowStages.map((stage)',
   'flow.assignments',
   'flow.nodes.map((stage)',
 ]) {
   if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004A_BOUNDED_ADOPTION_MISSING: ${marker}`);
+}
+if (dashboard.includes('buildOperationalFlow(orders), [orders]')) {
+  throw new Error('INTEL_UI_004A_COMMISSIONING_CONTEXT_MISSING');
 }
 
 for (const forbidden of [
