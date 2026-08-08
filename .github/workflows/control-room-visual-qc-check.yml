@@ -1,0 +1,58 @@
+name: Control Room visual QC check
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/navigation/OperationalAppShell.tsx'
+      - 'src/features/navigation/nativeOperationalRoutes.css'
+      - 'src/features/dashboard/**'
+      - 'src/features/intelligence/attention/PriorityWork.tsx'
+      - 'src/features/intelligence/attention/priorityWork.css'
+      - '.github/workflows/control-room-visual-qc-check.yml'
+  workflow_dispatch:
+
+jobs:
+  visual-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify screenshot-driven product contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          shell = Path('src/features/navigation/OperationalAppShell.tsx').read_text()
+          nav = Path('src/features/navigation/nativeOperationalRoutes.css').read_text()
+          qc = Path('src/features/dashboard/controlRoomVisualQc.css').read_text()
+          priority = Path('src/features/intelligence/attention/PriorityWork.tsx').read_text()
+          priority_css = Path('src/features/intelligence/attention/priorityWork.css').read_text()
+
+          checks = {
+              'unified shell owns navigation': 'data-navigation-owner="unified-operational-shell"' in shell,
+              'topbar no longer reads workspace quick actions': 'readQuickActions' not in shell and 'quickActions.map' not in shell,
+              'mobile nav uses unified selector': '[data-navigation-owner="unified-operational-shell"] .desktop-mobile-nav' in nav,
+              'old react-router selector retired': 'data-navigation-owner="react-router"' not in nav,
+              'landscape QC breakpoint exists': 'orientation: landscape' in qc,
+              'landscape flow is 4 by 2': 'grid-template-columns: repeat(4, minmax(0, 1fr))' in qc,
+              'landscape flow removes wide min width': 'min-width: 0 !important' in qc,
+              'warehouse delivery remain two columns in landscape': '.ops-vnext-live-grid' in qc and 'repeat(2, minmax(0, 1fr))' in qc,
+              'duplicate current backlog panel removed from main hierarchy': '.ops-vnext-decision-panel' in qc and 'display: none !important' in qc,
+              'priority copy never says read Not available': 'read ${formatPriorityWorkMoment' not in priority and 'read Not available' not in priority,
+              'partial priority data is explicit': 'POLICY DATA PARTIAL' in priority and 'Priority policy data is incomplete' in priority,
+              'priority empty state is compact': 'min-height: 78px' in priority_css,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Control Room visual contract failed: ' + ', '.join(failed))
+          PY
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
