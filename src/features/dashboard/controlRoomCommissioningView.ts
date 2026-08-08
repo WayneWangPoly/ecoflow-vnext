@@ -1,10 +1,10 @@
-import type { ImportedOrder, ReleaseGateStatus } from '@/domain/types';
+import type { ImportedOrder, ReleaseGateStatus } from '../../domain/types.ts';
 import {
   operationalFlowStages,
   type OperationalFlow,
   type OperationalFlowAssignment,
   type OperationalFlowNode,
-} from '@/features/intelligence/operationalFlow';
+} from '../intelligence/operationalFlow/operationalFlowContract.ts';
 
 const COMMISSIONING_GATES = new Set<ReleaseGateStatus>([
   'BLOCKED_MAPPING',
