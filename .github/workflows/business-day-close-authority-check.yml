@@ -1,0 +1,274 @@
+name: Business Day Close authority check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260808162000_business_day_close_authority_hardening.sql'
+      - 'src/data/repositories/businessDayClose.ts'
+      - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
+      - '.github/workflows/business-day-close-authority-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare production-shaped close authority fixture
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema auth;
+          create role authenticated noinherit;
+          create role service_role noinherit;
+          create role anon noinherit;
+          create or replace function auth.uid() returns uuid language sql stable as $$
+            select '11111111-1111-4111-8111-111111111111'::uuid
+          $$;
+          create or replace function public.ecoflow_active_app_role() returns text language sql stable as $$
+            select 'OWNER'::text
+          $$;
+
+          create table public.ecoflow_business_day_closes (
+            business_day date primary key,
+            revision bigint not null default 1,
+            next_business_day date not null,
+            status text not null default 'CLOSED',
+            reason text not null,
+            command_id uuid not null unique,
+            closed_by uuid not null,
+            closed_by_label text,
+            closed_at timestamptz not null default clock_timestamp(),
+            carry_over_count integer not null default 0
+          );
+
+          create table public.ecoflow_business_day_close_checklists (
+            business_day date primary key,
+            checklist jsonb not null,
+            acknowledgement_note text not null,
+            command_id uuid not null unique,
+            recorded_by uuid not null,
+            recorded_at timestamptz not null default clock_timestamp()
+          );
+
+          create or replace function public.ecoflow_business_day_close_readiness(p_business_day date)
+          returns table(check_key text,check_status text,detail text,blocking boolean,read_at timestamptz)
+          language sql stable as $$
+            select 'ACCOUNTS_VARIANCE'::text,'ACK_REQUIRED'::text,'fixture'::text,true,statement_timestamp()
+          $$;
+
+          create or replace function public.ecoflow_close_business_day(
+            p_business_day date,
+            p_next_business_day date,
+            p_expected_revision bigint,
+            p_reason text,
+            p_command_id uuid,
+            p_actor_label text default null
+          )
+          returns table(
+            command_id uuid,
+            business_day date,
+            close_status text,
+            revision bigint,
+            next_business_day date,
+            carry_over_count integer,
+            closed_at timestamptz
+          )
+          language plpgsql
+          as $$
+          declare
+            v_current public.ecoflow_business_day_closes%rowtype;
+          begin
+            perform pg_advisory_xact_lock(hashtextextended('day-close:'||p_business_day::text,0));
+            select c.* into v_current
+            from public.ecoflow_business_day_closes c
+            where c.business_day=p_business_day
+            for update;
+
+            if found then
+              if v_current.command_id=p_command_id
+                and v_current.next_business_day=p_next_business_day
+                and v_current.reason=btrim(p_reason) then
+                return query select p_command_id,p_business_day,'REPLAYED'::text,
+                  v_current.revision,v_current.next_business_day,
+                  v_current.carry_over_count,v_current.closed_at;
+              else
+                return query select p_command_id,p_business_day,'CONFLICT'::text,
+                  v_current.revision,v_current.next_business_day,
+                  v_current.carry_over_count,v_current.closed_at;
+              end if;
+              return;
+            end if;
+
+            if p_expected_revision<>0 then
+              return query select p_command_id,p_business_day,'CONFLICT'::text,
+                0::bigint,p_next_business_day,0::integer,null::timestamptz;
+              return;
+            end if;
+
+            perform pg_sleep(0.15);
+            insert into public.ecoflow_business_day_closes(
+              business_day,revision,next_business_day,reason,command_id,
+              closed_by,closed_by_label,carry_over_count
+            ) values (
+              p_business_day,1,p_next_business_day,btrim(p_reason),p_command_id,
+              auth.uid(),p_actor_label,0
+            ) returning * into v_current;
+
+            return query select p_command_id,p_business_day,'APPLIED'::text,
+              v_current.revision,v_current.next_business_day,
+              v_current.carry_over_count,v_current.closed_at;
+          end;
+          $$;
+          SQL
+
+      - name: Apply authority hardening migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808162000_business_day_close_authority_hardening.sql
+
+      - name: Verify OPEN, APPLIED, REPLAYED and immutable conflict evidence
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare
+            v_state record;
+            v_status text;
+            v_note text;
+            v_evidence_command uuid;
+            v_reuse_rejected boolean:=false;
+            v_command constant uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid;
+          begin
+            select * into v_state from public.ecoflow_read_business_day_close_state('2030-01-01');
+            if v_state.close_status<>'OPEN' or v_state.revision<>0 then
+              raise exception 'OPEN authority expected revision 0, got % rev %',v_state.close_status,v_state.revision;
+            end if;
+
+            select close_status into v_status
+            from public.ecoflow_complete_business_day_close(
+              '2030-01-01','2030-01-02',0,'Daily close',v_command,
+              '{"accountsVarianceAcknowledged":true}'::jsonb,'Evidence A','Owner'
+            );
+            if v_status<>'APPLIED' then raise exception 'first close expected APPLIED got %',v_status; end if;
+
+            select * into v_state from public.ecoflow_read_business_day_close_state('2030-01-01');
+            if v_state.close_status<>'CLOSED' or v_state.revision<>1 then
+              raise exception 'CLOSED authority expected revision 1, got % rev %',v_state.close_status,v_state.revision;
+            end if;
+
+            select close_status into v_status
+            from public.ecoflow_complete_business_day_close(
+              '2030-01-01','2030-01-02',0,'Daily close',v_command,
+              '{"accountsVarianceAcknowledged":true}'::jsonb,'Evidence A','Owner'
+            );
+            if v_status<>'REPLAYED' then raise exception 'same command expected REPLAYED got %',v_status; end if;
+
+            begin
+              perform * from public.ecoflow_complete_business_day_close(
+                '2030-01-01','2030-01-02',0,'Daily close',v_command,
+                '{"accountsVarianceAcknowledged":true}'::jsonb,'Changed evidence','Owner'
+              );
+            exception when others then
+              if position('BUSINESS_DAY_CLOSE_IDEMPOTENCY_KEY_REUSE' in sqlerrm)>0 then
+                v_reuse_rejected:=true;
+              else
+                raise;
+              end if;
+            end;
+            if not v_reuse_rejected then raise exception 'same command with changed evidence was not rejected'; end if;
+
+            select close_status into v_status
+            from public.ecoflow_complete_business_day_close(
+              '2030-01-01','2030-01-02',0,'Different close',
+              'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
+              '{"accountsVarianceAcknowledged":true}'::jsonb,'Evidence B','Owner'
+            );
+            if v_status<>'CONFLICT' then raise exception 'different command expected CONFLICT got %',v_status; end if;
+
+            select acknowledgement_note,command_id into v_note,v_evidence_command
+            from public.ecoflow_business_day_close_checklists where business_day='2030-01-01';
+            if v_note<>'Evidence A' or v_evidence_command<>v_command then
+              raise exception 'conflict mutated successful evidence: note %, command %',v_note,v_evidence_command;
+            end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Verify two concurrent close commands preserve winning evidence
+        run: |
+          set -euo pipefail
+          psql -Atq -v ON_ERROR_STOP=1 -c "select close_status from public.ecoflow_complete_business_day_close('2030-01-10','2030-01-11',0,'Concurrent close','cccccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid,'{\"accountsVarianceAcknowledged\":true}'::jsonb,'Evidence C','Owner');" >/tmp/close-c.txt &
+          pid_c=$!
+          psql -Atq -v ON_ERROR_STOP=1 -c "select close_status from public.ecoflow_complete_business_day_close('2030-01-10','2030-01-11',0,'Concurrent close','dddddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid,'{\"accountsVarianceAcknowledged\":true}'::jsonb,'Evidence D','Owner');" >/tmp/close-d.txt &
+          pid_d=$!
+          wait "$pid_c"
+          wait "$pid_d"
+          cat /tmp/close-c.txt /tmp/close-d.txt | sort > /tmp/close-statuses.txt
+          test "$(grep -c '^APPLIED$' /tmp/close-statuses.txt)" -eq 1
+          test "$(grep -c '^CONFLICT$' /tmp/close-statuses.txt)" -eq 1
+
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare
+            v_close_command uuid;
+            v_evidence_command uuid;
+            v_note text;
+          begin
+            select command_id into v_close_command
+            from public.ecoflow_business_day_closes where business_day='2030-01-10';
+            select command_id,acknowledgement_note into v_evidence_command,v_note
+            from public.ecoflow_business_day_close_checklists where business_day='2030-01-10';
+            if v_close_command is null or v_evidence_command<>v_close_command then
+              raise exception 'concurrent loser overwrote winning evidence: close %, evidence %',v_close_command,v_evidence_command;
+            end if;
+            if (v_close_command='cccccccc-cccc-4ccc-8ccc-cccccccccccc'::uuid and v_note<>'Evidence C')
+              or (v_close_command='dddddddd-dddd-4ddd-8ddd-dddddddddddd'::uuid and v_note<>'Evidence D') then
+              raise exception 'winning command/evidence pair diverged: command %, note %',v_close_command,v_note;
+            end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Frontend authority contract audit
+        run: |
+          set -euo pipefail
+          grep -q "rpc<.*ecoflow_read_business_day_close_state\|ecoflow_read_business_day_close_state" src/data/repositories/businessDayClose.ts
+          grep -q "expectedRevision:closeState.revision" src/features/operationalStability/OperationalPagedWorkspaceV3.tsx
+          grep -q "Retry same close command" src/features/operationalStability/OperationalPagedWorkspaceV3.tsx
+          grep -q "readBusinessDayCloseState" src/features/operationalStability/OperationalPagedWorkspaceV3.tsx
+          if grep -q "expectedRevision:0" src/features/operationalStability/OperationalPagedWorkspaceV3.tsx; then
+            echo 'Business Day Close must consume server-read revision authority.' >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build

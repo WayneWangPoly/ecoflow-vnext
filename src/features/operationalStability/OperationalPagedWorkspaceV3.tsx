@@ -8,14 +8,21 @@ import {
   NativeWorkspaceUnavailable,
 } from '@/features/navigation/NativeWorkspaceFrame';
 import { useWorkspaceQueryState } from '@/features/navigation/useWorkspaceQueryState';
+import { OrdersCommandWorkspace } from '@/features/orders/OrdersCommandWorkspace';
 import { actionableExceptionLifecycleRepository } from '@/data/repositories/actionableExceptionLifecycleRepository';
 import {
-  completeBusinessDayClose,
-  readBusinessDayCloseReadiness,
   readOperationalPage,
   type OperationalPageResource,
   type OperationalPageResult,
 } from '@/data/repositories/operationalStability';
+import {
+  completeBusinessDayClose,
+  createBusinessDayCloseCommandId,
+  readBusinessDayCloseReadiness,
+  readBusinessDayCloseState,
+  type BusinessDayCloseCheck,
+  type BusinessDayCloseState,
+} from '@/data/repositories/businessDayClose';
 import { OperationalPagedWorkspace as BaseOperationalPagedWorkspace } from './OperationalStabilityWorkspaceV2';
 
 const PAGE_SIZES = [10,20,25,50,100] as const;
@@ -76,31 +83,74 @@ function ExceptionLifecycleActions({ row, reload }: { row: Row; reload: () => vo
 }
 
 function ClosePanel({ businessDay,role }: { businessDay:string; role:Role }) {
-  const [checks,setChecks]=useState<Array<{check_key:string;check_status:string;detail:string;blocking:boolean;read_at:string}>>([]);
+  const [checks,setChecks]=useState<BusinessDayCloseCheck[]>([]);
+  const [closeState,setCloseState]=useState<BusinessDayCloseState|null>(null);
   const [nextDay,setNextDay]=useState(()=>{const date=new Date(`${businessDay}T12:00:00+09:30`);date.setDate(date.getDate()+1);return date.toISOString().slice(0,10);});
   const [reason,setReason]=useState('Daily operational reconciliation completed');
   const [ack,setAck]=useState('Accounts variance reviewed and acknowledged.');
   const [message,setMessage]=useState('');
   const [busy,setBusy]=useState(false);
+  const [pendingCommandId,setPendingCommandId]=useState<string|null>(null);
   const mayClose=role==='owner'||role==='admin';
 
-  const load=useCallback(async()=>{try{setChecks(await readBusinessDayCloseReadiness(businessDay));setMessage('');}catch(error){setMessage(error instanceof Error?error.message:String(error));}},[businessDay]);
+  const load=useCallback(async()=>{
+    try {
+      const [nextChecks,nextCloseState]=await Promise.all([
+        readBusinessDayCloseReadiness(businessDay),
+        readBusinessDayCloseState(businessDay),
+      ]);
+      setChecks(nextChecks);
+      setCloseState(nextCloseState);
+      if (nextCloseState.closeStatus==='CLOSED') setPendingCommandId(null);
+      setMessage('');
+    } catch(error) {
+      setCloseState(null);
+      setMessage(error instanceof Error?error.message:String(error));
+    }
+  },[businessDay]);
   useEffect(()=>{void load();},[load]);
   const blocked=checks.some((check)=>check.blocking&&check.check_key!=='ACCOUNTS_VARIANCE');
+  const closed=closeState?.closeStatus==='CLOSED';
 
   async function close() {
+    if (!closeState) {
+      setMessage('Business Day Close authority is not loaded. Refresh checks before closing.');
+      return;
+    }
+    if (closeState.closeStatus==='CLOSED') {
+      setMessage(`Business day already closed at ${adelaide(closeState.closedAt)}.`);
+      return;
+    }
+
+    const commandId=pendingCommandId??createBusinessDayCloseCommandId();
+    if (!pendingCommandId) setPendingCommandId(commandId);
     setBusy(true);
     try {
-      const result=await completeBusinessDayClose({businessDay,nextBusinessDay:nextDay,expectedRevision:0,reason,acknowledgementNote:ack});
-      setMessage(`Business Day Close ${value(result?.close_status)} · ${value(result?.carry_over_count)} carry-over records.`);
+      const result=await completeBusinessDayClose({
+        businessDay,
+        nextBusinessDay:nextDay,
+        expectedRevision:closeState.revision,
+        reason,
+        acknowledgementNote:ack,
+        commandId,
+      });
+      if (result.close_status==='CONFLICT') {
+        setPendingCommandId(null);
+        setMessage('Business Day Close conflict detected. Server authority has been refreshed; no checklist evidence was changed by this command.');
+      } else {
+        setPendingCommandId(null);
+        setMessage(`Business Day Close ${value(result.close_status)} · ${value(result.carry_over_count)} carry-over records.`);
+      }
       await load();
-    } catch(error) { setMessage(error instanceof Error?error.message:String(error)); }
+    } catch(error) {
+      setMessage(`${error instanceof Error?error.message:String(error)} Retry will reuse the same close command ID.`);
+    }
     finally { setBusy(false); }
   }
 
-  return <section className="native-close-panel"><header><div><span className="eyebrow">ADELAIDE BUSINESS DAY</span><h2>Close readiness</h2></div><button type="button" onClick={()=>void load()}>Refresh checks</button></header>
+  return <section className="native-close-panel"><header><div><span className="eyebrow">ADELAIDE BUSINESS DAY</span><h2>Close readiness</h2></div><div className="row-actions">{closeState?<span className="status-chip">{closeState.closeStatus} · rev {closeState.revision}</span>:null}<button type="button" disabled={busy} onClick={()=>void load()}>Refresh checks</button></div></header>
     <div className="native-close-checks">{checks.map((check)=><article key={check.check_key} className={check.blocking?'blocking':''}><strong>{check.check_key.replaceAll('_',' ')}</strong><span>{check.check_status}</span><p>{check.detail}</p></article>)}</div>
-    {mayClose?<div className="native-close-form"><label>Next business day<input type="date" min={businessDay} value={nextDay} onChange={(event)=>setNextDay(event.target.value)}/></label><label>Close reason<input value={reason} onChange={(event)=>setReason(event.target.value)}/></label><label>Accounts variance acknowledgement<textarea value={ack} onChange={(event)=>setAck(event.target.value)}/></label><button className="primary-button" type="button" disabled={busy||blocked||!reason.trim()||!ack.trim()} onClick={()=>void close()}>Close and carry forward</button></div>:<p>Owner or Admin approval is required to close the business day.</p>}
+    {closed?<div className="native-workspace-notice">Closed {adelaide(closeState.closedAt)} · next business day {value(closeState.nextBusinessDay)} · {closeState.carryOverCount.toLocaleString()} carry-over records. This close is server-authoritative and cannot be submitted again.</div>:mayClose?<div className="native-close-form"><label>Next business day<input type="date" min={businessDay} value={nextDay} disabled={busy||Boolean(pendingCommandId)} onChange={(event)=>setNextDay(event.target.value)}/></label><label>Close reason<input value={reason} disabled={busy||Boolean(pendingCommandId)} onChange={(event)=>setReason(event.target.value)}/></label><label>Accounts variance acknowledgement<textarea value={ack} disabled={busy||Boolean(pendingCommandId)} onChange={(event)=>setAck(event.target.value)}/></label><div className="row-actions"><button className="primary-button" type="button" disabled={busy||blocked||!closeState||!reason.trim()||!ack.trim()} onClick={()=>void close()}>{pendingCommandId?'Retry same close command':'Close and carry forward'}</button>{pendingCommandId&&!busy?<button type="button" onClick={()=>{setPendingCommandId(null);setMessage('Pending retry cleared. Close details can be changed before a new command is submitted.');}}>Change close details</button>:null}</div></div>:<p>Owner or Admin approval is required to close the business day.</p>}
     {message?<div className="native-workspace-notice">{message}</div>:null}
   </section>;
 }
@@ -129,6 +179,7 @@ function ExceptionQueue({ role,profile,businessDay }: Omit<Props,'resource'>) {
 }
 
 export function OperationalPagedWorkspace(props: Props) {
+  if (props.resource==='orders') return <OrdersCommandWorkspace role={props.role} profile={props.profile} businessDay={props.businessDay} />;
   if (props.resource==='exceptions') return <ExceptionQueue role={props.role} profile={props.profile} businessDay={props.businessDay}/>;
   return <BaseOperationalPagedWorkspace {...props}/>;
 }

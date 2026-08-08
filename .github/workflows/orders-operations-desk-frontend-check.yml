@@ -1,0 +1,34 @@
+name: Orders operations desk frontend check
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/orders/**'
+      - 'src/data/repositories/ordersOperationsDesk.ts'
+      - 'src/data/repositories/businessDayClose.ts'
+      - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
+      - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
+      - 'src/features/navigation/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/orders-operations-desk-frontend-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
