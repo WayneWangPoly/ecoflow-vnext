@@ -1,0 +1,71 @@
+name: Control Room inventory authority check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260808095000_dashboard_inventory_quantity_authority.sql'
+      - 'scripts/control-room-inventory-authority-contract-test.sql'
+      - 'src/data/repositories/dashboardReadiness.ts'
+      - 'src/features/dashboard/DashboardPage.tsx'
+      - '.github/workflows/control-room-inventory-authority-check.yml'
+  workflow_dispatch:
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ecoflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ecoflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Verify commissioning truth contract
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d ecoflow_test -f scripts/control-room-inventory-authority-contract-test.sql
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify Control Room truth boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          repository = Path('src/data/repositories/dashboardReadiness.ts').read_text()
+          dashboard = Path('src/features/dashboard/DashboardPage.tsx').read_text()
+          migration = Path('supabase/migrations/20260808095000_dashboard_inventory_quantity_authority.sql').read_text()
+          checks = {
+            'dashboard uses readiness v2': "rpc('ecoflow_get_dashboard_readiness_v2')" in repository,
+            'repository exposes quantity authority': 'inventory_quantity_commissioned: boolean' in repository,
+            'authority is approved INITIAL only': "s.session_type='INITIAL'" in migration and "s.session_status='APPROVED'" in migration,
+            'zero no longer infers first stocktake': 'n(readiness?.live_on_hand_units) <= 0' not in dashboard,
+            'first stocktake follows authority': 'firstStocktakeNeeded = Boolean(readiness) && !inventoryQuantityCommissioned' in dashboard,
+            'uncommissioned physical inventory is not numeric zero': "authoritativeInventoryUnits === null ? '—'" in dashboard,
+            'uncommissioned warehouse quantity is explicit': 'quantity not commissioned — approve the first stocktake' in dashboard,
+            'authority is visible in diagnostics': 'Inventory quantity authority' in dashboard,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+            print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+            raise SystemExit('Inventory authority contract failed: ' + ', '.join(failed))
+          PY
+      - run: npm run typecheck
+      - run: npm run build

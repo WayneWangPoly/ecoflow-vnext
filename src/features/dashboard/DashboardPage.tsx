@@ -236,10 +236,11 @@ export function DashboardPage({
     ).size,
     [locations],
   );
-  const firstStocktakeNeeded = Boolean(readiness)
-    && !secondaryLoading
-    && n(readiness?.live_on_hand_units) <= 0
-    && liveLocationCount === 0;
+  const inventoryQuantityCommissioned = Boolean(readiness?.inventory_quantity_commissioned);
+  const authoritativeInventoryUnits = readiness && inventoryQuantityCommissioned
+    ? n(readiness.live_on_hand_units)
+    : null;
+  const firstStocktakeNeeded = Boolean(readiness) && !inventoryQuantityCommissioned;
 
   const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
   const orderById = useMemo(() => {
@@ -356,6 +357,7 @@ export function DashboardPage({
       data-source-status={mirrorStatus.toLowerCase()}
       data-flow-state={detailReady ? flow.state : 'loading'}
       data-primary-ready={Boolean(readiness)}
+      data-inventory-quantity-authority={readiness ? (inventoryQuantityCommissioned ? 'commissioned' : 'pending-first-stocktake') : 'unknown'}
     >
       <header className="ops-control-hero ops-vnext-hero">
         <div className="ops-vnext-hero__main">
@@ -419,10 +421,14 @@ export function DashboardPage({
             <strong>{readiness ? serverExceptions : '—'}</strong>
             <small>current governed queue</small>
           </div>
-          <div>
+          <div data-alert={readiness && !inventoryQuantityCommissioned ? 'true' : undefined}>
             <span>Physical inventory</span>
-            <strong>{readiness ? n(readiness.live_on_hand_units).toLocaleString('en-AU') : '—'}</strong>
-            <small>{readiness ? `${n(readiness.registered_barcodes)} registered package codes` : 'bounded summary loading'}</small>
+            <strong>{authoritativeInventoryUnits === null ? '—' : authoritativeInventoryUnits.toLocaleString('en-AU')}</strong>
+            <small>{readiness
+              ? inventoryQuantityCommissioned
+                ? `${n(readiness.registered_barcodes)} registered package codes`
+                : `Not commissioned · ${n(readiness.registered_barcodes)} package codes known`
+              : 'bounded summary loading'}</small>
           </div>
         </div>
       </header>
@@ -570,7 +576,7 @@ export function DashboardPage({
           <div className="ops-vnext-live-summary">
             <div><Warehouse /><span>Picking</span><strong>{detailReady ? groups.WAREHOUSE.length : '—'}</strong></div>
             <div><Boxes /><span>Staged</span><strong>{detailReady ? groups.STAGED.length : '—'}</strong></div>
-            <div><MapPinned /><span>Live locations</span><strong>{secondaryLoading ? '—' : liveLocationCount}</strong></div>
+            <div><MapPinned /><span>Live locations</span><strong>{secondaryLoading || !inventoryQuantityCommissioned ? '—' : liveLocationCount}</strong></div>
           </div>
           <div className="ops-vnext-work-list">
             {!detailReady ? <ControlSkeleton shape="block" width="100%" /> : warehouseWork.length ? warehouseWork.map((order) => (
@@ -581,7 +587,11 @@ export function DashboardPage({
               </button>
             )) : <div className="ops-vnext-empty-line"><CheckCircle2 /> No current warehouse execution rows.</div>}
           </div>
-          <footer>{locationCount} mapped locations · {n(readiness?.live_on_hand_units).toLocaleString('en-AU')} live units</footer>
+          <footer>{locationCount} mapped locations · {readiness
+            ? inventoryQuantityCommissioned
+              ? `${authoritativeInventoryUnits?.toLocaleString('en-AU') ?? '—'} live units`
+              : 'quantity not commissioned — approve the first stocktake'
+            : 'quantity summary pending'}</footer>
         </ControlPanel>
 
         <ControlPanel
@@ -695,6 +705,7 @@ export function DashboardPage({
       <div className="ops-control-status-line ops-vnext-source-footnote">
         <span><Clock3 /> Control Room summary calculated {dateTime(readiness?.calculated_at)}</span>
         <span>Exception snapshot {dateTime(readiness?.exception_snapshot_refreshed_at)}</span>
+        <span>Inventory quantity authority {readiness ? (inventoryQuantityCommissioned ? `approved ${dateTime(readiness.initial_stocktake_approved_at)}` : 'pending first approved stocktake') : 'not verified'}</span>
         <span>Source mirror checked {dateTime(mirror?.checked_at)}</span>
         <span>Latest source time {shortTime(mirror?.checked_at)}</span>
       </div>

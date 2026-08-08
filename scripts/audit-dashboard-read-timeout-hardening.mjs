@@ -4,15 +4,17 @@ import { readFile } from 'node:fs/promises';
 
 const migrationPath = 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql';
 const safeRefreshMigrationPath = 'supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql';
+const inventoryAuthorityMigrationPath = 'supabase/migrations/20260808095000_dashboard_inventory_quantity_authority.sql';
 const replayMigrationPath = 'supabase/migrations/20260730190100_actionable_exception_idempotent_replay_snapshot.sql';
 const dashboardPath = 'src/features/dashboard/DashboardPage.tsx';
 const repositoryPath = 'src/data/repositories/dashboardReadiness.ts';
 const projectionPath = 'scripts/project-ordermentum-raw-orders.mjs';
 const operationalJobPath = 'scripts/operational-sync-job.mjs';
 
-const [migration, safeRefreshMigration, replayMigration, dashboard, repository, projection, operationalJob] = await Promise.all([
+const [migration, safeRefreshMigration, inventoryAuthorityMigration, replayMigration, dashboard, repository, projection, operationalJob] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(safeRefreshMigrationPath, 'utf8'),
+  readFile(inventoryAuthorityMigrationPath, 'utf8'),
   readFile(replayMigrationPath, 'utf8'),
   readFile(dashboardPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
@@ -63,6 +65,24 @@ assert.ok(
   'current-exception refresh must never use an unconditional DELETE on managed Supabase',
 );
 
+includesAll(inventoryAuthorityMigration, [
+  'ecoflow_get_dashboard_readiness_v2',
+  "set statement_timeout='8s'",
+  'inventory_quantity_commissioned boolean',
+  'initial_stocktake_approved_at timestamptz',
+  "s.session_type='INITIAL'",
+  "s.session_status='APPROVED'",
+  'from public.ecoflow_inventory_movements m',
+  'from public.ecoflow_sku_barcode_registry',
+  'perform public.ecoflow_assert_current_exception_snapshot()',
+  "grant execute on function public.ecoflow_get_dashboard_readiness_v2()\n  to authenticated",
+], 'inventory-aware bounded readiness migration');
+
+assert.ok(
+  !inventoryAuthorityMigration.includes("s.session_type='CYCLE_COUNT'"),
+  'a cycle count must never establish initial inventory quantity authority',
+);
+
 includesAll(replayMigration, [
   'rename to apply_actionable_exception_lifecycle_command_unsnapshotted_20260730',
   'from analytics.apply_actionable_exception_lifecycle_command_unsnapshotted_20260730(',
@@ -78,7 +98,7 @@ assert.ok(
 );
 assert.ok(
   migration.includes("grant execute on function public.ecoflow_get_dashboard_readiness_v1()\n  to authenticated"),
-  'interactive readiness RPC must be granted only through its function boundary',
+  'legacy interactive readiness RPC remains available through its function boundary',
 );
 assert.ok(
   migration.includes("grant execute on function public.ecoflow_refresh_dashboard_read_models()\n  to service_role"),
@@ -98,22 +118,31 @@ assert.ok(
 );
 
 includesAll(repository, [
-  "rpc('ecoflow_get_dashboard_readiness_v1')",
+  "rpc('ecoflow_get_dashboard_readiness_v2')",
   'server_current_orders',
   'live_on_hand_units',
   'registered_barcodes',
   'active_exception_count',
+  'inventory_quantity_commissioned',
+  'initial_stocktake_approved_at',
 ], 'dashboard readiness repository');
 
 includesAll(dashboard, [
   "from '@/data/repositories/dashboardReadiness'",
   'loadDashboardReadiness()',
   'readiness.registered_barcodes',
-  'readiness?.live_on_hand_units',
+  'readiness.live_on_hand_units',
   'readiness.active_exception_count',
   'readiness.server_current_orders',
+  'inventoryQuantityCommissioned',
+  'authoritativeInventoryUnits',
+  'quantity not commissioned — approve the first stocktake',
 ], 'dashboard surface');
 
+assert.ok(
+  !dashboard.includes('n(readiness?.live_on_hand_units) <= 0'),
+  'DashboardPage must not infer first-stocktake commissioning from a numeric zero',
+);
 assert.ok(!dashboard.includes("from '@/data/repositories/orderOperations'"),
   'DashboardPage must not restore the historical order summary view');
 assert.ok(!dashboard.includes("from '@/data/repositories/inventoryControl'"),
@@ -155,4 +184,4 @@ assert.ok(
   'empty explicit values such as --job-id "" must not be converted to the string true',
 );
 
-console.log('Dashboard read-timeout, managed-Supabase snapshot refresh and operational sync observability audit passed.');
+console.log('Dashboard bounded reads, inventory quantity authority, managed-Supabase snapshot refresh and operational sync observability audit passed.');

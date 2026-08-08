@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const projection = fs.readFileSync('scripts/project-ordermentum-raw-orders.mjs', 'utf8');
 const verifier = fs.readFileSync('scripts/verify-ordermentum-complete-mirror.mjs', 'utf8');
 const currentScopeMigration = fs.readFileSync('supabase/migrations/20260717010000_current_order_cache_scope.sql', 'utf8');
-const dashboardMigration = fs.readFileSync('supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql', 'utf8');
+const dashboardMigration = fs.readFileSync('supabase/migrations/20260808095000_dashboard_inventory_quantity_authority.sql', 'utf8');
 const safeRefreshMigration = fs.readFileSync('supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql', 'utf8');
 const timeoutSafeRepository = fs.readFileSync('src/data/repositories/resilientOrdermentumViewsTimeoutSafe.ts', 'utf8');
 const dashboardRepository = fs.readFileSync('src/data/repositories/dashboardReadiness.ts', 'utf8');
@@ -71,7 +71,7 @@ assert.ok(timeoutSafeRepository.includes('snapshot was rejected rather than trun
 assert.ok(timeoutSafeRepository.includes('fetched: currentLoaded'), 'Sync batch fetched count must use the current loaded slice, not retained raw history.');
 
 assert.ok(
-  dashboardRepository.includes("rpc('ecoflow_get_dashboard_readiness_v1')"),
+  dashboardRepository.includes("rpc('ecoflow_get_dashboard_readiness_v2')"),
   'Dashboard current-order total must come from the bounded server-authority RPC.',
 );
 assert.ok(
@@ -91,6 +91,11 @@ assert.ok(
   'Dashboard readiness must exclude terminal source states.',
 );
 assert.ok(
+  dashboardMigration.includes("s.session_type='INITIAL'")
+    && dashboardMigration.includes("s.session_status='APPROVED'"),
+  'Dashboard readiness must distinguish quantity commissioning from a numeric zero.',
+);
+assert.ok(
   dashboard.includes('readiness.server_current_orders')
     && dashboard.includes('const serverCurrentOrders = readiness')
     && dashboard.includes("<strong>{readiness ? serverCurrentOrders : '—'}</strong>")
@@ -107,4 +112,4 @@ assert.ok(
   'Dashboard must not restore the timeout-prone multi-join server summary.',
 );
 
-console.log('Active-order cache, bounded dashboard readiness and observable Control Room health boundary contract passed.');
+console.log('Active-order cache, bounded dashboard readiness v2 and observable Control Room health boundary contract passed.');

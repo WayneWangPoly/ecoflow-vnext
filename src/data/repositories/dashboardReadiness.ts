@@ -7,6 +7,8 @@ export type DashboardReadiness = {
   registered_barcodes: number | string | null;
   active_exception_count: number | string | null;
   exception_snapshot_refreshed_at: string | null;
+  inventory_quantity_commissioned: boolean;
+  initial_stocktake_approved_at: string | null;
   calculated_at: string | null;
 };
 
@@ -21,7 +23,7 @@ function activeClient(client?: SupabaseClient | null): SupabaseClient {
 export async function loadDashboardReadiness(
   client?: SupabaseClient | null,
 ): Promise<DashboardReadiness | null> {
-  const result = await activeClient(client).rpc('ecoflow_get_dashboard_readiness_v1');
+  const result = await activeClient(client).rpc('ecoflow_get_dashboard_readiness_v2');
   if (result.error) throw result.error;
 
   const row = Array.isArray(result.data)
