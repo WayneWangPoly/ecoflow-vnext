@@ -198,7 +198,7 @@ begin
     ) values (
       p_business_day,v_checklist,v_note,p_command_id,auth.uid()
     )
-    on conflict(business_day) do update set
+    on conflict on constraint ecoflow_business_day_close_checklists_pkey do update set
       checklist=excluded.checklist,
       acknowledgement_note=excluded.acknowledgement_note,
       command_id=excluded.command_id,
