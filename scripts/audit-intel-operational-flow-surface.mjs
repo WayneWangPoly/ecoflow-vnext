@@ -10,6 +10,7 @@ function read(relativePath) {
 }
 
 const dashboard = read('src/features/dashboard/DashboardPage.tsx');
+const commissioningView = read('src/features/dashboard/controlRoomCommissioningView.ts');
 const navigation = read('src/features/dashboard/dashboardNavigationContract.ts');
 const navigationTest = read('scripts/intel-dashboard-navigation-contract.test.mjs');
 const style = read('src/features/dashboard/operationalFlowSurface.css');
@@ -21,9 +22,11 @@ for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
   "import './operationalFlowSurface.css';",
   'buildOperationalFlow(orders)',
+  'buildOperationalFlow(todayOrders)',
+  'buildControlRoomCommissioningView(',
   'const orderById = useMemo(() => {',
   'const value = new Map<string, ImportedOrder>();',
-  'flow.assignments.forEach((assignment) => {',
+  'commissioningView.assignments.forEach((assignment) => {',
   'const order = orderById.get(assignment.orderId);',
   'if (order) value[assignment.stage].push(order);',
   'operationalFlowStages.map((stage) => [stage.key, []])',
@@ -35,12 +38,11 @@ for (const marker of [
   'groups.STAGED.length',
   'groups.ROUTE.length',
   'groups.DELIVERED',
-  'flow.nodes.map((stage)',
+  'commissioningView.nodes.map((stage)',
   'dashboardStageTarget(stage.key, role)',
   'title="Operational flow"',
   'aria-label="Eight-stage operational flow"',
   'data-stage={stage.key.toLowerCase()}',
-  "label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL'",
   'flow.excludedCount',
   'flow.unknownCount',
   'const detailReady = snapshotReady',
@@ -54,15 +56,30 @@ for (const marker of [
 if ((dashboard.match(/buildOperationalFlow\(orders\)/g) ?? []).length !== 1) {
   throw new Error('INTEL_UI_004B_CURRENT_FLOW_BUILD_COUNT_INVALID');
 }
-if ((dashboard.match(/flow\.assignments\.forEach\(\(assignment\) => \{/g) ?? []).length !== 1) {
-  throw new Error('INTEL_UI_004B_ASSIGNMENT_MAPPING_COUNT_INVALID');
-}
-
-// A second use of the same governed classifier is allowed only for the explicit
-// Adelaide business-day slice. No local replacement classifier may appear.
 if ((dashboard.match(/buildOperationalFlow\(todayOrders\)/g) ?? []).length !== 1) {
   throw new Error('TRANSFORM_003_TODAY_FLOW_MUST_REUSE_GOVERNED_CLASSIFIER');
 }
+if ((dashboard.match(/commissioningView\.assignments\.forEach\(\(assignment\) => \{/g) ?? []).length !== 1) {
+  throw new Error('INTEL_UI_004B_PRESENTATION_ASSIGNMENT_MAPPING_COUNT_INVALID');
+}
+
+for (const marker of [
+  'flow.assignments.map((assignment)',
+  "assignment.stage !== 'NEEDS_ACTION'",
+  "order.status === 'FAILED'",
+  "'BLOCKED_MAPPING'",
+  "'BLOCKED_STOCK'",
+  "stage: 'NEW' as const",
+]) {
+  if (!commissioningView.includes(marker)) throw new Error(`INTEL_UI_004B_COMMISSIONING_ADAPTER_MARKER_MISSING: ${marker}`);
+}
+if (/buildOperationalFlow\s*\(/.test(commissioningView)) {
+  throw new Error('INTEL_UI_004B_COMMISSIONING_ADAPTER_RECLASSIFIER_FORBIDDEN');
+}
+
+// Canonical classification stays centralised. Control Room may apply a bounded
+// presentation-only commissioning projection, but must not duplicate release
+// gate rules locally or alter execution-stage precedence.
 for (const forbidden of [
   /type Stage\s*=/,
   /function stageOf\s*\(/,
@@ -79,6 +96,14 @@ for (const forbidden of [
   /dispatchEvent/,
 ]) {
   if (forbidden.test(dashboard)) throw new Error(`INTEL_UI_004B_LEGACY_OR_DOM_CLASSIFIER: ${forbidden}`);
+}
+
+for (const forbidden of [
+  /inventoryQuantityCommissioned/,
+  /COMMISSIONING_DEFERRED_GATES/,
+  /controlRoomCommissioningView/,
+]) {
+  if (forbidden.test(contract)) throw new Error(`INTEL_UI_004B_CANONICAL_CONTRACT_PRESENTATION_LEAK: ${forbidden}`);
 }
 
 for (const marker of [
@@ -154,4 +179,4 @@ if (typeof frontendAudit !== 'string'
   throw new Error('INTEL_UI_004B_PACKAGE_WIRING_MISSING');
 }
 
-console.log('Operational flow VNext audit passed: both current workload and Today reuse the governed eight-stage classifier.');
+console.log('Operational flow VNext audit passed: canonical current/Today classification feeds a bounded commissioning presentation adapter.');

@@ -22,6 +22,7 @@ import {
 import type { EcoFlowDataSet, ImportedOrder, Role } from '@/domain/types';
 import { dashboardStageTarget, type DashboardNavigationTab } from './dashboardNavigationContract';
 import { dashboardSourceTone, type DashboardOperationalTone } from './dashboardControlContract';
+import { buildControlRoomCommissioningView } from './controlRoomCommissioningView';
 import { loadDashboardReadiness, type DashboardReadiness } from '@/data/repositories/dashboardReadiness';
 import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
 import { loadOrdermentumMirrorHealth, type OrdermentumMirrorHealthRow } from '@/features/team/ordermentumSync';
@@ -133,7 +134,7 @@ function dueOrderSort(left: ImportedOrder, right: ImportedOrder) {
   return leftDue.localeCompare(rightDue) || left.sequence - right.sequence;
 }
 
-function stageCount(flow: ReturnType<typeof buildOperationalFlow>, stage: OperationalFlowStage) {
+function stageCount(flow: { nodes: readonly { key: OperationalFlowStage; count: number }[] }, stage: OperationalFlowStage) {
   return flow.nodes.find((node) => node.key === stage)?.count ?? 0;
 }
 
@@ -243,6 +244,14 @@ export function DashboardPage({
   const firstStocktakeNeeded = Boolean(readiness) && !inventoryQuantityCommissioned;
 
   const flow = useMemo(() => buildOperationalFlow(orders), [orders]);
+  const commissioningView = useMemo(
+    () => buildControlRoomCommissioningView(
+      flow,
+      orders,
+      readiness ? inventoryQuantityCommissioned : undefined,
+    ),
+    [flow, inventoryQuantityCommissioned, orders, readiness],
+  );
   const orderById = useMemo(() => {
     const value = new Map<string, ImportedOrder>();
     orders.forEach((order) => {
@@ -254,18 +263,18 @@ export function DashboardPage({
     const value = Object.fromEntries(
       operationalFlowStages.map((stage) => [stage.key, []]),
     ) as unknown as Record<OperationalFlowStage, ImportedOrder[]>;
-    flow.assignments.forEach((assignment) => {
+    commissioningView.assignments.forEach((assignment) => {
       const order = orderById.get(assignment.orderId);
       if (order) value[assignment.stage].push(order);
     });
     return value;
-  }, [flow.assignments, orderById]);
+  }, [commissioningView.assignments, orderById]);
   const openOrders = useMemo(
-    () => flow.assignments
+    () => commissioningView.assignments
       .filter((assignment) => assignment.stage !== 'DELIVERED')
       .map((assignment) => orderById.get(assignment.orderId))
       .filter((order): order is ImportedOrder => Boolean(order)),
-    [flow.assignments, orderById],
+    [commissioningView.assignments, orderById],
   );
 
   const businessDay = data.businessDay.date;
@@ -274,14 +283,22 @@ export function DashboardPage({
     [businessDay, orders],
   );
   const todayFlow = useMemo(() => buildOperationalFlow(todayOrders), [todayOrders]);
+  const todayCommissioningView = useMemo(
+    () => buildControlRoomCommissioningView(
+      todayFlow,
+      todayOrders,
+      readiness ? inventoryQuantityCommissioned : undefined,
+    ),
+    [inventoryQuantityCommissioned, readiness, todayFlow, todayOrders],
+  );
   const todayTotal = todayFlow.classifiedCount;
   const todayDelivered = stageCount(todayFlow, 'DELIVERED');
   const todayCompletion = todayTotal > 0 ? Math.round((todayDelivered / todayTotal) * 100) : 0;
-  const todayNeedsDecision = stageCount(todayFlow, 'NEEDS_ACTION') + stageCount(todayFlow, 'FINANCE_REVIEW');
-  const todayReady = stageCount(todayFlow, 'READY');
-  const todayWarehouse = stageCount(todayFlow, 'WAREHOUSE');
-  const todayStaged = stageCount(todayFlow, 'STAGED');
-  const todayRoute = stageCount(todayFlow, 'ROUTE');
+  const todayNeedsDecision = stageCount(todayCommissioningView, 'NEEDS_ACTION') + stageCount(todayCommissioningView, 'FINANCE_REVIEW');
+  const todayReady = stageCount(todayCommissioningView, 'READY');
+  const todayWarehouse = stageCount(todayCommissioningView, 'WAREHOUSE');
+  const todayStaged = stageCount(todayCommissioningView, 'STAGED');
+  const todayRoute = stageCount(todayCommissioningView, 'ROUTE');
   const todayPodMissing = todayOrders.filter((order) => order.status === 'DELIVERED' && order.podStatus === 'missing').length;
 
   const serverCurrentOrders = readiness ? n(readiness.server_current_orders) : 0;
@@ -303,7 +320,7 @@ export function DashboardPage({
   const geocodedRouteStops = groups.ROUTE.filter((order) => typeof order.lat === 'number' && typeof order.lng === 'number').length;
 
   const closeBlockers = detailReady
-    ? todayNeedsDecision + todayWarehouse + todayStaged + todayRoute + todayPodMissing + serverExceptions
+    ? todayNeedsDecision + todayWarehouse + todayStaged + todayRoute + todayPodMissing + serverExceptions + (firstStocktakeNeeded ? 1 : 0)
     : null;
 
   const actions: Action[] = role === 'account'
@@ -327,8 +344,9 @@ export function DashboardPage({
       : role === 'account'
         ? 'Accounts'
         : 'Viewer';
-  const stages = flow.nodes.map((stage) => ({
+  const stages = commissioningView.nodes.map((stage) => ({
     ...stage,
+    label: firstStocktakeNeeded && stage.key === 'NEW' ? 'Loaded' : stage.label,
     tab: dashboardStageTarget(stage.key, role),
   }));
   const refreshBusy = primaryLoading || secondaryLoading || loading;
@@ -358,6 +376,7 @@ export function DashboardPage({
       data-flow-state={detailReady ? flow.state : 'loading'}
       data-primary-ready={Boolean(readiness)}
       data-inventory-quantity-authority={readiness ? (inventoryQuantityCommissioned ? 'commissioned' : 'pending-first-stocktake') : 'unknown'}
+      data-operating-mode={readiness ? (inventoryQuantityCommissioned ? 'live' : 'commissioning') : 'unknown'}
     >
       <header className="ops-control-hero ops-vnext-hero">
         <div className="ops-vnext-hero__main">
@@ -464,6 +483,22 @@ export function DashboardPage({
         </ControlBanner>
       ) : null}
 
+      {readiness && firstStocktakeNeeded ? (
+        <ControlBanner
+          tone="warning"
+          icon={<ScanLine />}
+          title="Warehouse commissioning required"
+          actions={(role === 'owner' || role === 'admin') ? (
+            <a className="ops-control-link ops-control-link--primary" href="/?workspace=warehouse&mode=stocktake">
+              <ScanLine aria-hidden="true" />
+              <span>Continue commissioning</span>
+            </a>
+          ) : undefined}
+        >
+          {serverCurrentOrders.toLocaleString('en-AU')} current orders are loaded but warehouse release evaluation is not live yet. {detailReady ? commissioningView.deferredCount.toLocaleString('en-AU') : 'Mapping and stock-dependent'} records are waiting behind one commissioning gate, not separate action items. Finish SKU/barcode identity work, then approve the INITIAL stocktake. Release remains closed until commissioning is complete.
+        </ControlBanner>
+      ) : null}
+
       <section className="ops-vnext-today" aria-labelledby="ops-vnext-today-title">
         <div className="ops-vnext-section-heading">
           <div>
@@ -486,7 +521,9 @@ export function DashboardPage({
           <article className="ops-control-metric" data-signal="information">
             <div><span>Today orders</span><ClipboardList aria-hidden="true" /></div>
             <strong>{detailReady ? todayTotal : '—'}</strong>
-            <small>business-day classified</small>
+            <small>{detailReady && firstStocktakeNeeded && todayCommissioningView.deferredCount
+              ? `${todayCommissioningView.deferredCount} await warehouse commissioning`
+              : 'business-day classified'}</small>
           </article>
           <article className="ops-control-metric" data-signal={detailReady && todayNeedsDecision ? 'danger' : 'neutral'}>
             <div><span>Needs decision</span><ShieldAlert aria-hidden="true" /></div>
@@ -525,7 +562,11 @@ export function DashboardPage({
           actions={detailReady ? (
             <ControlStatus
               tone={flow.state === 'partial' || flow.state === 'invalid' ? 'warning' : 'information'}
-              label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL' : `${flow.classifiedCount} CLASSIFIED`}
+              label={flow.state === 'partial' || flow.state === 'invalid'
+                ? 'PARTIAL'
+                : firstStocktakeNeeded
+                  ? `${flow.classifiedCount} LOADED`
+                  : `${flow.classifiedCount} CLASSIFIED`}
               compact
             />
           ) : <ControlStatus tone="neutral" label="STREAMING" compact />}
@@ -686,7 +727,7 @@ export function DashboardPage({
             <span data-state={detailReady && todayNeedsDecision === 0 ? 'good' : 'attention'}><i />Today decisions <b>{detailReady ? todayNeedsDecision : '—'}</b></span>
             <span data-state={detailReady && todayWarehouse + todayStaged + todayRoute === 0 ? 'good' : 'attention'}><i />Today execution open <b>{detailReady ? todayWarehouse + todayStaged + todayRoute : '—'}</b></span>
             <span data-state={detailReady && todayPodMissing === 0 ? 'good' : 'attention'}><i />Missing POD <b>{detailReady ? todayPodMissing : '—'}</b></span>
-            <span data-state={readiness && serverExceptions === 0 ? 'good' : 'attention'}><i />Active exceptions <b>{readiness ? serverExceptions : '—'}</b></span>
+            <span data-state={readiness && serverExceptions + (firstStocktakeNeeded ? 1 : 0) === 0 ? 'good' : 'attention'}><i />Global gates <b>{readiness ? serverExceptions + (firstStocktakeNeeded ? 1 : 0) : '—'}</b></span>
           </div>
           <ControlButton variant="primary" leading={<Zap />} onClick={() => onOpenTab('orders')}>
             Continue operating work
