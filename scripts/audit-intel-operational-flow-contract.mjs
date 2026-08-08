@@ -93,7 +93,6 @@ for (const marker of [
 for (const testName of [
   'canonical flow exposes exactly eight ordered mutually exclusive stages',
   'pre-release orders follow exception and governed release-gate precedence',
-  'pre-go-live commissioning collapses mapping and stock dependencies without hiding real blockers',
   'execution status is authoritative and keeps Warehouse separate from Staged',
   'cancelled orders are excluded rather than presented as delivered',
   'stale release gates never pull execution orders backwards',
@@ -108,16 +107,12 @@ for (const testName of [
 
 for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
-  'buildOperationalFlow(orders, {',
-  'inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined',
+  'buildOperationalFlow(orders)',
   'operationalFlowStages.map((stage)',
   'flow.assignments',
   'flow.nodes.map((stage)',
 ]) {
   if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004A_BOUNDED_ADOPTION_MISSING: ${marker}`);
-}
-if (dashboard.includes('buildOperationalFlow(orders), [orders]')) {
-  throw new Error('INTEL_UI_004A_COMMISSIONING_CONTEXT_MISSING');
 }
 
 for (const forbidden of [

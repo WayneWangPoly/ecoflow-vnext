@@ -74,8 +74,7 @@ for (const marker of [
   'matchesBusinessDay',
   'order.requestedDeliveryBusinessDay === businessDay',
   'deliveryDate === businessDay',
-  'buildOperationalFlow(todayOrders, {',
-  'inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined',
+  'buildOperationalFlow(todayOrders)',
   "stageCount(todayFlow, 'DELIVERED')",
   'todayDelivered / todayTotal',
 ]) {
@@ -83,9 +82,6 @@ for (const marker of [
 }
 if (dashboard.includes('serverCurrentOrders} Today') || dashboard.includes('server_current_orders) as today')) {
   throw new Error('TRANSFORM_003_CURRENT_WORKLOAD_MISREPRESENTED_AS_TODAY');
-}
-if (dashboard.includes('buildOperationalFlow(todayOrders), [todayOrders]')) {
-  throw new Error('TRANSFORM_003_TODAY_COMMISSIONING_CONTEXT_MISSING');
 }
 
 // Do not manufacture driver identity, route delay or close authority that does

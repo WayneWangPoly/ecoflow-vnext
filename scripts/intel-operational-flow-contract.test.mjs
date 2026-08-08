@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   buildOperationalFlow,
   classifyOperationalFlowOrder,
-  isOperationalFlowCommissioningDeferred,
   operationalFlowStages,
 } from '../src/features/intelligence/operationalFlow/operationalFlowContract.ts';
 
@@ -50,57 +49,6 @@ test('pre-release orders follow exception and governed release-gate precedence',
   assert.equal(stage('finance', 'IMPORTED', 'REVIEW_PAYMENT').stage, 'FINANCE_REVIEW');
   assert.equal(stage('ready-gate', 'IMPORTED', 'READY_TO_RELEASE').stage, 'READY');
   assert.equal(stage('ready-status', 'RELEASE_READY').stage, 'READY');
-});
-
-test('pre-go-live commissioning collapses mapping and stock dependencies without hiding real blockers', () => {
-  const commissioning = { inventoryQuantityCommissioned: false };
-
-  assert.equal(isOperationalFlowCommissioningDeferred(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning), true);
-  assert.equal(isOperationalFlowCommissioningDeferred(order('stock', 'IMPORTED', 'BLOCKED_STOCK'), commissioning), true);
-  assert.equal(isOperationalFlowCommissioningDeferred(order('data', 'IMPORTED', 'BLOCKED_DATA'), commissioning), false);
-  assert.equal(isOperationalFlowCommissioningDeferred(order('failed', 'FAILED', 'BLOCKED_MAPPING'), commissioning), false);
-
-  const mapping = classifyOperationalFlowOrder(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning);
-  assert.equal(mapping.kind, 'classified');
-  assert.equal(mapping.stage, 'NEW');
-
-  const stock = classifyOperationalFlowOrder(order('stock', 'IMPORTED', 'BLOCKED_STOCK'), commissioning);
-  assert.equal(stock.kind, 'classified');
-  assert.equal(stock.stage, 'NEW');
-
-  const data = classifyOperationalFlowOrder(order('data', 'IMPORTED', 'BLOCKED_DATA'), commissioning);
-  assert.equal(data.kind, 'classified');
-  assert.equal(data.stage, 'NEEDS_ACTION');
-
-  const failed = classifyOperationalFlowOrder(order('failed', 'FAILED', 'BLOCKED_MAPPING'), commissioning);
-  assert.equal(failed.kind, 'classified');
-  assert.equal(failed.stage, 'NEEDS_ACTION');
-
-  const finance = classifyOperationalFlowOrder(order('finance', 'IMPORTED', 'REVIEW_PAYMENT'), commissioning);
-  assert.equal(finance.kind, 'classified');
-  assert.equal(finance.stage, 'FINANCE_REVIEW');
-
-  const liveMapping = classifyOperationalFlowOrder(
-    order('live-mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'),
-    { inventoryQuantityCommissioned: true },
-  );
-  assert.equal(liveMapping.kind, 'classified');
-  assert.equal(liveMapping.stage, 'NEEDS_ACTION');
-
-  const liveStock = classifyOperationalFlowOrder(
-    order('live-stock', 'IMPORTED', 'BLOCKED_STOCK'),
-    { inventoryQuantityCommissioned: true },
-  );
-  assert.equal(liveStock.kind, 'classified');
-  assert.equal(liveStock.stage, 'NEEDS_ACTION');
-
-  const flow = buildOperationalFlow([
-    order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'),
-    order('stock', 'IMPORTED', 'BLOCKED_STOCK'),
-    order('data', 'IMPORTED', 'BLOCKED_DATA'),
-  ], commissioning);
-  assert.equal(flow.conservationOk, true);
-  assert.deepEqual(flow.nodes.map((node) => node.count), [2, 1, 0, 0, 0, 0, 0, 0]);
 });
 
 test('execution status is authoritative and keeps Warehouse separate from Staged', () => {
