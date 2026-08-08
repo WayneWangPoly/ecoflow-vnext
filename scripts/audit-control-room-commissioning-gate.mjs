@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+// Commissioning is a server-authoritative global operating mode; this audit
+// prevents UI cleanup from weakening release, data-quality or failure gates.
 const flow = fs.readFileSync('src/features/intelligence/operationalFlow/operationalFlowContract.ts', 'utf8');
 const dashboard = fs.readFileSync('src/features/dashboard/DashboardPage.tsx', 'utf8');
 
