@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/features/orders/**'
       - 'src/data/repositories/ordersOperationsDesk.ts'
+      - 'src/data/repositories/businessDayClose.ts'
       - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'src/features/navigation/**'
