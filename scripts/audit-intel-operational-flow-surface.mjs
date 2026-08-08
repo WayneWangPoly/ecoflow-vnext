@@ -20,7 +20,8 @@ const packageJson = JSON.parse(read('package.json'));
 for (const marker of [
   "from '@/features/intelligence/operationalFlow'",
   "import './operationalFlowSurface.css';",
-  'buildOperationalFlow(orders)',
+  'buildOperationalFlow(orders, {',
+  'inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined',
   'const orderById = useMemo(() => {',
   'const value = new Map<string, ImportedOrder>();',
   'flow.assignments.forEach((assignment) => {',
@@ -40,7 +41,10 @@ for (const marker of [
   'title="Operational flow"',
   'aria-label="Eight-stage operational flow"',
   'data-stage={stage.key.toLowerCase()}',
-  "label={flow.state === 'partial' || flow.state === 'invalid' ? 'PARTIAL'",
+  "label={flow.state === 'partial' || flow.state === 'invalid'",
+  "? 'PARTIAL'",
+  "? `${flow.classifiedCount} LOADED`",
+  ": `${flow.classifiedCount} CLASSIFIED`",
   'flow.excludedCount',
   'flow.unknownCount',
   'const detailReady = snapshotReady',
@@ -51,7 +55,7 @@ for (const marker of [
   if (!dashboard.includes(marker)) throw new Error(`INTEL_UI_004B_DASHBOARD_MARKER_MISSING: ${marker}`);
 }
 
-if ((dashboard.match(/buildOperationalFlow\(orders\)/g) ?? []).length !== 1) {
+if ((dashboard.match(/buildOperationalFlow\(orders,\s*\{/g) ?? []).length !== 1) {
   throw new Error('INTEL_UI_004B_CURRENT_FLOW_BUILD_COUNT_INVALID');
 }
 if ((dashboard.match(/flow\.assignments\.forEach\(\(assignment\) => \{/g) ?? []).length !== 1) {
@@ -59,9 +63,14 @@ if ((dashboard.match(/flow\.assignments\.forEach\(\(assignment\) => \{/g) ?? [])
 }
 
 // A second use of the same governed classifier is allowed only for the explicit
-// Adelaide business-day slice. No local replacement classifier may appear.
-if ((dashboard.match(/buildOperationalFlow\(todayOrders\)/g) ?? []).length !== 1) {
+// Adelaide business-day slice. Both reads must carry the same server-authoritative
+// commissioning context; no local replacement classifier may appear.
+if ((dashboard.match(/buildOperationalFlow\(todayOrders,\s*\{/g) ?? []).length !== 1) {
   throw new Error('TRANSFORM_003_TODAY_FLOW_MUST_REUSE_GOVERNED_CLASSIFIER');
+}
+if (dashboard.includes('buildOperationalFlow(orders), [orders]')
+  || dashboard.includes('buildOperationalFlow(todayOrders), [todayOrders]')) {
+  throw new Error('INTEL_UI_004B_COMMISSIONING_CONTEXT_MISSING');
 }
 for (const forbidden of [
   /type Stage\s*=/,
@@ -154,4 +163,4 @@ if (typeof frontendAudit !== 'string'
   throw new Error('INTEL_UI_004B_PACKAGE_WIRING_MISSING');
 }
 
-console.log('Operational flow VNext audit passed: both current workload and Today reuse the governed eight-stage classifier.');
+console.log('Operational flow VNext audit passed: current workload and Today reuse the governed eight-stage classifier with commissioning authority.');
