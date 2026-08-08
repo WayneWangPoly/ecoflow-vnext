@@ -1,0 +1,29 @@
+name: Control Room safe commissioning v2 check
+on:
+  pull_request:
+    paths:
+      - 'src/features/dashboard/DashboardPage.tsx'
+      - 'src/features/dashboard/controlRoomCommissioningView.ts'
+      - 'src/features/navigation/WorkspaceRuntimeBoundary.tsx'
+      - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
+      - 'src/features/intelligence/operationalFlow/operationalFlowContract.ts'
+      - 'scripts/audit-control-room-safe-commissioning-v2.mjs'
+      - '.github/workflows/control-room-safe-commissioning-v2-check.yml'
+  workflow_dispatch:
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Presentation isolation audit
+        run: node scripts/audit-control-room-safe-commissioning-v2.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
