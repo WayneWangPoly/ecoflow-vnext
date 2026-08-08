@@ -1,14 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { BrandMark } from '@/app/Brand';
 import type { Role } from '@/domain/types';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
-import { readQuickActions } from '@/data/repositories/operationalStability';
 import {
   canRoleAccessIntelligenceWorkspace,
   type IntelligenceWorkspaceId,
 } from '@/features/intelligence/navigation/routeContract';
 import '@/features/navigation/nativeOperationalRoutes.css';
+import '@/features/dashboard/controlRoomVisualQc.css';
 
 type NavigationItem = {
   label: string;
@@ -86,18 +86,7 @@ export function OperationalAppShell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const [quickKeys, setQuickKeys] = useState<string[]>([]);
-
-  useEffect(() => {
-    void readQuickActions()
-      .then((result) => setQuickKeys(result.actionKeys))
-      .catch(() => setQuickKeys([]));
-  }, [profile.user_id]);
-
   const navigation = OPERATIONAL_NAVIGATION.filter((item) => mayAccessOperationalWorkspace(role, item.workspace));
-  const quickActions = quickKeys
-    .map((key) => ACTION_PATHS[key])
-    .filter((item): item is NavigationItem => Boolean(item) && mayAccessOperationalWorkspace(role, item.workspace));
 
   return (
     <div className="desktop-app" data-app-role={role} data-navigation-owner="unified-operational-shell">
@@ -106,7 +95,7 @@ export function OperationalAppShell({
           <BrandMark />
           <div><strong>EcoFlow</strong><span>{roleLabel(role).toUpperCase()}</span></div>
         </div>
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="Primary navigation">
           {navigation.map((item) => (
             <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>
               {item.label}
@@ -123,14 +112,13 @@ export function OperationalAppShell({
               <span>{roleLabel(role).toUpperCase()} OPERATIONS</span>
             </div>
           </div>
-          <div className="topbar-actions">
-            {quickActions.map((item) => <NavLink key={item.path} className="soft-button" to={item.path}>{item.label}</NavLink>)}
-            {(role === 'owner' || role === 'admin') ? <NavLink className="soft-button" to="/warehouse-control">Warehouse Control</NavLink> : null}
-            {(role === 'owner' || role === 'admin') ? <a className="soft-button" href="/warehouse-map">Warehouse Map</a> : null}
-            <button type="button" onClick={onLogout}>Logout</button>
+          <div className="topbar-actions topbar-utility-actions">
+            {(role === 'owner' || role === 'admin') ? <NavLink className="soft-button topbar-owner-tool" to="/warehouse-control">Warehouse Control</NavLink> : null}
+            {(role === 'owner' || role === 'admin') ? <a className="soft-button topbar-owner-tool" href="/warehouse-map">Warehouse Map</a> : null}
+            <button className="topbar-logout" type="button" onClick={onLogout}>Logout</button>
           </div>
         </header>
-        <nav className="desktop-mobile-nav" aria-label="Sections">
+        <nav className="desktop-mobile-nav" aria-label="Primary sections">
           {navigation.map((item) => (
             <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? 'active' : undefined}>
               {item.label}
