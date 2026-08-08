@@ -8,6 +8,7 @@ import {
   NativeWorkspaceUnavailable,
 } from '@/features/navigation/NativeWorkspaceFrame';
 import { useWorkspaceQueryState } from '@/features/navigation/useWorkspaceQueryState';
+import { OrdersCommandWorkspace } from '@/features/orders/OrdersCommandWorkspace';
 import { actionableExceptionLifecycleRepository } from '@/data/repositories/actionableExceptionLifecycleRepository';
 import {
   completeBusinessDayClose,
@@ -129,6 +130,7 @@ function ExceptionQueue({ role,profile,businessDay }: Omit<Props,'resource'>) {
 }
 
 export function OperationalPagedWorkspace(props: Props) {
+  if (props.resource==='orders') return <OrdersCommandWorkspace role={props.role} profile={props.profile} businessDay={props.businessDay} />;
   if (props.resource==='exceptions') return <ExceptionQueue role={props.role} profile={props.profile} businessDay={props.businessDay}/>;
   return <BaseOperationalPagedWorkspace {...props}/>;
 }
