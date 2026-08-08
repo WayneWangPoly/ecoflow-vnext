@@ -1,0 +1,94 @@
+name: Agent centralize commissioning classifier
+
+on:
+  push:
+    branches:
+      - agent/global-inventory-commissioning-gate
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[COMMISSION-CLASSIFIER-CENTRALIZED]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/global-inventory-commissioning-gate
+          fetch-depth: 0
+      - name: Centralize commissioning-deferred rule
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          contract = 'src/features/intelligence/operationalFlow/operationalFlowContract.ts'
+          replace_once(
+              contract,
+              "function conflictIssue(orderId: string, value: string): OperationalFlowIssue {\n  return {\n    code: 'CONFLICTING_PRE_RELEASE_SIGNAL',\n    orderId,\n    field: 'releaseGateStatus',\n    value,\n  };\n}\n\nexport function classifyOperationalFlowOrder(",
+              "function conflictIssue(orderId: string, value: string): OperationalFlowIssue {\n  return {\n    code: 'CONFLICTING_PRE_RELEASE_SIGNAL',\n    orderId,\n    field: 'releaseGateStatus',\n    value,\n  };\n}\n\nexport function isOperationalFlowCommissioningDeferred(\n  input: OperationalFlowOrderInput,\n  context: OperationalFlowContext = {},\n): boolean {\n  if (context.inventoryQuantityCommissioned !== false) return false;\n  const status = knownStatus(input.status);\n  if (!status || status === 'CANCELLED' || status === 'FAILED' || EXECUTION_STAGE_BY_STATUS[status]) return false;\n  const gate = gateSignal(input.releaseGateStatus);\n  return gate.kind === 'known' && COMMISSIONING_DEFERRED_GATES.has(gate.value);\n}\n\nexport function classifyOperationalFlowOrder("
+          )
+          replace_once(
+              contract,
+              "  const commissioningDeferred = context.inventoryQuantityCommissioned === false\n    && gate.kind === 'known'\n    && COMMISSIONING_DEFERRED_GATES.has(gate.value)\n    && status !== 'FAILED';",
+              "  const commissioningDeferred = isOperationalFlowCommissioningDeferred(input, context);"
+          )
+
+          index = 'src/features/intelligence/operationalFlow/index.ts'
+          replace_once(
+              index,
+              "  classifyOperationalFlowOrder,\n  operationalFlowStages,",
+              "  classifyOperationalFlowOrder,\n  isOperationalFlowCommissioningDeferred,\n  operationalFlowStages,"
+          )
+          replace_once(
+              index,
+              "  type OperationalFlowOrderInput,\n  type OperationalFlowStage,",
+              "  type OperationalFlowOrderInput,\n  type OperationalFlowContext,\n  type OperationalFlowStage,"
+          )
+
+          dashboard = 'src/features/dashboard/DashboardPage.tsx'
+          replace_once(
+              dashboard,
+              "  buildOperationalFlow,\n  operationalFlowStages,",
+              "  buildOperationalFlow,\n  isOperationalFlowCommissioningDeferred,\n  operationalFlowStages,"
+          )
+          replace_once(
+              dashboard,
+              "\nfunction isCommissioningDeferredOrder(order: ImportedOrder, inventoryQuantityCommissioned: boolean) {\n  if (inventoryQuantityCommissioned || order.status === 'FAILED') return false;\n  return order.releaseGateStatus === 'BLOCKED_MAPPING' || order.releaseGateStatus === 'BLOCKED_STOCK';\n}\n",
+              "\n"
+          )
+          replace_once(
+              dashboard,
+              "  const commissioningDeferredCount = useMemo(\n    () => orders.filter((order) => isCommissioningDeferredOrder(order, inventoryQuantityCommissioned)).length,\n    [inventoryQuantityCommissioned, orders],\n  );\n  const todayCommissioningDeferred = useMemo(\n    () => todayOrders.filter((order) => isCommissioningDeferredOrder(order, inventoryQuantityCommissioned)).length,\n    [inventoryQuantityCommissioned, todayOrders],\n  );",
+              "  const commissioningContext = useMemo(\n    () => ({ inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined }),\n    [inventoryQuantityCommissioned, readiness],\n  );\n  const commissioningDeferredCount = useMemo(\n    () => orders.filter((order) => isOperationalFlowCommissioningDeferred(order, commissioningContext)).length,\n    [commissioningContext, orders],\n  );\n  const todayCommissioningDeferred = useMemo(\n    () => todayOrders.filter((order) => isOperationalFlowCommissioningDeferred(order, commissioningContext)).length,\n    [commissioningContext, todayOrders],\n  );"
+          )
+
+          test = 'scripts/intel-operational-flow-contract.test.mjs'
+          replace_once(
+              test,
+              "  classifyOperationalFlowOrder,\n  operationalFlowStages,",
+              "  classifyOperationalFlowOrder,\n  isOperationalFlowCommissioningDeferred,\n  operationalFlowStages,"
+          )
+          replace_once(
+              test,
+              "  const mapping = classifyOperationalFlowOrder(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning);",
+              "  assert.equal(isOperationalFlowCommissioningDeferred(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning), true);\n  assert.equal(isOperationalFlowCommissioningDeferred(order('stock', 'IMPORTED', 'BLOCKED_STOCK'), commissioning), true);\n  assert.equal(isOperationalFlowCommissioningDeferred(order('data', 'IMPORTED', 'BLOCKED_DATA'), commissioning), false);\n  assert.equal(isOperationalFlowCommissioningDeferred(order('failed', 'FAILED', 'BLOCKED_MAPPING'), commissioning), false);\n\n  const mapping = classifyOperationalFlowOrder(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning);"
+          )
+
+          Path('.github/workflows/agent-centralize-commissioning-classifier.yml').unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/intelligence/operationalFlow/operationalFlowContract.ts src/features/intelligence/operationalFlow/index.ts src/features/dashboard/DashboardPage.tsx scripts/intel-operational-flow-contract.test.mjs .github/workflows/agent-centralize-commissioning-classifier.yml
+          git commit -m "[COMMISSION-CLASSIFIER-CENTRALIZED] Use one governed commissioning rule"
+          git push origin HEAD:agent/global-inventory-commissioning-gate
