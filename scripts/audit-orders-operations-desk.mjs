@@ -5,8 +5,8 @@ const workspace = fs.readFileSync('src/features/orders/OrdersCommandWorkspace.ts
 const repository = fs.readFileSync('src/data/repositories/ordersOperationsDesk.ts', 'utf8');
 const route = fs.readFileSync('src/features/operationalStability/OperationalPagedWorkspaceV3.tsx', 'utf8');
 const css = fs.readFileSync('src/features/orders/ordersCommandWorkspace.css', 'utf8');
-const migration = fs.readFileSync('supabase/migrations/20260807234000_orders_operations_desk.sql', 'utf8');
-const guard = fs.readFileSync('supabase/migrations/20260807234100_orders_operations_exception_key_guard.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/20260808161000_orders_operations_desk.sql', 'utf8');
+const guard = fs.readFileSync('supabase/migrations/20260808161100_orders_operations_exception_key_guard.sql', 'utf8');
 
 for (const marker of [
   "rpc('ecoflow_read_orders_operations_v1'",
