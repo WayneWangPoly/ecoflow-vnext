@@ -32,6 +32,8 @@ export type PriorityWorkProps = {
   onOpenOrder?: (record: PriorityWorkRecord) => void;
 };
 
+const priorityWorkColumnSemantics = 'Order · cause · impact · age · owner · next action';
+
 export function PriorityWork({
   repository = priorityWorkRepository,
   limit = 20,
@@ -65,6 +67,12 @@ export function PriorityWork({
 
   const rows = result?.ok ? result.data : [];
   const summary = useMemo(() => priorityWorkSummary(rows), [rows]);
+  const completeRead = Boolean(result?.ok && result.state === 'ready' && result.issues.length === 0);
+  const meta = result?.ok
+    ? completeRead
+      ? `${summary.unassigned} unassigned · ${summary.policyCount} governed policies · updated ${formatPriorityWorkMoment(summary.readAt)}`
+      : `Priority policy data is partial · ${summary.total} governed item${summary.total === 1 ? '' : 's'} visible`
+    : 'Priority policy ranking is unavailable · current exceptions remain separately available';
 
   function openOrder(record: PriorityWorkRecord) {
     if (onOpenOrder) {
@@ -81,18 +89,14 @@ export function PriorityWork({
       className="ef-priority-work"
       eyebrow="POLICY-RANKED · CURRENT EXCEPTIONS"
       title="Priority work"
-      meta={result?.ok
-        ? `${summary.unassigned} unassigned · ${summary.policyCount} governed policies · read ${formatPriorityWorkMoment(summary.readAt)}`
-        : 'Order · cause · impact · age · owner · next action'}
+      meta={meta}
       actions={(
         <div className="ef-priority-work__actions">
           {result?.ok ? (
             <ControlStatus
               compact
-              tone={result.state === 'ready' && result.issues.length === 0 ? 'information' : 'warning'}
-              label={result.state === 'ready' && result.issues.length === 0
-                ? `${summary.total} CURRENT`
-                : `${summary.total} PARTIAL`}
+              tone={completeRead ? 'information' : 'warning'}
+              label={completeRead ? `${summary.total} CURRENT` : 'POLICY DATA PARTIAL'}
             />
           ) : null}
           <ControlButton
@@ -121,19 +125,24 @@ export function PriorityWork({
         </div>
       ) : result && !result.ok ? (
         <div className="ef-priority-work__state" data-state={result.state} role="status">
-          <strong>Priority work unavailable</strong>
-          <span>{result.state.toUpperCase()} · {result.error.code}</span>
+          <strong>Priority ranking unavailable</strong>
+          <span>{result.state.toUpperCase()} · {result.error.code} · Current exceptions are still available in the exception register.</span>
+        </div>
+      ) : !completeRead && rows.length === 0 ? (
+        <div className="ef-priority-work__state" data-state="partial" role="status">
+          <strong>Priority policy data is incomplete</strong>
+          <span>No governed work is presented as clear until policy ranking is complete.</span>
         </div>
       ) : rows.length === 0 ? (
         <div className="ef-priority-work__state" data-state="empty" role="status">
-          <strong>No policy-governed priority work</strong>
-          <span>Current exceptions do not meet a complete enabled Priority Work policy.</span>
+          <strong>No governed priority work</strong>
+          <span>No current exception matches an enabled Priority Work policy.</span>
         </div>
       ) : (
-        <div className="ef-priority-work__table-shell">
+        <div className="ef-priority-work__table-shell" aria-label={priorityWorkColumnSemantics}>
           <table className="ef-priority-work__table">
             <caption className="ef-priority-work__sr-only">
-              Policy-ranked Priority Work with Order, cause, impact, age, owner and next action
+              Policy-ranked Priority Work · {priorityWorkColumnSemantics}
             </caption>
             <thead>
               <tr>

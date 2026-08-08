@@ -34,7 +34,10 @@ has(unifiedRoute, '<OperationalPagedWorkspace', 'Operational paged workspaces ar
 has(unifiedRoute, '<OperationalSettingsWorkspace', 'Settings workspace is mounted inside the unified route');
 has(unifiedRoute, '<WarehouseControlWorkspace', 'Warehouse Control is mounted inside the unified route');
 has(session, 'v_ecoflow_current_user', 'Profile and role come from one authenticated application state');
-has(appShell, 'quickKeys', 'Effective Quick Actions are rendered in the shared compact top bar');
+has(appShell, 'data-navigation-owner="unified-operational-shell"', 'Unified AppShell remains the single navigation owner');
+has(appShell, 'desktop-mobile-nav', 'Responsive primary navigation remains available when the desktop sidebar collapses');
+lacks(appShell, 'quickActions.map', 'Workspace Quick Actions do not duplicate primary navigation in the top bar');
+lacks(appShell, 'readQuickActions', 'Top bar does not fetch Quick Actions solely to render duplicate workspace navigation');
 has(appShell, "role === 'account' && workspace === 'exceptions'", 'Account can manage commercial exceptions');
 has(compatibilityRoute, "export { default } from '@/features/operationalRoutes/UnifiedOperationalRoutes';", 'Legacy stability route cannot resurrect a duplicate auth or shell root');
 lacks(compatibilityRoute, 'v_ecoflow_current_user', 'Legacy stability route no longer owns profile loading');
@@ -100,7 +103,7 @@ for (const rpcName of [
 has(repository, 'row.row_data ? [row.row_data] : []', 'Pagination metadata rows are not exposed as fake records');
 
 has(workspace, 'Save current view', 'Saved Views are available from operational pages');
-has(workspace, 'Select up to four navigation shortcuts', 'Quick Action configuration is explicit');
+has(workspace, 'Select up to four navigation shortcuts', 'Quick Action configuration remains explicit even though the shell no longer duplicates workspace navigation');
 has(workspace, 'Save observation only', 'Stocktake observation is visibly non-posting');
 has(workspace, 'Approve and post balances', 'Supervisor approval is visibly distinct');
 has(workspace, 'Apply paired transfer', 'Move SKU is presented as one paired transaction');
