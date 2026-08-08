@@ -122,7 +122,7 @@ for (const marker of [
 
 for (const marker of [
   "import type {",
-  "from '@/features/intelligence/operationalFlow'",
+  "from '../intelligence/operationalFlow/operationalFlowContract.ts'",
   'flow.assignments.map((assignment)',
   "assignment.stage !== 'NEEDS_ACTION'",
   "stage: 'NEW' as const",
