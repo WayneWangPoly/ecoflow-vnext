@@ -8,6 +8,7 @@ on:
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'src/features/intelligence/operationalFlow/operationalFlowContract.ts'
       - 'scripts/audit-control-room-safe-commissioning-v2.mjs'
+      - 'scripts/control-room-commissioning-view.test.mjs'
       - '.github/workflows/control-room-safe-commissioning-v2-check.yml'
   workflow_dispatch:
 
@@ -23,6 +24,8 @@ jobs:
       - run: npm ci
       - name: Presentation isolation audit
         run: node scripts/audit-control-room-safe-commissioning-v2.mjs
+      - name: Presentation behavior tests
+        run: node --experimental-strip-types --test scripts/control-room-commissioning-view.test.mjs
       - name: TypeScript
         run: npm run typecheck
       - name: Production build
