@@ -5,6 +5,7 @@ export type IntelligenceWorkspaceId =
   | 'ordermentum'
   | 'orders'
   | 'inventory'
+  | 'product-identity'
   | 'customers'
   | 'stores'
   | 'delivery'
@@ -73,6 +74,7 @@ const STATIC_ROUTES: readonly StaticRoute[] = [
   { path: '/ordermentum', workspace: 'ordermentum', legacyDesktopTab: 'ordermentum' },
   { path: '/orders', workspace: 'orders', legacyDesktopTab: 'orders' },
   { path: '/inventory', workspace: 'inventory', legacyDesktopTab: 'inventory' },
+  { path: '/commissioning/product-identity', workspace: 'product-identity', legacyDesktopTab: null },
   { path: '/customers', workspace: 'customers', legacyDesktopTab: 'stores' },
   { path: '/delivery', workspace: 'delivery', legacyDesktopTab: 'delivery' },
   { path: '/returns', workspace: 'returns', legacyDesktopTab: null },
@@ -93,8 +95,8 @@ const DYNAMIC_ROUTES: readonly DynamicRoute[] = [
 ] as const;
 
 const OWNER_ADMIN_WORKSPACES = new Set<IntelligenceWorkspaceId>(STATIC_ROUTES.map((route) => route.workspace).concat(['stores']));
-const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'settings']);
-const VIEWER_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'logs']);
+const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'product-identity', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'settings']);
+const VIEWER_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'product-identity', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'logs']);
 
 const LEGACY_TAB_PATHS: Readonly<Record<DesktopTab, string>> = {
   dashboard: '/control-room',
