@@ -70,9 +70,11 @@ async function runOrders(mode) {
 
   // Raw upserts alone never reach the UI: the operational views read
   // om_orders / om_order_items / om_invoices, so project every stale raw
-  // order into those tables before the run finishes.
+  // order into those tables before the run finishes. Start at the projector's
+  // proven safe default; it still loops to a zero-result convergence probe, so
+  // lowering the transaction batch does not lower completeness.
   await timed('raw order projection into operational tables', () =>
-    runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '500']));
+    runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '100']));
 }
 
 async function runMasterResources(resources, label) {
