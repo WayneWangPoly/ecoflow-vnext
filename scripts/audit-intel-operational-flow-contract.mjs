@@ -57,8 +57,8 @@ if ((contract.match(/\{ key: '[A-Z_]+'/g) ?? []).length !== 8) {
 
 for (const forbidden of [
   /react/i,
-  /\.tsx['"]/, 
-  /\.css['"]/, 
+  /\.tsx['"]/,
+  /\.css['"]/,
   /supabase/i,
   /\.schema\s*\(/,
   /\.rpc\s*\(/,
@@ -93,6 +93,7 @@ for (const marker of [
 for (const testName of [
   'canonical flow exposes exactly eight ordered mutually exclusive stages',
   'pre-release orders follow exception and governed release-gate precedence',
+  'pre-go-live commissioning collapses mapping and stock dependencies without hiding real blockers',
   'execution status is authoritative and keeps Warehouse separate from Staged',
   'cancelled orders are excluded rather than presented as delivered',
   'stale release gates never pull execution orders backwards',
