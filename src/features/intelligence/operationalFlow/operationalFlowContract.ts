@@ -182,6 +182,17 @@ function conflictIssue(orderId: string, value: string): OperationalFlowIssue {
   };
 }
 
+export function isOperationalFlowCommissioningDeferred(
+  input: OperationalFlowOrderInput,
+  context: OperationalFlowContext = {},
+): boolean {
+  if (context.inventoryQuantityCommissioned !== false) return false;
+  const status = knownStatus(input.status);
+  if (!status || status === 'CANCELLED' || status === 'FAILED' || EXECUTION_STAGE_BY_STATUS[status]) return false;
+  const gate = gateSignal(input.releaseGateStatus);
+  return gate.kind === 'known' && COMMISSIONING_DEFERRED_GATES.has(gate.value);
+}
+
 export function classifyOperationalFlowOrder(
   input: OperationalFlowOrderInput,
   context: OperationalFlowContext = {},
@@ -221,10 +232,7 @@ export function classifyOperationalFlowOrder(
     return { kind: 'classified', orderId, stage: executionStage, issues };
   }
 
-  const commissioningDeferred = context.inventoryQuantityCommissioned === false
-    && gate.kind === 'known'
-    && COMMISSIONING_DEFERRED_GATES.has(gate.value)
-    && status !== 'FAILED';
+  const commissioningDeferred = isOperationalFlowCommissioningDeferred(input, context);
 
   // Before the first APPROVED INITIAL stocktake, mapping/stock-dependent orders
   // are held behind one warehouse commissioning gate. They remain fail-closed,

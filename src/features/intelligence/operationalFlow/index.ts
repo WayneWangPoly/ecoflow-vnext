@@ -1,6 +1,7 @@
 export {
   buildOperationalFlow,
   classifyOperationalFlowOrder,
+  isOperationalFlowCommissioningDeferred,
   operationalFlowStages,
   type OperationalFlow,
   type OperationalFlowAssignment,
@@ -10,6 +11,7 @@ export {
   type OperationalFlowIssueCode,
   type OperationalFlowNode,
   type OperationalFlowOrderInput,
+  type OperationalFlowContext,
   type OperationalFlowStage,
   type OperationalFlowState,
   type OperationalFlowUnknown,

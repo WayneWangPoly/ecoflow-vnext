@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildOperationalFlow,
   classifyOperationalFlowOrder,
+  isOperationalFlowCommissioningDeferred,
   operationalFlowStages,
 } from '../src/features/intelligence/operationalFlow/operationalFlowContract.ts';
 
@@ -53,6 +54,11 @@ test('pre-release orders follow exception and governed release-gate precedence',
 
 test('pre-go-live commissioning collapses mapping and stock dependencies without hiding real blockers', () => {
   const commissioning = { inventoryQuantityCommissioned: false };
+
+  assert.equal(isOperationalFlowCommissioningDeferred(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning), true);
+  assert.equal(isOperationalFlowCommissioningDeferred(order('stock', 'IMPORTED', 'BLOCKED_STOCK'), commissioning), true);
+  assert.equal(isOperationalFlowCommissioningDeferred(order('data', 'IMPORTED', 'BLOCKED_DATA'), commissioning), false);
+  assert.equal(isOperationalFlowCommissioningDeferred(order('failed', 'FAILED', 'BLOCKED_MAPPING'), commissioning), false);
 
   const mapping = classifyOperationalFlowOrder(order('mapping', 'MAPPING_EXCEPTION', 'BLOCKED_MAPPING'), commissioning);
   assert.equal(mapping.kind, 'classified');

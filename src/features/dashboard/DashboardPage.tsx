@@ -27,6 +27,7 @@ import { loadWarehouseLocationItems, type WarehouseLocationItemRow } from '@/dat
 import { loadOrdermentumMirrorHealth, type OrdermentumMirrorHealthRow } from '@/features/team/ordermentumSync';
 import {
   buildOperationalFlow,
+  isOperationalFlowCommissioningDeferred,
   operationalFlowStages,
   type OperationalFlowStage,
 } from '@/features/intelligence/operationalFlow';
@@ -137,10 +138,6 @@ function stageCount(flow: ReturnType<typeof buildOperationalFlow>, stage: Operat
   return flow.nodes.find((node) => node.key === stage)?.count ?? 0;
 }
 
-function isCommissioningDeferredOrder(order: ImportedOrder, inventoryQuantityCommissioned: boolean) {
-  if (inventoryQuantityCommissioned || order.status === 'FAILED') return false;
-  return order.releaseGateStatus === 'BLOCKED_MAPPING' || order.releaseGateStatus === 'BLOCKED_STOCK';
-}
 
 export function DashboardPage({
   role,
@@ -289,13 +286,17 @@ export function DashboardPage({
     }),
     [inventoryQuantityCommissioned, readiness, todayOrders],
   );
+  const commissioningContext = useMemo(
+    () => ({ inventoryQuantityCommissioned: readiness ? inventoryQuantityCommissioned : undefined }),
+    [inventoryQuantityCommissioned, readiness],
+  );
   const commissioningDeferredCount = useMemo(
-    () => orders.filter((order) => isCommissioningDeferredOrder(order, inventoryQuantityCommissioned)).length,
-    [inventoryQuantityCommissioned, orders],
+    () => orders.filter((order) => isOperationalFlowCommissioningDeferred(order, commissioningContext)).length,
+    [commissioningContext, orders],
   );
   const todayCommissioningDeferred = useMemo(
-    () => todayOrders.filter((order) => isCommissioningDeferredOrder(order, inventoryQuantityCommissioned)).length,
-    [inventoryQuantityCommissioned, todayOrders],
+    () => todayOrders.filter((order) => isOperationalFlowCommissioningDeferred(order, commissioningContext)).length,
+    [commissioningContext, todayOrders],
   );
   const todayTotal = todayFlow.classifiedCount;
   const todayDelivered = stageCount(todayFlow, 'DELIVERED');
