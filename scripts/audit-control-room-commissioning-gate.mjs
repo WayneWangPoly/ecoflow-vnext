@@ -4,6 +4,7 @@ import fs from 'node:fs';
 // Commissioning is a server-authoritative global operating mode; this audit
 // prevents UI cleanup from weakening release, data-quality or failure gates.
 const flow = fs.readFileSync('src/features/intelligence/operationalFlow/operationalFlowContract.ts', 'utf8');
+const flowIndex = fs.readFileSync('src/features/intelligence/operationalFlow/index.ts', 'utf8');
 const dashboard = fs.readFileSync('src/features/dashboard/DashboardPage.tsx', 'utf8');
 
 assert.ok(
@@ -15,10 +16,24 @@ assert.ok(
 );
 
 assert.ok(
+  flow.includes('export function isOperationalFlowCommissioningDeferred(')
+    && flow.includes("status === 'CANCELLED' || status === 'FAILED' || EXECUTION_STAGE_BY_STATUS[status]")
+    && flow.includes("gate.kind === 'known' && COMMISSIONING_DEFERRED_GATES.has(gate.value)")
+    && flow.includes('const commissioningDeferred = isOperationalFlowCommissioningDeferred(input, context);'),
+  'Commissioning deferral must have one governed classifier that excludes failed, cancelled and execution work.',
+);
+
+assert.ok(
+  flowIndex.includes('isOperationalFlowCommissioningDeferred')
+    && dashboard.includes('isOperationalFlowCommissioningDeferred(order, commissioningContext)')
+    && !dashboard.includes('releaseGateStatus ==='),
+  'Control Room summaries must consume the governed classifier instead of duplicating release-gate rules.',
+);
+
+assert.ok(
   flow.includes("status === 'MAPPING_EXCEPTION' && commissioningDeferred")
-    && flow.includes("stage: 'NEW'")
-    && flow.includes("status !== 'FAILED'"),
-  'Pre-commission mapping/stock dependencies must stay loaded without becoming order-level action items, while FAILED remains actionable.',
+    && flow.includes("stage: 'NEW'"),
+  'Pre-commission mapping/stock dependencies must stay loaded without becoming order-level action items.',
 );
 
 assert.ok(
