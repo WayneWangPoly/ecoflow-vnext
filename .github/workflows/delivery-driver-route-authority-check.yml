@@ -16,6 +16,7 @@ on:
       - 'src/data/repositories/pickSync.ts'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-route-authority-contract-test.sql'
+      - 'scripts/delivery-driver-execution-assignment-contract-test.sql'
       - 'scripts/audit-delivery-route-authority.mjs'
       - 'scripts/audit-delivery-driver-command-surface.mjs'
       - '.github/workflows/delivery-driver-route-authority-check.yml'
@@ -67,8 +68,11 @@ jobs:
       - name: Apply Driver execution assignment gate
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql
 
-      - name: Execute route + Driver assignment + execution contract
+      - name: Execute route + Driver assignment contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-contract-test.sql
+
+      - name: Execute assigned Driver write-isolation contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-assignment-contract-test.sql
 
       - name: Audit application authority direction
         run: node scripts/audit-delivery-route-authority.mjs
