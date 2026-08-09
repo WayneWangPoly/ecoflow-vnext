@@ -95,16 +95,24 @@ begin
 end;
 $verify$;
 
--- Receiving scan resolves canonical identity, preserves the existing operational
--- Ordermentum SKU namespace, is idempotent, and stages zero quantity side effect.
+-- Receiving resolves canonical identity but remains a staged transaction: scan
+-- and line confirmation are quantity-neutral; only explicit batch post creates
+-- the RECEIVE ledger entry and warehouse-location quantity. Replay stays idempotent.
 do $verify$
 declare
   v_batch record;
   v_line record;
   v_replay record;
+  v_confirm record;
+  v_post record;
+  v_replay_post record;
   v_moves_before bigint;
-  v_moves_after bigint;
+  v_moves_after_scan bigint;
+  v_moves_after_confirm bigint;
+  v_moves_after_post bigint;
   v_unknown_blocked boolean:=false;
+  v_unconfirmed_blocked boolean:=false;
+  v_stock numeric;
 begin
   select * into v_batch from public.ecoflow_start_warehouse_receiving_batch('Supplier A','PO-1',null,'fixture');
   select count(*) into v_moves_before from public.ecoflow_inventory_movements;
@@ -133,15 +141,62 @@ begin
   end;
   if not v_unknown_blocked then raise exception 'receiving accepted legacy-only barcode'; end if;
 
-  select count(*) into v_moves_after from public.ecoflow_inventory_movements;
-  if v_moves_after<>v_moves_before then raise exception 'receiving scan changed quantity before explicit post'; end if;
+  select count(*) into v_moves_after_scan from public.ecoflow_inventory_movements;
+  if v_moves_after_scan<>v_moves_before then raise exception 'receiving scan changed quantity before explicit post'; end if;
+  if exists(select 1 from public.ecoflow_warehouse_location_items where sku='CUP-12W') then
+    raise exception 'receiving scan changed warehouse-location quantity before explicit post';
+  end if;
+
+  begin
+    perform * from public.ecoflow_complete_warehouse_receiving_batch(v_batch.batch_id,'must require confirmation');
+  exception when others then
+    if position('all scanned receiving lines must be confirmed before completion' in sqlerrm)>0 then
+      v_unconfirmed_blocked:=true;
+    else raise;
+    end if;
+  end;
+  if not v_unconfirmed_blocked then raise exception 'receiving posted an unconfirmed line'; end if;
+
+  select * into v_confirm from public.ecoflow_confirm_warehouse_receiving_line(v_line.line_id,true,'count verified');
+  if not v_confirm.confirmation_checked or v_confirm.line_status<>'CONFIRMED' then
+    raise exception 'receiving confirmation did not reach CONFIRMED';
+  end if;
+  select count(*) into v_moves_after_confirm from public.ecoflow_inventory_movements;
+  if v_moves_after_confirm<>v_moves_before then raise exception 'line confirmation changed quantity before explicit batch post'; end if;
+
+  select * into v_post from public.ecoflow_complete_warehouse_receiving_batch(v_batch.batch_id,'explicit post');
+  if v_post.batch_status<>'POSTED' or v_post.posted_lines<>1 or v_post.posted_units<>2000 then
+    raise exception 'explicit receiving post returned wrong result';
+  end if;
+  select count(*) into v_moves_after_post from public.ecoflow_inventory_movements;
+  if v_moves_after_post<>v_moves_before+1 then raise exception 'explicit receiving post did not create exactly one quantity movement'; end if;
+  if not exists(
+    select 1 from public.ecoflow_inventory_movements
+    where reference_type='WAREHOUSE_RECEIVING_LINE' and reference_id=v_line.line_id::text
+      and sku='CUP-12W' and movement_type='RECEIVE' and quantity=2000
+      and source='WAREHOUSE_RECEIVING_BATCH'
+  ) then raise exception 'receiving post movement lost canonical operational SKU/quantity/source'; end if;
+  select quantity into v_stock from public.ecoflow_warehouse_location_items i
+  join public.ecoflow_warehouse_locations l on l.id=i.location_id
+  where i.sku='CUP-12W' and i.unit_level='carton' and l.location_code='A1';
+  if v_stock<>2000 then raise exception 'receiving post warehouse quantity expected 2000, got %',v_stock; end if;
+
+  select * into v_replay_post from public.ecoflow_complete_warehouse_receiving_batch(v_batch.batch_id,'post replay');
+  if v_replay_post.batch_status<>'POSTED' or v_replay_post.posted_lines<>1 or v_replay_post.posted_units<>2000 then
+    raise exception 'receiving post replay changed posted result';
+  end if;
+  if (select count(*) from public.ecoflow_inventory_movements where reference_type='WAREHOUSE_RECEIVING_LINE' and reference_id=v_line.line_id::text)<>1 then
+    raise exception 'receiving post replay duplicated quantity movement';
+  end if;
 end;
 $verify$;
 
 -- Pick must validate barcode/family before the pre-existing stock mutation runs.
 insert into public.ecoflow_warehouse_location_items(location_id,sku,product_name,source_barcode,unit_level,quantity,status)
 select id,'CUP-12W','12oz White Cup','LEGACY-FAKE-001','carton',5,'ACTIVE'
-from public.ecoflow_warehouse_locations where location_code='A1';
+from public.ecoflow_warehouse_locations where location_code='A1'
+on conflict(location_id,sku,unit_level) do update set
+  quantity=excluded.quantity,source_barcode=excluded.source_barcode,status='ACTIVE',updated_at=now();
 
 do $verify$
 declare
