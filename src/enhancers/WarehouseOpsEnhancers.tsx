@@ -7,7 +7,6 @@ import { FirstStocktakePackagingSignal } from '../FirstStocktakePackagingSignal'
 import { PickTaskOwnership } from '../PickTaskOwnership';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
-import { WarehouseBarcodeTargetBridge } from '../WarehouseBarcodeTargetBridge';
 import { WarehouseCameraAngleAssist } from '../WarehouseCameraAngleAssist';
 import { WarehouseCameraScanner } from '../WarehouseCameraScanner';
 import { WarehousePickHandoffStatus } from '../WarehousePickHandoffStatus';
@@ -52,7 +51,6 @@ export default function WarehouseOpsEnhancers() {
       <PickTaskOwnership />
       <StageAndLoadExecution />
       <WarehouseBarcodeSprintMount />
-      <WarehouseBarcodeTargetBridge />
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <WarehousePurchaseOrderReceiving />
