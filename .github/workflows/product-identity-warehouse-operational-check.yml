@@ -6,10 +6,16 @@ on:
       - 'supabase/migrations/20260808180500_product_identity_authority.sql'
       - 'supabase/migrations/20260809184500_product_identity_warehouse_operational_gate.sql'
       - 'supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql'
+      - 'supabase/migrations/20260809204000_product_identity_unknown_quarantine_gate.sql'
       - 'scripts/product-identity-warehouse-operational-fixture.sql'
+      - 'scripts/product-identity-warehouse-receiving-post-fixture.sql'
       - 'scripts/product-identity-warehouse-operational-contract-test.sql'
       - '.github/workflows/product-identity-warehouse-operational-check.yml'
       - 'src/FirstStocktakeFlow.tsx'
+      - 'src/FirstStocktakeWorkspace.tsx'
+      - 'src/WarehouseBarcodeSprintMount.tsx'
+      - 'src/enhancers/WarehouseOpsEnhancers.tsx'
+      - 'src/WarehouseReceivingFlow.tsx'
       - 'src/app/PickBoard.tsx'
       - 'src/WarehouseReturnsPanel.tsx'
       - 'src/data/repositories/productIdentityBarcodeResolution.ts'
@@ -49,6 +55,9 @@ jobs:
       - name: Prepare operational warehouse fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-fixture.sql
 
+      - name: Prepare explicit receiving confirm/post fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-receiving-post-fixture.sql
+
       - name: Apply canonical Product Identity authority
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180500_product_identity_authority.sql
 
@@ -57,6 +66,9 @@ jobs:
 
       - name: Preserve warehouse operational SKU namespace
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql
+
+      - name: Canonicalize unknown receiving quarantine
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809204000_product_identity_unknown_quarantine_gate.sql
 
       - name: Execute end-to-end operational authority contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-contract-test.sql
@@ -67,10 +79,14 @@ jobs:
           set -euo pipefail
           gate=supabase/migrations/20260809184500_product_identity_warehouse_operational_gate.sql
           compat=supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql
+          quarantine=supabase/migrations/20260809204000_product_identity_unknown_quarantine_gate.sql
+
           grep -q 'ecoflow_resolve_operational_barcode' "$gate"
           grep -q 'ecoflow_record_pick_movement_precanonical_20260809' "$gate"
           grep -q 'CANONICAL_BARCODE_REQUIRED_FOR_RESTOCK' "$gate"
           grep -q 'ecoflow_operational_sku_code' "$compat"
+          grep -q 'ecoflow_resolve_operational_barcode' "$quarantine"
+          grep -q 'BARCODE_NOT_MAPPED: CANONICAL_BARCODE_UNKNOWN' "$quarantine"
 
           # Operational mutation bodies must not query the legacy barcode registry.
           if awk '/create or replace function public.ecoflow_stage_receiving_scan_v2/{flag=1} flag{print} /revoke all on function public.ecoflow_stage_receiving_scan_v2/{flag=0}' "$gate" | grep -q 'ecoflow_sku_barcode_registry'; then
@@ -79,5 +95,53 @@ jobs:
           fi
           if awk '/create or replace function public.ecoflow_record_return_inspection_item/{flag=1} flag{print} /revoke all on function public.ecoflow_record_return_inspection_item/{flag=0}' "$gate" | grep -q 'ecoflow_sku_barcode_registry'; then
             echo 'Returns still query legacy barcode authority.' >&2
+            exit 1
+          fi
+          if grep -q 'ecoflow_sku_barcode_registry' "$quarantine"; then
+            echo 'Unknown receiving quarantine still references legacy barcode authority.' >&2
+            exit 1
+          fi
+
+          # Current operational surfaces may call repositories/RPCs, but must not
+          # directly query the legacy barcode registry.
+          active_surfaces=(
+            src/FirstStocktakeFlow.tsx
+            src/FirstStocktakeWorkspace.tsx
+            src/WarehouseReceivingFlow.tsx
+            src/app/PickBoard.tsx
+            src/WarehouseReturnsPanel.tsx
+            src/data/repositories/stagedReceiving.ts
+            src/data/repositories/warehouseLocations.ts
+            src/data/repositories/returnZoneOperations.ts
+            src/data/repositories/productIdentityBarcodeResolution.ts
+          )
+          if grep -n 'ecoflow_sku_barcode_registry' "${active_surfaces[@]}"; then
+            echo 'An active warehouse surface directly references legacy barcode authority.' >&2
+            exit 1
+          fi
+
+          # Identity commissioning is no longer mounted through the retired
+          # Stocktake/Barcode Sprint/Quick Sleeve mapping UIs.
+          if grep -q 'FirstStocktakeMappingFlow' src/FirstStocktakeWorkspace.tsx; then
+            echo 'First Stocktake still mounts legacy mapping authority.' >&2
+            exit 1
+          fi
+          if grep -q "from './WarehouseBarcodeSprint'" src/WarehouseBarcodeSprintMount.tsx; then
+            echo 'Warehouse operations still mount legacy Barcode Sprint authority.' >&2
+            exit 1
+          fi
+          if grep -q 'QuickSleeveBarcodeCapture' src/enhancers/WarehouseOpsEnhancers.tsx; then
+            echo 'Warehouse operations still mount legacy quick sleeve mapping authority.' >&2
+            exit 1
+          fi
+          grep -q "/commissioning/product-identity" src/FirstStocktakeWorkspace.tsx
+          grep -q "/commissioning/product-identity" src/WarehouseBarcodeSprintMount.tsx
+          grep -q 'resolveOperationalBarcode' src/app/PickBoard.tsx
+          grep -q "ecoflow_resolve_operational_barcode" src/data/repositories/productIdentityBarcodeResolution.ts
+
+          # Stocktake may record a validated count observation, but active
+          # operational surfaces may never commission identity with MAP_ONLY.
+          if grep -n "actionMode: 'MAP_ONLY'" src/FirstStocktakeFlow.tsx src/WarehouseReceivingFlow.tsx src/app/PickBoard.tsx src/WarehouseReturnsPanel.tsx; then
+            echo 'An active warehouse operation can still commission identity with MAP_ONLY.' >&2
             exit 1
           fi
