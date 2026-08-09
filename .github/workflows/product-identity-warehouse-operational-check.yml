@@ -5,6 +5,7 @@ on:
     paths:
       - 'supabase/migrations/20260808180500_product_identity_authority.sql'
       - 'supabase/migrations/20260809184500_product_identity_warehouse_operational_gate.sql'
+      - 'supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql'
       - 'scripts/product-identity-warehouse-operational-fixture.sql'
       - 'scripts/product-identity-warehouse-operational-contract-test.sql'
       - '.github/workflows/product-identity-warehouse-operational-check.yml'
@@ -54,6 +55,9 @@ jobs:
       - name: Apply warehouse operational authority gate
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809184500_product_identity_warehouse_operational_gate.sql
 
+      - name: Preserve warehouse operational SKU namespace
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql
+
       - name: Execute end-to-end operational authority contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-contract-test.sql
 
@@ -62,12 +66,13 @@ jobs:
         run: |
           set -euo pipefail
           gate=supabase/migrations/20260809184500_product_identity_warehouse_operational_gate.sql
+          compat=supabase/migrations/20260809193000_product_identity_operational_sku_namespace.sql
           grep -q 'ecoflow_resolve_operational_barcode' "$gate"
           grep -q 'ecoflow_record_pick_movement_precanonical_20260809' "$gate"
           grep -q 'CANONICAL_BARCODE_REQUIRED_FOR_RESTOCK' "$gate"
+          grep -q 'ecoflow_operational_sku_code' "$compat"
 
-          # The new gate may keep legacy table names only as comments/history; its
-          # operational function bodies must not query the legacy barcode registry.
+          # Operational mutation bodies must not query the legacy barcode registry.
           if awk '/create or replace function public.ecoflow_stage_receiving_scan_v2/{flag=1} flag{print} /revoke all on function public.ecoflow_stage_receiving_scan_v2/{flag=0}' "$gate" | grep -q 'ecoflow_sku_barcode_registry'; then
             echo 'Receiving still queries legacy barcode authority.' >&2
             exit 1
