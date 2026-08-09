@@ -1,0 +1,68 @@
+name: Delivery Driver route authority check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
+      - 'src/data/repositories/deliveryRouteAuthority.ts'
+      - 'src/app/App.tsx'
+      - 'src/app/DriverApp.tsx'
+      - 'scripts/delivery-route-authority-fixture.sql'
+      - 'scripts/delivery-route-authority-contract-test.sql'
+      - 'scripts/audit-delivery-route-authority.mjs'
+      - '.github/workflows/delivery-driver-route-authority-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  route-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54330:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54330
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare route authority fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-fixture.sql
+
+      - name: Apply route authority migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809212500_delivery_route_authority.sql
+
+      - name: Execute route authority contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-contract-test.sql
+
+      - name: Audit application authority direction
+        run: node scripts/audit-delivery-route-authority.mjs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
+
+      - name: Production build
+        run: node ./node_modules/vite/bin/vite.js build
