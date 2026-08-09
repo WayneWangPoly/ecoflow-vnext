@@ -45,7 +45,12 @@ begin
     perform * from public.ecoflow_stage_unknown_barcode_intake(
       'bbbbbbbb-0000-4000-8000-000000000098'::uuid,'NO-SUCH-BARCODE',1,'driver must not quarantine','driver:unknown',now()
     );
-  exception when sqlstate '42501' then v_quarantine_denied:=true;
+  exception when others then
+    if sqlstate='42501' or position('OWNER_ADMIN_OR_WAREHOUSE_REQUIRED' in sqlerrm)>0 then
+      v_quarantine_denied:=true;
+    else
+      raise;
+    end if;
   end;
 
   if not v_stocktake_denied then raise exception 'DRIVER gained Stocktake write access'; end if;
