@@ -226,14 +226,18 @@ begin
 end;
 $verify$;
 
--- Private pre-canonical mutation primitive must not be executable by clients.
+-- Private pre-canonical mutation primitive must not be executable by API client
+-- roles. Function owners retain EXECUTE by design; effective privilege is what
+-- matters for authenticated/anon callers.
 do $verify$
-declare v_acl text;
+declare
+  v_proc regprocedure:='public.ecoflow_record_pick_movement_precanonical_20260809(text,numeric,text,text,text)'::regprocedure;
 begin
-  select coalesce(array_to_string(proacl,','),'') into v_acl
-  from pg_proc where oid='public.ecoflow_record_pick_movement_precanonical_20260809(text,numeric,text,text,text)'::regprocedure;
-  if v_acl like '%authenticated=X%' or v_acl like '%=X%' then
-    raise exception 'pre-canonical pick primitive remains client-executable: %',v_acl;
+  if has_function_privilege('authenticated',v_proc,'EXECUTE') then
+    raise exception 'pre-canonical pick primitive is executable by authenticated';
+  end if;
+  if has_function_privilege('anon',v_proc,'EXECUTE') then
+    raise exception 'pre-canonical pick primitive is executable by anon';
   end if;
 end;
 $verify$;
