@@ -1,7 +1,6 @@
 // Supabase Edge Function: notify-route-start
 // Sends one idempotent "delivery today" email per store after the driver starts a route.
-// Recipient addresses are loaded server-side from an Owner-only contact table; the browser
-// cannot choose arbitrary recipients. Required secrets: RESEND_API_KEY, DELIVERY_FROM_EMAIL.
+// Recipient addresses, route membership and route-start time are server authoritative.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
@@ -26,6 +25,14 @@ type StoreGroup = {
   storeName: string;
   orderIds: string[];
   orderNumbers: string[];
+};
+
+type ResourceRow = {
+  route_snapshot_id: string;
+  run_code: string;
+  assigned_driver_user_id: string;
+  assigned_driver_label: string | null;
+  snapshot: { stops?: Array<{ orderId?: string }> };
 };
 
 function json(status: number, body: unknown) {
@@ -97,18 +104,44 @@ Deno.serve(async (req) => {
 
   const businessDay = clean(body.businessDay);
   const routeId = clean(body.routeId);
-  const startedAt = clean(body.startedAt);
-  const orderIds = [...new Set((body.orderIds ?? []).map(clean).filter(Boolean))].slice(0, 200);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDay)) return json(400, { error: 'VALID_BUSINESS_DAY_REQUIRED' });
   if (!routeId) return json(400, { error: 'ROUTE_ID_REQUIRED' });
-  if (!startedAt || Number.isNaN(new Date(startedAt).getTime())) return json(400, { error: 'VALID_ROUTE_START_REQUIRED' });
-  if (!orderIds.length) return json(200, { ok: true, sent: 0, alreadySent: 0, missingContact: 0, disabled: 0, failed: 0, details: [] });
+
+  // Resolve the caller-supplied legacy/canonical route reference through the same
+  // DB authority used by Driver writes. A DRIVER therefore cannot notify another run.
+  const { data: resourceData, error: resourceError } = await userClient.rpc('ecoflow_authorize_delivery_resource', {
+    p_business_day: businessDay,
+    p_route_reference: routeId,
+    p_order_id: null,
+  });
+  const resource = (resourceData as ResourceRow[] | null)?.[0];
+  if (resourceError || !resource?.route_snapshot_id || !resource.run_code) {
+    return json(403, { error: 'DELIVERY_ROUTE_FORBIDDEN', details: resourceError?.message });
+  }
+
+  const canonicalRouteId = `RUN-${businessDay.replaceAll('-', '')}-${resource.run_code}`;
+  const orderIds = [...new Set((resource.snapshot?.stops ?? []).map((stop) => clean(stop.orderId)).filter(Boolean))].slice(0, 200);
+  if (!orderIds.length) return json(422, { error: 'AUTHORITATIVE_ROUTE_HAS_NO_ORDERS' });
+
+  // Route-start customer communication is an effect of the authoritative shared
+  // route state, not a browser-provided timestamp. A premature function call fails.
+  const { data: routeState, error: routeStateError } = await admin
+    .from('ecoflow_day_state')
+    .select('payload')
+    .eq('business_day', businessDay)
+    .eq('scope', `run:${resource.run_code}:route`)
+    .maybeSingle();
+  if (routeStateError) return json(500, { error: 'ROUTE_STATE_LOOKUP_FAILED', details: routeStateError.message });
+  const startedAt = clean((routeState?.payload as Record<string, unknown> | null)?.startedAt);
+  const endedAt = clean((routeState?.payload as Record<string, unknown> | null)?.endedAt);
+  if (!startedAt || Number.isNaN(new Date(startedAt).getTime())) return json(409, { error: 'AUTHORITATIVE_ROUTE_NOT_STARTED' });
+  if (endedAt) return json(409, { error: 'AUTHORITATIVE_ROUTE_ALREADY_ENDED' });
 
   const { data: acknowledgement, error: acknowledgementError } = await admin
     .from('ecoflow_driver_departure_acknowledgements')
     .select('id')
     .eq('business_day', businessDay)
-    .eq('route_id', routeId)
+    .eq('route_id', canonicalRouteId)
     .eq('driver_user_id', actor.id)
     .eq('policy_version', POLICY_VERSION)
     .maybeSingle();
@@ -143,7 +176,7 @@ Deno.serve(async (req) => {
     groups.set(key, current);
   }
 
-  if (!groups.size) return json(422, { error: 'ROUTE_ORDERS_NOT_FOUND', details: 'No released route orders could be matched to om_orders.' });
+  if (!groups.size) return json(422, { error: 'ROUTE_ORDERS_NOT_FOUND', details: 'No authoritative route orders could be matched to om_orders.' });
 
   const resendApiKey = Deno.env.get('RESEND_API_KEY');
   const fromEmail = Deno.env.get('DELIVERY_FROM_EMAIL');
@@ -162,7 +195,7 @@ Deno.serve(async (req) => {
       .from('ecoflow_delivery_notification_log')
       .select('id,status,recipient_email')
       .eq('business_day', businessDay)
-      .eq('route_id', routeId)
+      .eq('route_id', canonicalRouteId)
       .eq('store_key', group.storeKey)
       .eq('notification_type', 'ROUTE_STARTED_TODAY')
       .maybeSingle();
@@ -255,7 +288,7 @@ Deno.serve(async (req) => {
 
     const logRow = {
       business_day: businessDay,
-      route_id: routeId,
+      route_id: canonicalRouteId,
       retailer_id: group.retailerId,
       store_key: group.storeKey,
       store_name: group.storeName,
@@ -269,7 +302,13 @@ Deno.serve(async (req) => {
       requested_by: actor.id,
       requested_at: new Date().toISOString(),
       sent_at: sentAt,
-      payload: { routeStartedAt: startedAt, driverRole: profile.app_role, acknowledgementId: acknowledgement?.id ?? null },
+      payload: {
+        routeStartedAt: startedAt,
+        routeSnapshotId: resource.route_snapshot_id,
+        runCode: resource.run_code,
+        driverRole: profile.app_role,
+        acknowledgementId: acknowledgement?.id ?? null,
+      },
     };
     const { error: logError } = await admin
       .from('ecoflow_delivery_notification_log')
