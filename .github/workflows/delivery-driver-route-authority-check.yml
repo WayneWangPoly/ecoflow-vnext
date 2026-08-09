@@ -26,6 +26,8 @@ on:
       - 'scripts/delivery-driver-resource-authority-test-inspection.sql'
       - 'scripts/delivery-driver-resource-authority-contract-test.sql'
       - 'scripts/delivery-pod-business-day-guard-contract-test.sql'
+      - 'scripts/delivery-private-primitive-identifier-contract-test.sql'
+      - 'scripts/audit-delivery-authority-migration-order.mjs'
       - 'scripts/audit-delivery-route-authority.mjs'
       - 'scripts/audit-delivery-driver-command-surface.mjs'
       - 'scripts/audit-delivery-driver-resource-authority.mjs'
@@ -102,6 +104,12 @@ jobs:
 
       - name: Execute malformed POD business-day guard contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-pod-business-day-guard-contract-test.sql
+
+      - name: Verify private primitive catalog identities and ACLs
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-private-primitive-identifier-contract-test.sql
+
+      - name: Audit migration ordering for authority overrides
+        run: node scripts/audit-delivery-authority-migration-order.mjs
 
       - name: Audit application authority direction
         run: node scripts/audit-delivery-route-authority.mjs
