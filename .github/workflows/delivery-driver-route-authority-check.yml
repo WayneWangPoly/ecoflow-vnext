@@ -6,12 +6,14 @@ on:
       - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
       - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
       - 'supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql'
+      - 'supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql'
       - 'src/data/repositories/deliveryRouteAuthority.ts'
       - 'src/data/repositories/deliveryDispatchDrivers.ts'
       - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
       - 'src/features/delivery/deliveryDispatchCommandSurface.css'
       - 'src/app/App.tsx'
       - 'src/app/DriverApp.tsx'
+      - 'src/data/repositories/pickSync.ts'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-route-authority-contract-test.sql'
       - 'scripts/audit-delivery-route-authority.mjs'
@@ -47,8 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare route authority fixture
+      - name: Prepare route + shared-state authority fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-fixture.sql
+
+      - name: Apply existing operational CAS authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801053000_operational_state_authority.sql
 
       - name: Apply route authority migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809212500_delivery_route_authority.sql
@@ -59,7 +64,10 @@ jobs:
       - name: Apply dispatch Driver directory
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql
 
-      - name: Execute route + Driver assignment contract
+      - name: Apply Driver execution assignment gate
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql
+
+      - name: Execute route + Driver assignment + execution contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-contract-test.sql
 
       - name: Audit application authority direction
