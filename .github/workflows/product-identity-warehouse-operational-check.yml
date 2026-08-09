@@ -10,6 +10,7 @@ on:
       - 'scripts/product-identity-warehouse-operational-fixture.sql'
       - 'scripts/product-identity-warehouse-receiving-post-fixture.sql'
       - 'scripts/product-identity-warehouse-operational-contract-test.sql'
+      - 'scripts/product-identity-warehouse-operational-role-contract-test.sql'
       - '.github/workflows/product-identity-warehouse-operational-check.yml'
       - 'src/FirstStocktakeFlow.tsx'
       - 'src/FirstStocktakeWorkspace.tsx'
@@ -69,6 +70,9 @@ jobs:
 
       - name: Canonicalize unknown receiving quarantine
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809204000_product_identity_unknown_quarantine_gate.sql
+
+      - name: Verify warehouse role boundaries
+        run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-role-contract-test.sql
 
       - name: Execute end-to-end operational authority contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-contract-test.sql
