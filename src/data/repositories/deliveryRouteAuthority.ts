@@ -21,6 +21,8 @@ export type LockedDeliveryRouteRecord = {
   runCode: string;
   revision: number;
   snapshot: LockedDeliveryRouteSnapshot;
+  assignedDriverUserId: string;
+  assignedDriverLabel: string;
   approvedBy: string;
   approvedAt: string;
 };
@@ -55,13 +57,18 @@ function routeSnapshot(value: unknown): LockedDeliveryRouteSnapshot {
 function record(row: Record<string, unknown>): LockedDeliveryRouteRecord {
   const snapshot = routeSnapshot(row.snapshot);
   const revision = finiteNumber(row.revision);
+  const assignedDriverUserId = String(row.assigned_driver_user_id || '');
+  const assignedDriverLabel = String(row.assigned_driver_label || '');
   if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Approved route revision is invalid.');
+  if (!assignedDriverUserId || !assignedDriverLabel) throw new Error('Approved route has no active Driver assignment. Ask office to re-approve the route.');
   return {
     routeSnapshotId: String(row.route_snapshot_id || ''),
     businessDay: String(row.business_day || snapshot.businessDay),
     runCode: String(row.run_code || snapshot.runCode),
     revision,
     snapshot,
+    assignedDriverUserId,
+    assignedDriverLabel,
     approvedBy: String(row.approved_by || ''),
     approvedAt: String(row.approved_at || ''),
   };
@@ -108,13 +115,21 @@ export function driverRunFromLockedSnapshot(snapshot: LockedDeliveryRouteSnapsho
 }
 
 export async function lockDeliveryRouteSnapshot(
-  input: { businessDay: string; runCode: string; snapshot: LockedDeliveryRouteSnapshot },
+  input: {
+    businessDay: string;
+    runCode: string;
+    assignedDriverUserId: string;
+    snapshot: LockedDeliveryRouteSnapshot;
+  },
   client?: SupabaseClient | null,
 ) {
   const active = requireClient(client);
-  const { data, error } = await active.rpc('ecoflow_lock_delivery_route_snapshot', {
+  const driverId = input.assignedDriverUserId.trim();
+  if (!driverId) throw new Error('Choose an active Driver before approving the route.');
+  const { data, error } = await active.rpc('ecoflow_lock_delivery_route_snapshot_v2', {
     p_business_day: input.businessDay,
     p_run_code: input.runCode,
+    p_assigned_driver_user_id: driverId,
     p_snapshot: input.snapshot,
   });
   if (error) throw new Error(message(error));
@@ -142,7 +157,7 @@ export async function loadLockedDeliveryRouteSnapshot(
   client?: SupabaseClient | null,
 ): Promise<LockedDeliveryRouteRecord | null> {
   const active = requireClient(client);
-  const { data, error } = await active.rpc('ecoflow_get_locked_delivery_route_snapshot', {
+  const { data, error } = await active.rpc('ecoflow_get_assigned_delivery_route_snapshot', {
     p_business_day: input.businessDay,
     p_run_code: input.runCode,
   });
