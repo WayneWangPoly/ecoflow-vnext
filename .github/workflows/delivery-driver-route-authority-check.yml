@@ -1,1 +1,138 @@
 name: Delivery Driver route authority check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
+      - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
+      - 'supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql'
+      - 'supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql'
+      - 'supabase/migrations/20260809224000_delivery_driver_resource_authority.sql'
+      - 'supabase/migrations/20260809224500_delivery_pod_business_day_guard.sql'
+      - 'supabase/functions/delivery-notification-dispatch/index.ts'
+      - 'supabase/functions/notify-route-start/index.ts'
+      - 'src/data/repositories/deliveryRouteAuthority.ts'
+      - 'src/data/repositories/deliveryDispatchDrivers.ts'
+      - 'src/data/repositories/deliveryPodQuality.ts'
+      - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
+      - 'src/features/delivery/deliveryDispatchCommandSurface.css'
+      - 'src/app/App.tsx'
+      - 'src/app/DriverApp.tsx'
+      - 'src/data/repositories/pickSync.ts'
+      - 'scripts/delivery-route-authority-fixture.sql'
+      - 'scripts/delivery-route-authority-contract-test.sql'
+      - 'scripts/delivery-driver-execution-assignment-contract-test.sql'
+      - 'scripts/delivery-driver-resource-authority-fixture.sql'
+      - 'scripts/delivery-driver-resource-authority-test-inspection.sql'
+      - 'scripts/delivery-driver-resource-authority-contract-test.sql'
+      - 'scripts/delivery-pod-business-day-guard-contract-test.sql'
+      - 'scripts/delivery-private-primitive-identifier-contract-test.sql'
+      - 'scripts/audit-delivery-authority-migration-order.mjs'
+      - 'scripts/audit-delivery-route-authority.mjs'
+      - 'scripts/audit-delivery-driver-command-surface.mjs'
+      - 'scripts/audit-delivery-driver-resource-authority.mjs'
+      - 'scripts/check-delivery-edge-function-syntax.mjs'
+      - '.github/workflows/delivery-driver-route-authority-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  route-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54330:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54330
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare route + shared-state authority fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-fixture.sql
+
+      - name: Apply existing operational CAS authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801053000_operational_state_authority.sql
+
+      - name: Apply route authority migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809212500_delivery_route_authority.sql
+
+      - name: Apply Driver assignment authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221000_delivery_route_driver_assignment.sql
+
+      - name: Apply dispatch Driver directory
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql
+
+      - name: Apply Driver execution assignment gate
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql
+
+      - name: Execute route + Driver assignment contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-contract-test.sql
+
+      - name: Execute assigned Driver write-isolation contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-assignment-contract-test.sql
+
+      - name: Prepare legacy delivery-operation fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-fixture.sql
+
+      - name: Expose fixture audit rows to contract actor
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-test-inspection.sql
+
+      - name: Apply delivery resource authority hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809224000_delivery_driver_resource_authority.sql
+
+      - name: Apply parse-safe POD business-day guard
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809224500_delivery_pod_business_day_guard.sql
+
+      - name: Execute delivery resource-isolation contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-contract-test.sql
+
+      - name: Execute malformed POD business-day guard contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-pod-business-day-guard-contract-test.sql
+
+      - name: Verify private primitive catalog identities and ACLs
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-private-primitive-identifier-contract-test.sql
+
+      - name: Audit migration ordering for authority overrides
+        run: node scripts/audit-delivery-authority-migration-order.mjs
+
+      - name: Audit application authority direction
+        run: node scripts/audit-delivery-route-authority.mjs
+
+      - name: Audit Delivery command surface and Driver hierarchy
+        run: node scripts/audit-delivery-driver-command-surface.mjs
+
+      - name: Audit Driver operational resource authority
+        run: node scripts/audit-delivery-driver-resource-authority.mjs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Parse Delivery Edge Function TypeScript
+        run: node scripts/check-delivery-edge-function-syntax.mjs
+
+      - name: TypeScript
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
+
+      - name: Production build
+        run: node ./node_modules/vite/bin/vite.js build
