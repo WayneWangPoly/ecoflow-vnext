@@ -1331,8 +1331,20 @@ export function App() {
   useEffect(() => {
     if (import.meta.env.DEV && !authEnabled) return;
     if (authEnabled && !authProfile?.user_id) return;
+    if (authEnabled && authProfile?.app_role === 'DRIVER') {
+      // A production Driver consumes only the assigned route snapshot + shared
+      // run state. Never preload broad Ordermentum order/customer views into a
+      // Driver browser merely to rebuild a route the office already approved.
+      trustedLiveDataRef.current = null;
+      setData(initialData);
+      setOrders(initialData.orders);
+      setSnapshotReady(false);
+      setLoadWarning('');
+      setLoadError('');
+      return;
+    }
     void reloadViews();
-  }, [reloadViews, authEnabled, authProfile?.user_id]);
+  }, [reloadViews, authEnabled, authProfile?.user_id, authProfile?.app_role]);
 
   async function logout() {
     window.localStorage.removeItem('ecoflow-role');
@@ -1372,7 +1384,7 @@ export function App() {
   if (workspace === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (workspace === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
-  if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
+  if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={initialData.orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 
   return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} snapshotReady={snapshotReady} snapshotLoading={snapshotLoading} healthNotice={loadWarning || undefined} />;
 }
