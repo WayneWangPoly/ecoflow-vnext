@@ -24,6 +24,7 @@ language plpgsql
 security definer
 set search_path=public
 as $$
+#variable_conflict error
 declare
   v_batch_id uuid;
 begin
@@ -36,16 +37,16 @@ begin
   for update of l;
   if v_batch_id is null then raise exception 'open receiving line not found'; end if;
 
-  update public.ecoflow_warehouse_receiving_lines
+  update public.ecoflow_warehouse_receiving_lines as l
   set confirmation_checked=coalesce(p_confirmed,true),
       line_status=case when coalesce(p_confirmed,true) then 'CONFIRMED' else 'WAITING_CONFIRM' end,
-      line_note=coalesce(nullif(trim(coalesce(p_note,'')),''),line_note),
+      line_note=coalesce(nullif(trim(coalesce(p_note,'')),''),l.line_note),
       confirmed_by=case when coalesce(p_confirmed,true) then auth.uid() else null end,
       confirmed_at=case when coalesce(p_confirmed,true) then now() else null end,
       updated_at=now()
-  where id=p_line_id and line_status in ('WAITING_CONFIRM','CONFIRMED');
+  where l.id=p_line_id and l.line_status in ('WAITING_CONFIRM','CONFIRMED');
 
-  update public.ecoflow_warehouse_receiving_batches b
+  update public.ecoflow_warehouse_receiving_batches as b
   set batch_status=case
         when exists(select 1 from public.ecoflow_warehouse_receiving_lines l where l.batch_id=b.id and l.line_status in ('WAITING_CONFIRM','CONFIRMED'))
          and not exists(select 1 from public.ecoflow_warehouse_receiving_lines l where l.batch_id=b.id and l.line_status in ('WAITING_CONFIRM','CONFIRMED') and not l.confirmation_checked)
@@ -71,6 +72,7 @@ language plpgsql
 security definer
 set search_path=public
 as $$
+#variable_conflict error
 declare
   v_unconfirmed integer;
   v_line record;
@@ -82,9 +84,9 @@ declare
 begin
   if not public.ecoflow_can_manage_warehouse() then raise exception 'OWNER_ADMIN_OR_WAREHOUSE_REQUIRED'; end if;
 
-  select * into v_batch
-  from public.ecoflow_warehouse_receiving_batches
-  where id=p_batch_id
+  select b.* into v_batch
+  from public.ecoflow_warehouse_receiving_batches b
+  where b.id=p_batch_id
   for update;
   if not found then raise exception 'receiving batch not found'; end if;
 
@@ -104,25 +106,25 @@ begin
   if v_batch.batch_status='CANCELLED' then raise exception 'cancelled receiving batch cannot be posted'; end if;
 
   select count(*) into v_unconfirmed
-  from public.ecoflow_warehouse_receiving_lines
-  where batch_id=p_batch_id
-    and line_status in ('WAITING_CONFIRM','CONFIRMED')
-    and not confirmation_checked;
+  from public.ecoflow_warehouse_receiving_lines l
+  where l.batch_id=p_batch_id
+    and l.line_status in ('WAITING_CONFIRM','CONFIRMED')
+    and not l.confirmation_checked;
   if v_unconfirmed>0 then raise exception 'all scanned receiving lines must be confirmed before completion'; end if;
 
   if not exists(
-    select 1 from public.ecoflow_warehouse_receiving_lines
-    where batch_id=p_batch_id and confirmation_checked and movement_id is null
+    select 1 from public.ecoflow_warehouse_receiving_lines l
+    where l.batch_id=p_batch_id and l.confirmation_checked and l.movement_id is null
   ) then raise exception 'no confirmed receiving lines to post'; end if;
 
   for v_line in
-    select * from public.ecoflow_warehouse_receiving_lines
-    where batch_id=p_batch_id and confirmation_checked and movement_id is null and line_status='CONFIRMED'
-    order by scanned_at asc
+    select l.* from public.ecoflow_warehouse_receiving_lines l
+    where l.batch_id=p_batch_id and l.confirmation_checked and l.movement_id is null and l.line_status='CONFIRMED'
+    order by l.scanned_at asc
   loop
-    select * into v_location
-    from public.ecoflow_warehouse_locations
-    where upper(location_code)=upper(v_line.suggested_location) and status='ACTIVE'
+    select wl.* into v_location
+    from public.ecoflow_warehouse_locations wl
+    where upper(wl.location_code)=upper(v_line.suggested_location) and wl.status='ACTIVE'
     limit 1;
     if not found then raise exception 'active warehouse location not found: %',v_line.suggested_location; end if;
 
@@ -180,15 +182,15 @@ begin
       ) returning id into v_warehouse_movement_id;
     end if;
 
-    update public.ecoflow_warehouse_receiving_lines
+    update public.ecoflow_warehouse_receiving_lines as l
     set movement_id=v_inventory_movement_id,line_status='POSTED',updated_at=now()
-    where id=v_line.id;
+    where l.id=v_line.id;
   end loop;
 
-  update public.ecoflow_warehouse_receiving_batches
+  update public.ecoflow_warehouse_receiving_batches as b
   set batch_status='POSTED',completed_by=auth.uid(),completed_at=now(),
-      batch_note=coalesce(nullif(trim(coalesce(p_note,'')),''),batch_note),updated_at=now()
-  where id=p_batch_id;
+      batch_note=coalesce(nullif(trim(coalesce(p_note,'')),''),b.batch_note),updated_at=now()
+  where b.id=p_batch_id;
 
   insert into public.ecoflow_warehouse_receiving_audit(batch_id,action,detail)
   values(p_batch_id,'BATCH_POSTED',nullif(trim(coalesce(p_note,'')),''));
