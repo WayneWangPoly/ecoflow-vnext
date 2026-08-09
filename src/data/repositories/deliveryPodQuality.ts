@@ -30,17 +30,16 @@ function errorMessage(error: unknown) {
   return String(error);
 }
 
+/** BOX resolution is a delivery resource read, not a generic day-state lookup. */
 export async function resolveOrderIdForBox(input: { businessDay: string; boxCode: string }, client?: SupabaseClient | null) {
   const active = requireSupabase(client);
-  const { data, error } = await active
-    .from('ecoflow_day_state')
-    .select('payload')
-    .eq('business_day', input.businessDay)
-    .eq('scope', 'meta')
-    .maybeSingle();
+  const { data, error } = await active.rpc('ecoflow_resolve_assigned_delivery_order_by_box', {
+    p_business_day: input.businessDay,
+    p_box_code: input.boxCode,
+  });
   if (error) throw new Error(errorMessage(error));
-  const payload = (data?.payload ?? {}) as { boxCodes?: Record<string, string> };
-  return Object.entries(payload.boxCodes ?? {}).find(([, code]) => code === input.boxCode)?.[0] ?? null;
+  const value = Array.isArray(data) ? data[0] : data;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 async function saveProof(input: {
