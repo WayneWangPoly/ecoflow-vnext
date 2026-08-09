@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Builder OS Evidence Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "project",
+    "problem",
+    "failed_approach",
+    "observed_evidence",
+    "root_cause",
+    "successful_pattern",
+    "general_rule",
+    "possible_eval",
+    "confidence",
+    "evidence_location"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "project": {
+      "type": "string"
+    },
+    "problem": {
+      "type": "string"
+    },
+    "failed_approach": {
+      "type": "string"
+    },
+    "observed_evidence": {
+      "type": "string"
+    },
+    "root_cause": {
+      "type": "string"
+    },
+    "successful_pattern": {
+      "type": "string"
+    },
+    "general_rule": {
+      "type": "string"
+    },
+    "possible_eval": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "enum": [
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "CANDIDATE"
+      ]
+    },
+    "evidence_location": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
