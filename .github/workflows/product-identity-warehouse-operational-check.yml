@@ -97,8 +97,8 @@ jobs:
             echo 'Returns still query legacy barcode authority.' >&2
             exit 1
           fi
-          if grep -q 'ecoflow_sku_barcode_registry' "$quarantine"; then
-            echo 'Unknown receiving quarantine still references legacy barcode authority.' >&2
+          if grep -vE '^[[:space:]]*--' "$quarantine" | grep -q 'ecoflow_sku_barcode_registry'; then
+            echo 'Unknown receiving quarantine executable SQL still references legacy barcode authority.' >&2
             exit 1
           fi
 
@@ -134,10 +134,26 @@ jobs:
             echo 'Warehouse operations still mount legacy quick sleeve mapping authority.' >&2
             exit 1
           fi
+          if grep -q 'WarehouseBarcodeTargetBridge' src/enhancers/WarehouseOpsEnhancers.tsx; then
+            echo 'Warehouse operations still mount a legacy Barcode Sprint target bridge.' >&2
+            exit 1
+          fi
           grep -q "/commissioning/product-identity" src/FirstStocktakeWorkspace.tsx
           grep -q "/commissioning/product-identity" src/WarehouseBarcodeSprintMount.tsx
+          grep -q 'resolveOperationalBarcode' src/FirstStocktakeFlow.tsx
           grep -q 'resolveOperationalBarcode' src/app/PickBoard.tsx
           grep -q "ecoflow_resolve_operational_barcode" src/data/repositories/productIdentityBarcodeResolution.ts
+
+          # Stocktake is count-only: package identity/conversion comes from the
+          # canonical resolver and cannot be edited through legacy package policy.
+          if grep -q 'setSkuPackagePolicy' src/FirstStocktakeFlow.tsx; then
+            echo 'First Stocktake still mutates legacy package policy.' >&2
+            exit 1
+          fi
+          if grep -q 'unitsPerPackage\|packageModes\|setPackageLevel' src/FirstStocktakeFlow.tsx; then
+            echo 'First Stocktake still asks the operator to author package identity facts.' >&2
+            exit 1
+          fi
 
           # Stocktake may record a validated count observation, but active
           # operational surfaces may never commission identity with MAP_ONLY.
