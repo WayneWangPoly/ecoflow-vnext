@@ -8,11 +8,14 @@ on:
       - 'supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql'
       - 'src/data/repositories/deliveryRouteAuthority.ts'
       - 'src/data/repositories/deliveryDispatchDrivers.ts'
+      - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
+      - 'src/features/delivery/deliveryDispatchCommandSurface.css'
       - 'src/app/App.tsx'
       - 'src/app/DriverApp.tsx'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-route-authority-contract-test.sql'
       - 'scripts/audit-delivery-route-authority.mjs'
+      - 'scripts/audit-delivery-driver-command-surface.mjs'
       - '.github/workflows/delivery-driver-route-authority-check.yml'
   workflow_dispatch:
 
@@ -61,6 +64,9 @@ jobs:
 
       - name: Audit application authority direction
         run: node scripts/audit-delivery-route-authority.mjs
+
+      - name: Audit Delivery command surface and Driver hierarchy
+        run: node scripts/audit-delivery-driver-command-surface.mjs
 
       - uses: actions/setup-node@v4
         with:
