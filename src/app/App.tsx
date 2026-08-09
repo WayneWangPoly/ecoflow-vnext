@@ -26,6 +26,7 @@ import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/Orderme
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdersControlPage } from '@/features/orders/OrdersControlPage';
+import { DeliveryDispatchCommandSurface } from '@/features/delivery/DeliveryDispatchCommandSurface';
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';
 import { useDesktopRouteAdapter } from '@/features/intelligence/navigation/useDesktopRouteAdapter';
@@ -833,6 +834,14 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
         <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
+      <DeliveryDispatchCommandSurface
+        runCode={day.runCode}
+        businessDayLabel={businessDay.label}
+        stops={stops}
+        warehousePoint={run.warehousePoint}
+        day={day}
+        assignedDriverLabel={lockedRouteRecord?.assignedDriverLabel || dispatchDrivers.find((driver) => driver.userId === assignedDriverUserId)?.label || ''}
+      />
       {canPlan && day.routeEndedAt ? (
         <section className="panel">
           <div className="panel-head"><h2>Run {day.runCode} completed</h2><span>Previous run facts remain archived in their own server namespace</span></div>
