@@ -21,6 +21,12 @@ has(surface, 'Store / address', 'Dispatch table must expose address context.');
 has(surface, 'Boxes / cartons', 'Dispatch summary must expose route load volume.');
 has(surface, 'ETA window', 'Dispatch summary must expose ETA range.');
 
+// A production Driver must never preload broad Ordermentum customer/order views.
+has(app, "authProfile?.app_role === 'DRIVER'", 'Production data loading must branch explicitly for Driver role.');
+has(app, 'Never preload broad Ordermentum order/customer views', 'Driver data-minimisation boundary must remain documented at the code boundary.');
+has(app, 'if (role === \'driver\') return <Suspense', 'Secure Driver routing must remain explicit.');
+has(app, '<DriverApp orders={initialData.orders}', 'Production Driver must receive no broad order dataset; locked route snapshot is the route data authority.');
+
 // Driver remains execution-first rather than duplicating the office command surface.
 has(driver, '<h2><MapPin size={18} /> Next stop</h2>', 'Driver Today must foreground the next stop.');
 has(driver, 'run-progress-card', 'Driver Stops must expose route progress.');
@@ -31,4 +37,4 @@ has(driver, 'Take POD 2 · all goods', 'Driver must retain POD 2 capture.');
 has(driver, "{ id: 'history', label: 'History'", 'Driver must retain a dedicated history surface.');
 has(driver, 'Waiting for Owner or office to approve and lock today’s route.', 'Driver must not own office route approval.');
 
-console.log('TRANSFORM-006 Delivery command surface and Driver execution hierarchy audit passed.');
+console.log('TRANSFORM-006 Delivery command surface, Driver data minimisation and execution hierarchy audit passed.');
