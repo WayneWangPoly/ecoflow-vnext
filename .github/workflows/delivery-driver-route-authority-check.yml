@@ -7,8 +7,12 @@ on:
       - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
       - 'supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql'
       - 'supabase/migrations/20260809222500_delivery_driver_execution_assignment_gate.sql'
+      - 'supabase/migrations/20260809224000_delivery_driver_resource_authority.sql'
+      - 'supabase/functions/delivery-notification-dispatch/index.ts'
+      - 'supabase/functions/notify-route-start/index.ts'
       - 'src/data/repositories/deliveryRouteAuthority.ts'
       - 'src/data/repositories/deliveryDispatchDrivers.ts'
+      - 'src/data/repositories/deliveryPodQuality.ts'
       - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
       - 'src/features/delivery/deliveryDispatchCommandSurface.css'
       - 'src/app/App.tsx'
@@ -17,8 +21,11 @@ on:
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-route-authority-contract-test.sql'
       - 'scripts/delivery-driver-execution-assignment-contract-test.sql'
+      - 'scripts/delivery-driver-resource-authority-fixture.sql'
+      - 'scripts/delivery-driver-resource-authority-contract-test.sql'
       - 'scripts/audit-delivery-route-authority.mjs'
       - 'scripts/audit-delivery-driver-command-surface.mjs'
+      - 'scripts/audit-delivery-driver-resource-authority.mjs'
       - '.github/workflows/delivery-driver-route-authority-check.yml'
   workflow_dispatch:
 
@@ -74,11 +81,23 @@ jobs:
       - name: Execute assigned Driver write-isolation contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-assignment-contract-test.sql
 
+      - name: Prepare legacy delivery-operation fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-fixture.sql
+
+      - name: Apply delivery resource authority hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809224000_delivery_driver_resource_authority.sql
+
+      - name: Execute delivery resource-isolation contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-contract-test.sql
+
       - name: Audit application authority direction
         run: node scripts/audit-delivery-route-authority.mjs
 
       - name: Audit Delivery command surface and Driver hierarchy
         run: node scripts/audit-delivery-driver-command-surface.mjs
+
+      - name: Audit Driver operational resource authority
+        run: node scripts/audit-delivery-driver-resource-authority.mjs
 
       - uses: actions/setup-node@v4
         with:
