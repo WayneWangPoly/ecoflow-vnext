@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
+      - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
+      - 'supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql'
       - 'src/data/repositories/deliveryRouteAuthority.ts'
+      - 'src/data/repositories/deliveryDispatchDrivers.ts'
       - 'src/app/App.tsx'
       - 'src/app/DriverApp.tsx'
       - 'scripts/delivery-route-authority-fixture.sql'
@@ -47,7 +50,13 @@ jobs:
       - name: Apply route authority migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809212500_delivery_route_authority.sql
 
-      - name: Execute route authority contract
+      - name: Apply Driver assignment authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221000_delivery_route_driver_assignment.sql
+
+      - name: Apply dispatch Driver directory
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221500_delivery_dispatch_driver_directory.sql
+
+      - name: Execute route + Driver assignment contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-contract-test.sql
 
       - name: Audit application authority direction
