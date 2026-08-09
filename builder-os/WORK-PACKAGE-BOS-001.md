@@ -15,7 +15,8 @@ Convert completed EcoFlow archaeology into a portable, machine-readable Builder 
 - command/work-package/eval/evidence schemas;
 - build, archaeology and cross-project validation playbooks;
 - project adapter/work-package templates;
-- internal registry consistency validator.
+- internal registry consistency validator;
+- one narrow CI workflow that executes the Builder OS validator on Builder OS changes.
 
 ## Out of scope
 
@@ -40,7 +41,8 @@ EcoFlow Git/PR/issue/CI/production evidence is evidence for v0.1. A standard is 
 6. Completion model separates Engineering, Data, Deployment, Production and Field readiness.
 7. Generic kernel extraction remains blocked pending cross-project validation.
 8. `node builder-os/tools/validate.mjs` passes.
+9. The validator is wired into a required pull-request CI workflow and that workflow passes on the final PR head.
 
 ## Rollback
 
-Delete/revert the isolated `builder-os/` directory. No EcoFlow runtime or data state is affected.
+Revert the additive `builder-os/` directory and its narrow Builder OS validation workflow. No EcoFlow runtime or data state is affected.
