@@ -8,6 +8,21 @@
 
 begin;
 
+-- Production already has this named constraint. The guard also makes drifted or
+-- test schemas converge on the same unambiguous idempotency contract before the
+-- RPC uses ON CONFLICT ON CONSTRAINT.
+do $$
+begin
+  if not exists(
+    select 1 from pg_constraint
+    where conrelid='public.ecoflow_unknown_barcode_intakes'::regclass
+      and conname='uq_unknown_barcode_intake_idempotency'
+  ) then
+    alter table public.ecoflow_unknown_barcode_intakes
+      add constraint uq_unknown_barcode_intake_idempotency unique(batch_id,idempotency_key);
+  end if;
+end $$;
+
 -- Keep the canonical staged-receiving implementation private, but preserve the
 -- historical BARCODE_NOT_MAPPED error token expected by the current warehouse UI
 -- when the canonical resolver reports UNKNOWN.
@@ -141,7 +156,7 @@ begin
     p_batch_id,v_barcode,p_qty_packages,'TEMP',nullif(trim(coalesce(p_note,'')),''),
     'PENDING_MAPPING',v_key,p_client_scanned_at,auth.uid(),now()
   )
-  on conflict(batch_id,idempotency_key) do update set
+  on conflict on constraint uq_unknown_barcode_intake_idempotency do update set
     intake_note=coalesce(excluded.intake_note,public.ecoflow_unknown_barcode_intakes.intake_note)
   returning id into v_id;
 
