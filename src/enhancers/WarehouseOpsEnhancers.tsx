@@ -5,7 +5,6 @@ import { FirstStocktakeGoLiveCheck } from '../FirstStocktakeGoLiveCheck';
 import { FirstStocktakePackagingRulesEnhancer } from '../FirstStocktakePackagingRulesEnhancer';
 import { FirstStocktakePackagingSignal } from '../FirstStocktakePackagingSignal';
 import { PickTaskOwnership } from '../PickTaskOwnership';
-import { QuickSleeveBarcodeCapture } from '../QuickSleeveBarcodeCapture';
 import { StageAndLoadExecution } from '../StageAndLoadExecution';
 import { WarehouseBarcodeSprintMount } from '../WarehouseBarcodeSprintMount';
 import { WarehouseBarcodeTargetBridge } from '../WarehouseBarcodeTargetBridge';
@@ -39,7 +38,6 @@ import '../firstStocktakeGuide.css';
 import '../firstStocktakeCompact.css';
 import '../warehouseCameraPerformance.css';
 import '../warehousePurchaseOrderReceiving.css';
-import '../quickSleeveBarcodeCapture.css';
 
 /** Warehouse phone modules: first stocktake, receive, pick, stage and scanner controls. */
 export default function WarehouseOpsEnhancers() {
@@ -58,7 +56,6 @@ export default function WarehouseOpsEnhancers() {
       <WarehousePutawayTargetBridge />
       <WarehousePickHandoffStatus />
       <WarehousePurchaseOrderReceiving />
-      <QuickSleeveBarcodeCapture />
       <WarehouseCameraScanner />
       <WarehouseCameraAngleAssist />
       <WarehouseScannerGalleryEnhancer />
