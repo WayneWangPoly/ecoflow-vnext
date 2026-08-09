@@ -11,7 +11,9 @@ const receiving = read('src/WarehouseReceivingFlow.tsx');
 const stagedReceiving = read('src/data/repositories/stagedReceiving.ts');
 const barcodeSetup = read('src/WarehouseBarcodeSprint.tsx');
 const firstStocktake = read('src/FirstStocktakeFlow.tsx');
+const firstStocktakeWorkspace = read('src/FirstStocktakeWorkspace.tsx');
 const warehouseMount = read('src/WarehouseBarcodeSprintMount.tsx');
+const identityResolution = read('src/data/repositories/productIdentityBarcodeResolution.ts');
 const main = read('src/main.tsx');
 const authTypes = read('src/features/auth/authTypes.ts');
 const ownerBundle = read('src/enhancers/OwnerEnhancers.tsx');
@@ -61,7 +63,7 @@ has(receiving, 'Number.isInteger(qty)', 'Receiving package quantity must be a po
 has(receiving, 'crypto.randomUUID()', 'Receiving scans must generate idempotency keys.');
 has(stagedReceiving, 'ecoflow_stage_receiving_scan_v2', 'Receiving must use the idempotent database RPC.');
 has(receiving, 'stageUnknownBarcodeIntake', 'Unknown barcodes must be preserved in a TEMP quarantine intake.');
-has(receiving, 'Retry after mapping', 'Warehouse must be able to convert a quarantined barcode after Owner mapping.');
+has(receiving, 'Retry after mapping', 'Warehouse must be able to convert a quarantined barcode after Owner publication.');
 has(unknownMigration, 'UNRESOLVED_UNKNOWN_BARCODES', 'Unresolved unknown codes must block stock posting.');
 has(unknownMigration, 'uq_unknown_barcode_intake_idempotency', 'Unknown intake retries must be idempotent.');
 lacks(warehouseMapPage, 'receiveWarehouseStock', 'Warehouse Map must not contain a hidden direct receiving implementation.');
@@ -73,21 +75,30 @@ has(warehouseWriteGuardMigration, 'if not public.ecoflow_can_manage_warehouse()'
 has(warehouseWriteGuardMigration, 'BARCODE_CONFLICT', 'A barcode conflict must be rejected instead of silently remapped.');
 has(warehouseWriteGuardMigration, 'BARCODE_SETUP_CANNOT_RECEIVE_STOCK', 'Barcode mapping must not become a direct receiving path.');
 has(warehouseWriteGuardMigration, "'INVENTORY_CONTROL'", 'Movement source metadata must be server controlled.');
-lacks(barcodeSetup, 'Save + receive stock', 'Barcode setup must never become a stock receiving path.');
+lacks(barcodeSetup, 'Save + receive stock', 'Historical barcode setup must never become a stock receiving path.');
 lacks(inventory, '<option value="RECEIVE">', 'Inventory ledger must not expose uncontrolled Receive.');
 
-// Guided first stocktake: one operator flow, existing controlled posting boundary.
-has(warehouseMount, 'FirstStocktakeFlow', 'Warehouse preparation must expose one guided first-stocktake entry.');
+// Guided first stocktake: Product Identity owns package facts; Stocktake counts.
+has(warehouseMount, 'FirstStocktakeWorkspace', 'Warehouse preparation must expose one guided first-stocktake entry.');
 has(warehouseMount, "return 'stocktake'", 'First stocktake must be the default warehouse preparation mode.');
+has(firstStocktakeWorkspace, '/commissioning/product-identity', 'First stocktake identity setup must route to canonical Product Identity.');
 has(firstStocktake, 'Step 1: enter or scan a warehouse location.', 'First stocktake must be location-first.');
-has(firstStocktake, 'recordBarcodeScan', 'First stocktake must save the package barcode mapping.');
-has(firstStocktake, "actionMode: 'MAP_AND_COUNT'", 'First stocktake mapping must record the observed count without directly posting stock.');
+has(firstStocktake, 'resolveOperationalBarcode', 'First stocktake must validate the published physical barcode before counting.');
+has(identityResolution, 'ecoflow_resolve_operational_barcode', 'First stocktake and Pick must share the server operational resolver.');
+has(firstStocktake, 'recordBarcodeScan', 'First stocktake must record a canonical-validated count observation.');
+has(firstStocktake, "actionMode: 'MAP_AND_COUNT'", 'First stocktake must record observed count evidence without directly posting stock.');
 has(firstStocktake, 'stageReceivingScan', 'First stocktake must stage the observed packages through the controlled receiving batch.');
 has(firstStocktake, 'setReceivingLineTick', 'Every first-stocktake line must require an explicit verification tick.');
 has(firstStocktake, 'finishStagedReceivingBatch', 'Opening stock must post through the existing controlled batch completion transaction.');
 has(firstStocktake, 'crypto.randomUUID()', 'First-stocktake retries must use idempotency keys.');
+has(firstStocktake, 'Product Identity owns barcode and package conversion facts', 'Stocktake must explain that package facts come from Product Identity.');
+lacks(firstStocktake, 'setSkuPackagePolicy', 'First stocktake must not author legacy package identity policy.');
+lacks(firstStocktake, 'unitsPerPackage', 'First stocktake must not ask the operator to author units-per-package.');
 lacks(firstStocktake, 'recordInventoryMovement', 'First stocktake must not write the stock ledger directly.');
 lacks(firstStocktake, 'receiveByBarcode', 'First stocktake must not use the legacy direct receive RPC.');
+lacks(warehouseMount, "from './WarehouseBarcodeSprint'", 'Warehouse operations must not mount legacy barcode commissioning.');
+lacks(warehouseBundle, 'QuickSleeveBarcodeCapture', 'Warehouse operations must not mount legacy quick sleeve commissioning.');
+lacks(warehouseBundle, 'WarehouseBarcodeTargetBridge', 'Warehouse operations must not mount the retired barcode sprint target bridge.');
 
 // Warehouse Map is read-only; layout editing may change presentation only.
 lacks(mapInteraction, 'incrementWarehouseSkuSlot', 'Warehouse Map must not expose + SKU position capacity changes.');
@@ -198,4 +209,4 @@ has(integrationPanel, 'Sync orders + invoices now', 'Owner must have a clear del
 has(integrationPanel, 'Sync stores', 'Owner must have an isolated store sync action.');
 has(integrationPanel, 'Sync SKU', 'Owner must have an isolated SKU sync action.');
 
-console.log('EcoFlow production workflow, read-only Warehouse Map and visual SKU-order audit passed.');
+console.log('EcoFlow production workflow, canonical Product Identity warehouse authority, read-only Warehouse Map and visual SKU-order audit passed.');
