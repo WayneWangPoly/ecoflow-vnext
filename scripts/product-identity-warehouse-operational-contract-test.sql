@@ -55,6 +55,58 @@ begin
 end;
 $verify$;
 
+-- Unknown inbound goods remain auditable in TEMP without stock side effects.
+-- Legacy registry evidence cannot make them mapped; canonical publication is the
+-- only transition that permits conversion to a normal receiving line.
+do $verify$
+declare
+  v_batch record;
+  v_intake record;
+  v_replay record;
+  v_moves_before bigint;
+  v_moves_after bigint;
+  v_convert_blocked boolean:=false;
+  v_published_blocked boolean:=false;
+begin
+  select * into v_batch from public.ecoflow_start_warehouse_receiving_batch('Supplier Unknown','PO-U',null,'unknown fixture');
+  select count(*) into v_moves_before from public.ecoflow_inventory_movements;
+
+  select * into v_intake from public.ecoflow_stage_unknown_barcode_intake(
+    v_batch.batch_id,'LEGACY-FAKE-001',2,'hold physical goods','unknown:1',now()
+  );
+  if v_intake.intake_status<>'PENDING_MAPPING' or v_intake.target_location<>'TEMP' then
+    raise exception 'canonical UNKNOWN barcode was not quarantined in TEMP';
+  end if;
+
+  select * into v_replay from public.ecoflow_stage_unknown_barcode_intake(
+    v_batch.batch_id,'LEGACY-FAKE-001',2,'replay','unknown:1',now()
+  );
+  if v_replay.intake_id<>v_intake.intake_id then raise exception 'unknown quarantine replay duplicated intake'; end if;
+
+  begin
+    perform * from public.ecoflow_convert_unknown_barcode_intake(v_intake.intake_id);
+  exception when others then
+    if position('BARCODE_STILL_UNMAPPED' in sqlerrm)>0 then v_convert_blocked:=true; else raise; end if;
+  end;
+  if not v_convert_blocked then raise exception 'legacy registry allowed unknown intake conversion before canonical publication'; end if;
+
+  begin
+    perform * from public.ecoflow_stage_unknown_barcode_intake(
+      v_batch.batch_id,'CANON-001',1,'already published','unknown:published',now()
+    );
+  exception when others then
+    if position('BARCODE_NOW_MAPPED' in sqlerrm)>0 then v_published_blocked:=true; else raise; end if;
+  end;
+  if not v_published_blocked then raise exception 'published canonical barcode entered unknown quarantine'; end if;
+
+  select count(*) into v_moves_after from public.ecoflow_inventory_movements;
+  if v_moves_after<>v_moves_before then raise exception 'unknown quarantine or failed conversion changed inventory quantity'; end if;
+  if exists(select 1 from public.ecoflow_warehouse_location_items where source_barcode='LEGACY-FAKE-001') then
+    raise exception 'unknown quarantine changed live warehouse quantity';
+  end if;
+end;
+$verify$;
+
 -- Stocktake-compatible MAP_AND_COUNT is evidence-only. It cannot commission a
 -- new barcode, rewrite primary_barcode, or change quantity.
 do $verify$
@@ -257,13 +309,16 @@ begin
 end;
 $verify$;
 
--- Retirement is final: operational loops must all fail closed on the same barcode.
+-- Retirement is final: operational loops and quarantine must all fail closed on
+-- the same barcode.
 do $verify$
 declare
   v_revision bigint;
   v_result record;
   v_scan_blocked boolean:=false;
   v_pick_blocked boolean:=false;
+  v_quarantine_blocked boolean:=false;
+  v_batch record;
 begin
   select revision into v_revision from public.ecoflow_physical_barcode_bindings
   where barcode='CANON-001' and identity_status='ACTIVE';
@@ -277,7 +332,15 @@ begin
   begin
     perform * from public.ecoflow_record_pick_movement('CUP-12W',1,'carton','CANON-001','retired must fail');
   exception when others then if position('BARCODE_RETIRED' in sqlerrm)>0 then v_pick_blocked:=true; else raise; end if; end;
-  if not v_scan_blocked or not v_pick_blocked then raise exception 'retired barcode remained operational'; end if;
+
+  select * into v_batch from public.ecoflow_start_warehouse_receiving_batch('Supplier retired','PO-R',null,'retired fixture');
+  begin
+    perform * from public.ecoflow_stage_unknown_barcode_intake(v_batch.batch_id,'CANON-001',1,'retired','retired:1',now());
+  exception when others then if position('BARCODE_RETIRED' in sqlerrm)>0 then v_quarantine_blocked:=true; else raise; end if; end;
+
+  if not v_scan_blocked or not v_pick_blocked or not v_quarantine_blocked then
+    raise exception 'retired barcode remained operational';
+  end if;
 end;
 $verify$;
 
