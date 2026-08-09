@@ -27,6 +27,7 @@ on:
       - 'scripts/audit-delivery-route-authority.mjs'
       - 'scripts/audit-delivery-driver-command-surface.mjs'
       - 'scripts/audit-delivery-driver-resource-authority.mjs'
+      - 'scripts/check-delivery-edge-function-syntax.mjs'
       - '.github/workflows/delivery-driver-route-authority-check.yml'
   workflow_dispatch:
 
@@ -110,6 +111,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Parse Delivery Edge Function TypeScript
+        run: node scripts/check-delivery-edge-function-syntax.mjs
 
       - name: TypeScript
         run: node ./node_modules/typescript/bin/tsc -b --pretty false
