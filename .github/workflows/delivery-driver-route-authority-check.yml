@@ -22,6 +22,7 @@ on:
       - 'scripts/delivery-route-authority-contract-test.sql'
       - 'scripts/delivery-driver-execution-assignment-contract-test.sql'
       - 'scripts/delivery-driver-resource-authority-fixture.sql'
+      - 'scripts/delivery-driver-resource-authority-test-inspection.sql'
       - 'scripts/delivery-driver-resource-authority-contract-test.sql'
       - 'scripts/audit-delivery-route-authority.mjs'
       - 'scripts/audit-delivery-driver-command-surface.mjs'
@@ -83,6 +84,9 @@ jobs:
 
       - name: Prepare legacy delivery-operation fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-fixture.sql
+
+      - name: Expose fixture audit rows to contract actor
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-resource-authority-test-inspection.sql
 
       - name: Apply delivery resource authority hardening
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809224000_delivery_driver_resource_authority.sql
