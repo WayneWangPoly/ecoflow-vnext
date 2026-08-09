@@ -49,6 +49,7 @@ import {
 } from '@/domain/driverRun';
 import { saveDropPointProof, saveGoodsPlacedProof } from '@/data/repositories/deliveryPodQuality';
 import { dispatchDeliveryNotifications, queueDeliveryNotifications } from '@/data/repositories/deliveryOperations';
+import { driverRunFromLockedSnapshot, loadLockedDeliveryRouteSnapshot, type LockedDeliveryRouteRecord } from '@/data/repositories/deliveryRouteAuthority';
 import { readImageDownscaled } from '@/lib/downscaleImage';
 import { allStopsStaged, buildRunCartons } from '@/domain/pickPlan';
 import { stopsInLockedOrder } from '@/domain/driverRun';
@@ -372,7 +373,11 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   actorLabel?: string;
 }) {
   const [day, setDay] = useState<DriverDayState>(() => loadDriverDayState(businessDay.date));
-  const run = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode), [orders, businessDay.date, day.releasedOrders, day.runCode]);
+  const draftRun = useMemo(() => buildDriverRun(orders, businessDay.date, day.releasedOrders, day.runCode), [orders, businessDay.date, day.releasedOrders, day.runCode]);
+  const [lockedRoute, setLockedRoute] = useState<LockedDeliveryRouteRecord | null>(null);
+  const [routeAuthorityState, setRouteAuthorityState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [routeAuthorityError, setRouteAuthorityError] = useState('');
+  const [routeAuthorityRetry, setRouteAuthorityRetry] = useState(0);
   const [tab, setTab] = useState<DriverTab>('today');
   const [stopsView, setStopsView] = useState<'map' | 'list'>('map');
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
@@ -386,6 +391,43 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!day.pick) {
+      setLockedRoute(null);
+      setRouteAuthorityState('idle');
+      setRouteAuthorityError('');
+      return () => { active = false; };
+    }
+
+    setLockedRoute(null);
+    setRouteAuthorityState('loading');
+    setRouteAuthorityError('');
+    void loadLockedDeliveryRouteSnapshot({ businessDay: businessDay.date, runCode: day.runCode })
+      .then((record) => {
+        if (!active) return;
+        if (!record) throw new Error('The office-approved route snapshot is missing.');
+        if (record.businessDay !== businessDay.date || record.runCode !== day.runCode) {
+          throw new Error('The approved route snapshot does not match the active business day and run.');
+        }
+        setLockedRoute(record);
+        setRouteAuthorityState('ready');
+      })
+      .catch((reason) => {
+        if (!active) return;
+        setLockedRoute(null);
+        setRouteAuthorityState('error');
+        setRouteAuthorityError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { active = false; };
+  }, [businessDay.date, day.pick?.lockedAt, day.runCode, routeAuthorityRetry]);
+
+  const run = useMemo(() => {
+    if (!day.pick) return draftRun;
+    if (lockedRoute) return driverRunFromLockedSnapshot(lockedRoute.snapshot);
+    return { ...draftRun, stops: [], totalCartons: 0, readyStops: 0 };
+  }, [day.pick, draftRun, lockedRoute]);
 
   const pickSyncStatus = usePickSync(businessDay.date, day, setDay, actorLabel || 'Driver');
 
@@ -451,6 +493,10 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
   }
 
   async function startRoute() {
+    if (day.pick && !lockedRoute) {
+      window.alert('Approved route snapshot is unavailable. Ask office to re-approve the route before departure.');
+      return;
+    }
     const pendingIds = rows.filter((row) => row.progress.status === 'PENDING').map((row) => row.stop.orderId);
     const startedAt = nowIso();
     const location = await capturePosition();
@@ -605,7 +651,18 @@ export function DriverApp({ orders, setOrders, businessDay, onLogout, loadError,
           </span>
         </div>
 
-        {!rows.length ? (
+        {routeLocked && routeAuthorityState !== 'ready' ? (
+          <>
+            <p className="driver-card-meta">
+              {routeAuthorityState === 'loading'
+                ? 'Loading the exact office-approved route snapshot…'
+                : `Approved route snapshot unavailable. ${routeAuthorityError || 'Ask office to re-approve the route.'}`}
+            </p>
+            {routeAuthorityState === 'error' ? (
+              <button type="button" className="driver-ghost-button" onClick={() => setRouteAuthorityRetry((value) => value + 1)}>Retry approved route</button>
+            ) : null}
+          </>
+        ) : !rows.length ? (
           <p className="driver-card-meta">No orders released into today’s run yet — the office releases orders from the Ordermentum tab first.</p>
         ) : routeStatus === 'NOT_STARTED' && !routeLocked ? (
           <>

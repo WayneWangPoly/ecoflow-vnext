@@ -4,6 +4,7 @@ import { buildProductionEmptyData } from '@/domain/productionData';
 import { resolveTrustedLiveSnapshot, type TrustedLiveSnapshot } from '@/domain/trustedLiveSnapshot';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { callInternaliseOrders, setActiveRunCode } from '@/data/repositories/pickSync';
+import { buildLockedDeliveryRouteSnapshot, lockDeliveryRouteSnapshot, unlockDeliveryRouteSnapshot } from '@/data/repositories/deliveryRouteAuthority';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import { BrandMark } from './Brand';
@@ -679,9 +680,36 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
     if (!canPlan || day.pick || !stops.length) return;
     const stopOrder = reconcileStopOrder(day.stopOrder, run.stops);
     const boxCodes = Object.fromEntries(stopOrder.map((orderId, index) => [orderId, boxCodeForStop(index)]));
+    const lockedStops = stopOrder
+      .map((orderId, index) => {
+        const stop = byId.get(orderId);
+        return stop ? { ...stop, stopNumber: index + 1, boxCode: boxCodes[orderId] } : null;
+      })
+      .filter((stop): stop is NonNullable<typeof stop> => Boolean(stop));
+    if (lockedStops.length !== stopOrder.length) {
+      window.alert('Route was not locked: one or more released stops disappeared from the route draft. Refresh and approve again.');
+      return;
+    }
+
+    let authorityLocked = false;
     try {
+      const snapshot = buildLockedDeliveryRouteSnapshot({
+        ...run,
+        stops: lockedStops,
+        totalCartons: lockedStops.reduce((sum, stop) => sum + stop.cartons, 0),
+        readyStops: lockedStops.filter((stop) => stop.warehouseReady).length,
+      }, day.runCode);
+      await lockDeliveryRouteSnapshot({ businessDay: businessDay.date, runCode: day.runCode, snapshot });
+      authorityLocked = true;
       await setActiveRunCode(businessDay.date, day.runCode, 'Office route approval');
     } catch (error) {
+      if (authorityLocked) {
+        await unlockDeliveryRouteSnapshot({
+          businessDay: businessDay.date,
+          runCode: day.runCode,
+          reason: 'Route approval rolled back because shared run activation failed',
+        }).catch(() => undefined);
+      }
       window.alert(`Route was not locked: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
@@ -699,9 +727,19 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
     }));
   }
 
-  function unlockRoute() {
+  async function unlockRoute() {
     if (!canPlan || !day.pick || routeInUse) return;
     if (!window.confirm('Unlock this route? Printed labels become invalid and must be reprinted.')) return;
+    try {
+      await unlockDeliveryRouteSnapshot({
+        businessDay: businessDay.date,
+        runCode: day.runCode,
+        reason: 'Office unlocked route before picking',
+      });
+    } catch (error) {
+      window.alert(`Route was not unlocked: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
     setDay((current) => ({ ...current, pick: undefined }));
   }
 
@@ -739,7 +777,7 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
           <div className="row-actions">
             <button className="soft-button" type="button" disabled={Boolean(day.pick) || !stops.length} onClick={optimiseRoute}>Optimise draft</button>
             {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length} onClick={() => void lockRoute()}>Approve &amp; lock route</button> : null}
-            {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={unlockRoute}>Unlock before picking</button> : null}
+            {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={() => void unlockRoute()}>Unlock before picking</button> : null}
           </div>
           <div className="list-stack">
             {stops.map((stop, index) => (
