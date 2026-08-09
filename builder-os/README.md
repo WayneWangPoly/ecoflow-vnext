@@ -48,6 +48,11 @@ The generic runtime/kernel is intentionally blocked until that validation occurs
 - `playbooks/` — build lifecycle, archaeology-to-standard and cross-project validation.
 - `templates/` — project adapter and bounded work package.
 - `tools/validate.mjs` — self-contained registry consistency validator.
+- `.github/workflows/builder-os-validation.yml` — required CI execution of the validator when Builder OS changes.
+
+## Validation rule
+
+The validator is not considered evidence merely because the file exists. Builder OS changes are required to execute it in CI, reflecting the v0.1 rule that an Eval moves through `DEFINED → WIRED → REQUIRED → EXECUTED → PASS/FAIL` rather than stopping at test-file creation.
 
 ## Operating rule
 
