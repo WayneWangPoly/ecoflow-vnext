@@ -1,0 +1,48 @@
+name: Disk IO write amplification guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'scripts/project-ordermentum-raw-orders.mjs'
+      - 'scripts/audit-disk-io-write-amplification.mjs'
+      - 'supabase/migrations/20260808194000_active_order_keys_delta_refresh.sql'
+      - '.github/workflows/disk-io-write-amplification-check.yml'
+  push:
+    branches:
+      - main
+      - 'hotfix/disk-io-write-amplification'
+    paths:
+      - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'scripts/project-ordermentum-raw-orders.mjs'
+      - 'scripts/audit-disk-io-write-amplification.mjs'
+      - 'supabase/migrations/20260808194000_active_order_keys_delta_refresh.sql'
+      - '.github/workflows/disk-io-write-amplification-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: disk-io-write-amplification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disk-io-contracts:
+    name: Disk IO contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check script syntax
+        run: |
+          node --check scripts/ordermentum-cloud-sync.mjs
+          node --check scripts/project-ordermentum-raw-orders.mjs
+          node --check scripts/audit-disk-io-write-amplification.mjs
+      - name: Audit Disk IO contracts
+        run: node scripts/audit-disk-io-write-amplification.mjs

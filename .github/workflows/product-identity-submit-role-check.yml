@@ -1,0 +1,85 @@
+name: Product identity submit role check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260808180500_product_identity_authority.sql'
+      - 'supabase/migrations/20260811002000_product_identity_submit_role_hardening.sql'
+      - 'scripts/product-identity-warehouse-operational-fixture.sql'
+      - 'scripts/product-identity-submit-role-contract-test.sql'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx'
+      - '.github/workflows/product-identity-submit-role-check.yml'
+  push:
+    branches:
+      - 'agent/transform-005-product-identity-warehouse'
+    paths:
+      - 'supabase/migrations/20260808180500_product_identity_authority.sql'
+      - 'supabase/migrations/20260811002000_product_identity_submit_role_hardening.sql'
+      - 'scripts/product-identity-warehouse-operational-fixture.sql'
+      - 'scripts/product-identity-submit-role-contract-test.sql'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx'
+      - '.github/workflows/product-identity-submit-role-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-identity-submit-role-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  submit-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Product Identity fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-warehouse-operational-fixture.sql
+
+      - name: Apply canonical Product Identity authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180500_product_identity_authority.sql
+
+      - name: Apply submit role hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811002000_product_identity_submit_role_hardening.sql
+
+      - name: Verify submit role contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/product-identity-submit-role-contract-test.sql
+
+      - name: Static authority audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate=supabase/migrations/20260811002000_product_identity_submit_role_hardening.sql
+          ui=src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx
+
+          grep -q 'ecoflow_can_publish_product_identity' "$gate"
+          grep -q 'OWNER_OR_ADMIN_REQUIRED' "$gate"
+          grep -q 'ecoflow_submit_product_identity_batch_pre_owner_gate_20260811' "$gate"
+          grep -q 'ecoflow_read_current_product_identity_batch_pre_submit_role_20260811' "$gate"
+          grep -q 'r.can_submit and public.ecoflow_can_publish_product_identity()' "$gate"
+
+          # The current UI must continue to obey the server-provided canSubmit
+          # capability rather than enabling submission locally.
+          grep -Fq 'disabled={busy || !batch?.canSubmit}' "$ui"

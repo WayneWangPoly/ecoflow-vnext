@@ -1,0 +1,43 @@
+name: Ordermentum background IO cadence guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/ordermentum-background-io-cadence-check.yml'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/audit-ordermentum-background-io-cadence.mjs'
+  push:
+    branches:
+      - main
+      - 'hotfix/disk-io-background-cadence'
+    paths:
+      - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/ordermentum-background-io-cadence-check.yml'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/audit-ordermentum-background-io-cadence.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordermentum-background-io-cadence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cadence-contract:
+    name: Background IO cadence contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check audit syntax
+        run: node --check scripts/audit-ordermentum-background-io-cadence.mjs
+      - name: Audit background IO cadence
+        run: node scripts/audit-ordermentum-background-io-cadence.mjs
