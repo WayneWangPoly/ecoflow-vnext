@@ -1,0 +1,91 @@
+name: Delivery Driver execution sequence check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
+      - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
+      - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
+      - 'scripts/delivery-route-authority-fixture.sql'
+      - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - '.github/workflows/delivery-driver-execution-sequence-check.yml'
+  push:
+    branches:
+      - 'agent/transform-006-delivery-driver'
+    paths:
+      - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
+      - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
+      - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
+      - 'scripts/delivery-route-authority-fixture.sql'
+      - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - '.github/workflows/delivery-driver-execution-sequence-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execution-sequence-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54331:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54331
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare route + shared-state authority fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-route-authority-fixture.sql
+
+      - name: Apply operational CAS authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260801053000_operational_state_authority.sql
+
+      - name: Apply immutable dispatch snapshot authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809212500_delivery_route_authority.sql
+
+      - name: Apply Driver assignment authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260809221000_delivery_route_driver_assignment.sql
+
+      - name: Apply Driver execution sequence authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql
+
+      - name: Verify Driver execution sequence contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-sequence-contract-test.sql
+
+      - name: Static authority audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration=supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql
+          testfile=scripts/delivery-driver-execution-sequence-contract-test.sql
+
+          grep -q 'ecoflow_delivery_route_sequence_revisions' "$migration"
+          grep -q 'p_expected_sequence_revision' "$migration"
+          grep -q 'ROUTE_SEQUENCE_REVISION_CONFLICT' "$migration"
+          grep -q 'ROUTE_SEQUENCE_COMMAND_ID_REUSE_MISMATCH' "$migration"
+          grep -q 'STOP_ORDER_ROUTE_MEMBERSHIP_MISMATCH' "$migration"
+          grep -q 'EXECUTED_STOP_POSITION_IMMUTABLE' "$migration"
+          grep -q 'ecoflow_delivery_route_effective_snapshot' "$migration"
+          grep -q "'eta',coalesce(eta_slot.eta,'')" "$migration"
+
+          grep -q 'different Driver mutated assigned execution sequence' "$testfile"
+          grep -q 'stale sequence revision was accepted' "$testfile"
+          grep -q 'ARRIVED/current stop was moved behind another stop' "$testfile"
+          grep -q 'reorder mutated immutable dispatch facts' "$testfile"
+          grep -q 'assigned route read remained tied to stale office sequence/ETA' "$testfile"
