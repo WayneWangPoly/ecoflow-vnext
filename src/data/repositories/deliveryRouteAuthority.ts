@@ -27,6 +27,27 @@ export type LockedDeliveryRouteRecord = {
   approvedAt: string;
 };
 
+export type DeliveryRouteExecutionSequence = {
+  routeSnapshotId: string;
+  routeRevision: number;
+  sequenceRevision: number;
+  stopOrder: string[];
+  snapshot: LockedDeliveryRouteSnapshot;
+  assignedDriverUserId: string;
+  assignedDriverLabel: string;
+  updatedAt: string;
+};
+
+export type DeliveryRouteSequenceWriteResult = {
+  routeSnapshotId: string;
+  routeRevision: number;
+  sequenceRevision: number;
+  stopOrder: string[];
+  snapshot: LockedDeliveryRouteSnapshot;
+  commandStatus: 'APPLIED' | 'REPLAYED';
+  updatedAt: string;
+};
+
 function requireClient(client?: SupabaseClient | null) {
   const active = client ?? supabase;
   if (!active) throw new Error('Supabase is not configured.');
@@ -44,6 +65,12 @@ function finiteNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function safeInteger(value: unknown, label: string, minimum = 0) {
+  const parsed = finiteNumber(value, Number.NaN);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) throw new Error(`${label} is invalid.`);
+  return parsed;
+}
+
 function routeSnapshot(value: unknown): LockedDeliveryRouteSnapshot {
   if (!value || typeof value !== 'object') throw new Error('Approved route snapshot is malformed.');
   const raw = value as Record<string, unknown>;
@@ -54,12 +81,18 @@ function routeSnapshot(value: unknown): LockedDeliveryRouteSnapshot {
   return raw as unknown as LockedDeliveryRouteSnapshot;
 }
 
+function stopOrder(value: unknown) {
+  if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw new Error('Authoritative route sequence is malformed.');
+  }
+  return value.map((item) => String(item));
+}
+
 function record(row: Record<string, unknown>): LockedDeliveryRouteRecord {
   const snapshot = routeSnapshot(row.snapshot);
-  const revision = finiteNumber(row.revision);
+  const revision = safeInteger(row.revision, 'Approved route revision', 1);
   const assignedDriverUserId = String(row.assigned_driver_user_id || '');
   const assignedDriverLabel = String(row.assigned_driver_label || '');
-  if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Approved route revision is invalid.');
   if (!assignedDriverUserId || !assignedDriverLabel) throw new Error('Approved route has no active Driver assignment. Ask office to re-approve the route.');
   return {
     routeSnapshotId: String(row.route_snapshot_id || ''),
@@ -71,6 +104,39 @@ function record(row: Record<string, unknown>): LockedDeliveryRouteRecord {
     assignedDriverLabel,
     approvedBy: String(row.approved_by || ''),
     approvedAt: String(row.approved_at || ''),
+  };
+}
+
+function executionRecord(row: Record<string, unknown>): DeliveryRouteExecutionSequence {
+  const snapshot = routeSnapshot(row.snapshot);
+  const assignedDriverUserId = String(row.assigned_driver_user_id || '');
+  const assignedDriverLabel = String(row.assigned_driver_label || '');
+  if (!assignedDriverUserId || !assignedDriverLabel) throw new Error('Approved route has no active Driver assignment.');
+  return {
+    routeSnapshotId: String(row.route_snapshot_id || ''),
+    routeRevision: safeInteger(row.route_revision, 'Approved route revision', 1),
+    sequenceRevision: safeInteger(row.sequence_revision, 'Execution sequence revision'),
+    stopOrder: stopOrder(row.stop_order),
+    snapshot,
+    assignedDriverUserId,
+    assignedDriverLabel,
+    updatedAt: String(row.updated_at || ''),
+  };
+}
+
+function executionWriteRecord(row: Record<string, unknown>): DeliveryRouteSequenceWriteResult {
+  const commandStatus = String(row.command_status || '');
+  if (commandStatus !== 'APPLIED' && commandStatus !== 'REPLAYED') {
+    throw new Error(`Unexpected route reorder status: ${commandStatus || 'missing'}.`);
+  }
+  return {
+    routeSnapshotId: String(row.route_snapshot_id || ''),
+    routeRevision: safeInteger(row.route_revision, 'Approved route revision', 1),
+    sequenceRevision: safeInteger(row.sequence_revision, 'Execution sequence revision', 1),
+    stopOrder: stopOrder(row.stop_order),
+    snapshot: routeSnapshot(row.snapshot),
+    commandStatus,
+    updatedAt: String(row.updated_at || ''),
   };
 }
 
@@ -164,4 +230,46 @@ export async function loadLockedDeliveryRouteSnapshot(
   if (error) throw new Error(message(error));
   const row = Array.isArray(data) ? data[0] : null;
   return row ? record(row as Record<string, unknown>) : null;
+}
+
+export async function loadDeliveryRouteExecutionSequence(
+  input: { businessDay: string; runCode: string },
+  client?: SupabaseClient | null,
+): Promise<DeliveryRouteExecutionSequence | null> {
+  const active = requireClient(client);
+  const { data, error } = await active.rpc('ecoflow_get_delivery_route_execution_sequence', {
+    p_business_day: input.businessDay,
+    p_run_code: input.runCode,
+  });
+  if (error) throw new Error(message(error));
+  const row = Array.isArray(data) ? data[0] : null;
+  return row ? executionRecord(row as Record<string, unknown>) : null;
+}
+
+export async function reorderDeliveryRouteExecution(
+  input: {
+    businessDay: string;
+    runCode: string;
+    expectedSequenceRevision: number;
+    commandId: string;
+    stopOrder: string[];
+  },
+  client?: SupabaseClient | null,
+): Promise<DeliveryRouteSequenceWriteResult> {
+  const active = requireClient(client);
+  const { data, error } = await active.rpc('ecoflow_reorder_delivery_route_execution', {
+    p_business_day: input.businessDay,
+    p_run_code: input.runCode,
+    p_expected_sequence_revision: input.expectedSequenceRevision,
+    p_command_id: input.commandId,
+    p_stop_order: input.stopOrder,
+  });
+  if (error) {
+    const failure = new Error(message(error)) as Error & { code?: string };
+    failure.code = String((error as { code?: unknown }).code || '');
+    throw failure;
+  }
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row) throw new Error('Route reorder returned no authoritative sequence.');
+  return executionWriteRecord(row as Record<string, unknown>);
 }
