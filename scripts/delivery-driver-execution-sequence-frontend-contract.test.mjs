@@ -18,6 +18,11 @@ test('Driver reorder is a server-authoritative CAS command with stable retry ide
   assert.match(panel, /expectedSequenceRevision: sequence\.sequenceRevision/);
   assert.match(panel, /pendingIntent\.stopOrder, pendingIntent/);
   assert.match(panel, /Retry same command safely/);
+  assert.match(panel, /next\s*&& pendingIntent\s*&& sameOrder\(next\.stopOrder, pendingIntent\.stopOrder\)/);
+  assert.match(panel, /next\.sequenceRevision > pendingIntent\.expectedSequenceRevision/);
+  assert.match(panel, /replaceDraft\(next\.stopOrder\);\s*markSaved\(\)/);
+  assert.match(panel, /sameOrder\(nextOrder, sequence\.stopOrder\)/);
+  assert.match(panel, /if \(retryIntent\)[\s\S]*replaceDraft\(sequence\.stopOrder\);[\s\S]*markSaved\(\)/);
   assert.match(panel, /saveState !== 'saving' && !draggingId && !pendingIntent/);
   assert.match(panel, /ROUTE_SEQUENCE_REVISION_CONFLICT/);
   assert.match(panel, /setPendingIntent\(null\)/);
