@@ -131,9 +131,22 @@ jobs:
               end if;
             end loop;
           end $$;
-          create extension if not exists pgcrypto;
-          create extension if not exists "uuid-ossp";
+          -- Production Supabase installs UUID helpers in the extensions schema.
+          -- Keep the plain postgres shadow layout compatible before loading the
+          -- production dump; otherwise extension-qualified defaults fail before
+          -- pending migrations are even exercised.
           create schema if not exists extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          do $$
+          begin
+            if to_regprocedure('extensions.gen_random_uuid()') is null then
+              execute 'create function extensions.gen_random_uuid() returns uuid language sql volatile parallel safe as ''select pg_catalog.gen_random_uuid()''';
+            end if;
+            if to_regprocedure('extensions.gen_random_uuid()') is null then
+              raise exception 'SHADOW_SUPABASE_UUID_HELPER_MISSING';
+            end if;
+          end $$;
           create schema if not exists auth;
           create schema if not exists storage;
           create schema if not exists vault;
