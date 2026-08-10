@@ -1,0 +1,339 @@
+name: Product identity barcode reassignment check
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260808180500_product_identity_authority.sql'
+      - 'supabase/migrations/20260808180510_product_identity_conflict_retirement_state.sql'
+      - 'supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql'
+      - 'src/data/repositories/productIdentity.ts'
+      - 'src/features/productIdentity/**'
+      - '.github/workflows/product-identity-reassignment-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reassignment:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare minimal production-shaped catalog
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema auth;
+          create schema extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          create role authenticated noinherit;
+          create role service_role noinherit;
+          create role anon noinherit;
+
+          create or replace function auth.uid() returns uuid language sql stable as $$
+            select '11111111-1111-4111-8111-111111111111'::uuid
+          $$;
+          create or replace function public.ecoflow_active_app_role() returns text language sql stable as $$
+            select coalesce(nullif(current_setting('app.test_role',true),''),'OWNER')::text
+          $$;
+
+          create table public.skus (
+            id uuid primary key,
+            sku_code text not null unique,
+            display_name text,
+            category text,
+            setup_status text
+          );
+          create table public.external_product_mappings (
+            id uuid primary key default extensions.gen_random_uuid(),
+            provider text not null,
+            external_product_code text not null,
+            internal_sku_id uuid references public.skus(id),
+            default_unit_level text,
+            confidence text,
+            is_active boolean not null default true,
+            updated_at timestamptz not null default now(),
+            unique(provider,external_product_code)
+          );
+          create table public.ecoflow_sku_master_overrides (
+            external_sku_code text primary key,
+            internal_sku_id uuid,
+            classification text,
+            is_service_item boolean not null default false,
+            preferred_pick_level text,
+            status text,
+            notes text
+          );
+          create table public.ecoflow_sku_barcode_registry (
+            id uuid primary key default extensions.gen_random_uuid(),
+            sku text not null,
+            barcode text not null unique,
+            package_level text not null,
+            units_per_barcode numeric not null default 1,
+            product_name text,
+            fixed_shelf text,
+            is_active boolean not null default true,
+            first_scanned_at timestamptz not null default now(),
+            last_scanned_at timestamptz not null default now()
+          );
+
+          insert into public.skus values
+            ('aaaaaaaa-0000-4000-8000-000000000001','COM-CUP-12','12oz Cup','Cups','active'),
+            ('aaaaaaaa-0000-4000-8000-000000000002','COM-CUP-16','16oz Cup','Cups','active');
+          insert into public.external_product_mappings(provider,external_product_code,internal_sku_id,default_unit_level,confidence,is_active) values
+            ('ORDERMENTUM','CUP-12W','aaaaaaaa-0000-4000-8000-000000000001','carton','VERIFIED',true),
+            ('ORDERMENTUM','CUP-16W','aaaaaaaa-0000-4000-8000-000000000002','carton','VERIFIED',true);
+          insert into public.ecoflow_sku_master_overrides(external_sku_code,internal_sku_id,classification,is_service_item,status) values
+            ('CUP-12W','aaaaaaaa-0000-4000-8000-000000000001','PRODUCT',false,'ACTIVE'),
+            ('CUP-16W','aaaaaaaa-0000-4000-8000-000000000002','PRODUCT',false,'ACTIVE');
+          SQL
+
+      - name: Apply Product Identity authority chain
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180500_product_identity_authority.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180510_product_identity_conflict_retirement_state.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql
+
+      - name: Publish initial barcode owner
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare v_batch record; v_capture record; v_revision bigint; v_publish record;
+          begin
+            -- Temporarily make second catalog line a service item so the first batch
+            -- can publish one complete Commercial SKU without a fake second mapping.
+            update public.ecoflow_sku_master_overrides set is_service_item=true where external_sku_code='CUP-16W';
+            select * into v_batch from public.ecoflow_start_product_identity_batch(
+              'Initial owner','10000000-0000-4000-8000-000000000001'::uuid
+            );
+            select * into v_capture from public.ecoflow_capture_product_identity(
+              v_batch.batch_id,'10000000-0000-4000-8000-000000000002'::uuid,
+              'aaaaaaaa-0000-4000-8000-000000000001'::uuid,
+              'PHY-CUP-A','12oz Cup Brand A','Brand A','Supplier A',
+              'FAM-CUP-A','Compatible cup family A','9311111111111','CARTON',1000,'ALLOWED',true,'initial owner'
+            );
+            if v_capture.capture_status<>'DRAFTED' then raise exception 'initial capture failed'; end if;
+            select revision into v_revision from public.ecoflow_product_identity_batches where id=v_batch.batch_id;
+            perform * from public.ecoflow_submit_product_identity_batch(
+              v_batch.batch_id,v_revision,'10000000-0000-4000-8000-000000000003'::uuid,'initial submit'
+            );
+            select revision into v_revision from public.ecoflow_product_identity_batches where id=v_batch.batch_id;
+            select * into v_publish from public.ecoflow_publish_product_identity_batch(
+              v_batch.batch_id,v_revision,'10000000-0000-4000-8000-000000000004'::uuid,'initial publish'
+            );
+            if v_publish.command_status<>'APPLIED' then raise exception 'initial publish failed'; end if;
+            update public.ecoflow_sku_master_overrides set is_service_item=false where external_sku_code='CUP-16W';
+          end;
+          $verify$;
+          SQL
+
+      - name: Create a second-batch collision observation
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare v_batch record; v_capture record;
+          begin
+            select * into v_batch from public.ecoflow_start_product_identity_batch(
+              'Replacement batch','20000000-0000-4000-8000-000000000001'::uuid
+            );
+            select * into v_capture from public.ecoflow_capture_product_identity(
+              v_batch.batch_id,'20000000-0000-4000-8000-000000000002'::uuid,
+              'aaaaaaaa-0000-4000-8000-000000000002'::uuid,
+              'PHY-CUP-B','16oz Cup Brand B','Brand B','Supplier B',
+              'FAM-CUP-B','Compatible cup family B','9311111111111','CARTON',800,'ALLOWED',true,'replacement target'
+            );
+            if v_capture.capture_status<>'CONFLICT' then raise exception 'expected active barcode collision'; end if;
+            if not exists(
+              select 1 from public.ecoflow_product_identity_tasks
+              where task_key='BARCODE:9311111111111' and task_status='CONFLICT' and blocking
+            ) then raise exception 'collision did not create blocking task'; end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Warehouse cannot authorize barcode reassignment
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          set app.test_role='WAREHOUSE';
+          do $verify$
+          declare v_batch uuid; v_conflict uuid; v_revision bigint; v_denied boolean:=false;
+          begin
+            select id into v_batch from public.ecoflow_product_identity_batches where batch_status='DRAFT';
+            select id into v_conflict from public.ecoflow_product_identity_observations
+              where batch_id=v_batch and observation_status='CONFLICT' order by captured_at desc limit 1;
+            select revision into v_revision from public.ecoflow_physical_barcode_bindings
+              where barcode='9311111111111' and identity_status='ACTIVE';
+            begin
+              perform * from public.ecoflow_authorize_barcode_reassignment(
+                v_batch,v_conflict,v_revision,'warehouse must not authorize','20000000-0000-4000-8000-000000000003'::uuid
+              );
+            exception when sqlstate '42501' then v_denied:=true;
+            end;
+            if not v_denied then raise exception 'WAREHOUSE unexpectedly authorized reassignment'; end if;
+          end;
+          $verify$;
+          reset app.test_role;
+          SQL
+
+      - name: Owner authorizes exact replacement atomically
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          set app.test_role='OWNER';
+          do $verify$
+          declare
+            v_batch uuid; v_conflict uuid; v_revision bigint; v_auth record; v_before bigint; v_after bigint;
+            v_old_status text; v_new_status text; v_new_owner text; v_history bigint; v_resolve record;
+          begin
+            select id into v_batch from public.ecoflow_product_identity_batches where batch_status='DRAFT';
+            select id into v_conflict from public.ecoflow_product_identity_observations
+              where batch_id=v_batch and observation_status='CONFLICT' order by captured_at desc limit 1;
+            select revision into v_revision from public.ecoflow_physical_barcode_bindings
+              where barcode='9311111111111' and identity_status='ACTIVE';
+            select count(*) into v_before from public.ecoflow_product_identity_observations;
+
+            select * into v_auth from public.ecoflow_authorize_barcode_reassignment(
+              v_batch,v_conflict,v_revision,'Verified packaging now belongs to Brand B','20000000-0000-4000-8000-000000000004'::uuid
+            );
+            if v_auth.authorization_status<>'APPLIED' then raise exception 'authorization failed: %',v_auth.authorization_status; end if;
+
+            select count(*) into v_after from public.ecoflow_product_identity_observations;
+            if v_after<>v_before+1 then raise exception 'authorization should append exactly one replacement observation'; end if;
+
+            select identity_status into v_old_status from public.ecoflow_physical_barcode_bindings
+              where id=v_auth.retired_binding_id;
+            if v_old_status<>'RETIRED' then raise exception 'old binding not retained as RETIRED history'; end if;
+
+            select b.identity_status,p.physical_sku_code into v_new_status,v_new_owner
+            from public.ecoflow_physical_barcode_bindings b
+            join public.ecoflow_physical_skus p on p.id=b.physical_sku_id
+            where b.barcode='9311111111111' and b.created_in_batch_id=v_batch and b.identity_status='DRAFT';
+            if v_new_status<>'DRAFT' or v_new_owner<>'PHY-CUP-B' then raise exception 'exact replacement was not staged'; end if;
+
+            select count(*) into v_history from public.ecoflow_physical_barcode_bindings where barcode='9311111111111';
+            if v_history<>2 then raise exception 'expected retired + draft history rows, got %',v_history; end if;
+
+            if not exists(
+              select 1 from public.ecoflow_product_identity_tasks
+              where task_key='BARCODE:9311111111111' and task_status='DRAFT_READY' and blocking
+            ) then raise exception 'barcode task did not transition to DRAFT_READY'; end if;
+            if not exists(
+              select 1 from public.ecoflow_product_identity_tasks
+              where task_key='COMMERCIAL:aaaaaaaa-0000-4000-8000-000000000002' and task_status='DRAFT_READY'
+            ) then raise exception 'target Commercial SKU did not transition to DRAFT_READY'; end if;
+
+            -- Until publication there is no ACTIVE owner: warehouse resolution fails closed.
+            select * into v_resolve from public.ecoflow_resolve_published_physical_barcode('9311111111111');
+            if v_resolve.resolution_status<>'RETIRED' or v_resolve.physical_sku_id is not null then
+              raise exception 'draft replacement leaked into published barcode resolver';
+            end if;
+          end;
+          $verify$;
+          reset app.test_role;
+          SQL
+
+      - name: Authorization is idempotent and exact-target only
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare v_batch uuid; v_conflict uuid; v_auth record; v_wrong record;
+          begin
+            select id into v_batch from public.ecoflow_product_identity_batches where batch_status='DRAFT';
+            select conflict_observation_id into v_conflict from public.ecoflow_barcode_reassignment_authorizations
+              where batch_id=v_batch limit 1;
+            select * into v_auth from public.ecoflow_authorize_barcode_reassignment(
+              v_batch,v_conflict,0,'Verified packaging now belongs to Brand B','20000000-0000-4000-8000-000000000004'::uuid
+            );
+            if v_auth.authorization_status<>'REPLAYED' then raise exception 'authorization replay failed'; end if;
+
+            -- Generic capture remains fail-closed for any other target because retired
+            -- history does not become generally reusable after authorization.
+            select * into v_wrong from public.ecoflow_capture_product_identity(
+              v_batch,'20000000-0000-4000-8000-000000000005'::uuid,
+              'aaaaaaaa-0000-4000-8000-000000000002'::uuid,
+              'PHY-CUP-C','16oz Cup Brand C','Brand C','Supplier C',
+              'FAM-CUP-C','Compatible cup family C','9311111111111','CARTON',800,'ALLOWED',true,'unauthorized third target'
+            );
+            if v_wrong.capture_status<>'CONFLICT' then raise exception 'retired history became generally reusable'; end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Publish exact replacement and preserve history
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare v_batch uuid; v_revision bigint; v_publish record; v_resolve record; v_history bigint;
+          begin
+            select id,revision into v_batch,v_revision from public.ecoflow_product_identity_batches where batch_status='DRAFT';
+
+            -- The unauthorized third-target test creates another CONFLICT observation/task;
+            -- remove only that test artifact so we can prove the authorized replacement itself
+            -- is publishable. Production never auto-clears a real conflicting observation.
+            delete from public.ecoflow_product_identity_observations
+              where command_id='20000000-0000-4000-8000-000000000005'::uuid;
+            update public.ecoflow_product_identity_tasks set
+              task_status='DRAFT_READY',detail='Authorized exact replacement remains ready for review',updated_at=now()
+              where task_key='BARCODE:9311111111111';
+
+            select revision into v_revision from public.ecoflow_product_identity_batches where id=v_batch;
+            perform * from public.ecoflow_submit_product_identity_batch(
+              v_batch,v_revision,'20000000-0000-4000-8000-000000000006'::uuid,'authorized replacement submit'
+            );
+            select revision into v_revision from public.ecoflow_product_identity_batches where id=v_batch;
+            select * into v_publish from public.ecoflow_publish_product_identity_batch(
+              v_batch,v_revision,'20000000-0000-4000-8000-000000000007'::uuid,'authorized replacement publish'
+            );
+            if v_publish.command_status<>'APPLIED' then raise exception 'replacement publish failed'; end if;
+
+            select * into v_resolve from public.ecoflow_resolve_published_physical_barcode('9311111111111');
+            if v_resolve.resolution_status<>'RESOLVED' or v_resolve.physical_sku_code<>'PHY-CUP-B' then
+              raise exception 'published resolver did not switch to authorized exact target';
+            end if;
+            select count(*) into v_history from public.ecoflow_physical_barcode_bindings where barcode='9311111111111';
+            if v_history<>2 then raise exception 'publication rewrote barcode history'; end if;
+            if not exists(
+              select 1 from public.ecoflow_physical_barcode_bindings old
+              join public.ecoflow_physical_barcode_bindings replacement on replacement.id=old.replaced_by_binding_id
+              where old.barcode='9311111111111' and old.identity_status='RETIRED'
+                and replacement.identity_status='ACTIVE'
+            ) then raise exception 'retired history does not point to active authorized replacement'; end if;
+          end;
+          $verify$;
+          SQL
+
+      - name: Static safety boundary
+        run: |
+          set -euo pipefail
+          grep -q "OWNER_OR_ADMIN_REQUIRED" supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql
+          grep -q "conflict_observation_id" supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql
+          grep -q "OWNER_AUTHORIZED_REASSIGNMENT" supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql
+          if grep -Eiq '^[[:space:]]*(insert[[:space:]]+into|update|delete[[:space:]]+from)[[:space:]]+public\.(ecoflow_inventory_movements|ecoflow_warehouse_receiving|ecoflow_stocktake|ecoflow_pick)' supabase/migrations/20260808180520_product_identity_barcode_reassignment_authority.sql; then
+            echo 'Barcode reassignment authority must not mutate warehouse quantities.' >&2
+            exit 1
+          fi

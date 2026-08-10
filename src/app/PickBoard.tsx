@@ -26,6 +26,7 @@ import {
 import type { BulkPickTask, PickState, PickTaskState } from '@/domain/pickPlan';
 import type { BusinessDay, ImportedOrder } from '@/domain/types';
 import { loadWarehouseLocationItems, pickWarehouseStock, type WarehouseLocationItemRow } from '@/data/repositories/warehouseLocations';
+import { operationalBarcodeFailureMessage, resolveOperationalBarcode } from '@/data/repositories/productIdentityBarcodeResolution';
 import { getPickSyncErrorDetail } from './usePickSync';
 import { BoxChip } from './Brand';
 import { LabelSheet } from './LabelSheet';
@@ -114,6 +115,8 @@ function buildWarehouseSkuStock(rows: WarehouseLocationItemRow[]) {
 function planWarehousePick(task: BulkPickTask, stock: WarehouseSkuStock | undefined, state: PickTaskState): WarehousePickPlan {
   const pickCartons = Math.max(0, task.totalCartons - (state.shortCartons || 0));
   const pickSleeves = Math.max(0, task.totalSleeves - (state.shortSleeves || 0));
+  // These remain operator hints only. Product identity authority is the server-side
+  // operational resolver, so stale location evidence cannot reject a valid package.
   const expectedBarcodes = Array.from(new Set([task.barcode, ...(stock?.barcodes || [])].filter((value): value is string => Boolean(value))));
   const cartonShortage = Math.max(0, pickCartons - (stock?.cartonQty || 0));
   const sleeveShortage = Math.max(0, pickSleeves - (stock?.looseQty || 0));
@@ -208,7 +211,7 @@ function ScanSheet({ task, expectedBarcodes, onResult, onClose }: {
           </div>
           <button type="button" className="driver-icon-button" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
-        {expectedBarcodes.length ? <div className="driver-inline-hint">Expected: {expectedBarcodes.join(' / ')}</div> : null}
+        {expectedBarcodes.length ? <div className="driver-inline-hint">Previous barcode evidence: {expectedBarcodes.join(' / ')} · Product Identity decides.</div> : null}
         {!error ? <video ref={videoRef} className="scan-video" muted playsInline /> : <div className="driver-inline-hint">{error}</div>}
         <label className="pod-input">
           <span>Or type the code</span>
@@ -361,10 +364,6 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
       setPickPersistErrors((current) => ({ ...current, [task.sku]: 'Scan the product barcode before picking.' }));
       return;
     }
-    if (plan.expectedBarcodes.length && !plan.expectedBarcodes.map(normalize).includes(normalize(state.scannedValue))) {
-      setPickPersistErrors((current) => ({ ...current, [task.sku]: `Scanned barcode does not match expected ${plan.expectedBarcodes.join(' / ')}.` }));
-      return;
-    }
     if (!plan.hasEnough) {
       setPickPersistErrors((current) => ({ ...current, [task.sku]: plan.warning || 'Live warehouse stock is not enough. Record shortage first.' }));
       return;
@@ -373,13 +372,19 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
     setSavingPickSku(task.sku);
     setPickPersistErrors((current) => ({ ...current, [task.sku]: '' }));
     try {
+      // Re-resolve immediately before quantity mutation. This protects persisted
+      // scan state and catches retirement/family-contract changes since scanning.
+      const identity = await resolveOperationalBarcode(state.scannedValue, task.sku);
+      if (identity.resolutionStatus !== 'RESOLVED') {
+        throw new Error(operationalBarcodeFailureMessage(identity));
+      }
       const moves: string[] = [];
       if (plan.pickCartons > 0) {
-        const result = await pickWarehouseStock({ sku: task.sku, quantity: plan.pickCartons, unitLevel: 'carton', barcode: state.scannedValue, note: 'Picked to dock from bulk pick' });
+        const result = await pickWarehouseStock({ sku: task.sku, quantity: plan.pickCartons, unitLevel: 'carton', barcode: identity.barcode, note: 'Picked to dock from bulk pick' });
         moves.push(...result.map((row) => `${row.picked_quantity} ctn from ${row.location_code}`));
       }
       if (plan.pickSleeves > 0) {
-        const result = await pickWarehouseStock({ sku: task.sku, quantity: plan.pickSleeves, unitLevel: 'sleeve', barcode: state.scannedValue, note: 'Picked to dock from bulk pick' });
+        const result = await pickWarehouseStock({ sku: task.sku, quantity: plan.pickSleeves, unitLevel: 'sleeve', barcode: identity.barcode, note: 'Picked to dock from bulk pick' });
         moves.push(...result.map((row) => `${row.picked_quantity} slv from ${row.location_code}`));
       }
       markPickedLocal(task.sku);
@@ -399,16 +404,27 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
     }));
   }
 
-  function recordScan(sku: string, value: string | null) {
+  async function recordScan(sku: string, value: string | null) {
     setScanSku(null);
     if (!value) return;
-    patchPick((current) => ({
-      ...current,
-      taskState: {
-        ...current.taskState,
-        [sku]: { ...taskStateFor(current, sku), scannedValue: value, scanSkipped: false }
+    setPickPersistErrors((current) => ({ ...current, [sku]: 'Checking published Product Identity…' }));
+    try {
+      const identity = await resolveOperationalBarcode(value, sku);
+      if (identity.resolutionStatus !== 'RESOLVED') {
+        setPickPersistErrors((current) => ({ ...current, [sku]: operationalBarcodeFailureMessage(identity) }));
+        return;
       }
-    }));
+      patchPick((current) => ({
+        ...current,
+        taskState: {
+          ...current.taskState,
+          [sku]: { ...taskStateFor(current, sku), scannedValue: identity.barcode, scanSkipped: false }
+        }
+      }));
+      setPickPersistErrors((current) => ({ ...current, [sku]: `Product Identity verified · ${identity.physicalSkuCode || identity.barcode}` }));
+    } catch (error) {
+      setPickPersistErrors((current) => ({ ...current, [sku]: error instanceof Error ? error.message : String(error) }));
+    }
   }
 
   function recordShort(sku: string, shortCartons: number, shortSleeves: number) {
@@ -451,11 +467,13 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
             const plan = planWarehousePick(task, warehouseSkuStock.get(task.sku), state);
             const scannedValue = state.scannedValue || '';
             const scanDone = Boolean(scannedValue);
-            const expectedNormalized = plan.expectedBarcodes.map(normalize);
-            const scanMatch = scanDone && (!expectedNormalized.length || expectedNormalized.includes(normalize(scannedValue)));
-            const scanInvalid = scanDone && !scanMatch;
+            // Legacy task/location barcode strings are hints only. A stored scan
+            // exists here only after operational authority resolution; server RPC
+            // re-validates it again immediately before stock deduction.
+            const scanMatch = scanDone;
+            const scanInvalid = false;
             const short = (state.shortCartons || 0) + (state.shortSleeves || 0) > 0;
-            const pickBlocked = !scanDone || scanInvalid || !plan.hasEnough || savingPickSku === task.sku;
+            const pickBlocked = !scanDone || !plan.hasEnough || savingPickSku === task.sku;
             const mapHref = plan.displayLocation && plan.displayLocation !== 'NO LIVE LOC' ? mapUrlForLocation(plan.displayLocation) : mapUrlForSku(task.sku);
 
             if (state.status === 'PICKED') {
@@ -504,9 +522,9 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
                     Short: {state.shortCartons ? `${state.shortCartons} ctn` : ''}{state.shortCartons && state.shortSleeves ? ', ' : ''}{state.shortSleeves ? `${state.shortSleeves} sleeves` : ''} — office is notified.
                   </div>
                 ) : null}
-                <button type="button" className={cls('driver-ghost-button pick-scan-button', scanDone && 'scanned', scanInvalid && 'scan-invalid')} onClick={() => setScanSku(task.sku)}>
+                <button type="button" className={cls('driver-ghost-button pick-scan-button', scanDone && 'scanned')} onClick={() => setScanSku(task.sku)}>
                   <ScanLine size={16} />
-                  {scannedValue ? (scanMatch ? 'Scanned · match' : `Wrong barcode · ${scannedValue}`) : 'Scan product barcode'}
+                  {scannedValue ? `Product Identity verified · ${scannedValue}` : 'Scan product barcode'}
                 </button>
                 {pickPersistErrors[task.sku] ? <div className="driver-inline-hint pick-persist-error">{pickPersistErrors[task.sku]}</div> : null}
                 <div className="driver-button-row">
@@ -619,7 +637,7 @@ export function PickBoard({ orders, businessDay, day, setDay, syncStatus = 'off'
       {view === 'sort' ? sortView : null}
       {view === 'stops' ? stopsView : null}
 
-      {scanTask && scanPlan ? <ScanSheet task={scanTask} expectedBarcodes={scanPlan.expectedBarcodes} onResult={(value) => recordScan(scanTask.sku, value)} onClose={() => setScanSku(null)} /> : null}
+      {scanTask && scanPlan ? <ScanSheet task={scanTask} expectedBarcodes={scanPlan.expectedBarcodes} onResult={(value) => { void recordScan(scanTask.sku, value); }} onClose={() => setScanSku(null)} /> : null}
       {shortTask ? <ShortSheet task={shortTask} onSave={(cartonsShort, sleevesShort) => recordShort(shortTask.sku, cartonsShort, sleevesShort)} onClose={() => setShortSku(null)} /> : null}
       {labelsOpen ? <LabelSheet cartons={cartons} runLabel={run.label} dateLabel={businessDay.label} onClose={() => setLabelsOpen(false)} /> : null}
     </div>

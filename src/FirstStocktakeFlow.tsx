@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   recordBarcodeScan,
-  setSkuPackagePolicy,
   startBarcodeScanSession,
   type BarcodePackageLevel,
-  type SkuPackageMode,
 } from '@/data/repositories/inventoryControl';
+import {
+  operationalBarcodeFailureMessage,
+  resolveOperationalBarcode,
+} from '@/data/repositories/productIdentityBarcodeResolution';
 import {
   finishStagedReceivingBatch,
   loadOpenStagedReceivingBatches,
@@ -49,21 +51,6 @@ type MissingSkuReview = StocktakeSkuOption & {
   liveLocations: string[];
 };
 
-const packageModes: Array<{ value: SkuPackageMode; label: string; firstLevel: BarcodePackageLevel }> = [
-  { value: 'CARTON_AND_SLEEVE', label: 'Carton + sleeve', firstLevel: 'CARTON' },
-  { value: 'CARTON_ONLY', label: 'Carton only', firstLevel: 'CARTON' },
-  { value: 'SLEEVE_ONLY', label: 'Sleeve only', firstLevel: 'SLEEVE' },
-  { value: 'EACH_ONLY', label: 'Single unit', firstLevel: 'EACH' },
-  { value: 'INNER_ONLY', label: 'Inner pack', firstLevel: 'INNER' },
-];
-
-const packageLevels: Array<{ value: BarcodePackageLevel; label: string }> = [
-  { value: 'CARTON', label: 'Carton' },
-  { value: 'SLEEVE', label: 'Sleeve' },
-  { value: 'INNER', label: 'Inner pack' },
-  { value: 'EACH', label: 'Single unit' },
-];
-
 const facingLabel: Record<WarehouseFacing, string> = {
   left: 'Left-facing view',
   right: 'Right-facing view',
@@ -75,13 +62,10 @@ function n(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function allowedLevel(mode: SkuPackageMode, level: BarcodePackageLevel) {
-  if (mode === 'CARTON_AND_SLEEVE') return level === 'CARTON' || level === 'SLEEVE';
-  if (mode === 'CARTON_ONLY') return level === 'CARTON';
-  if (mode === 'SLEEVE_ONLY') return level === 'SLEEVE';
-  if (mode === 'EACH_ONLY') return level === 'EACH';
-  if (mode === 'INNER_ONLY') return level === 'INNER';
-  return false;
+function canonicalPackageLevel(value: string | null): BarcodePackageLevel {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (normalized === 'CARTON' || normalized === 'SLEEVE' || normalized === 'EACH' || normalized === 'INNER') return normalized;
+  return 'UNKNOWN';
 }
 
 function locationCompact(value: string) {
@@ -218,9 +202,6 @@ export function FirstStocktakeFlow() {
   const [skuAssistError, setSkuAssistError] = useState('');
   const [skuFocused, setSkuFocused] = useState(false);
   const [barcode, setBarcode] = useState('');
-  const [packageMode, setPackageMode] = useState<SkuPackageMode>('CARTON_AND_SLEEVE');
-  const [packageLevel, setPackageLevel] = useState<BarcodePackageLevel>('CARTON');
-  const [unitsPerPackage, setUnitsPerPackage] = useState('1');
   const [packagesObserved, setPackagesObserved] = useState('1');
   const [note, setNote] = useState('');
   const [batch, setBatch] = useState<StagedReceivingBatch | null>(null);
@@ -364,24 +345,28 @@ export function FirstStocktakeFlow() {
     const selectedFacing = selectedLocation?.side || facing;
     const cleanSku = canonicalSku(sku, skuOptions);
     const cleanBarcode = barcode.trim();
-    const units = Number(unitsPerPackage);
     const packages = Number(packagesObserved);
     if (!cleanSku) { setError('Step 2: enter the Ordermentum SKU / item code.'); return; }
-    if (!cleanBarcode) { setError('Step 3: scan the package barcode.'); return; }
-    if (!allowedLevel(packageMode, packageLevel)) { setError(`${packageLevel} is not valid for the selected package rule.`); return; }
-    if (!Number.isInteger(units) || units <= 0) { setError('Units per package must be a whole number greater than zero.'); return; }
+    if (!cleanBarcode) { setError('Step 3: scan the published package barcode.'); return; }
     if (!Number.isInteger(packages) || packages <= 0) { setError('Packages counted must be a whole number greater than zero.'); return; }
 
     setBusy('add');
     setError('');
     setNotice('');
     try {
+      const identity = await resolveOperationalBarcode(cleanBarcode, cleanSku);
+      if (identity.resolutionStatus !== 'RESOLVED') throw new Error(operationalBarcodeFailureMessage(identity));
+      const packageLevel = canonicalPackageLevel(identity.packageLevel);
+      const units = Number(identity.unitsInBaseUnit);
+      if (packageLevel === 'UNKNOWN' || !Number.isFinite(units) || units <= 0) {
+        throw new Error('Published Product Identity is missing a valid package conversion. Resolve it before stocktake.');
+      }
+
       setLocation(cleanBaseLocation);
       setFacing(selectedFacing);
       setSku(cleanSku);
       const [sessionId, batchId] = await Promise.all([ensureSession(storageLocation), ensureBatch()]);
       const facingNote = `FACING ${selectedFacing.toUpperCase()}`;
-      await setSkuPackagePolicy({ sku: cleanSku, packageMode, defaultShelf: storageLocation, note: note || `First stocktake · ${facingNote}` });
       await recordBarcodeScan({
         sessionId,
         sku: cleanSku,
@@ -391,7 +376,7 @@ export function FirstStocktakeFlow() {
         shelf: storageLocation,
         qtyObserved: packages,
         actionMode: 'MAP_AND_COUNT',
-        note: note || `First stocktake mapping and observed count · ${facingNote}`,
+        note: note || `First stocktake canonical count observation · ${facingNote}`,
       });
 
       const fingerprint = JSON.stringify([batchId, storageLocation, selectedFacing, cleanSku, cleanBarcode, packageLevel, units, packages, note.trim()]);
@@ -405,14 +390,14 @@ export function FirstStocktakeFlow() {
         barcode: cleanBarcode,
         qtyPackages: packages,
         targetLocation: storageLocation,
-        note: `FIRST STOCKTAKE · ${cleanSku} · ${packageLevel} · ${facingNote}${note ? ` · ${note}` : ''}`,
+        note: `FIRST STOCKTAKE · ${cleanSku} · ${packageLevel} · ${units} units/package · ${facingNote}${note ? ` · ${note}` : ''}`,
         idempotencyKey: pending.idempotencyKey,
         clientScannedAt: pending.clientScannedAt,
       });
       pendingRef.current = null;
       window.localStorage.removeItem(coverageKey(batchId));
       setCoverageAcknowledged(false);
-      setNotice(`${cleanSku} added to ${cleanBaseLocation} · ${facingLabel[selectedFacing]}. Location and facing are kept for the next package.`);
+      setNotice(`${cleanSku} · ${packageLevel} × ${units} units validated by Product Identity and counted at ${cleanBaseLocation} · ${facingLabel[selectedFacing]}.`);
       setSku('');
       setBarcode('');
       setPackagesObserved('1');
@@ -506,10 +491,11 @@ export function FirstStocktakeFlow() {
         <div>
           <span>FIELD READINESS · CURRENT TASK</span>
           <h2>First stocktake</h2>
-          <p>Work one physical location at a time. One scan saves the package identity and adds the counted packages to a controlled batch; stock changes only after the final review.</p>
+          <p>Work one physical location at a time. Product Identity owns barcode and package conversion facts; Stocktake records only the observed package count. Stock changes only after the final review.</p>
         </div>
         <div className="first-stocktake-hero-actions">
           <a href="/warehouse-map">Open warehouse map</a>
+          <a href="/commissioning/product-identity">Product Identity</a>
           <button type="button" onClick={() => void reload(batch?.id)} disabled={Boolean(busy)}>Refresh</button>
         </div>
       </header>
@@ -517,7 +503,7 @@ export function FirstStocktakeFlow() {
       <ol className="first-stocktake-steps">
         <li className={location ? 'done' : 'active'}><b>1</b><span><strong>Location</strong><small>Choose the physical cell</small></span></li>
         <li className={sku ? 'done' : location ? 'active' : ''}><b>2</b><span><strong>SKU</strong><small>Use the Ordermentum item code</small></span></li>
-        <li className={barcode ? 'done' : sku ? 'active' : ''}><b>3</b><span><strong>Package</strong><small>Scan barcode and conversion</small></span></li>
+        <li className={barcode ? 'done' : sku ? 'active' : ''}><b>3</b><span><strong>Package</strong><small>Scan a published Product Identity barcode</small></span></li>
         <li className={barcode ? 'active' : ''}><b>4</b><span><strong>Count</strong><small>Add packages to the review batch</small></span></li>
       </ol>
 
@@ -589,7 +575,7 @@ export function FirstStocktakeFlow() {
         </div>
 
         <div className="first-stocktake-assist-field">
-          <label htmlFor={BARCODE_INPUT_ID}><span>3 · Package barcode</span></label>
+          <label htmlFor={BARCODE_INPUT_ID}><span>3 · Published package barcode</span></label>
           <div className="first-stocktake-barcode-control">
             <input
               id={BARCODE_INPUT_ID}
@@ -602,29 +588,15 @@ export function FirstStocktakeFlow() {
             />
             <button type="button" onClick={openBarcodeCamera} aria-label="Open camera to scan package barcode">Scan</button>
           </div>
-        </div>
-
-        <div className="first-stocktake-package-rule">
-          <span>Package rule</span>
-          <select value={packageMode} onChange={(event) => {
-            const next = event.target.value as SkuPackageMode;
-            setPackageMode(next);
-            setPackageLevel(packageModes.find((item) => item.value === next)?.firstLevel || 'CARTON');
-          }}>
-            {packageModes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-          <select value={packageLevel} onChange={(event) => setPackageLevel(event.target.value as BarcodePackageLevel)}>
-            {packageLevels.filter((item) => allowedLevel(packageMode, item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          <small>Package level and units-per-package come from published Product Identity. Stocktake cannot create or edit those facts.</small>
         </div>
 
         <div className="first-stocktake-count-row">
-          <label><span>Units per package</span><input type="number" min="1" step="1" inputMode="numeric" value={unitsPerPackage} onChange={(event) => setUnitsPerPackage(event.target.value)} /></label>
           <label><span>4 · Packages counted</span><input type="number" min="1" step="1" inputMode="numeric" value={packagesObserved} onChange={(event) => setPackagesObserved(event.target.value)} /></label>
         </div>
         <label><span>Optional note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Damaged cartons, mixed packaging, count note" /></label>
-        <button className="first-stocktake-primary" type="button" disabled={Boolean(busy)} onClick={() => void addStocktakeLine()}>{busy === 'add' ? 'Saving and adding…' : 'Add to first stocktake'}</button>
-        <small className="first-stocktake-safety">The warehouse location and facing remain selected after each add. This button stages one idempotent line; stock changes only after final verification.</small>
+        <button className="first-stocktake-primary" type="button" disabled={Boolean(busy)} onClick={() => void addStocktakeLine()}>{busy === 'add' ? 'Validating and adding…' : 'Validate barcode and add count'}</button>
+        <small className="first-stocktake-safety">The warehouse location and facing remain selected after each add. The published barcode is validated first; this button stages one idempotent count line and stock changes only after final verification.</small>
       </section>
 
       <section className="first-stocktake-review">

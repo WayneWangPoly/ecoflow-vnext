@@ -12,6 +12,7 @@ import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
+import { ProductIdentityCommissioningWorkspace } from '@/features/productIdentity/ProductIdentityCommissioningWorkspace';
 import {
   OperationalPagedWorkspace,
   OperationalSettingsWorkspace,
@@ -38,6 +39,7 @@ type UnifiedWorkspace =
   | 'ordermentum'
   | 'orders'
   | 'inventory'
+  | 'product-identity'
   | 'stores'
   | 'exceptions'
   | 'logs'
@@ -51,6 +53,7 @@ export function unifiedOperationalWorkspace(pathname: string): UnifiedWorkspace 
   if (pathname === '/ordermentum') return 'ordermentum';
   if (pathname === '/orders' || pathname.startsWith('/orders/')) return 'orders';
   if (pathname === '/inventory' || pathname.startsWith('/inventory/')) return 'inventory';
+  if (pathname === '/commissioning/product-identity') return 'product-identity';
   if (pathname === '/customers' || pathname.startsWith('/customers/') || pathname === '/stores' || pathname.startsWith('/stores/')) return 'stores';
   if (pathname === '/exceptions') return 'exceptions';
   if (pathname === '/logs') return 'logs';
@@ -179,6 +182,31 @@ function WarehouseStandalone({ role, onLogout }: { role: Role; onLogout: () => v
   );
 }
 
+function ProductIdentityStandalone({
+  role,
+  profile,
+  onLogout,
+}: {
+  role: Role;
+  profile: EcoFlowAuthProfile;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="warehouse-control-standalone product-identity-standalone">
+      <header className="warehouse-control-standalone-header">
+        <BrandMark />
+        <strong>EcoFlow Product Identity</strong>
+        <button type="button" onClick={onLogout}>Logout</button>
+      </header>
+      <main>
+        <WorkspaceRuntimeBoundary workspace="product-identity">
+          <ProductIdentityCommissioningWorkspace role={role} profile={profile} />
+        </WorkspaceRuntimeBoundary>
+      </main>
+    </div>
+  );
+}
+
 export default function UnifiedOperationalRoutes() {
   const location = useLocation();
   const workspace = unifiedOperationalWorkspace(location.pathname);
@@ -233,6 +261,37 @@ export default function UnifiedOperationalRoutes() {
     return (
       <OperationalAppShell role={role} profile={profile} onLogout={() => void logout()}>
         <WarehouseControlWorkspace role={role} />
+      </OperationalAppShell>
+    );
+  }
+
+  if (workspace === 'product-identity') {
+    if (role === 'driver') {
+      return (
+        <OperationalAccessState
+          title="Product Identity not authorised"
+          detail="Driver accounts cannot read or change warehouse product identity."
+          actions={<button type="button" onClick={() => void logout()}>Logout</button>}
+        />
+      );
+    }
+    if (role === 'warehouse') {
+      return <ProductIdentityStandalone role={role} profile={profile} onLogout={() => void logout()} />;
+    }
+    if (!mayAccessOperationalWorkspace(role, 'product-identity')) {
+      return (
+        <OperationalAccessState
+          title="Product Identity not authorised"
+          detail={`${roleLabel(role)} does not have Product Identity access.`}
+          actions={<button type="button" onClick={() => void logout()}>Logout</button>}
+        />
+      );
+    }
+    return (
+      <OperationalAppShell role={role} profile={profile} onLogout={() => void logout()}>
+        <WorkspaceRuntimeBoundary workspace="product-identity">
+          <ProductIdentityCommissioningWorkspace role={role} profile={profile} />
+        </WorkspaceRuntimeBoundary>
       </OperationalAppShell>
     );
   }

@@ -2,22 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 import { createPortal } from 'react-dom';
 import { FirstStocktakeWorkspace } from './FirstStocktakeWorkspace';
-import { WarehouseBarcodeSprint } from './WarehouseBarcodeSprint';
 import { WarehouseReceivingFlow } from './WarehouseReceivingFlow';
 import { WarehouseReturnsPanel } from './WarehouseReturnsPanel';
 
-// FirstStocktakeFlow remains the controlled opening-count phase inside FirstStocktakeWorkspace.
-type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns' | 'barcode';
+// Identity commissioning now lives exclusively in /commissioning/product-identity.
+// Warehouse operations retain Stocktake / Receiving / Returns only.
+type WarehouseOpsMode = 'stocktake' | 'receive' | 'returns';
 
 const secondaryModes: Array<{ mode: Exclude<WarehouseOpsMode, 'stocktake'>; label: string }> = [
   { mode: 'receive', label: 'Receiving' },
   { mode: 'returns', label: 'Returns' },
-  { mode: 'barcode', label: 'Barcode' },
 ];
 
 function requestedMode(): WarehouseOpsMode {
   const value = new URLSearchParams(window.location.search).get('mode')?.toLowerCase();
-  if (value === 'receive' || value === 'returns' || value === 'barcode') return value;
+  if (value === 'receive' || value === 'returns') return value;
   return 'stocktake';
 }
 
@@ -114,12 +113,12 @@ export function WarehouseBarcodeSprintMount() {
           {secondaryModes.map((item) => (
             <button key={item.mode} type="button" className={mode === item.mode ? 'active' : ''} onClick={() => setMode(item.mode)}>{item.label}</button>
           ))}
+          <button type="button" onClick={() => window.location.assign('/commissioning/product-identity')}>Product identity</button>
         </nav>
       ) : null}
       {mode === 'stocktake' ? <FirstStocktakeWorkspace /> : null}
       {mode === 'receive' ? <WarehouseReceivingFlow /> : null}
       {mode === 'returns' ? <WarehouseReturnsPanel /> : null}
-      {mode === 'barcode' ? <WarehouseBarcodeSprint /> : null}
     </>,
     host,
   );
