@@ -36,6 +36,9 @@ test('Driver mobile surface supports touch drag and accessible up/down fallback'
   assert.match(panel, /DELIVERED/);
   assert.match(panel, /FAILED/);
   assert.match(panel, /SKIPPED/);
+  assert.match(panel, /draftRef\.current = next/);
+  assert.match(panel, /const finalOrder = \[\.\.\.draftRef\.current\]/);
+  assert.match(panel, /persist\(finalOrder\)/);
 });
 
 test('execution order cannot silently overwrite warehouse pick and label order', () => {
