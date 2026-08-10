@@ -61,6 +61,14 @@ export function DriverRouteSequencePanel({
     setDraft(next);
   }, []);
 
+  const markSaved = useCallback(() => {
+    setPendingIntent(null);
+    setSaveState('saved');
+    setError('');
+    onRouteChanged();
+    window.setTimeout(() => setSaveState((current) => current === 'saved' ? 'idle' : current), 1800);
+  }, [onRouteChanged]);
+
   const refresh = useCallback(async (quiet = false) => {
     const localDay = loadDriverDayState(businessDay.date);
     const nextRunCode = localDay.runCode;
@@ -74,7 +82,20 @@ export function DriverRouteSequencePanel({
     try {
       const next = await loadDeliveryRouteExecutionSequence({ businessDay: businessDay.date, runCode: nextRunCode });
       setSequence(next);
-      if (next && saveState !== 'saving' && !draggingId && !pendingIntent) replaceDraft(next.stopOrder);
+      if (
+        next
+        && pendingIntent
+        && sameOrder(next.stopOrder, pendingIntent.stopOrder)
+        && next.sequenceRevision > pendingIntent.expectedSequenceRevision
+      ) {
+        // The write may have succeeded while the response was lost. Once the
+        // server authority has advanced to the exact intended order, converge
+        // the UI to that fact instead of leaving a false "retry required" state.
+        replaceDraft(next.stopOrder);
+        markSaved();
+      } else if (next && saveState !== 'saving' && !draggingId && !pendingIntent) {
+        replaceDraft(next.stopOrder);
+      }
       if (!next) {
         replaceDraft([]);
         setPendingIntent(null);
@@ -86,7 +107,7 @@ export function DriverRouteSequencePanel({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [businessDay.date, draggingId, pendingIntent, replaceDraft, saveState]);
+  }, [businessDay.date, draggingId, markSaved, pendingIntent, replaceDraft, saveState]);
 
   useEffect(() => {
     void refresh();
@@ -122,7 +143,14 @@ export function DriverRouteSequencePanel({
   }
 
   async function persist(nextOrder: string[], retryIntent?: PendingIntent) {
-    if (!sequence || sameOrder(nextOrder, sequence.stopOrder) || saveState === 'saving') return;
+    if (!sequence || saveState === 'saving') return;
+    if (sameOrder(nextOrder, sequence.stopOrder)) {
+      if (retryIntent) {
+        replaceDraft(sequence.stopOrder);
+        markSaved();
+      }
+      return;
+    }
     const intent = retryIntent ?? {
       commandId: commandId(),
       expectedSequenceRevision: sequence.sequenceRevision,
@@ -150,10 +178,7 @@ export function DriverRouteSequencePanel({
       };
       setSequence(nextSequence);
       replaceDraft(result.stopOrder);
-      setPendingIntent(null);
-      setSaveState('saved');
-      onRouteChanged();
-      window.setTimeout(() => setSaveState((current) => current === 'saved' ? 'idle' : current), 1800);
+      markSaved();
     } catch (reason) {
       if (isConflict(reason)) {
         setPendingIntent(null);
