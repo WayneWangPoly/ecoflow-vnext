@@ -170,9 +170,10 @@ export function driverRunFromLockedSnapshot(snapshot: LockedDeliveryRouteSnapsho
     businessDay: snapshot.businessDay,
     stops: snapshot.stops.map((stop) => ({
       ...stop,
+      executionSequenceAuthoritative: true,
       mapPoint: { ...stop.mapPoint },
       lines: stop.lines.map((line) => ({ ...line })),
-    })),
+    } as RunStop & { executionSequenceAuthoritative: true })),
     totalCartons: snapshot.totalCartons,
     readyStops: snapshot.readyStops,
     warehousePoint: { ...snapshot.warehousePoint },
