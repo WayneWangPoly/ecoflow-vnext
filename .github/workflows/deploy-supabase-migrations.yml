@@ -447,9 +447,12 @@ jobs:
           fi
           echo "frontend files changed in this commit: $FRONTEND_CHANGED"
 
-          if [ "$FRONTEND_CHANGED" = 'no' ]; then
+          if [ "$SHADOW_RESULT" != 'success' ] || [ "$DEPLOY_RESULT" != 'success' ]; then
+            STATE='failure'
+            DESCRIPTION="RELEASE NOT SYNCHRONIZED: database release incomplete (shadow=$SHADOW_RESULT deploy=$DEPLOY_RESULT)."
+          elif [ "$FRONTEND_CHANGED" = 'no' ]; then
             STATE='success'
-            DESCRIPTION='No frontend changes in this commit; no Vercel release check is required'
+            DESCRIPTION='No frontend changes in this commit; database deployment completed'
           else
             VERCEL_STATE=none
             for i in $(seq 1 20); do
