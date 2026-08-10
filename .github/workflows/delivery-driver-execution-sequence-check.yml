@@ -9,6 +9,14 @@ on:
       - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - 'scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs'
+      - 'src/app/DriverApp.tsx'
+      - 'src/app/DriverAppCore.tsx'
+      - 'src/app/DriverRouteSequencePanel.tsx'
+      - 'src/data/repositories/deliveryRouteAuthority.ts'
+      - 'src/domain/driverRun.ts'
+      - 'src/domain/driverRunCore.ts'
+      - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
       - '.github/workflows/delivery-driver-execution-sequence-check.yml'
   push:
     branches:
@@ -19,6 +27,14 @@ on:
       - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - 'scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs'
+      - 'src/app/DriverApp.tsx'
+      - 'src/app/DriverAppCore.tsx'
+      - 'src/app/DriverRouteSequencePanel.tsx'
+      - 'src/data/repositories/deliveryRouteAuthority.ts'
+      - 'src/domain/driverRun.ts'
+      - 'src/domain/driverRunCore.ts'
+      - 'src/features/delivery/DeliveryDispatchCommandSurface.tsx'
       - '.github/workflows/delivery-driver-execution-sequence-check.yml'
   workflow_dispatch:
 
@@ -28,7 +44,7 @@ permissions:
 jobs:
   execution-sequence-authority:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17
@@ -68,6 +84,9 @@ jobs:
       - name: Verify Driver execution sequence contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-sequence-contract-test.sql
 
+      - name: Verify Driver + office sequence frontend contract
+        run: node --test scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs
+
       - name: Static authority audit
         shell: bash
         run: |
@@ -89,3 +108,17 @@ jobs:
           grep -q 'ARRIVED/current stop was moved behind another stop' "$testfile"
           grep -q 'reorder mutated immutable dispatch facts' "$testfile"
           grep -q 'assigned route read remained tied to stale office sequence/ETA' "$testfile"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: TypeScript
+        run: npx tsc -b --pretty false
+
+      - name: Production build
+        run: npm run build
