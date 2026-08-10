@@ -113,8 +113,8 @@ requireText('supabase/migrations/20260720070000_customer_operational_events.sql'
 
 requireText('src/app/PickBoard.tsx', 'Scan the product barcode before picking.', 'Warehouse stock deduction still requires barcode scan');
 requireText('src/app/PickBoard.tsx', 'pickWarehouseStock', 'Warehouse pick remains a server stock transaction');
-requireText('src/app/DriverApp.tsx', 'pod1', 'Driver flow retains first POD evidence');
-requireText('src/app/DriverApp.tsx', 'pod2', 'Driver flow retains second POD evidence');
+requireText('src/app/DriverAppCore.tsx', 'pod1', 'Driver flow retains first POD evidence in preserved execution core');
+requireText('src/app/DriverAppCore.tsx', 'pod2', 'Driver flow retains second POD evidence in preserved execution core');
 
 requirePattern('src/operationalSafetyCenter.css', /@media \(max-width: 760px\)/, 'Confirmation and recent-action surfaces have a mobile breakpoint');
 requirePattern('src/industrialDesktopWorkbench.css', /@media \(max-width: 1180px\)/, 'Workbench has a laptop breakpoint');

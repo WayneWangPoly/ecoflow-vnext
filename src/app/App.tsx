@@ -4,6 +4,8 @@ import { buildProductionEmptyData } from '@/domain/productionData';
 import { resolveTrustedLiveSnapshot, type TrustedLiveSnapshot } from '@/domain/trustedLiveSnapshot';
 import { applySupabaseOrdermentumViews, loadSupabaseOrdermentumViews } from '@/data/repositories/resilientOrdermentumViews';
 import { callInternaliseOrders, setActiveRunCode } from '@/data/repositories/pickSync';
+import { buildLockedDeliveryRouteSnapshot, loadLockedDeliveryRouteSnapshot, lockDeliveryRouteSnapshot, unlockDeliveryRouteSnapshot, type LockedDeliveryRouteRecord } from '@/data/repositories/deliveryRouteAuthority';
+import { loadActiveDispatchDrivers, type DispatchDriver } from '@/data/repositories/deliveryDispatchDrivers';
 import { bucketOrders, getOrderBucketCounts, orderBucketDefinitions } from '@/domain/orderBuckets';
 import { changeImpactLabel, formatBusinessDate, formatDateTime, sortOrdersForOperations, syncStatusLabel } from '@/domain/syncModel';
 import { BrandMark } from './Brand';
@@ -24,6 +26,7 @@ import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/Orderme
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdersControlPage } from '@/features/orders/OrdersControlPage';
+import { DeliveryDispatchCommandSurface } from '@/features/delivery/DeliveryDispatchCommandSurface';
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { DesktopRouteBoundary } from '@/features/intelligence/navigation/DesktopRouteBoundary';
 import { useDesktopRouteAdapter } from '@/features/intelligence/navigation/useDesktopRouteAdapter';
@@ -654,6 +657,61 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
   const deliveredCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'DELIVERED').length;
   const failedCount = stops.filter((stop) => progressFor(stop.orderId)?.status === 'FAILED').length;
   const routeInUse = Boolean(day.routeStartedAt || stagedCount || Object.keys(day.pick?.taskState || {}).length);
+  const [dispatchDrivers, setDispatchDrivers] = useState<DispatchDriver[]>([]);
+  const [driverDirectoryState, setDriverDirectoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [driverDirectoryError, setDriverDirectoryError] = useState('');
+  const [assignedDriverUserId, setAssignedDriverUserId] = useState('');
+  const [lockedRouteRecord, setLockedRouteRecord] = useState<LockedDeliveryRouteRecord | null>(null);
+  const [lockedRouteError, setLockedRouteError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!canPlan) {
+      setDispatchDrivers([]);
+      setDriverDirectoryState('idle');
+      setDriverDirectoryError('');
+      return () => { active = false; };
+    }
+    setDriverDirectoryState('loading');
+    setDriverDirectoryError('');
+    void loadActiveDispatchDrivers()
+      .then((rows) => {
+        if (!active) return;
+        setDispatchDrivers(rows);
+        setAssignedDriverUserId((current) => rows.some((row) => row.userId === current) ? current : rows[0]?.userId || '');
+        setDriverDirectoryState('ready');
+      })
+      .catch((reason) => {
+        if (!active) return;
+        setDispatchDrivers([]);
+        setAssignedDriverUserId('');
+        setDriverDirectoryState('error');
+        setDriverDirectoryError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { active = false; };
+  }, [canPlan]);
+
+  useEffect(() => {
+    let active = true;
+    if (!day.pick) {
+      setLockedRouteRecord(null);
+      setLockedRouteError('');
+      return () => { active = false; };
+    }
+    setLockedRouteError('');
+    void loadLockedDeliveryRouteSnapshot({ businessDay: businessDay.date, runCode: day.runCode })
+      .then((record) => {
+        if (!active) return;
+        setLockedRouteRecord(record);
+        if (record?.assignedDriverUserId) setAssignedDriverUserId(record.assignedDriverUserId);
+      })
+      .catch((reason) => {
+        if (!active) return;
+        setLockedRouteRecord(null);
+        setLockedRouteError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { active = false; };
+  }, [businessDay.date, day.pick?.lockedAt, day.runCode]);
 
   function setRouteOrder(orderIds: string[]) {
     setDay((current) => current.pick || current.routeStartedAt ? current : { ...current, stopOrder: orderIds });
@@ -677,11 +735,49 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
 
   async function lockRoute() {
     if (!canPlan || day.pick || !stops.length) return;
+    if (!assignedDriverUserId) {
+      window.alert('Route was not locked: choose an active Driver first.');
+      return;
+    }
     const stopOrder = reconcileStopOrder(day.stopOrder, run.stops);
     const boxCodes = Object.fromEntries(stopOrder.map((orderId, index) => [orderId, boxCodeForStop(index)]));
+    const lockedStops = stopOrder
+      .map((orderId, index) => {
+        const stop = byId.get(orderId);
+        return stop ? { ...stop, stopNumber: index + 1, boxCode: boxCodes[orderId] } : null;
+      })
+      .filter((stop): stop is NonNullable<typeof stop> => Boolean(stop));
+    if (lockedStops.length !== stopOrder.length) {
+      window.alert('Route was not locked: one or more released stops disappeared from the route draft. Refresh and approve again.');
+      return;
+    }
+
+    let authorityLocked = false;
     try {
+      const snapshot = buildLockedDeliveryRouteSnapshot({
+        ...run,
+        stops: lockedStops,
+        totalCartons: lockedStops.reduce((sum, stop) => sum + stop.cartons, 0),
+        readyStops: lockedStops.filter((stop) => stop.warehouseReady).length,
+      }, day.runCode);
+      const authority = await lockDeliveryRouteSnapshot({
+        businessDay: businessDay.date,
+        runCode: day.runCode,
+        assignedDriverUserId,
+        snapshot,
+      });
+      setLockedRouteRecord(authority);
+      authorityLocked = true;
       await setActiveRunCode(businessDay.date, day.runCode, 'Office route approval');
     } catch (error) {
+      if (authorityLocked) {
+        await unlockDeliveryRouteSnapshot({
+          businessDay: businessDay.date,
+          runCode: day.runCode,
+          reason: 'Route approval rolled back because shared run activation failed',
+        }).catch(() => undefined);
+        setLockedRouteRecord(null);
+      }
       window.alert(`Route was not locked: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
@@ -699,9 +795,20 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
     }));
   }
 
-  function unlockRoute() {
+  async function unlockRoute() {
     if (!canPlan || !day.pick || routeInUse) return;
     if (!window.confirm('Unlock this route? Printed labels become invalid and must be reprinted.')) return;
+    try {
+      await unlockDeliveryRouteSnapshot({
+        businessDay: businessDay.date,
+        runCode: day.runCode,
+        reason: 'Office unlocked route before picking',
+      });
+    } catch (error) {
+      window.alert(`Route was not unlocked: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    setLockedRouteRecord(null);
     setDay((current) => ({ ...current, pick: undefined }));
   }
 
@@ -727,6 +834,14 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
         <MetricCard label="STAGED" value={`${stagedCount}/${stops.length}`} tone="blue" helper="warehouse progress" />
         <MetricCard label="DELIVERED" value={`${deliveredCount}${failedCount ? ` · ${failedCount} failed` : ''}`} tone="mint" helper={day.routeEndedAt ? `run finished ${formatClockTime(day.routeEndedAt)}` : 'live from driver'} />
       </section>
+      <DeliveryDispatchCommandSurface
+        runCode={day.runCode}
+        businessDayLabel={businessDay.label}
+        stops={stops}
+        warehousePoint={run.warehousePoint}
+        day={day}
+        assignedDriverLabel={lockedRouteRecord?.assignedDriverLabel || dispatchDrivers.find((driver) => driver.userId === assignedDriverUserId)?.label || ''}
+      />
       {canPlan && day.routeEndedAt ? (
         <section className="panel">
           <div className="panel-head"><h2>Run {day.runCode} completed</h2><span>Previous run facts remain archived in their own server namespace</span></div>
@@ -735,12 +850,26 @@ function DeliveryBoard({ orders, day, setDay, businessDay, canPlan }: {
       ) : null}
       {canPlan && !day.routeStartedAt ? (
         <section className="panel">
-          <div className="panel-head"><h2>Office route approval</h2><span>Labels and picking use this locked order</span></div>
+          <div className="panel-head"><h2>Office route approval</h2><span>Labels, Driver hand-off and picking use this locked order</span></div>
           <div className="row-actions">
+            {!day.pick ? (
+              <select
+                aria-label="Assigned Driver"
+                value={assignedDriverUserId}
+                disabled={driverDirectoryState !== 'ready' || !dispatchDrivers.length}
+                onChange={(event) => setAssignedDriverUserId(event.target.value)}
+              >
+                <option value="">Assign Driver…</option>
+                {dispatchDrivers.map((driver) => <option key={driver.userId} value={driver.userId}>{driver.label}</option>)}
+              </select>
+            ) : <span>Driver: {lockedRouteRecord?.assignedDriverLabel || 'loading assignment…'}</span>}
             <button className="soft-button" type="button" disabled={Boolean(day.pick) || !stops.length} onClick={optimiseRoute}>Optimise draft</button>
-            {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length} onClick={() => void lockRoute()}>Approve &amp; lock route</button> : null}
-            {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={unlockRoute}>Unlock before picking</button> : null}
+            {!day.pick ? <button className="primary-small" type="button" disabled={!stops.length || !assignedDriverUserId || driverDirectoryState !== 'ready'} onClick={() => void lockRoute()}>Approve &amp; lock route</button> : null}
+            {day.pick ? <button className="soft-button" type="button" disabled={routeInUse} onClick={() => void unlockRoute()}>Unlock before picking</button> : null}
           </div>
+          {!day.pick && driverDirectoryState === 'error' ? <small>Driver directory unavailable: {driverDirectoryError}</small> : null}
+          {!day.pick && driverDirectoryState === 'ready' && !dispatchDrivers.length ? <small>No active Driver account is available. Add or activate a Driver before route approval.</small> : null}
+          {day.pick && lockedRouteError ? <small>Locked Driver assignment unavailable: {lockedRouteError}. Unlock and re-approve before execution.</small> : null}
           <div className="list-stack">
             {stops.map((stop, index) => (
               <article className="stop-row" key={stop.orderId}>
@@ -1202,8 +1331,20 @@ export function App() {
   useEffect(() => {
     if (import.meta.env.DEV && !authEnabled) return;
     if (authEnabled && !authProfile?.user_id) return;
+    if (authEnabled && authProfile?.app_role === 'DRIVER') {
+      // A production Driver consumes only the assigned route snapshot + shared
+      // run state. Never preload broad Ordermentum order/customer views into a
+      // Driver browser merely to rebuild a route the office already approved.
+      trustedLiveDataRef.current = null;
+      setData(initialData);
+      setOrders(initialData.orders);
+      setSnapshotReady(false);
+      setLoadWarning('');
+      setLoadError('');
+      return;
+    }
     void reloadViews();
-  }, [reloadViews, authEnabled, authProfile?.user_id]);
+  }, [reloadViews, authEnabled, authProfile?.user_id, authProfile?.app_role]);
 
   async function logout() {
     window.localStorage.removeItem('ecoflow-role');
@@ -1243,7 +1384,7 @@ export function App() {
   if (workspace === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
   if (workspace === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
   if (role === 'warehouse') return <WarehouseWorkspace orders={orders} businessDay={data.businessDay} loadError={loadError || undefined} onLogout={logout} actorLabel={authProfile.display_name || authProfile.email} />;
-  if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
+  if (role === 'driver') return <Suspense fallback={<LoadingScreen message="Loading driver app..." />}><DriverApp orders={initialData.orders} setOrders={setOrders} businessDay={data.businessDay} onLogout={logout} loadError={loadError || undefined} actorLabel={authProfile.display_name || authProfile.email} /></Suspense>;
 
   return <DesktopWorkspace role={role} data={data} orders={orders} setOrders={setOrders} stock={data.stock} stores={data.stores} logs={loadError ? [{ at: 'sync', actor: 'Supabase', action: 'Live refresh unavailable', detail: loadError }, ...data.logs] : data.logs} onLogout={logout} loadError={loadError || undefined} authProfile={authProfile} onReload={reloadViews} snapshotReady={snapshotReady} snapshotLoading={snapshotLoading} healthNotice={loadWarning || undefined} />;
 }
