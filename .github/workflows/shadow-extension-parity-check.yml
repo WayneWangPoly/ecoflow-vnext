@@ -80,7 +80,7 @@ jobs:
           end $$;
           SQL
 
-      - name: Audit deployment workflow ordering
+      - name: Audit deployment workflow ordering and release integrity
         shell: bash
         run: |
           set -euo pipefail
@@ -98,5 +98,13 @@ jobs:
               raise SystemExit('Supabase extension parity must be established before production schema load')
           if "to_regprocedure('extensions.gen_random_uuid()')" not in text:
               raise SystemExit('Missing explicit extensions.gen_random_uuid compatibility assertion')
-          print('shadow extension parity ordering verified')
+
+          release_guard = "if [ \"$SHADOW_RESULT\" != 'success' ] || [ \"$DEPLOY_RESULT\" != 'success' ]; then"
+          release_failure = 'RELEASE NOT SYNCHRONIZED: database release incomplete'
+          release_status = "-f context='Release sync'"
+          guard = text.index(release_guard)
+          status = text.index(release_status, guard)
+          if release_failure not in text[guard:status]:
+              raise SystemExit('Release sync can still advertise success when database deployment is incomplete')
+          print('shadow extension parity and release integrity ordering verified')
           PY
