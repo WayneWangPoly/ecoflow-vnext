@@ -47,6 +47,7 @@ export function DriverRouteSequencePanel({
   const [runCode, setRunCode] = useState(() => loadDriverDayState(businessDay.date).runCode);
   const [sequence, setSequence] = useState<DeliveryRouteExecutionSequence | null>(null);
   const [draft, setDraft] = useState<string[]>([]);
+  const draftRef = useRef<string[]>([]);
   const [immutableIds, setImmutableIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -54,6 +55,11 @@ export function DriverRouteSequencePanel({
   const [pendingIntent, setPendingIntent] = useState<PendingIntent | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const dragStartOrder = useRef<string[]>([]);
+
+  const replaceDraft = useCallback((next: string[]) => {
+    draftRef.current = next;
+    setDraft(next);
+  }, []);
 
   const refresh = useCallback(async (quiet = false) => {
     const localDay = loadDriverDayState(businessDay.date);
@@ -68,9 +74,9 @@ export function DriverRouteSequencePanel({
     try {
       const next = await loadDeliveryRouteExecutionSequence({ businessDay: businessDay.date, runCode: nextRunCode });
       setSequence(next);
-      if (next && saveState !== 'saving' && !draggingId) setDraft(next.stopOrder);
+      if (next && saveState !== 'saving' && !draggingId) replaceDraft(next.stopOrder);
       if (!next) {
-        setDraft([]);
+        replaceDraft([]);
         setPendingIntent(null);
         setSaveState('idle');
       }
@@ -80,7 +86,7 @@ export function DriverRouteSequencePanel({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [businessDay.date, draggingId, saveState]);
+  }, [businessDay.date, draggingId, replaceDraft, saveState]);
 
   useEffect(() => {
     void refresh();
@@ -122,7 +128,7 @@ export function DriverRouteSequencePanel({
       expectedSequenceRevision: sequence.sequenceRevision,
       stopOrder: nextOrder,
     };
-    setDraft(nextOrder);
+    replaceDraft(nextOrder);
     setPendingIntent(intent);
     setSaveState('saving');
     setError('');
@@ -143,7 +149,7 @@ export function DriverRouteSequencePanel({
         updatedAt: result.updatedAt,
       };
       setSequence(nextSequence);
-      setDraft(result.stopOrder);
+      replaceDraft(result.stopOrder);
       setPendingIntent(null);
       setSaveState('saved');
       onRouteChanged();
@@ -170,7 +176,7 @@ export function DriverRouteSequencePanel({
 
   function handlePointerDown(orderId: string, event: React.PointerEvent<HTMLButtonElement>) {
     if (immutableIds.has(orderId) || saveState === 'saving') return;
-    dragStartOrder.current = [...draft];
+    dragStartOrder.current = [...draftRef.current];
     setDraggingId(orderId);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -192,6 +198,7 @@ export function DriverRouteSequencePanel({
       const next = [...current];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
+      draftRef.current = next;
       return next;
     });
   }
@@ -199,8 +206,9 @@ export function DriverRouteSequencePanel({
   function handlePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
     if (!draggingId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const finalOrder = [...draftRef.current];
     setDraggingId(null);
-    if (!sameOrder(draft, dragStartOrder.current)) void persist(draft);
+    if (!sameOrder(finalOrder, dragStartOrder.current)) void persist(finalOrder);
   }
 
   if (!sequence && !loading) return null;
