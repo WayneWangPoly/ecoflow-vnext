@@ -74,7 +74,7 @@ export function DriverRouteSequencePanel({
     try {
       const next = await loadDeliveryRouteExecutionSequence({ businessDay: businessDay.date, runCode: nextRunCode });
       setSequence(next);
-      if (next && saveState !== 'saving' && !draggingId) replaceDraft(next.stopOrder);
+      if (next && saveState !== 'saving' && !draggingId && !pendingIntent) replaceDraft(next.stopOrder);
       if (!next) {
         replaceDraft([]);
         setPendingIntent(null);
@@ -86,7 +86,7 @@ export function DriverRouteSequencePanel({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [businessDay.date, draggingId, replaceDraft, saveState]);
+  }, [businessDay.date, draggingId, pendingIntent, replaceDraft, saveState]);
 
   useEffect(() => {
     void refresh();
