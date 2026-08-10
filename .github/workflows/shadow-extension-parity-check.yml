@@ -1,0 +1,102 @@
+name: Shadow extension parity check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - '.github/workflows/shadow-extension-parity-check.yml'
+  push:
+    branches:
+      - 'fix/transform-005-shadow-extension-parity'
+    paths:
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - '.github/workflows/shadow-extension-parity-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres17-supabase-extension-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reproduce shadow UUID extension layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema if not exists extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          do $$
+          begin
+            if to_regprocedure('extensions.gen_random_uuid()') is null then
+              execute 'create function extensions.gen_random_uuid() returns uuid language sql volatile parallel safe as ''select pg_catalog.gen_random_uuid()''';
+            end if;
+          end $$;
+
+          select extensions.gen_random_uuid() as pgcrypto_uuid;
+          select extensions.uuid_generate_v4() as uuid_ossp_uuid;
+
+          create table shadow_extension_contract (
+            id uuid primary key default extensions.gen_random_uuid(),
+            legacy_id uuid not null default extensions.uuid_generate_v4(),
+            payload text not null
+          );
+          insert into shadow_extension_contract(payload) values ('supabase-shadow-parity');
+
+          do $$
+          declare v_count integer;
+          begin
+            select count(*) into v_count
+            from shadow_extension_contract
+            where id is not null and legacy_id is not null;
+            if v_count <> 1 then
+              raise exception 'SHADOW_EXTENSION_PARITY_FAILED';
+            end if;
+          end $$;
+          SQL
+
+      - name: Audit deployment workflow ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/deploy-supabase-migrations.yml
+          python3 - "$workflow" <<'PY'
+          import pathlib
+          import sys
+
+          text = pathlib.Path(sys.argv[1]).read_text()
+          schema = text.index('create schema if not exists extensions;')
+          pgcrypto = text.index('create extension if not exists pgcrypto with schema extensions;')
+          uuid_ossp = text.index('create extension if not exists "uuid-ossp" with schema extensions;')
+          dump = text.index('- name: Dump production schema')
+          if not (schema < pgcrypto < dump and schema < uuid_ossp < dump):
+              raise SystemExit('Supabase extension parity must be established before production schema load')
+          if "to_regprocedure('extensions.gen_random_uuid()')" not in text:
+              raise SystemExit('Missing explicit extensions.gen_random_uuid compatibility assertion')
+          print('shadow extension parity ordering verified')
+          PY
