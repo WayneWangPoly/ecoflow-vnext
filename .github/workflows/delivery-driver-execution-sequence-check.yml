@@ -7,8 +7,10 @@ on:
       - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
       - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
       - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
+      - 'supabase/migrations/20260811011000_delivery_driver_sequence_replay_consistency.sql'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - 'scripts/delivery-driver-execution-sequence-replay-contract-test.sql'
       - 'scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs'
       - 'src/app/DriverApp.tsx'
       - 'src/app/DriverAppCore.tsx'
@@ -25,8 +27,10 @@ on:
       - 'supabase/migrations/20260809212500_delivery_route_authority.sql'
       - 'supabase/migrations/20260809221000_delivery_route_driver_assignment.sql'
       - 'supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql'
+      - 'supabase/migrations/20260811011000_delivery_driver_sequence_replay_consistency.sql'
       - 'scripts/delivery-route-authority-fixture.sql'
       - 'scripts/delivery-driver-execution-sequence-contract-test.sql'
+      - 'scripts/delivery-driver-execution-sequence-replay-contract-test.sql'
       - 'scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs'
       - 'src/app/DriverApp.tsx'
       - 'src/app/DriverAppCore.tsx'
@@ -81,8 +85,14 @@ jobs:
       - name: Apply Driver execution sequence authority
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql
 
+      - name: Apply replay consistency hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811011000_delivery_driver_sequence_replay_consistency.sql
+
       - name: Verify Driver execution sequence contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-sequence-contract-test.sql
+
+      - name: Verify historical reorder replay contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/delivery-driver-execution-sequence-replay-contract-test.sql
 
       - name: Verify Driver + office sequence frontend contract
         run: node --test scripts/delivery-driver-execution-sequence-frontend-contract.test.mjs
@@ -92,7 +102,9 @@ jobs:
         run: |
           set -euo pipefail
           migration=supabase/migrations/20260811010000_delivery_driver_execution_sequence.sql
+          replay=supabase/migrations/20260811011000_delivery_driver_sequence_replay_consistency.sql
           testfile=scripts/delivery-driver-execution-sequence-contract-test.sql
+          replaytest=scripts/delivery-driver-execution-sequence-replay-contract-test.sql
 
           grep -q 'ecoflow_delivery_route_sequence_revisions' "$migration"
           grep -q 'p_expected_sequence_revision' "$migration"
@@ -102,6 +114,12 @@ jobs:
           grep -q 'EXECUTED_STOP_POSITION_IMMUTABLE' "$migration"
           grep -q 'ecoflow_delivery_route_effective_snapshot' "$migration"
           grep -q "'eta',coalesce(eta_slot.eta,'')" "$migration"
+
+          grep -q 'ecoflow_delivery_route_snapshot_for_stop_order' "$replay"
+          grep -q 'pre_replay_consistency_20260811' "$replay"
+          grep -q 'v_result.stop_order' "$replay"
+          grep -q 'historical command replay snapshot mixed in a newer execution sequence' "$replaytest"
+          grep -q 'historical replay mutated latest sequence authority' "$replaytest"
 
           grep -q 'different Driver mutated assigned execution sequence' "$testfile"
           grep -q 'stale sequence revision was accepted' "$testfile"
