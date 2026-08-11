@@ -13,6 +13,7 @@ import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
 import { ProductIdentityCommissioningWorkspace } from '@/features/productIdentity/ProductIdentityCommissioningWorkspace';
+import { OperationalRecordsWorkspace } from '@/features/operationalRecords/OperationalRecordsWorkspace';
 import {
   OperationalPagedWorkspace,
   OperationalSettingsWorkspace,
@@ -41,6 +42,8 @@ type UnifiedWorkspace =
   | 'inventory'
   | 'product-identity'
   | 'stores'
+  | 'accounts'
+  | 'returns'
   | 'exceptions'
   | 'logs'
   | 'settings'
@@ -55,6 +58,8 @@ export function unifiedOperationalWorkspace(pathname: string): UnifiedWorkspace 
   if (pathname === '/inventory' || pathname.startsWith('/inventory/')) return 'inventory';
   if (pathname === '/commissioning/product-identity') return 'product-identity';
   if (pathname === '/customers' || pathname.startsWith('/customers/') || pathname === '/stores' || pathname.startsWith('/stores/')) return 'stores';
+  if (pathname === '/accounts' || pathname.startsWith('/accounts/')) return 'accounts';
+  if (pathname === '/returns' || pathname.startsWith('/returns/')) return 'returns';
   if (pathname === '/exceptions') return 'exceptions';
   if (pathname === '/logs') return 'logs';
   if (pathname === '/settings') return 'settings';
@@ -325,6 +330,13 @@ export default function UnifiedOperationalRoutes() {
     content = <NativeUnifiedWorkspace workspace={workspace} role={role} profile={profile} />;
   } else if (workspace === 'settings') {
     content = <OperationalSettingsWorkspace profile={profile} />;
+  } else if (workspace === 'inventory' || workspace === 'stores' || workspace === 'accounts' || workspace === 'returns') {
+    content = (
+      <OperationalRecordsWorkspace
+        workspace={workspace === 'stores' ? 'customers' : workspace}
+        profile={profile}
+      />
+    );
   } else {
     content = <OperationalPagedWorkspace resource={workspace} role={role} profile={profile} businessDay={businessDay} />;
   }

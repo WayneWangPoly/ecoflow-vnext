@@ -67,6 +67,10 @@ export function isUnifiedOperationalPath(pathname: string) {
     || pathname.startsWith('/inventory/')
     || pathname === '/customers'
     || pathname.startsWith('/customers/')
+    || pathname === '/accounts'
+    || pathname.startsWith('/accounts/')
+    || pathname === '/returns'
+    || pathname.startsWith('/returns/')
     || pathname === '/stores'
     || pathname.startsWith('/stores/');
 }
