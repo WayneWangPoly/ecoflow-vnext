@@ -24,11 +24,17 @@ const ACTION_PATHS: Readonly<Record<string, NavigationItem>> = {
   CUSTOMERS: { label: 'Customers', path: '/customers', workspace: 'customers' },
   DELIVERY: { label: 'Delivery', path: '/delivery', workspace: 'delivery' },
   RETURNS: { label: 'Returns', path: '/returns', workspace: 'returns' },
+  ACCOUNTS: { label: 'Accounts', path: '/accounts', workspace: 'accounts' },
   ANALYTICS: { label: 'Analytics', path: '/analytics', workspace: 'analytics' },
   EXCEPTIONS: { label: 'Exceptions', path: '/exceptions', workspace: 'exceptions' },
   LOGS: { label: 'Logs', path: '/logs', workspace: 'logs' },
   SETTINGS: { label: 'Settings', path: '/settings', workspace: 'settings' },
 };
+
+export const LEGACY_RECONCILIATION_ROUTE = {
+  path: '/reconciliation',
+  workspace: 'reconciliation',
+} as const;
 
 export const OPERATIONAL_NAVIGATION: readonly NavigationItem[] = [
   ACTION_PATHS.CONTROL_ROOM,
@@ -39,7 +45,8 @@ export const OPERATIONAL_NAVIGATION: readonly NavigationItem[] = [
   ACTION_PATHS.CUSTOMERS,
   ACTION_PATHS.EXCEPTIONS,
   ACTION_PATHS.DELIVERY,
-  { label: 'Reconciliation', path: '/reconciliation', workspace: 'reconciliation' },
+  ACTION_PATHS.RETURNS,
+  ACTION_PATHS.ACCOUNTS,
   ACTION_PATHS.ANALYTICS,
   ACTION_PATHS.LOGS,
   ACTION_PATHS.SETTINGS,

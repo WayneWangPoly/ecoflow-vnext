@@ -10,6 +10,7 @@ export type IntelligenceWorkspaceId =
   | 'stores'
   | 'delivery'
   | 'returns'
+  | 'accounts'
   | 'exceptions'
   | 'reconciliation'
   | 'analytics'
@@ -22,6 +23,8 @@ export type IntelligenceEntityKind =
   | 'physical-sku'
   | 'customer'
   | 'store'
+  | 'account'
+  | 'return'
   | 'delivery-run';
 
 export type IntelligenceRouteMatch = {
@@ -78,6 +81,7 @@ const STATIC_ROUTES: readonly StaticRoute[] = [
   { path: '/customers', workspace: 'customers', legacyDesktopTab: 'stores' },
   { path: '/delivery', workspace: 'delivery', legacyDesktopTab: 'delivery' },
   { path: '/returns', workspace: 'returns', legacyDesktopTab: null },
+  { path: '/accounts', workspace: 'accounts', legacyDesktopTab: null },
   { path: '/exceptions', workspace: 'exceptions', legacyDesktopTab: null },
   { path: '/reconciliation', workspace: 'reconciliation', legacyDesktopTab: 'reconciliation' },
   { path: '/analytics', workspace: 'analytics', legacyDesktopTab: 'analytics' },
@@ -92,10 +96,12 @@ const DYNAMIC_ROUTES: readonly DynamicRoute[] = [
   { path: '/customers/:customerId', pattern: /^\/customers\/([^/]+)\/?$/, workspace: 'customers', entityKind: 'customer', legacyDesktopTab: 'stores' },
   { path: '/stores/:storeId', pattern: /^\/stores\/([^/]+)\/?$/, workspace: 'stores', entityKind: 'store', legacyDesktopTab: 'stores' },
   { path: '/delivery/runs/:runCode', pattern: /^\/delivery\/runs\/([^/]+)\/?$/, workspace: 'delivery', entityKind: 'delivery-run', legacyDesktopTab: 'delivery' },
+  { path: '/accounts/:storeId', pattern: /^\/accounts\/([^/]+)\/?$/, workspace: 'accounts', entityKind: 'account', legacyDesktopTab: null },
+  { path: '/returns/:returnId', pattern: /^\/returns\/([^/]+)\/?$/, workspace: 'returns', entityKind: 'return', legacyDesktopTab: null },
 ] as const;
 
 const OWNER_ADMIN_WORKSPACES = new Set<IntelligenceWorkspaceId>(STATIC_ROUTES.map((route) => route.workspace).concat(['stores']));
-const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'product-identity', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'settings']);
+const ACCOUNT_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'product-identity', 'customers', 'stores', 'delivery', 'accounts', 'reconciliation', 'analytics', 'settings']);
 const VIEWER_WORKSPACES = new Set<IntelligenceWorkspaceId>(['control-room', 'orders', 'inventory', 'product-identity', 'customers', 'stores', 'delivery', 'reconciliation', 'analytics', 'logs']);
 
 const LEGACY_TAB_PATHS: Readonly<Record<DesktopTab, string>> = {
