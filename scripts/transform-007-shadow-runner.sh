@@ -182,7 +182,7 @@ PY
     if docker run --rm \
       --env TRANSFORM_007_SHADOW_READ_DB_URL \
       postgres:17 \
-      sh -ceu 'pg_dump "$TRANSFORM_007_SHADOW_READ_DB_URL" --schema-only --schema=public --quote-all-identifiers --no-owner --no-acl --no-publications --no-subscriptions' \
+      sh -ceu 'pg_dump "$TRANSFORM_007_SHADOW_READ_DB_URL" --schema-only --schema=public --schema=analytics --quote-all-identifiers --no-owner --no-acl --no-publications --no-subscriptions' \
       > "$input_dir/prod-schema.sql"; then
       break
     fi
@@ -279,12 +279,11 @@ create role transform_007_shadow
   nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls;
 
 drop schema if exists public cascade;
-create schema public authorization postgres;
-grant usage, create on schema public to transform_007_shadow;
 
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists "uuid-ossp" with schema extensions;
+create extension if not exists citext with schema extensions;
 create schema if not exists auth;
 create schema if not exists storage;
 create schema if not exists vault;

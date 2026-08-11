@@ -38,8 +38,8 @@ production write.
   - emit a no-secret request run for every pull request targeting `main`;
   - let a default-branch `workflow_run` resolve the current same-repository PR
     and truthfully decide whether the fixed `007A` migration is in scope;
-  - read production migration history and `public` schema through a dedicated,
-    default-read-only PostgreSQL role;
+  - read production migration history plus the bounded `public` and `analytics`
+    schemas through a dedicated, default-read-only PostgreSQL role;
   - transfer only the schema-only dump, migration history, fixed candidate SQL
     and a hash manifest between isolated jobs;
   - execute candidate SQL only in a local PostgreSQL 17 service under a
@@ -112,6 +112,10 @@ production write.
   persistent mutation capability.
 - [ ] Candidate SQL executes in a separate job with no environment secret and
   no status/write permission, using a non-superuser local role.
+- [ ] The production snapshot contains both `public` and `analytics`; local
+  PostgreSQL 17 installs `extensions.citext` before schema load and lets the
+  dump recreate `public` exactly once. Every other schema-load error remains
+  fail closed.
 - [ ] The final job alone has `statuses: write`, revalidates the open PR snapshot
   and publishes `Supabase shadow gate (required)` fail-closed to both the
   resolved current head and current test-merge SHA.
@@ -131,10 +135,10 @@ production write.
 
 | Layer | Command or scenario | Expected result |
 |---|---|---|
-| Static | `node --test scripts/transform-007-shadow-bootstrap.test.mjs` | trigger, permission, secret isolation, incomplete/oversize file lists, synchronize race, fixed-path fetch, no-deploy and dual-status contracts pass |
+| Static | `node --test scripts/transform-007-shadow-bootstrap.test.mjs` | trigger, permission, secret isolation, incomplete/oversize file lists, synchronize race, fixed-path fetch, bounded cross-schema snapshot, `citext`, no-deploy and dual-status contracts pass |
 | Syntax | YAML parse plus `bash -n scripts/transform-007-shadow-runner.sh` | both workflows and the runner parse |
 | Integration | trusted run with missing environment secret | fixed target fails closed without executing the local candidate job |
-| Integration | trusted run with dedicated reader and PR `#274` | production schema/history are read, candidate applies only to PostgreSQL 17 and the same context succeeds on exact head and current test-merge SHA |
+| Integration | trusted run with dedicated reader and PR `#274` | production `public` + `analytics` schema/history are read, candidate applies only to PostgreSQL 17 and the same context succeeds on exact head and current test-merge SHA |
 | Regression | all existing PR workflows on updated `#274` | application and repository gates remain green |
 
 ## Required evidence
@@ -183,13 +187,18 @@ business-data rollback exists because the package is read-only and no-deploy.
   invokes candidate-selected production routines.
 - Keep the gate fixed to the one `007A` migration so the bootstrap does not
   expand the product work package into a general deployment platform.
+- Capture `analytics` with `public` because production `public` views have
+  declared dependencies on the governed analytics schema. Recreate only the
+  required `citext` extension locally and continue rejecting all unexpected
+  schema-load errors rather than suppressing dependency failures.
 
 ### Assumptions
 
 - GitHub's environment deployment-branch rule is configured to allow only
   `main` before `TRANSFORM_007_SHADOW_READ_DB_URL` is stored.
-- The dedicated PostgreSQL role can read schema metadata and
-  `supabase_migrations.schema_migrations` but cannot mutate persistent objects.
+- The dedicated PostgreSQL role can take the read locks required to schema-dump
+  `public` and `analytics`, and can read
+  `supabase_migrations.schema_migrations`, but cannot mutate persistent objects.
 
 ### Risks
 
@@ -202,3 +211,24 @@ business-data rollback exists because the package is read-only and no-deploy.
 
 - Generalising the trusted path for future migrations requires a separate work
   package and review after `007A` is complete.
+
+## Bootstrap repair checkpoint — 2026-08-11
+
+Trusted run `31495896547` proved the reader identity, default read-only mode,
+mutation denial, TLS connection, production migration history and `public`
+schema capture. The credential-free PostgreSQL 17 job then failed before the
+candidate migration ran:
+
+- the runner pre-created `public` although the dump also creates it;
+- production public tables use `extensions.citext`, which the local service had
+  not installed; and
+- production public views depend on `analytics` objects omitted from the dump.
+
+The repair is limited to `scripts/transform-007-shadow-runner.sh`, its static
+contract and this record. It adds the bounded `analytics` schema to the dump,
+installs `citext` in the existing local `extensions` schema and removes the
+premature local `public` creation. It does not change workflow permissions,
+candidate SQL, production data, PR `#274` product files or the `007B`/`007C`
+sequence. The repair is accepted only when the exact failed evidence can be
+replayed as far as that evidence permits and a fresh trusted run captures both
+schemas and passes the exact #274 head and test-merge SHA.

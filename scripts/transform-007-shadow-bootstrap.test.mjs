@@ -425,9 +425,35 @@ test('reader identity, direct-mutation denial and schema-only dump are enforced'
   );
   assert.match(
     runner,
-    /pg_dump \"\$TRANSFORM_007_SHADOW_READ_DB_URL\" --schema-only --schema=public/,
+    /pg_dump \"\$TRANSFORM_007_SHADOW_READ_DB_URL\" --schema-only --schema=public --schema=analytics/,
   );
   assert.match(runner, /--no-owner --no-acl --no-publications --no-subscriptions/);
+});
+
+test('shadow rebuild restores public dependencies without masking dump errors', () => {
+  const shadowFunction = runner.match(/\nshadow\(\) \{[\s\S]*?\n\}\n\ncase /)?.[0] ?? '';
+  assert.ok(shadowFunction, 'shadow runner function is required');
+
+  const schemaLoadMarker =
+    'psql \"$SHADOW_ADMIN_DB_URL\" -X -v ON_ERROR_STOP=0';
+  const schemaLoadIndex = shadowFunction.indexOf(schemaLoadMarker);
+  assert.notEqual(schemaLoadIndex, -1, 'production schema load is required');
+
+  const setupBeforeSchemaLoad = shadowFunction.slice(0, schemaLoadIndex);
+  assert.match(setupBeforeSchemaLoad, /drop schema if exists public cascade;/);
+  assert.doesNotMatch(
+    setupBeforeSchemaLoad,
+    /create schema public/,
+    'the dump must recreate public exactly once',
+  );
+  assert.match(
+    setupBeforeSchemaLoad,
+    /create extension if not exists citext with schema extensions;/,
+  );
+  assert.match(
+    shadowFunction,
+    /UNEXPECTED_PRODUCTION_SCHEMA_LOAD_ERROR[\s\S]*?exit 1/,
+  );
 });
 
 test('only final trusted job publishes fail-closed head and test-merge status', () => {
