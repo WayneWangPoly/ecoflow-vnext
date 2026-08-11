@@ -168,18 +168,19 @@ flowchart TD
   `/reconciliation` remain usable.
 - [x] `007B` and `007C` commands are not exposed until their CAS, replay,
   rejection, RLS and audit tests pass.
-- [ ] The exact final `007A` head SHA has a successful `Supabase shadow gate
-  (required)` result plus independent Verification and Chief Engineer approval.
+- [ ] The exact final `007A` head SHA and its validated current test-merge SHA
+  both have a successful `Supabase shadow gate (required)` result, followed by
+  independent Verification and Chief Engineer review of the exact head.
 
 ## Test plan
 
 | Layer | Command or scenario | Expected result |
 |---|---|---|
 | Static | `node scripts/audit-transform-007-operational-records.mjs` | migration, role, bound and route invariants pass |
-| Release safety | `node --test scripts/transform-007-supabase-shadow-gate.test.mjs` | PR-only production-schema read, local-shadow-only apply, complete pending-file iteration and forbidden deploy commands are enforced |
+| Release safety | trusted-main bootstrap contract on `main`: `node --test scripts/transform-007-shadow-bootstrap.test.mjs` | PR request has no secret; trusted `workflow_run` never checks out PR code; candidate SQL executes only in a credential-free local PostgreSQL job; forbidden deploy commands are absent |
 | Unit | `node --experimental-strip-types --test scripts/transform-007-operational-records-frontend-contract.test.mjs` | canonical route/repository/surface contract passes |
 | Integration/RLS | PostgreSQL fixture + `scripts/transform-007-operational-records-contract-test.sql` | pagination, detail, role denial and consequence facts pass |
-| Supabase shadow | `TRANSFORM-007 Supabase production-schema shadow` PR workflow | URL identity and TLS are pinned to the EcoFlow production project, the dedicated role has no detected direct persistent-database mutation path, the target migration is pending, the production `public` schema loads with only allow-listed managed differences, and all pending migrations apply to PostgreSQL 17 without production writes |
+| Supabase shadow | `TRANSFORM-007 trusted Supabase shadow` default-branch workflow | URL identity and TLS are pinned to the EcoFlow production project, the dedicated role has no detected direct persistent-database mutation path, the target migration is pending, production `public` schema loads with only allow-listed managed differences, and the exact candidate blob applies under a local non-superuser in PostgreSQL 17 without production writes |
 | Build | `npm run typecheck && npm run build` | production TypeScript and bundle pass |
 | Regression | existing operational safety and repository hygiene audits | earlier transformation gates stay green |
 | End-to-end/UI | authenticated Owner, Account and Viewer route matrix | correct routes, empty/error states, URL detail and denial states render |
@@ -187,28 +188,30 @@ flowchart TD
 ## Required evidence
 
 - Changed files: versioned read migration, repository, native workspace/CSS,
-  canonical route/shell integration, static/frontend/PostgreSQL contracts,
-  workflow and this work package.
+  canonical route/shell integration, static/frontend/PostgreSQL contracts and
+  this work package. The trusted shadow workflow belongs to the preceding,
+  independently reviewed bootstrap PR and is not PR-controlled here.
 - Build and test output: local TypeScript, Vite production build, five new
   frontend contracts, sixteen routed-shell regressions, 78 operational-safety
   contracts, full intelligence audit, warehouse/Returns ACL/production-boundary
   audits and repository hygiene passed on 2026-08-11.
 - Migration/shadow result: the fixture, migration and behavioural contract pass
-  in local embedded PostgreSQL. PostgreSQL 16 CI passes. The dedicated PR-only
-  production-schema shadow gate must pass before merge; it may read production
-  schema/history but can apply SQL only to its local PostgreSQL 17 service and
-  contains no deployment or status-publication capability. It must use the
-  protected `transform-007-shadow-read` environment and a dedicated
+  in local embedded PostgreSQL. PostgreSQL 16 CI passes. The default-branch
+  trusted-main gate must pass before merge. Its credentialed job may read
+  production schema/history but never checks out or executes PR code. A
+  separate job receives no production secret or status-write permission and
+  applies the exact hashed candidate blob only to local PostgreSQL 17 under a
+  non-superuser. The gate must use the `transform-007-shadow-read` environment,
+  externally restricted to `main`, and a dedicated
   `TRANSFORM_007_SHADOW_READ_DB_URL` pinned to project
   `kauqwlzuyxcudoyognwf`, the approved session-pooler endpoint and
   `sslmode=require`; the existing production `postgres` password is forbidden.
   The SQL contract must confirm the authenticated reader identity, default
   read-only mode, no relation/column/sequence/MAINTAIN or create privilege, no
-  reachable role, no role-ownership record in PostgreSQL's exhaustive shared
-  dependency catalog and no executable non-system `SECURITY DEFINER` routine.
-  The credentialed job is additionally disabled
-  until repository variable `TRANSFORM_007_SHADOW_GATE_ENABLED=true` is set
-  after provisioning evidence is approved.
+  reachable role and no role-ownership record in PostgreSQL's exhaustive shared
+  dependency catalog. The final trusted job alone publishes the same
+  `Supabase shadow gate (required)` context to the exact current PR head SHA and
+  its validated current test-merge SHA, while evidence remains bound to head.
 - Screenshots: Owner desktop list/detail for all four domains plus one denied-role
   state required before merge.
 - Risks: historical return rows may expose missing consequence evidence; this is
@@ -218,38 +221,49 @@ flowchart TD
   detail PostgreSQL `57014` timeout remain independent release-health blockers.
 - External enforcement blocker (read-only check on 2026-08-11): the existing
   `Production` environment has no protection rules and the repository exposes
-  no ruleset. It must not be reused for this PR gate. The new
-  `transform-007-shadow-read` environment, its dedicated credential, enable
-  variable and `main` ruleset remain unprovisioned and therefore cannot be
-  claimed as passing evidence.
+  no ruleset. It must not be reused for this PR gate. The independent
+  trusted-main bootstrap PR must first be reviewed and merged. Then the existing
+  empty `transform-007-shadow-read` environment must be restricted to `main`
+  before its dedicated credential is added, and the required status/ruleset
+  must be configured. No live pass is claimed before that evidence exists.
 
 ## Protected merge sequence
 
-1. Commit the shadow-only workflow and its no-deploy contract to the `007A` PR;
-   do not start `007B` on this branch.
-2. Run every application, PostgreSQL 16 and production-schema shadow check on
-   the exact final PR head SHA. `Supabase shadow gate (required)` is the durable
-   required-check context: it enforces the live shadow when the `007A` migration
-   is in the PR and reports a truthful non-applicable success for other PRs.
-3. Require the `main` ruleset to block merge unless the required gate and code
-   owner review pass, stale approvals are dismissed and the head is up to date.
-   Repository settings evidence is mandatory; workflow existence alone is not
-   enforcement.
-   Before adding the shadow-read secret, configure `transform-007-shadow-read` with
-   a required reviewer, prevent self-review/admin bypass where the plan permits,
-   and allow the intended pull-request merge ref. Evidence of these settings and
-   of the reader endpoint identity/TLS plus its non-superuser, direct
-   persistent-mutation denial and default-read-only SQL contract is mandatory.
-4. Independent Verification reviews the final SHA and evidence first. Chief
+1. Independently review the bounded `TRANSFORM-007 Shadow Bootstrap` PR. It
+   adds only a no-secret request workflow and a trusted default-branch
+   `workflow_run`; it contains no application or migration change. Do not start
+   `007B`.
+2. After its own Verification and Chief Engineer review, obtain explicit
+   bootstrap merge authorisation; the new trusted status cannot gate the PR that
+   introduces it. Only then update this `007A` PR so it contains no credentialed
+   workflow or gate helper. Configure `transform-007-shadow-read` to allow only
+   the `main` deployment branch before adding its dedicated reader secret.
+3. Run every application, PostgreSQL 16 and production-schema shadow check on
+   the exact final PR head SHA. Publish `Supabase shadow gate (required)` to that
+   head and its validated current test-merge SHA; this durable context enforces
+   the live shadow when the `007A` migration is in the PR and reports a truthful
+   non-applicable success for other PRs.
+4. Require the `main` ruleset to enforce the PR path, the exact required gate
+   from its expected source, a head up to date with `main` and no bypass actor.
+   Under the documented, owner-authorised single-maintainer exception, do not
+   enable an impossible required approval or code-owner self-approval. The
+   independent Verification then Chief Engineer reviews are exact-SHA evidence,
+   not native GitHub approvals; any change invalidates them. Repository settings
+   evidence is mandatory because workflow existence alone is not enforcement.
+   Evidence of the environment's `main`-only deployment-branch rule, reader
+   endpoint identity/TLS, non-superuser, direct persistent-mutation denial and
+   default-read-only SQL contract is mandatory. A fictitious human reviewer is
+   not substituted for the repository's absent second maintainer.
+5. Independent Verification reviews the final SHA and evidence first. Chief
    Engineer reviews the same SHA, protected workflow and merge order second.
    Any change to the migration, workflow, tests or head SHA invalidates both
    approvals and requires the gate and both reviews again.
-5. Merge `007A` only after all remaining required UI evidence and release-health
+6. Merge `007A` only after all remaining required UI evidence and release-health
    blockers are resolved or explicitly dispositioned. `007B` remains forbidden
    until the merged `007A` release is verified.
 
-Unrelated fork pull requests receive the truthful non-applicable result. A fork
-that changes the protected `007A` migration fails closed before any environment
+Unrelated PRs receive the truthful non-applicable result. Forks and any PR that
+changes a bootstrap trust-boundary file fail closed before the environment
 secret is referenced.
 
 ## Rollback
@@ -259,10 +273,11 @@ read migration has deployed, add a forward compensating migration that revokes
 and drops the new versioned RPCs; never edit the deployed migration. Read-only
 objects create no business-data rollback requirement. Later command packages
 must preserve append-only audit rows even when UI authority is rolled back.
-The PR-only shadow job never writes production data, so it has no database
-rollback. If the workflow is renamed or retired, first update the `main`
-required-check rule to its replacement (or deliberately remove that rule), then
-remove the workflow; never leave an orphan required check that blocks every PR.
+The trusted-main shadow jobs never write production data, so they have no
+database rollback. Their lifecycle belongs to the bootstrap package. If those
+workflows are renamed or retired, first update the `main` required-check rule to
+its replacement (or deliberately remove that rule), then remove the workflow;
+never leave an orphan required check that blocks every PR.
 
 ## Decision log
 
@@ -277,6 +292,9 @@ remove the workflow; never leave an orphan required check that blocks every PR.
 - Existing unsafe mutation RPCs are not imported into the native Phase 5 UI.
 - The unprotected existing `Production` environment and its write-capable
   database password are forbidden for pre-merge shadow verification.
+- The single-maintainer trusted-main bootstrap is release infrastructure for
+  the blueprint's migration-shadow exit criterion, not a new Phase 5 product
+  feature.
 
 ### Assumptions
 
