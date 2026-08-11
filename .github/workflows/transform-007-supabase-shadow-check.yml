@@ -1,0 +1,480 @@
+name: TRANSFORM-007 Supabase production-schema shadow
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transform-007-supabase-shadow-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect_scope:
+    name: Detect TRANSFORM-007A migration scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      requires_shadow: ${{ steps.scope.outputs.requires_shadow }}
+      same_repository: ${{ steps.scope.outputs.same_repository }}
+    steps:
+      - name: Checkout full pull-request history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect target migration in pull-request diff
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > /tmp/pull-request-files.txt
+          if grep -qx 'supabase/migrations/20260811020000_transform_007_operational_records.sql' /tmp/pull-request-files.txt; then
+            echo 'requires_shadow=true' >> "$GITHUB_OUTPUT"
+            echo 'TRANSFORM-007A migration is in scope; production-schema shadow is mandatory.'
+          else
+            echo 'requires_shadow=false' >> "$GITHUB_OUTPUT"
+            echo 'TRANSFORM-007A migration is not in scope; shadow is truthfully not applicable.'
+          fi
+          if [ "$HEAD_REPOSITORY" = "$GITHUB_REPOSITORY" ]; then
+            echo 'same_repository=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'same_repository=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  no_deploy_policy:
+    name: Verify shadow-only policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enforce no-deploy contract
+        run: node --test scripts/transform-007-supabase-shadow-gate.test.mjs
+
+  production_schema_shadow:
+    name: Verify pending migrations in PostgreSQL 17 shadow
+    needs: [detect_scope, no_deploy_policy]
+    if: needs.detect_scope.outputs.requires_shadow == 'true' && needs.detect_scope.outputs.same_repository == 'true' && vars.TRANSFORM_007_SHADOW_GATE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: transform-007-shadow-read
+      deployment: false
+    services:
+      shadow:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: shadow
+          POSTGRES_DB: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      SHADOW_DB_URL: postgresql://postgres:shadow@localhost:54329/postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require dedicated production-schema reader
+        env:
+          TRANSFORM_007_SHADOW_READ_DB_URL: ${{ secrets.TRANSFORM_007_SHADOW_READ_DB_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TRANSFORM_007_SHADOW_READ_DB_URL" || {
+            echo 'Missing dedicated TRANSFORM_007_SHADOW_READ_DB_URL.'
+            exit 1
+          }
+          echo "::add-mask::$TRANSFORM_007_SHADOW_READ_DB_URL"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import parse_qsl, unquote, urlsplit
+
+          expected = {
+              'scheme': 'postgresql',
+              'host': 'aws-1-ap-southeast-2.pooler.supabase.com',
+              'port': 5432,
+              'database': '/postgres',
+              'username': 'ecoflow_shadow_read.kauqwlzuyxcudoyognwf',
+          }
+          try:
+              parsed = urlsplit(os.environ['TRANSFORM_007_SHADOW_READ_DB_URL'])
+              query = parse_qsl(
+                  parsed.query,
+                  keep_blank_values=True,
+                  strict_parsing=True,
+              )
+              valid = (
+                  parsed.scheme == expected['scheme']
+                  and parsed.hostname == expected['host']
+                  and parsed.port == expected['port']
+                  and parsed.path == expected['database']
+                  and unquote(parsed.username or '') == expected['username']
+                  and bool(parsed.password)
+                  and query == [('sslmode', 'require')]
+                  and not parsed.fragment
+              )
+          except (KeyError, TypeError, ValueError):
+              valid = False
+          if not valid:
+              raise SystemExit('TRANSFORM_007_SHADOW_READER_IDENTITY_MISMATCH')
+          print('Dedicated reader endpoint identity and required TLS mode verified.')
+          PY
+
+      - name: Isolate legacy SQL archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ecoflow-legacy-migrations
+          shopt -s nullglob
+          for file in supabase/migrations/*.sql; do
+            base="$(basename "$file")"
+            if [[ "$base" == '20260624_remote_production_baseline.sql' ]] || [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              continue
+            fi
+            mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
+          done
+
+      - name: Verify dedicated production reader contract
+        env:
+          TRANSFORM_007_SHADOW_READ_DB_URL: ${{ secrets.TRANSFORM_007_SHADOW_READ_DB_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$TRANSFORM_007_SHADOW_READ_DB_URL"
+          reader_contract="$(
+            psql "$TRANSFORM_007_SHADOW_READ_DB_URL" -XqAt -v ON_ERROR_STOP=1 <<'SQL'
+          with relation_writes as (
+            select count(*) as total
+            from pg_class c
+            join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname not like 'pg_%'
+              and n.nspname <> 'information_schema'
+              and case
+                when c.relkind = 'S' then
+                  has_sequence_privilege(current_user,c.oid,'USAGE')
+                  or has_sequence_privilege(current_user,c.oid,'UPDATE')
+                when c.relkind in ('r','p','v','m','f') then
+                  has_table_privilege(current_user,c.oid,'INSERT')
+                  or has_table_privilege(current_user,c.oid,'UPDATE')
+                  or has_any_column_privilege(current_user,c.oid,'INSERT')
+                  or has_any_column_privilege(current_user,c.oid,'UPDATE')
+                  or has_table_privilege(current_user,c.oid,'DELETE')
+                  or has_table_privilege(current_user,c.oid,'TRUNCATE')
+                  or has_table_privilege(current_user,c.oid,'TRIGGER')
+                  or case
+                    when current_setting('server_version_num')::integer >= 170000
+                      then has_table_privilege(current_user,c.oid,'MAINTAIN')
+                    else false
+                  end
+                else false
+              end
+          ), namespace_writes as (
+            select count(*) as total
+            from pg_namespace n
+            where n.nspname not like 'pg_%'
+              and n.nspname <> 'information_schema'
+              and has_schema_privilege(current_user,n.oid,'CREATE')
+          ), reachable_roles as (
+            select count(*) as total
+            from pg_roles r
+            where r.rolname <> current_user
+              and pg_has_role(current_user,r.oid,'MEMBER')
+          ), security_definer_execution as (
+            select count(*) as total
+            from pg_proc p
+            join pg_namespace n on n.oid=p.pronamespace
+            where n.nspname not like 'pg_%'
+              and n.nspname <> 'information_schema'
+              and p.prosecdef
+              and has_function_privilege(current_user,p.oid,'EXECUTE')
+          ), owned_objects as (
+            select count(*) as total
+            from pg_shdepend d
+            where d.refclassid='pg_authid'::regclass
+              and d.refobjid=(select oid from pg_roles where rolname=current_user)
+              and d.deptype='o'
+          ), write_capability as (
+            select
+              relation_writes.total
+              + namespace_writes.total
+              + reachable_roles.total
+              + security_definer_execution.total
+              + owned_objects.total
+              + case when has_database_privilege(current_user,current_database(),'CREATE') then 1 else 0 end
+                as total
+            from relation_writes,namespace_writes,reachable_roles,security_definer_execution,owned_objects
+          )
+          select concat_ws('|',
+            current_user,
+            session_user,
+            case when r.rolsuper then '1' else '0' end,
+            case when r.rolcreaterole then '1' else '0' end,
+            case when r.rolcreatedb then '1' else '0' end,
+            case when r.rolreplication then '1' else '0' end,
+            case when r.rolbypassrls then '1' else '0' end,
+            current_setting('transaction_read_only'),
+            w.total::text
+          )
+          from pg_roles r
+          cross join write_capability w
+          where r.rolname=current_user;
+          SQL
+          )"
+          echo "Dedicated reader contract: $reader_contract"
+          test "$reader_contract" = 'ecoflow_shadow_read|ecoflow_shadow_read|0|0|0|0|0|on|0' || {
+            echo 'TRANSFORM_007_SHADOW_READ_DB_URL violates the direct-mutation reader contract.'
+            exit 1
+          }
+
+      - name: Read pending migration history
+        env:
+          TRANSFORM_007_SHADOW_READ_DB_URL: ${{ secrets.TRANSFORM_007_SHADOW_READ_DB_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$TRANSFORM_007_SHADOW_READ_DB_URL"
+          for attempt in 1 2 3; do
+            if psql "$TRANSFORM_007_SHADOW_READ_DB_URL" -XqAt -v ON_ERROR_STOP=1 \
+              -c 'select version::text from supabase_migrations.schema_migrations order by version' \
+              > /tmp/remote-migration-versions.txt 2> /tmp/migration-history-error.txt; then
+              break
+            fi
+            echo "migration history read attempt $attempt failed; retrying in 20s"
+            cat /tmp/migration-history-error.txt
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          local = set()
+          for path in Path('supabase/migrations').glob('*.sql'):
+              match = re.fullmatch(r'(\d{14})_.+\.sql', path.name)
+              if not match:
+                  continue
+              version = match.group(1)
+              if version in local:
+                  raise SystemExit(f'DUPLICATE_LOCAL_MIGRATION_VERSION:{version}')
+              local.add(version)
+
+          remote = set()
+          for raw in Path('/tmp/remote-migration-versions.txt').read_text().splitlines():
+              version = raw.strip()
+              if not re.fullmatch(r'(?:\d{8}|\d{14})', version):
+                  raise SystemExit('INVALID_REMOTE_MIGRATION_VERSION')
+              if len(version) == 14:
+                  remote.add(version)
+
+          missing_local = sorted(remote - local)
+          if missing_local:
+              raise SystemExit('REMOTE_MIGRATION_MISSING_LOCALLY:' + ','.join(missing_local))
+
+          pending = sorted(local - remote)
+          rendered = ''.join(f'{version}\n' for version in pending)
+          Path('/tmp/pending-versions.txt').write_text(rendered)
+          print('pending migrations:', pending or 'none')
+          PY
+          grep -qx '20260811020000' /tmp/pending-versions.txt || {
+            echo 'TRANSFORM-007A migration is not pending against production; refusing to claim a shadow pass.'
+            exit 1
+          }
+
+      - name: Prepare local Supabase-compatible shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r text;
+          begin
+            foreach r in array array['anon','authenticated','service_role','authenticator','supabase_admin','supabase_auth_admin','supabase_storage_admin','supabase_read_only_user','dashboard_user','pgbouncer'] loop
+              if not exists (select 1 from pg_roles where rolname = r) then
+                execute format('create role %I nologin', r);
+              end if;
+            end loop;
+          end $$;
+          create schema if not exists extensions;
+          create extension if not exists pgcrypto with schema extensions;
+          create extension if not exists "uuid-ossp" with schema extensions;
+          do $$
+          begin
+            if to_regprocedure('extensions.gen_random_uuid()') is null then
+              execute 'create function extensions.gen_random_uuid() returns uuid language sql volatile parallel safe as ''select pg_catalog.gen_random_uuid()''';
+            end if;
+            if to_regprocedure('extensions.gen_random_uuid()') is null then
+              raise exception 'SHADOW_SUPABASE_UUID_HELPER_MISSING';
+            end if;
+          end $$;
+          create schema if not exists auth;
+          create schema if not exists storage;
+          create schema if not exists vault;
+          create schema if not exists graphql_public;
+          create table if not exists auth.users (
+            id uuid primary key default gen_random_uuid(),
+            email text,
+            raw_user_meta_data jsonb,
+            created_at timestamptz default now()
+          );
+          create or replace function auth.uid() returns uuid language sql stable
+            as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          create or replace function auth.role() returns text language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon') $$;
+          create or replace function auth.jwt() returns jsonb language sql stable
+            as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
+          create table if not exists storage.buckets (
+            id text primary key,
+            name text,
+            public boolean default false,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now()
+          );
+          create table if not exists storage.objects (
+            id uuid primary key default gen_random_uuid(),
+            bucket_id text,
+            name text,
+            owner uuid,
+            owner_id text,
+            version text,
+            metadata jsonb,
+            created_at timestamptz default now(),
+            updated_at timestamptz default now(),
+            last_accessed_at timestamptz,
+            path_tokens text[] generated always as (string_to_array(name, '/')) stored
+          );
+          create or replace function storage.foldername(name text) returns text[] language sql immutable
+            as $$ select (string_to_array(name, '/'))[1:coalesce(array_length(string_to_array(name, '/'), 1), 1) - 1] $$;
+          grant usage on schema auth, storage, extensions to anon, authenticated, service_role;
+          alter table storage.objects enable row level security;
+          SQL
+
+      - name: Read production schema
+        env:
+          TRANSFORM_007_SHADOW_READ_DB_URL: ${{ secrets.TRANSFORM_007_SHADOW_READ_DB_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$TRANSFORM_007_SHADOW_READ_DB_URL"
+          for attempt in 1 2 3; do
+            if docker run --rm \
+              --env TRANSFORM_007_SHADOW_READ_DB_URL \
+              postgres:17 \
+              sh -ceu 'pg_dump "$TRANSFORM_007_SHADOW_READ_DB_URL" --schema-only --schema=public --quote-all-identifiers --no-owner --no-acl --no-publications --no-subscriptions' \
+              > /tmp/prod-schema.sql 2> /tmp/schema-read-error.txt; then
+              break
+            fi
+            echo "production schema read attempt $attempt failed; retrying in 20s"
+            cat /tmp/schema-read-error.txt
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          test -s /tmp/prod-schema.sql
+          wc -c /tmp/prod-schema.sql
+
+      - name: Load production schema into local shadow
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=0 -f /tmp/prod-schema.sql > /tmp/schema-load.log 2>&1
+          unexpected_errors="$(grep '^psql:.*ERROR' /tmp/schema-load.log | grep -Fv 'extension "supabase_vault" is not available' || true)"
+          if [ -n "$unexpected_errors" ]; then
+            echo 'UNEXPECTED_PRODUCTION_SCHEMA_LOAD_ERROR'
+            printf '%s\n' "$unexpected_errors"
+            exit 1
+          fi
+          known_errors="$(grep -c '^psql:.*ERROR.*extension "supabase_vault" is not available' /tmp/schema-load.log || true)"
+          echo "Production schema loaded with $known_errors known managed-extension difference(s) and no unexpected errors."
+
+      - name: Apply pending migrations to local shadow only
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/transform-007-apply-pending-to-shadow.sh \
+            /tmp/pending-versions.txt \
+            supabase/migrations
+
+      - name: Assert TRANSFORM-007A shadow authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SHADOW_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            if to_regprocedure('public.ecoflow_read_operational_records_v1(text,text,integer,integer,text,text,text)') is null then
+              raise exception 'TRANSFORM_007_PAGE_RPC_MISSING';
+            end if;
+            if to_regprocedure('public.ecoflow_read_operational_record_detail_v1(text,text,integer)') is null then
+              raise exception 'TRANSFORM_007_DETAIL_RPC_MISSING';
+            end if;
+            if has_function_privilege('anon', 'public.ecoflow_read_operational_records_v1(text,text,integer,integer,text,text,text)', 'EXECUTE') then
+              raise exception 'TRANSFORM_007_ANON_PAGE_EXECUTE_PRESENT';
+            end if;
+            if has_function_privilege('anon', 'public.ecoflow_read_operational_record_detail_v1(text,text,integer)', 'EXECUTE') then
+              raise exception 'TRANSFORM_007_ANON_DETAIL_EXECUTE_PRESENT';
+            end if;
+          end $$;
+          SQL
+          echo 'TRANSFORM-007A shadow verification passed without production writes.'
+
+  supabase_shadow_gate:
+    name: Supabase shadow gate (required)
+    needs: [detect_scope, no_deploy_policy, production_schema_shadow]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enforce applicable shadow result
+        env:
+          DETECT_RESULT: ${{ needs.detect_scope.result }}
+          POLICY_RESULT: ${{ needs.no_deploy_policy.result }}
+          REQUIRES_SHADOW: ${{ needs.detect_scope.outputs.requires_shadow }}
+          SAME_REPOSITORY: ${{ needs.detect_scope.outputs.same_repository }}
+          SHADOW_GATE_ENABLED: ${{ vars.TRANSFORM_007_SHADOW_GATE_ENABLED }}
+          SHADOW_RESULT: ${{ needs.production_schema_shadow.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$DETECT_RESULT" = 'success' || {
+            echo "Scope detection did not succeed: $DETECT_RESULT"
+            exit 1
+          }
+          test "$POLICY_RESULT" = 'success' || {
+            echo "Shadow-only policy did not succeed: $POLICY_RESULT"
+            exit 1
+          }
+          if [ "$REQUIRES_SHADOW" = 'true' ]; then
+            test "$SAME_REPOSITORY" = 'true' || {
+              echo 'TRANSFORM-007A production-schema shadow is restricted to same-repository pull requests.'
+              exit 1
+            }
+            test "$SHADOW_GATE_ENABLED" = 'true' || {
+              echo 'TRANSFORM-007 shadow-read environment is not provisioned and explicitly enabled.'
+              exit 1
+            }
+            test "$SHADOW_RESULT" = 'success' || {
+              echo "Required TRANSFORM-007A production-schema shadow did not succeed: $SHADOW_RESULT"
+              exit 1
+            }
+            echo 'Required TRANSFORM-007A production-schema shadow succeeded.'
+          else
+            test "$SHADOW_RESULT" = 'skipped' || {
+              echo "Non-applicable shadow produced an unexpected result: $SHADOW_RESULT"
+              exit 1
+            }
+            echo 'TRANSFORM-007A shadow is not applicable to this pull request.'
+          fi

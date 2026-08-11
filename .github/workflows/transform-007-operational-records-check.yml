@@ -27,6 +27,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Audit bounded operational records
         run: node scripts/audit-transform-007-operational-records.mjs
+      - name: Audit shadow-only release gate
+        run: node --test scripts/transform-007-supabase-shadow-gate.test.mjs
       - name: Frontend contract
         run: node --experimental-strip-types --test scripts/transform-007-operational-records-frontend-contract.test.mjs
       - name: TypeScript
