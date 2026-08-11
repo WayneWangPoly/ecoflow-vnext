@@ -1,0 +1,41 @@
+name: TRANSFORM-007 shadow request
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transform-007-shadow-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  request:
+    name: Request trusted production-schema shadow
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout unprivileged pull-request merge
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify bootstrap trust-boundary contract
+        run: node --test scripts/transform-007-shadow-bootstrap.test.mjs
+      - name: Emit unprivileged request
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "Trusted shadow requested for PR #$PR_NUMBER at $HEAD_SHA."
+          echo 'This workflow has no production credential and performs no database action.'
