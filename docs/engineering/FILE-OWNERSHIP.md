@@ -37,5 +37,37 @@ agent/<area>/<ticket>-<short-description>
 Do not reuse a branch for unrelated work, include broad formatting changes, or
 commit generated output and local configuration.
 
-CODEOWNERS enforcement also requires branch protection to require code-owner
-review on `main`.
+## Review enforcement
+
+`CODEOWNERS` routes accountability, but native GitHub code-owner approval is
+enforceable only when an eligible reviewer exists who is not the pull-request
+author. The normal `main` policy is to require that native approval in addition
+to the role reviews above.
+
+The repository currently has one eligible maintainer. For only the
+`TRANSFORM-007 Shadow Bootstrap` PR and operational-records PR `#274`, the
+repository owner authorised a single-maintainer exception on 2026-08-11 and the
+Chief Engineer must approve its exact scope. During both parts of that exception:
+
+- required approval count and required code-owner approval remain disabled,
+  because the author cannot supply a valid self-approval;
+- independent Verification followed by Chief Engineer review is retained as
+  exact-SHA evidence on the PR, but must not be represented as a native GitHub
+  approval; and
+- any head, workflow, migration or evidence change invalidates those reviews.
+
+The enforcement order is deliberately split to avoid a bootstrap deadlock:
+
+1. The bootstrap PR is protected by the existing CI, a head up to date with
+   `main`, no bypass, independent exact-SHA Verification then Chief Engineer
+   review, and separate explicit merge authorisation. It cannot require the new
+   trusted shadow status because that workflow does not exist on `main` yet.
+2. After the bootstrap is merged, and before `#274` can merge, add the exact
+   trusted shadow status from its expected source to the `main` ruleset. For
+   `#274` the ruleset must require the PR path, that status, a head up to date
+   with `main`, and no bypass actor.
+
+The exception grants no merge permission by itself and expires when `#274` is
+merged or closed. Other protected work remains subject to the normal policy or
+needs its own explicit disposition. Add native code-owner approval before the
+next protected merge as soon as a distinct eligible maintainer exists.
