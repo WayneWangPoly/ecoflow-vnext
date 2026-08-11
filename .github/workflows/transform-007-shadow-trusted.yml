@@ -12,8 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_MIGRATION_PATH: supabase/migrations/20260811020000_transform_007_operational_records.sql
-  TARGET_MIGRATION_VERSION: '20260811020000'
   STATUS_CONTEXT: Supabase shadow gate (required)
 
 jobs:
@@ -31,6 +29,8 @@ jobs:
       head_sha: ${{ steps.context.outputs.head_sha }}
       merge_sha: ${{ steps.context.outputs.merge_sha }}
       candidate_blob_sha: ${{ steps.context.outputs.candidate_blob_sha }}
+      target_path: ${{ steps.context.outputs.target_path }}
+      target_version: ${{ steps.context.outputs.target_version }}
     steps:
       - name: Resolve current PR head and bounded scope
         id: context
@@ -49,6 +49,8 @@ jobs:
             echo "head_sha=${4:-}" >> "$GITHUB_OUTPUT"
             echo "merge_sha=${5:-}" >> "$GITHUB_OUTPUT"
             echo "candidate_blob_sha=${6:-}" >> "$GITHUB_OUTPUT"
+            echo "target_path=${7:-}" >> "$GITHUB_OUTPUT"
+            echo "target_version=${8:-}" >> "$GITHUB_OUTPUT"
           }
 
           pr_number="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
@@ -68,188 +70,113 @@ jobs:
             sleep 2
           done
 
-          if [[ -z "$pr_json" ]]; then
-            emit blocked REQUEST_PR_UNREADABLE "$pr_number"
-            exit 0
-          fi
-
           head_sha="$(jq -r '.head.sha // empty' <<< "$pr_json")"
           merge_sha="$(jq -r '.merge_commit_sha // empty' <<< "$pr_json")"
           changed_files="$(jq -r '.changed_files // empty' <<< "$pr_json")"
           head_repo="$(jq -r '.head.repo.full_name // empty' <<< "$pr_json")"
           base_ref="$(jq -r '.base.ref // empty' <<< "$pr_json")"
           pr_state="$(jq -r '.state // empty' <<< "$pr_json")"
-          expected_snapshot="$(
-            jq -r '[
-              .head.sha,
-              .merge_commit_sha,
-              (.changed_files | tostring),
-              .head.repo.full_name,
-              .base.ref,
-              .state
-            ] | @tsv' <<< "$pr_json"
-          )"
+          expected_snapshot="$(jq -r '[.head.sha,.merge_commit_sha,(.changed_files|tostring),.head.repo.full_name,.base.ref,.state] | @tsv' <<< "$pr_json")"
 
           if [[ ! "$head_sha" =~ ^[0-9a-f]{40}$ ]]; then
             emit blocked REQUEST_HEAD_INVALID "$pr_number"
             exit 0
           fi
-          if [[ "$mergeable" != true ||
-                ! "$merge_sha" =~ ^[0-9a-f]{40}$ ||
-                "$merge_sha" == "$head_sha" ]]; then
+          if [[ "$mergeable" != true || ! "$merge_sha" =~ ^[0-9a-f]{40}$ || "$merge_sha" == "$head_sha" ]]; then
             emit blocked REQUEST_TEST_MERGE_UNAVAILABLE "$pr_number" "$head_sha"
             exit 0
           fi
           if [[ ! "$changed_files" =~ ^[0-9]+$ ]]; then
-            emit blocked REQUEST_FILE_COUNT_INVALID \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_FILE_COUNT_INVALID "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if (( changed_files > 3000 )); then
-            emit blocked REQUEST_FILE_LIMIT_EXCEEDED \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_FILE_LIMIT_EXCEEDED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if [[ "$REQUEST_EVENT" != pull_request || "$REQUEST_CONCLUSION" != success ]]; then
-            emit blocked REQUEST_RUN_NOT_SUCCESSFUL \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_RUN_NOT_SUCCESSFUL "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if [[ "$pr_state" != open || "$base_ref" != main ]]; then
-            emit blocked REQUEST_PR_NOT_OPEN_MAIN \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_PR_NOT_OPEN_MAIN "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if [[ "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
-            emit blocked REQUEST_FORK_FORBIDDEN \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_FORK_FORBIDDEN "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
-          if ! gh api --paginate \
-            "/repos/$GITHUB_REPOSITORY/pulls/$pr_number/files?per_page=100" \
-            > /tmp/transform-007-pr-file-pages.json; then
-            emit blocked REQUEST_FILES_UNREADABLE \
-              "$pr_number" "$head_sha" "$merge_sha"
+          if ! gh api --paginate "/repos/$GITHUB_REPOSITORY/pulls/$pr_number/files?per_page=100" > /tmp/transform-007-pr-file-pages.json; then
+            emit blocked REQUEST_FILES_UNREADABLE "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if ! jq -s '
-              if all(.[]; type == "array") then add // []
-              else error("non-array PR files page") end
+              if all(.[]; type == "array") then add // [] else error("non-array PR files page") end
               | if all(.[];
                   (.filename | type) == "string" and
                   (.status | type) == "string" and
                   (.sha | type) == "string" and
-                  ((has("previous_filename") | not) or
-                    (.previous_filename | type) == "string" or
-                    .previous_filename == null)
+                  ((has("previous_filename") | not) or (.previous_filename | type) == "string" or .previous_filename == null)
                 ) then . else error("invalid PR file row") end
-            ' /tmp/transform-007-pr-file-pages.json \
-            > /tmp/transform-007-pr-files.json; then
-            emit blocked REQUEST_FILES_INVALID \
-              "$pr_number" "$head_sha" "$merge_sha"
+            ' /tmp/transform-007-pr-file-pages.json > /tmp/transform-007-pr-files.json; then
+            emit blocked REQUEST_FILES_INVALID "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
           enumerated_files="$(jq 'length' /tmp/transform-007-pr-files.json)"
           if [[ "$enumerated_files" != "$changed_files" ]]; then
-            emit blocked REQUEST_FILES_INCOMPLETE \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_FILES_INCOMPLETE "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
           current_pr_json="$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$pr_number")" || {
-            emit blocked REQUEST_PR_UNREADABLE \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_PR_UNREADABLE "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           }
-          current_snapshot="$(
-            jq -r '[
-              .head.sha,
-              .merge_commit_sha,
-              (.changed_files | tostring),
-              .head.repo.full_name,
-              .base.ref,
-              .state
-            ] | @tsv' <<< "$current_pr_json"
-          )"
+          current_snapshot="$(jq -r '[.head.sha,.merge_commit_sha,(.changed_files|tostring),.head.repo.full_name,.base.ref,.state] | @tsv' <<< "$current_pr_json")"
           if [[ "$current_snapshot" != "$expected_snapshot" ]]; then
-            emit blocked REQUEST_PR_CHANGED \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked REQUEST_PR_CHANGED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
           protected_pattern='^(\.github/workflows/transform-007-shadow-(request|trusted)\.yml|scripts/transform-007-shadow-(runner\.sh|bootstrap\.test\.mjs)|docs/engineering/FILE-OWNERSHIP\.md|docs/engineering/work-packages/TRANSFORM-007-shadow-bootstrap\.md)$'
-          if jq -e --arg pattern "$protected_pattern" \
-            'any(.[];
-              (.filename | test($pattern)) or
-              ((.previous_filename // "") | test($pattern))
-            )' \
-            /tmp/transform-007-pr-files.json > /dev/null; then
-            emit blocked TRUST_BOUNDARY_CHANGED \
-              "$pr_number" "$head_sha" "$merge_sha"
+          if jq -e --arg pattern "$protected_pattern" 'any(.[]; (.filename | test($pattern)) or ((.previous_filename // "") | test($pattern)))' /tmp/transform-007-pr-files.json > /dev/null; then
+            emit blocked TRUST_BOUNDARY_CHANGED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
-          target_count="$(
-            jq --arg path "$TARGET_MIGRATION_PATH" \
-              '[.[] | select(
-                .filename == $path or .previous_filename == $path
-              )] | length' \
-              /tmp/transform-007-pr-files.json
-          )"
+          changed_migration_count="$(jq '[.[] | select((.filename | test("^supabase/migrations/[^/]+\\.sql$")) or ((.previous_filename // "") | test("^supabase/migrations/[^/]+\\.sql$")))] | length' /tmp/transform-007-pr-files.json)"
+          target_count="$(jq '[.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\\.sql$"))] | length' /tmp/transform-007-pr-files.json)"
+
           if [[ "$target_count" == 0 ]]; then
-            emit not_applicable TARGET_MIGRATION_NOT_CHANGED \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit not_applicable TRANSFORM_007_MIGRATION_NOT_CHANGED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if [[ "$target_count" != 1 ]]; then
-            emit blocked TARGET_MIGRATION_AMBIGUOUS \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked TARGET_MIGRATION_AMBIGUOUS "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
-
-          changed_migration_count="$(
-            jq '[.[] | select(
-                  (.filename | test("^supabase/migrations/[^/]+\\.sql$")) or
-                  ((.previous_filename // "") |
-                    test("^supabase/migrations/[^/]+\\.sql$"))
-                )] | length' \
-              /tmp/transform-007-pr-files.json
-          )"
           if [[ "$changed_migration_count" != 1 ]]; then
-            emit blocked ADDITIONAL_MIGRATION_FORBIDDEN \
-              "$pr_number" "$head_sha" "$merge_sha"
+            emit blocked ADDITIONAL_MIGRATION_FORBIDDEN "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
-          target_status="$(
-            jq -r --arg path "$TARGET_MIGRATION_PATH" \
-              '.[] | select(
-                .filename == $path or .previous_filename == $path
-              ) | .status' \
-              /tmp/transform-007-pr-files.json
-          )"
-          candidate_blob_sha="$(
-            jq -r --arg path "$TARGET_MIGRATION_PATH" \
-              '.[] | select(
-                .filename == $path or .previous_filename == $path
-              ) | .sha' \
-              /tmp/transform-007-pr-files.json
-          )"
-          if [[ "$target_status" != added && "$target_status" != modified ]]; then
-            emit blocked TARGET_MIGRATION_NOT_PRESENT \
-              "$pr_number" "$head_sha" "$merge_sha"
+          target_path="$(jq -r '.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\\.sql$")) | .filename' /tmp/transform-007-pr-files.json)"
+          target_status="$(jq -r --arg path "$target_path" '.[] | select(.filename == $path) | .status' /tmp/transform-007-pr-files.json)"
+          candidate_blob_sha="$(jq -r --arg path "$target_path" '.[] | select(.filename == $path) | .sha' /tmp/transform-007-pr-files.json)"
+          target_version="$(basename "$target_path" | cut -c1-14)"
+
+          if [[ "$target_status" != added ]]; then
+            emit blocked DEPLOYED_MIGRATION_EDIT_FORBIDDEN "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
-          if [[ ! "$candidate_blob_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            emit blocked TARGET_BLOB_INVALID \
-              "$pr_number" "$head_sha" "$merge_sha"
+          if [[ ! "$target_version" =~ ^[0-9]{14}$ || ! "$candidate_blob_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            emit blocked TARGET_METADATA_INVALID "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
 
-          emit run TARGET_MIGRATION_REQUIRES_SHADOW \
-            "$pr_number" "$head_sha" "$merge_sha" "$candidate_blob_sha"
+          emit run TARGET_MIGRATION_REQUIRES_SHADOW "$pr_number" "$head_sha" "$merge_sha" "$candidate_blob_sha" "$target_path" "$target_version"
 
   prepare_evidence:
     name: Read production schema with trusted main
@@ -267,6 +194,8 @@ jobs:
       PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
       HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
       CANDIDATE_BLOB_SHA: ${{ needs.resolve.outputs.candidate_blob_sha }}
+      TARGET_MIGRATION_PATH: ${{ needs.resolve.outputs.target_path }}
+      TARGET_MIGRATION_VERSION: ${{ needs.resolve.outputs.target_version }}
     steps:
       - name: Checkout trusted main only
         uses: actions/checkout@v4
@@ -280,10 +209,10 @@ jobs:
       - name: Read production schema and migration history
         env:
           TRANSFORM_007_SHADOW_READ_DB_URL: ${{ secrets.TRANSFORM_007_SHADOW_READ_DB_URL }}
+          TRANSFORM_007_TARGET_PATH: ${{ env.TARGET_MIGRATION_PATH }}
+          TRANSFORM_007_TARGET_VERSION: ${{ env.TARGET_MIGRATION_VERSION }}
         shell: bash
-        run: |
-          bash scripts/transform-007-shadow-runner.sh \
-            read-production /tmp/transform-007-shadow-input
+        run: bash scripts/transform-007-shadow-runner.sh read-production /tmp/transform-007-shadow-input
 
       - name: Fetch the fixed candidate blob as data
         shell: bash
@@ -292,22 +221,18 @@ jobs:
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CANDIDATE_BLOB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_MIGRATION_PATH" =~ ^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\.sql$ ]]
+          [[ "$TARGET_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]
 
-          metadata="$(
-            gh api "/repos/$GITHUB_REPOSITORY/contents/$TARGET_MIGRATION_PATH?ref=$HEAD_SHA"
-          )"
+          metadata="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$TARGET_MIGRATION_PATH?ref=$HEAD_SHA")"
           test "$(jq -r '.type' <<< "$metadata")" = file
           test "$(jq -r '.sha' <<< "$metadata")" = "$CANDIDATE_BLOB_SHA"
           size="$(jq -r '.size' <<< "$metadata")"
           [[ "$size" =~ ^[0-9]+$ ]] && (( size > 0 && size <= 2000000 ))
 
-          gh api \
-            -H 'Accept: application/vnd.github.raw+json' \
-            "/repos/$GITHUB_REPOSITORY/contents/$TARGET_MIGRATION_PATH?ref=$HEAD_SHA" \
-            > /tmp/transform-007-shadow-input/candidate.sql
+          gh api -H 'Accept: application/vnd.github.raw+json' "/repos/$GITHUB_REPOSITORY/contents/$TARGET_MIGRATION_PATH?ref=$HEAD_SHA" > /tmp/transform-007-shadow-input/candidate.sql
           test "$(git hash-object /tmp/transform-007-shadow-input/candidate.sql)" = "$CANDIDATE_BLOB_SHA"
-          cp scripts/transform-007-shadow-runner.sh \
-            /tmp/transform-007-shadow-input/shadow-runner.sh
+          cp scripts/transform-007-shadow-runner.sh /tmp/transform-007-shadow-input/shadow-runner.sh
 
       - name: Seal the isolated input manifest
         env:
@@ -331,18 +256,8 @@ jobs:
             --arg history_sha256 "$history_sha" \
             --arg candidate_sha256 "$candidate_sha" \
             --arg runner_sha256 "$runner_sha" \
-            '{
-              pr_number: $pr_number,
-              head_sha: $head_sha,
-              candidate_blob_sha: $candidate_blob_sha,
-              target_path: $target_path,
-              target_version: $target_version,
-              request_run_id: $request_run_id,
-              schema_sha256: $schema_sha256,
-              history_sha256: $history_sha256,
-              candidate_sha256: $candidate_sha256,
-              runner_sha256: $runner_sha256
-            }' > "$input/manifest.json"
+            '{pr_number:$pr_number,head_sha:$head_sha,candidate_blob_sha:$candidate_blob_sha,target_path:$target_path,target_version:$target_version,request_run_id:$request_run_id,schema_sha256:$schema_sha256,history_sha256:$history_sha256,candidate_sha256:$candidate_sha256,runner_sha256:$runner_sha256}' \
+            > "$input/manifest.json"
 
       - name: Upload schema-only shadow input
         uses: actions/upload-artifact@v4
@@ -379,6 +294,8 @@ jobs:
       EXPECTED_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
       EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
       EXPECTED_CANDIDATE_BLOB_SHA: ${{ needs.resolve.outputs.candidate_blob_sha }}
+      EXPECTED_TARGET_PATH: ${{ needs.resolve.outputs.target_path }}
+      EXPECTED_TARGET_VERSION: ${{ needs.resolve.outputs.target_version }}
     steps:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -417,42 +334,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
-            echo 'No validated pull-request head SHA is available.'
-            exit 1
-          }
-          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
-            echo 'No validated pull-request test-merge SHA is available.'
-            exit 1
-          }
-          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || {
-            echo 'No validated pull-request number is available.'
-            exit 1
-          }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 1
 
           current_pr="$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
-          jq -e \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg head_sha "$HEAD_SHA" \
-            --arg merge_sha "$MERGE_SHA" \
-            '.state == "open" and
-             .base.ref == "main" and
-             .head.repo.full_name == $repository and
-             .head.sha == $head_sha and
-             .merge_commit_sha == $merge_sha' \
-            <<< "$current_pr" > /dev/null || {
-              echo 'Pull-request head or test-merge snapshot changed before publication.'
-              exit 1
-            }
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg head_sha "$HEAD_SHA" --arg merge_sha "$MERGE_SHA" \
+            '.state == "open" and .base.ref == "main" and .head.repo.full_name == $repository and .head.sha == $head_sha and .merge_commit_sha == $merge_sha' \
+            <<< "$current_pr" > /dev/null || exit 1
 
           final_state=failure
           final_description="Shadow blocked: ${REASON:-UNKNOWN_CONTEXT}"
           if [[ "$VERDICT" == not_applicable ]]; then
             final_state=success
-            final_description='TRANSFORM-007A shadow is not applicable to this PR'
-          elif [[ "$VERDICT" == run &&
-                  "$PREPARE_RESULT" == success &&
-                  "$SHADOW_RESULT" == success ]]; then
+            final_description='TRANSFORM-007 migration shadow is not applicable to this PR'
+          elif [[ "$VERDICT" == run && "$PREPARE_RESULT" == success && "$SHADOW_RESULT" == success ]]; then
             final_state=success
             final_description='Production-schema shadow passed in isolated PostgreSQL 17'
           elif [[ "$VERDICT" == run ]]; then
@@ -460,24 +356,13 @@ jobs:
           fi
 
           publish_status() {
-            local target_sha="$1"
-            local state="$2"
-            local description="$3"
-            gh api --method POST \
-              "/repos/$GITHUB_REPOSITORY/statuses/$target_sha" \
-              -f state="$state" \
-              -f context="$STATUS_CONTEXT" \
-              -f description="$description" \
-              -f target_url="$STATUS_URL"
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$1" \
+              -f state="$2" -f context="$STATUS_CONTEXT" -f description="$3" -f target_url="$STATUS_URL"
           }
 
-          # The test-merge commit is GitHub's primary PR status source. Put it
-          # in a blocking state before touching the fallback head status.
           publish_status "$MERGE_SHA" pending 'Shadow result publication in progress'
           publish_status "$HEAD_SHA" pending 'Shadow result publication in progress'
-
           for target_sha in "$HEAD_SHA" "$MERGE_SHA"; do
             publish_status "$target_sha" "$final_state" "$final_description"
           done
-
           test "$final_state" = success
