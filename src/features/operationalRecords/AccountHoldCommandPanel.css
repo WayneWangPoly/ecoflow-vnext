@@ -1,0 +1,138 @@
+.operational-record-command-panel {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-strong, #6f7f78) 55%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-raised, #ffffff) 94%, var(--accent-soft, #e9f0ec));
+  box-shadow: 0 12px 28px rgb(15 29 23 / 8%);
+}
+
+.operational-record-command-panel.is-readonly {
+  box-shadow: none;
+}
+
+.operational-record-command-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.operational-record-command-heading h3 {
+  margin: 3px 0 0;
+  font-size: 1rem;
+}
+
+.operational-record-command-heading button,
+.operational-record-command-form button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong, #6f7f78);
+  border-radius: 9px;
+  background: var(--surface-raised, #fff);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.operational-record-command-heading button:disabled,
+.operational-record-command-form button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.operational-record-command-state {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+}
+
+.operational-record-command-state > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border-subtle, #d8dfdb);
+  border-radius: 9px;
+  background: var(--surface-base, #fff);
+}
+
+.operational-record-command-state span,
+.operational-record-command-form label > span {
+  color: var(--text-muted, #5b6761);
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.operational-record-command-state strong {
+  overflow-wrap: anywhere;
+  font-size: .9rem;
+}
+
+.operational-record-command-form {
+  display: grid;
+  gap: 10px;
+}
+
+.operational-record-command-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.operational-record-command-form textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid var(--border-strong, #8a9891);
+  border-radius: 9px;
+  background: var(--surface-base, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.operational-record-command-form button {
+  justify-self: start;
+}
+
+.operational-record-command-help,
+.operational-record-command-panel > p {
+  margin: 0;
+  color: var(--text-muted, #5b6761);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.operational-record-command-notice,
+.operational-record-command-error {
+  padding: 10px 11px;
+  border-radius: 9px;
+  font-size: .84rem;
+  line-height: 1.45;
+}
+
+.operational-record-command-notice {
+  border: 1px solid var(--border-subtle, #cbd7d1);
+  background: var(--surface-base, #fff);
+}
+
+.operational-record-command-error {
+  border: 1px solid #b65f58;
+  background: #fff5f4;
+  color: #7a2822;
+}
+
+@media (max-width: 680px) {
+  .operational-record-command-heading {
+    display: grid;
+  }
+
+  .operational-record-command-state {
+    grid-template-columns: 1fr;
+  }
+}

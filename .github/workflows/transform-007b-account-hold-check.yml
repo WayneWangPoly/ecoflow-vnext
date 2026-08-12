@@ -1,0 +1,70 @@
+name: TRANSFORM-007B account hold command
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*_transform_007b_account_hold_command.sql'
+      - 'scripts/audit-transform-007b-account-hold-command.mjs'
+      - 'scripts/transform-007b-account-hold-fixture.sql'
+      - 'scripts/transform-007b-account-hold-contract-test.sql'
+      - 'scripts/transform-007b-account-hold-frontend-contract.test.mjs'
+      - 'src/data/repositories/accountHoldAuthority.ts'
+      - 'src/operational/operationalDeviceIdentity.ts'
+      - 'src/features/operationalRecords/AccountHoldCommandPanel.tsx'
+      - 'src/features/operationalRecords/AccountHoldCommandPanel.css'
+      - 'src/features/operationalRecords/OperationalRecordsWorkspace.tsx'
+      - '.github/workflows/transform-007b-account-hold-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    name: 007B application contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Static authority audit
+        run: node scripts/audit-transform-007b-account-hold-command.mjs
+      - name: Frontend command contract
+        run: node --test scripts/transform-007b-account-hold-frontend-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+
+  database:
+    name: 007B database CAS contract
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 54329
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load bounded production-shaped fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-account-hold-fixture.sql
+      - name: Apply exact 007B forward migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260812115000_transform_007b_account_hold_command.sql
+      - name: Verify CAS, replay, audit and authorization
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-account-hold-contract-test.sql

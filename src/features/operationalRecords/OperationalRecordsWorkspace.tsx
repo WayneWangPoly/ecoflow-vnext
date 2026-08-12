@@ -16,6 +16,7 @@ import {
   type OperationalRecordsView,
   type OperationalRecordsWorkspace,
 } from '@/data/repositories/operationalRecords';
+import { AccountHoldCommandPanel } from './AccountHoldCommandPanel';
 import './operationalRecordsWorkspace.css';
 
 const PAGE_SIZES = [10,20,25,50,100] as const;
@@ -235,9 +236,13 @@ function DetailRecord({ record }: { record: OperationalRecordDetail }) {
 function RecordDetail({
   workspace,
   recordId,
+  profile,
+  onAuthorityChanged,
 }: {
   workspace: OperationalRecordsWorkspace;
   recordId: string;
+  profile: EcoFlowAuthProfile;
+  onAuthorityChanged: () => void;
 }) {
   const navigate=useNavigate();
   const location=useLocation();
@@ -264,9 +269,14 @@ function RecordDetail({
   const active=tabs.find((tab)=>tab.label===activeTab) ?? tabs[0];
   const visible=records.filter((record)=>active.kinds.includes(record.kind));
   const summary=records.find((record)=>record.kind==='SUMMARY')?.data;
+  const refreshAfterCommand=()=>{
+    setReloadKey((value)=>value+1);
+    onAuthorityChanged();
+  };
   return <aside className="operational-record-drawer" aria-label={`${WORKSPACE_COPY[workspace].title} record detail`}>
     <header><div><span className="section-eyebrow">AUTHORITATIVE DETAIL</span><h2>{text(summary?.store_name) || text(summary?.product_name) || text(summary?.return_code) || recordId}</h2><small>{recordId}</small></div><button type="button" onClick={()=>navigate(`${basePath(workspace)}${location.search}`)}>Close</button></header>
-    {(workspace==='accounts' || workspace==='returns') ? <div className="operational-record-command-gate">Commands remain withheld until the CAS gate passes.</div> : null}
+    {workspace==='accounts' ? <AccountHoldCommandPanel storeId={recordId} role={profile.app_role} onAuthorityChanged={refreshAfterCommand}/> : null}
+    {workspace==='returns' ? <div className="operational-record-command-gate">Commands remain withheld until the 007C CAS gate passes.</div> : null}
     {workspace==='accounts' && summary ? <div className="operational-record-authority"><span>Release authority</span><strong>{display(summary.release_authority)}</strong></div> : null}
     {workspace==='returns' && summary ? <div className="operational-record-authority"><span>Inventory consequence</span><strong>{display(summary.inventory_consequence_status)}</strong></div> : null}
     <nav className="operational-record-detail-tabs" aria-label="Record detail sections">{tabs.map((tab)=><button key={tab.label} type="button" className={tab.label===active.label?'active':''} onClick={()=>setActiveTab(tab.label)}>{tab.label}</button>)}</nav>
@@ -325,12 +335,17 @@ export function OperationalRecordsWorkspace({
 
   const totalPages=Math.max(1,Math.ceil(result.totalCount/query.state.pageSize));
   const detailEligible=view!=='movements' && view!=='cycle-count';
+  const releaseNotice=workspace==='accounts'
+    ? '007B Accounts hold/release uses server-owned revision, idempotency and audit authority. The UI waits for server acknowledgement and authoritative readback.'
+    : workspace==='returns'
+      ? '007A Returns remains deliberately read-only. Return disposition commands stay unavailable until the separate 007C gate passes.'
+      : undefined;
   return <NativeWorkspaceFrame
     eyebrow={copy.eyebrow}
     title={copy.title}
     detail={copy.detail}
     actions={<><span className="status-chip">{profile.app_role}</span><span className="status-chip">Read {adelaide(result.readAt)}</span><button type="button" onClick={()=>setReloadKey((value)=>value+1)}>Reload</button></>}
-    notice={(workspace==='accounts' || workspace==='returns') ? '007A is deliberately read-only. Critical state changes stay unavailable until revision, idempotency and audit gates pass.' : undefined}
+    notice={releaseNotice}
     noticeTone="information"
   >
     <nav className="native-workspace-tabs" aria-label={`${copy.title} views`}>{definitions.map((definition)=><button key={definition.id} type="button" className={definition.id===view?'active':''} onClick={()=>query.update({tab:definition.id})}>{definition.label}</button>)}</nav>
@@ -352,7 +367,7 @@ export function OperationalRecordsWorkspace({
         })}</tbody></table></div> : null}
         {!loading && !error ? <nav className="native-workspace-pager" aria-label={`${copy.title} pagination`}><span>{result.totalCount.toLocaleString()} exact records · Page {Math.min(query.state.page,totalPages)} of {totalPages}</span><div className="row-actions"><button type="button" disabled={query.state.page<=1} onClick={()=>query.update({page:query.state.page-1},{preservePage:true})}>Previous</button><button type="button" disabled={query.state.page>=totalPages} onClick={()=>query.update({page:query.state.page+1},{preservePage:true})}>Next</button></div></nav> : null}
       </section>
-      {selected ? <RecordDetail workspace={workspace} recordId={selected}/> : null}
+      {selected ? <RecordDetail workspace={workspace} recordId={selected} profile={profile} onAuthorityChanged={()=>setReloadKey((value)=>value+1)}/> : null}
     </div>
   </NativeWorkspaceFrame>;
 }
