@@ -203,6 +203,15 @@ test('candidate executes only in credential-free PostgreSQL under a non-superuse
   assert.doesNotMatch(runner.match(/\nshadow\(\) \{[\s\S]*?\n\}\n\ncase /)?.[0] ?? '', /TRANSFORM_007_SHADOW_READ_DB_URL/);
 });
 
+test('shadow ownership handoff excludes table-owned serial and identity sequences', () => {
+  const tableOwners = runner.indexOf("c.relkind in ('r','p','v','m','f')");
+  const sequenceOwners = runner.indexOf("c.relkind='S'", tableOwners);
+  assert.ok(tableOwners >= 0 && sequenceOwners > tableOwners, 'table-like relations must be re-owned before standalone sequences');
+  assert.match(runner, /from pg_depend d[\s\S]*?d\.objid=c\.oid[\s\S]*?d\.deptype in \('a','i'\)/);
+  assert.match(runner, /not exists \([\s\S]*?from pg_depend d/);
+  assert.doesNotMatch(runner, /case r\.relkind when 'S' then 'SEQUENCE'/);
+});
+
 test('finalizer publishes fail-closed status to exact head and test-merge', () => {
   assert.match(finalizer, /final_state=failure/);
   assert.match(finalizer, /publish_status \"\$MERGE_SHA\" pending/);

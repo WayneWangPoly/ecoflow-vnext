@@ -292,14 +292,38 @@ grant usage,create on schema public to transform_007_shadow;
 do $$
 declare r record; kind text;
 begin
+  -- Change table-like owners first. PostgreSQL automatically transfers serial
+  -- and identity sequences that are owned by those tables.
   for r in
     select c.oid,n.nspname,c.relname,c.relkind
     from pg_class c join pg_namespace n on n.oid=c.relnamespace
-    where n.nspname in ('public','analytics') and c.relkind in ('r','p','S','v','m','f')
+    where n.nspname in ('public','analytics') and c.relkind in ('r','p','v','m','f')
   loop
-    kind := case r.relkind when 'S' then 'SEQUENCE' when 'v' then 'VIEW' when 'm' then 'MATERIALIZED VIEW' when 'f' then 'FOREIGN TABLE' else 'TABLE' end;
+    kind := case r.relkind when 'v' then 'VIEW' when 'm' then 'MATERIALIZED VIEW' when 'f' then 'FOREIGN TABLE' else 'TABLE' end;
     execute format('alter %s %I.%I owner to transform_007_shadow',kind,r.nspname,r.relname);
   end loop;
+
+  -- Only standalone sequences may be re-owned directly. A sequence linked to
+  -- a table column must keep the same owner as that table and cannot be altered
+  -- independently (PostgreSQL rejects that operation).
+  for r in
+    select c.oid,n.nspname,c.relname
+    from pg_class c
+    join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname in ('public','analytics')
+      and c.relkind='S'
+      and not exists (
+        select 1
+        from pg_depend d
+        where d.classid='pg_class'::regclass
+          and d.objid=c.oid
+          and d.refclassid='pg_class'::regclass
+          and d.deptype in ('a','i')
+      )
+  loop
+    execute format('alter SEQUENCE %I.%I owner to transform_007_shadow',r.nspname,r.relname);
+  end loop;
+
   for r in
     select p.oid,n.nspname,p.proname,pg_get_function_identity_arguments(p.oid) args,p.prokind
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
