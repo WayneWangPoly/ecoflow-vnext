@@ -57,8 +57,6 @@ async function loadExistingDetailIds(resourceType) {
 }
 
 async function archivePreviousVersion(existing, resourceType, externalId, sourceEndpoint) {
-  if (!shouldArchivePreviousVersion(existing, null)) return;
-
   const latest = await supabase.from('ordermentum_raw_master_resource_versions').select('payload_hash')
     .eq('resource_type', resourceType).eq('external_id', externalId)
     .order('changed_at', { ascending: false }).limit(1).maybeSingle();
@@ -137,7 +135,7 @@ async function syncResource(resource) {
       const externalId = uniqueIds[index]; counters.detailAttempted += 1;
       const path = def.detailPath(externalId); const result = await fetchOrdermentumJson(token, path, {});
       if (result.ok && result.data) { await upsertRaw(def.detailType, path, {}, result.data); existingDetailIds.add(externalId); counters.detailSucceeded += 1; }
-      else { counters.detailFailed += 1; detailFailuresByResource[resource] = (detailFailuresByResource[resource] || 0) + 1; console.warn(`[${resources}] detail ${externalId} failed ${result.status}`); }
+      else { counters.detailFailed += 1; detailFailuresByResource[resource] = (detailFailuresByResource[resource] || 0) + 1; console.warn(`[${resource}] detail ${externalId} failed ${result.status}`); }
       if ((index + 1) % 25 === 0 || index === uniqueIds.length - 1) console.log(JSON.stringify({ action: 'master_detail_progress', resource, completed: index + 1, total: uniqueIds.length, failed: detailFailuresByResource[resource] || 0 }));
       if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
