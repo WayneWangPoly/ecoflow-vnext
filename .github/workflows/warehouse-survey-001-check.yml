@@ -1,0 +1,93 @@
+name: WAREHOUSE-SURVEY-001 barcode evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/warehouse-survey-001-check.yml'
+      - 'docs/engineering/work-packages/WAREHOUSE-SURVEY-001-barcode-evidence.md'
+      - 'scripts/warehouse-survey-001-*'
+      - 'src/data/repositories/barcodeSurvey.ts'
+      - 'src/features/operationalStability/BarcodeSurveyWorkspace.tsx'
+      - 'src/features/operationalStability/WarehouseControlWorkspaceV3.tsx'
+      - 'src/features/operationalStability/OperationalStabilityWorkspace.tsx'
+      - 'supabase/migrations/*warehouse_survey_001*.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Static authority contract
+        run: node --test scripts/warehouse-survey-001-contract.test.mjs
+
+      - name: Load isolated auth and role fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-001-migration-fixture.sql
+
+      - name: Apply candidate migration in PostgreSQL 17
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260812210000_warehouse_survey_001_barcode_evidence.sql
+
+      - name: Execute RPC, role, replay and DML contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-001-db-contract-test.sql
+
+      - name: Concurrent same-command retry creates one observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          command_id='ffffffff-ffff-4fff-8fff-ffffffffffff'
+          export PGOPTIONS='-c request.jwt.claim.sub=11111111-1111-1111-1111-111111111111 -c request.jwt.claim.app_role=WAREHOUSE'
+          query="select status from public.ecoflow_record_barcode_survey_observation_v1('${command_id}'::uuid,'CONCURRENT-CARTON','SCANNED','CONCURRENT-SLEEVE','concurrency contract','warehouse-device-a');"
+          psql -Atq -c "$query" > /tmp/survey-a.txt &
+          pid_a=$!
+          psql -Atq -c "$query" > /tmp/survey-b.txt &
+          pid_b=$!
+          wait "$pid_a"
+          wait "$pid_b"
+          cat /tmp/survey-a.txt /tmp/survey-b.txt | sort > /tmp/survey-results.txt
+          printf 'APPLIED\nREPLAYED\n' > /tmp/survey-expected.txt
+          diff -u /tmp/survey-expected.txt /tmp/survey-results.txt
+          test "$(psql -Atq -c "select count(*) from public.ecoflow_barcode_survey_observations where command_id='${command_id}'::uuid")" = '1'
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
