@@ -40,10 +40,13 @@ forbidText('repository', ".from('ecoflow_account_release_holds')", 'repository m
 requireText('repository', "status: 'APPLIED' | 'REPLAYED' | 'CONFLICT'", 'repository must model explicit command outcomes');
 
 requireText('panel', "new Set<EcoFlowAppRole>(['OWNER', 'ADMIN', 'ACCOUNT'])", 'UI role gate must match DB role gate');
-requireText('panel', 'expectedRevision: state.revision', 'UI command must use the state it actually read');
+requireText('panel', 'expectedRevision: intent.expectedRevision', 'UI command must use the revision bound into the retained intent');
 requireText('panel', 'deviceId: getOperationalDeviceId()', 'command must bind bounded device context');
 requireText('panel', 'const authoritative = await readAccountHoldState(storeId)', 'success/conflict must refresh authoritative state');
 requireText('panel', "if (result.status === 'CONFLICT')", 'conflict must be visible and non-optimistic');
+requireText('panel', 'setRetryIntent(intent)', 'unresolved acknowledgement must retain the same command intent');
+requireText('panel', 'Retry same command', 'unresolved retry must be explicit to the operator');
+requireText('panel', 'authoritative.sourceActionId === intent.idempotencyKey', 'authoritative readback must be able to recover an applied command');
 requireText('panel', 'maxLength={500}', 'reason must remain bounded client-side as well as server-side');
 requireText('panel', 'disabled={pending || !reason.trim()}', 'blank reasons must not be submitted');
 
@@ -51,6 +54,7 @@ requireText('workspace', "workspace==='accounts' ? <AccountHoldCommandPanel", 'A
 requireText('workspace', "workspace==='returns' ? <div className=\"operational-record-command-gate\">Commands remain withheld until the 007C CAS gate passes.", '007C must remain withheld');
 requireText('device', "ecoflow:operational-device:v1", 'device identity must be stable across commands');
 requireText('device', 'crypto.randomUUID()', 'device id should use a UUID where available');
+requireText('device', 'let memoryDeviceId: string | null = null', 'storage denial must not rotate device context within the app session');
 
 if (failures.length) {
   console.error('TRANSFORM-007B static authority audit: FAIL');
