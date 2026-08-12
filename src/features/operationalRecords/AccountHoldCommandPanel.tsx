@@ -10,6 +10,13 @@ import './AccountHoldCommandPanel.css';
 
 const COMMAND_ROLES = new Set<EcoFlowAppRole>(['OWNER', 'ADMIN', 'ACCOUNT']);
 
+type RetryIntent = {
+  idempotencyKey: string;
+  targetActive: boolean;
+  expectedRevision: number;
+  reason: string;
+};
+
 function commandId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -48,6 +55,7 @@ export function AccountHoldCommandPanel({
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(canCommand);
   const [pending, setPending] = useState(false);
+  const [retryIntent, setRetryIntent] = useState<RetryIntent | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -67,6 +75,7 @@ export function AccountHoldCommandPanel({
 
   useEffect(() => {
     setReason('');
+    setRetryIntent(null);
     setNotice('');
     void load();
   }, [load]);
@@ -80,22 +89,36 @@ export function AccountHoldCommandPanel({
       return;
     }
 
+    const targetActive = !state.active;
+    const reusableIntent = retryIntent
+      && retryIntent.targetActive === targetActive
+      && retryIntent.expectedRevision === state.revision
+      && retryIntent.reason === cleanReason
+      ? retryIntent
+      : null;
+    const intent: RetryIntent = reusableIntent ?? {
+      idempotencyKey: commandId(),
+      targetActive,
+      expectedRevision: state.revision,
+      reason: cleanReason,
+    };
+
     setPending(true);
     setError('');
     setNotice('');
-    const idempotencyKey = commandId();
     try {
       const result = await setAccountReleaseHold({
         storeId,
-        targetActive: !state.active,
-        expectedRevision: state.revision,
-        idempotencyKey,
+        targetActive: intent.targetActive,
+        expectedRevision: intent.expectedRevision,
+        idempotencyKey: intent.idempotencyKey,
         deviceId: getOperationalDeviceId(),
-        reason: cleanReason,
+        reason: intent.reason,
       });
 
       const authoritative = await readAccountHoldState(storeId);
       setState(authoritative);
+      setRetryIntent(null);
       if (result.status === 'CONFLICT') {
         setNotice(`State changed on the server. Refreshed to revision ${authoritative.revision}; review it before trying again.`);
       } else {
@@ -104,16 +127,38 @@ export function AccountHoldCommandPanel({
         onAuthorityChanged();
       }
     } catch (commandError) {
-      setError(commandError instanceof Error ? commandError.message : String(commandError));
+      const message = commandError instanceof Error ? commandError.message : String(commandError);
       try {
-        setState(await readAccountHoldState(storeId));
+        const authoritative = await readAccountHoldState(storeId);
+        setState(authoritative);
+        if (
+          authoritative.sourceActionId === intent.idempotencyKey
+          && authoritative.revision === intent.expectedRevision + 1
+          && authoritative.active === intent.targetActive
+        ) {
+          setRetryIntent(null);
+          setReason('');
+          setNotice(`Applied by server and recovered by authoritative readback · revision ${authoritative.revision}.`);
+          onAuthorityChanged();
+          return;
+        }
       } catch {
-        // Keep the command error as the primary evidence if readback also fails.
+        // Keep the original command error as the primary evidence if readback also fails.
       }
+      setRetryIntent(intent);
+      setError(`${message} · Server acknowledgement is unresolved. Retrying the unchanged intent will reuse the same command ID.`);
     } finally {
       setPending(false);
     }
   }
+
+  const retryMatchesCurrentState = Boolean(
+    state
+    && retryIntent
+    && retryIntent.targetActive === !state.active
+    && retryIntent.expectedRevision === state.revision
+    && retryIntent.reason === reason.trim(),
+  );
 
   if (!canCommand) {
     return <section className="operational-record-command-panel is-readonly" aria-label="Account hold command">
@@ -137,7 +182,7 @@ export function AccountHoldCommandPanel({
     {state ? <form onSubmit={submit} className="operational-record-command-form">
       <label><span>Reason <strong aria-hidden="true">*</strong></span><textarea rows={3} maxLength={500} disabled={pending} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={state.active ? 'Why can this store be released?' : 'Why must this store be held?'}/></label>
       <p className="operational-record-command-help">The server will compare revision {state.revision}, bind your authenticated identity and device context, and record before/after audit evidence. No optimistic state is shown.</p>
-      <button type="submit" disabled={pending || !reason.trim()}>{pending ? 'Waiting for server…' : state.active ? 'Release hold' : 'Place hold'}</button>
+      <button type="submit" disabled={pending || !reason.trim()}>{pending ? 'Waiting for server…' : retryMatchesCurrentState ? 'Retry same command' : state.active ? 'Release hold' : 'Place hold'}</button>
     </form> : null}
     {notice ? <div className="operational-record-command-notice" role="status">{notice}</div> : null}
     {error ? <div className="operational-record-command-error" role="alert">{error}</div> : null}
