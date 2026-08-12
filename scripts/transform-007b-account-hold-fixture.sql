@@ -52,6 +52,8 @@ create table public.ordermentum_stores (
   store_name text not null
 );
 
+grant select on public.ordermentum_stores to authenticated;
+
 create table public.ecoflow_account_release_holds (
   store_id text primary key,
   active boolean not null default true,
