@@ -3,6 +3,10 @@ import {
   RESOURCE_DEFINITIONS, extractArray, extractExternalId, extractTimestamp, fetchOrdermentumJson,
   getLegacyBearerToken, hashPayload, optionalSupabase, parseArgs, requireEnv,
 } from './ordermentum-master-data-common.mjs';
+import {
+  buildArchivedVersion,
+  shouldArchivePreviousVersion,
+} from './ordermentum-master-version-policy.mjs';
 
 const args = parseArgs(process.argv);
 const supabase = optionalSupabase();
@@ -17,7 +21,11 @@ const detail = Boolean(args.detail);
 const detailChangedOnly = detail && args['detail-changed-only'] !== 'false';
 const delayMs = Number(args['delay-ms'] || args.delayMs || 300);
 let runId = null;
-const counters = { endpointsAttempted: 0, pagesSeen: 0, recordsSeen: 0, recordsUpserted: 0, recordsChanged: 0, detailAttempted: 0, detailSucceeded: 0, detailFailed: 0, detailSkippedUnchanged: 0, storesProjected: 0 };
+const counters = {
+  endpointsAttempted: 0, pagesSeen: 0, recordsSeen: 0, recordsUpserted: 0, recordsChanged: 0,
+  versionsArchived: 0, versionsArchiveDeduped: 0,
+  detailAttempted: 0, detailSucceeded: 0, detailFailed: 0, detailSkippedUnchanged: 0, storesProjected: 0,
+};
 const resourcesSucceeded = []; const resourcesFailed = []; const resourcesUnavailable = [];
 const errors = []; const warnings = []; const detailFailuresByResource = {}; const detailSkippedByResource = {};
 
@@ -48,6 +56,28 @@ async function loadExistingDetailIds(resourceType) {
   return ids;
 }
 
+async function archivePreviousVersion(existing, resourceType, externalId, sourceEndpoint) {
+  if (!shouldArchivePreviousVersion(existing, null)) return;
+
+  const latest = await supabase.from('ordermentum_raw_master_resource_versions').select('payload_hash')
+    .eq('resource_type', resourceType).eq('external_id', externalId)
+    .order('changed_at', { ascending: false }).limit(1).maybeSingle();
+  if (latest.error) throw latest.error;
+
+  // If a previous archive succeeded but the current-row upsert failed, a retry
+  // must not append the same prior snapshot again.
+  if (latest.data?.payload_hash === existing.payload_hash) {
+    counters.versionsArchiveDeduped += 1;
+    return;
+  }
+
+  const version = await supabase.from('ordermentum_raw_master_resource_versions').insert(
+    buildArchivedVersion(existing, { supplierId, sourceEndpoint, syncRunId: runId }),
+  );
+  if (version.error) throw version.error;
+  counters.versionsArchived += 1;
+}
+
 async function upsertRaw(resourceType, sourceEndpoint, requestQuery, item) {
   const externalId = extractExternalId(item, resourceType);
   const payloadHash = hashPayload(item);
@@ -55,10 +85,16 @@ async function upsertRaw(resourceType, sourceEndpoint, requestQuery, item) {
   const remoteUpdatedAt = extractTimestamp(item, ['updatedAt', 'updated_at', 'modifiedAt', 'lastModifiedAt', 'product.updatedAt', 'retailer.updatedAt']);
   counters.recordsSeen += 1;
   if (dryRun || !supabase) return { externalId, changed: false };
-  const existing = await supabase.from('ordermentum_raw_master_resources').select('payload_hash')
+  const existing = await supabase.from('ordermentum_raw_master_resources')
+    .select('resource_type,external_id,supplier_id,source_endpoint,payload,payload_hash,sync_run_id')
     .eq('resource_type', resourceType).eq('external_id', externalId).maybeSingle();
   if (existing.error) throw existing.error;
+
   const changed = !existing.data || existing.data.payload_hash !== payloadHash;
+  const archivePrevious = shouldArchivePreviousVersion(existing.data, payloadHash);
+
+  if (archivePrevious) await archivePreviousVersion(existing.data, resourceType, externalId, sourceEndpoint);
+
   const row = {
     resource_type: resourceType, external_id: externalId, supplier_id: supplierId, source_endpoint: sourceEndpoint,
     source_method: 'GET', request_query: requestQuery, payload: item, payload_hash: payloadHash,
@@ -68,14 +104,7 @@ async function upsertRaw(resourceType, sourceEndpoint, requestQuery, item) {
   };
   const saved = await supabase.from('ordermentum_raw_master_resources').upsert(row, { onConflict: 'resource_type,external_id' });
   if (saved.error) throw saved.error; counters.recordsUpserted += 1;
-  if (changed) {
-    counters.recordsChanged += 1;
-    const version = await supabase.from('ordermentum_raw_master_resource_versions').insert({
-      resource_type: resourceType, external_id: externalId, supplier_id: supplierId, source_endpoint: sourceEndpoint,
-      payload: item, payload_hash: payloadHash, sync_run_id: runId,
-    });
-    if (version.error) throw version.error;
-  }
+  if (changed) counters.recordsChanged += 1;
   return { externalId, changed };
 }
 
@@ -108,7 +137,7 @@ async function syncResource(resource) {
       const externalId = uniqueIds[index]; counters.detailAttempted += 1;
       const path = def.detailPath(externalId); const result = await fetchOrdermentumJson(token, path, {});
       if (result.ok && result.data) { await upsertRaw(def.detailType, path, {}, result.data); existingDetailIds.add(externalId); counters.detailSucceeded += 1; }
-      else { counters.detailFailed += 1; detailFailuresByResource[resource] = (detailFailuresByResource[resource] || 0) + 1; console.warn(`[${resource}] detail ${externalId} failed ${result.status}`); }
+      else { counters.detailFailed += 1; detailFailuresByResource[resource] = (detailFailuresByResource[resource] || 0) + 1; console.warn(`[${resources}] detail ${externalId} failed ${result.status}`); }
       if ((index + 1) % 25 === 0 || index === uniqueIds.length - 1) console.log(JSON.stringify({ action: 'master_detail_progress', resource, completed: index + 1, total: uniqueIds.length, failed: detailFailuresByResource[resource] || 0 }));
       if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
@@ -139,7 +168,7 @@ try {
     records_upserted: counters.recordsUpserted, records_changed: counters.recordsChanged,
     detail_attempted: counters.detailAttempted, detail_succeeded: counters.detailSucceeded, detail_failed: counters.detailFailed,
     finished_at: new Date().toISOString(), last_error: errors.length ? JSON.stringify(errors).slice(0, 2000) : null,
-    notes: { errors, warnings, resourcesUnavailable, detailFailuresByResource, detailSkippedByResource, detailSkippedUnchanged: counters.detailSkippedUnchanged, storesProjected: counters.storesProjected },
+    notes: { errors, warnings, resourcesUnavailable, detailFailuresByResource, detailSkippedByResource, detailSkippedUnchanged: counters.detailSkippedUnchanged, storesProjected: counters.storesProjected, versionsArchived: counters.versionsArchived, versionsArchiveDeduped: counters.versionsArchiveDeduped },
   }).eq('id', runId);
   console.log(JSON.stringify({ runId, dryRun, supplierId, resources, resourcesSucceeded, resourcesUnavailable, resourcesFailed, ...counters, detailChangedOnly, detailFailuresByResource, detailSkippedByResource, warnings, errors }, null, 2));
   if (resourcesFailed.length) process.exitCode = 2;
