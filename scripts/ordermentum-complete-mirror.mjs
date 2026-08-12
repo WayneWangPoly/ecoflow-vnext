@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createClient } from '@supabase/supabase-js';
+import { ORDERMENTUM_DATABASE_GUARD_BYTES } from './ordermentum-master-version-policy.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -60,10 +61,12 @@ const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 const timeBudgetMinutes = String(args['time-budget-minutes'] || process.env.ORDERMENTUM_HISTORY_SLICE_MINUTES || 45);
 const degradedExitMode = String(args['degraded-exit-mode'] || process.env.ORDERMENTUM_DEGRADED_EXIT_MODE || 'always').toLowerCase();
 if (!['always', 'transition', 'never'].includes(degradedExitMode)) throw new Error(`Unsupported degraded exit mode: ${degradedExitMode}`);
+const storageGuardBytes = Number(process.env.ORDERMENTUM_DATABASE_GUARD_BYTES || ORDERMENTUM_DATABASE_GUARD_BYTES);
+if (!Number.isFinite(storageGuardBytes) || storageGuardBytes <= 0) throw new Error(`Invalid ORDERMENTUM_DATABASE_GUARD_BYTES: ${storageGuardBytes}`);
 const resultFile = '/tmp/ordermentum-history-pipeline-result.json';
 const mirrorStart = new Date().toISOString();
 
-console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart, timeBudgetMinutes: Number(timeBudgetMinutes), degradedExitMode }, null, 2));
+console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart, timeBudgetMinutes: Number(timeBudgetMinutes), degradedExitMode, storageGuardBytes }, null, 2));
 
 async function runFinalisationData({ scope, historyRunId = null }) {
   await timed('complete Ordermentum master mirror', () => runNode('scripts/ordermentum-master-data-sync.mjs', [
@@ -77,7 +80,36 @@ async function runFinalisationData({ scope, historyRunId = null }) {
   ]));
 }
 
+async function verifyStorageHeadroom() {
+  const result = await db.rpc('ecoflow_ordermentum_storage_health');
+  if (result.error) throw result.error;
+  const row = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!row) throw new Error('Ordermentum storage health RPC returned no row.');
+
+  const databaseBytes = Number(row.database_bytes);
+  const versionsTableBytes = Number(row.versions_table_bytes);
+  const versionsRows = Number(row.versions_rows);
+  const versionsPayloadBytes = Number(row.versions_payload_bytes);
+  if (![databaseBytes, versionsTableBytes, versionsRows, versionsPayloadBytes].every(Number.isFinite)) {
+    throw new Error(`Ordermentum storage health returned invalid metrics: ${JSON.stringify(row)}`);
+  }
+
+  console.log(JSON.stringify({
+    action: 'ordermentum_storage_health',
+    databaseBytes,
+    versionsTableBytes,
+    versionsRows,
+    versionsPayloadBytes,
+    storageGuardBytes,
+  }, null, 2));
+
+  if (databaseBytes >= storageGuardBytes) {
+    throw new Error(`ORDERMENTUM_STORAGE_GUARD: database is ${databaseBytes} bytes, at or above the ${storageGuardBytes}-byte pre-quota guard.`);
+  }
+}
+
 async function verifyMirror(requireHistory) {
+  await verifyStorageHeadroom();
   await timed(requireHistory ? 'verify completed history contract' : 'verify complete mirror', () =>
     runNode('scripts/verify-ordermentum-complete-mirror.mjs', [
       `--require-history=${requireHistory ? 'true' : 'false'}`,
