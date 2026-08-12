@@ -2,15 +2,15 @@
 
 ## Objective
 
-Provide a warehouse-mobile workflow that records unresolved carton/sleeve barcode evidence in under one short interaction without changing inventory, locations, Commercial SKU mapping, or published Product Identity.
+Provide a warehouse-mobile workflow that records unresolved carton/sleeve barcode evidence in one short interaction without changing inventory, locations, Commercial SKU mapping, or published Product Identity.
 
 ## Owner and reviewers
 
 - Implementation role: Platform/Data + Frontend
 - Verification role: independent Verification
-- Chief Engineer: required for migration and Warehouse Control integration
+- Chief Engineer: required for migration, workflow and Warehouse Control integration
 - Dependencies: authenticated EcoFlow role and `ecoflow_active_app_role()`
-- Planned merge order: schema/RPC → typed repository → frontend integration → verification → Chief Engineer → release
+- Planned merge order: schema/RPC → typed repository → frontend integration → executable database contract → Verification → Chief Engineer → release
 
 ## In scope
 
@@ -20,7 +20,8 @@ Provide a warehouse-mobile workflow that records unresolved carton/sleeve barcod
   - `src/features/operationalStability/BarcodeSurveyWorkspace.tsx`
   - `src/features/operationalStability/WarehouseControlWorkspaceV3.tsx`
   - `src/features/operationalStability/OperationalStabilityWorkspace.tsx`
-  - `scripts/warehouse-survey-001-contract.test.mjs`
+  - `scripts/warehouse-survey-001-*`
+  - `.github/workflows/warehouse-survey-001-check.yml`
   - this work package
 - Allowed behaviour changes: Owner/Admin/Warehouse can append physical barcode survey evidence through a server-authoritative command; Warehouse Control opens the survey as the fast default and retains existing Stocktake/Move access.
 
@@ -31,6 +32,7 @@ Provide a warehouse-mobile workflow that records unresolved carton/sleeve barcod
 - Inventory balances, movements, stocktake posting, locations, receiving, picking, returns, accounts, driver flow, routing or global auth/role mapping.
 - Photo/storage infrastructure.
 - Editing any deployed migration.
+- Giving pull-request code access to production database credentials.
 
 ## Behaviour contract
 
@@ -47,30 +49,34 @@ Provide a warehouse-mobile workflow that records unresolved carton/sleeve barcod
 ## Acceptance criteria
 
 - [ ] Owner/Admin/Warehouse can save a valid carton observation and receive `APPLIED`.
-- [ ] Retry of the exact command returns `REPLAYED` with the same observation ID.
+- [ ] Retry of the exact command returns `REPLAYED` with the same observation ID and one stored row.
+- [ ] Concurrent same-command requests serialize to one `APPLIED`, one `REPLAYED`, one stored row.
 - [ ] Reusing the UUID for changed evidence or another actor fails closed.
 - [ ] ACCOUNT/VIEWER/DRIVER and unauthenticated callers are rejected server-side.
 - [ ] Direct authenticated INSERT/UPDATE/DELETE on the evidence table is unavailable.
 - [ ] `NOT_CHECKED` is preserved as first-class evidence and does not invent a sleeve barcode.
 - [ ] The workflow contains no stock quantity, warehouse location, Commercial SKU, family, substitution or package-conversion input.
 - [ ] Existing Initial/Cycle Count and Move SKU workflows remain reachable and unchanged.
-- [ ] Typecheck/build and shadow migration gate pass on the exact PR head/test-merge.
+- [ ] Exact-head static contract, PostgreSQL 17 migration/RPC contract, typecheck and production build pass.
+- [ ] A trusted production-schema migration check is still required before production release; an unrelated/not-applicable TRANSFORM-007 green status is not accepted as that evidence.
 
 ## Test plan
 
 | Layer | Command or scenario | Expected result |
 |---|---|---|
 | Static | `node --test scripts/warehouse-survey-001-contract.test.mjs` | authority boundaries, role checks, idempotency and UI field exclusions pass |
+| Database | fixture → candidate migration → `warehouse-survey-001-db-contract-test.sql` | migration executes; role/DML/replay/conflict/recovery contracts pass |
+| Concurrency | two simultaneous calls with the same command UUID | `APPLIED` + `REPLAYED`; exactly one observation |
 | TypeScript | `npm run typecheck` | pass |
 | Build | `npm run build` | pass |
-| Integration/RLS | shadow migration + authenticated RPC scenarios | role/DML/retry/conflict contract passes |
+| Trusted release | production-schema-safe migration validation from trusted main | pass before merge/deploy |
 | End-to-end/UI | warehouse mobile scan → sleeve choice → Save & Next | acknowledgement then clear/refocus; failure leaves evidence unsaved and retryable |
 
 ## Required evidence
 
 - Changed files: PR diff restricted to declared paths.
 - Build and test output: exact-head CI links/statuses.
-- Migration/shadow result: required shadow gate on exact head and test-merge.
+- Migration evidence: credential-free PostgreSQL 17 execution plus trusted production-schema validation before release.
 - Screenshots: authenticated Warehouse Control barcode survey after deployment.
 - Risks: field evidence can duplicate the same physical barcode across separate observations by design; reconciliation happens later and does not silently publish/remap identity.
 - Known limitations: no evidence photo in MVP; no canonical Product Identity conflict label in this staging surface.
@@ -88,6 +94,7 @@ Revert frontend/repository integration to remove the entry point. If the migrati
 - Commercial SKU assignment is intentionally absent from field capture.
 - `NOT_CHECKED` is explicit rather than inferred.
 - Photo capture is deferred until storage/upload authority is separately verified.
+- Pull-request validation is credential-free; production schema credentials stay behind trusted-main workflows.
 
 ### Assumptions
 
