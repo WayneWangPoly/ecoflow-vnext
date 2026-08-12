@@ -5,6 +5,7 @@ import test from 'node:test';
 const repository = fs.readFileSync('src/data/repositories/accountHoldAuthority.ts','utf8');
 const panel = fs.readFileSync('src/features/operationalRecords/AccountHoldCommandPanel.tsx','utf8');
 const workspace = fs.readFileSync('src/features/operationalRecords/OperationalRecordsWorkspace.tsx','utf8');
+const device = fs.readFileSync('src/operational/operationalDeviceIdentity.ts','utf8');
 
 test('repository serializes the bounded authoritative command contract', () => {
   for (const field of [
@@ -33,9 +34,24 @@ test('Accounts command surface is server-acknowledged rather than optimistic', (
   const readback = panel.indexOf('await readAccountHoldState(storeId)', command);
   const stateWrite = panel.indexOf('setState(authoritative)', command);
   assert.ok(command >= 0 && readback > command && stateWrite > readback, 'state must update only after command and authoritative readback');
-  assert.match(panel, /expectedRevision: state\.revision/);
+  assert.match(panel, /expectedRevision: intent\.expectedRevision/);
   assert.match(panel, /if \(result\.status === 'CONFLICT'\)/);
   assert.match(panel, /A reason is required for every hold or release command/);
+  assert.match(panel, /authoritative\.sourceActionId === intent\.idempotencyKey/);
+});
+
+test('unresolved acknowledgement retains the exact command intent for retry', () => {
+  assert.match(panel, /const reusableIntent = retryIntent/);
+  assert.match(panel, /idempotencyKey: intent\.idempotencyKey/);
+  assert.match(panel, /setRetryIntent\(intent\)/);
+  assert.match(panel, /Retry same command/);
+  assert.match(panel, /Server acknowledgement is unresolved/);
+});
+
+test('device context stays stable even when localStorage is unavailable', () => {
+  assert.match(device, /let memoryDeviceId: string \| null = null/);
+  assert.match(device, /if \(valid\(memoryDeviceId\)\) return memoryDeviceId\.trim\(\)/);
+  assert.match(device, /memoryDeviceId = freshDeviceId\(\)/);
 });
 
 test('007B is bounded to Accounts and does not open Returns', () => {
