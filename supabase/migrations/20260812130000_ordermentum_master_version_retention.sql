@@ -14,8 +14,10 @@ as $function$
 declare
   v_deleted bigint := 0;
 begin
-  -- Serialize pruning with version writers so the global payload budget remains a hard bound.
-  lock table public.ordermentum_raw_master_resource_versions in share row exclusive mode;
+  -- Serialize concurrent trigger/admin pruning without escalating the table lock
+  -- held by the INSERT that invoked this function. Under READ COMMITTED, a waiter
+  -- sees rows committed by the prior pruner before its DELETE statement begins.
+  perform pg_advisory_xact_lock(hashtextextended('ecoflow-ordermentum-version-retention', 0));
 
   with resource_ranked as (
     select
