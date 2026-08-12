@@ -1,5 +1,6 @@
 const DEVICE_STORAGE_KEY = 'ecoflow:operational-device:v1';
 const DEVICE_ID_MAX = 128;
+let memoryDeviceId: string | null = null;
 
 function valid(value: string | null): value is string {
   if (!value) return false;
@@ -22,18 +23,23 @@ function freshDeviceId() {
 
 export function getOperationalDeviceId() {
   if (typeof window === 'undefined') return 'device:server-render';
+  if (valid(memoryDeviceId)) return memoryDeviceId.trim();
+
   try {
     const stored = window.localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (valid(stored)) return stored.trim();
+    if (valid(stored)) {
+      memoryDeviceId = stored.trim();
+      return memoryDeviceId;
+    }
   } catch {
     // Storage may be unavailable in hardened/private browser contexts.
   }
 
-  const generated = freshDeviceId();
+  memoryDeviceId = freshDeviceId();
   try {
-    window.localStorage.setItem(DEVICE_STORAGE_KEY, generated);
+    window.localStorage.setItem(DEVICE_STORAGE_KEY, memoryDeviceId);
   } catch {
-    // A stable in-page value is still enough to bind the command attempt.
+    // Keep the module-scoped value stable for the lifetime of this app session.
   }
-  return generated;
+  return memoryDeviceId;
 }
