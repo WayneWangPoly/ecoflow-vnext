@@ -327,7 +327,7 @@ begin
     v_applied_at,
     v_next_revision
   )
-  on conflict (store_id) do update
+  on conflict on constraint ecoflow_account_release_holds_pkey do update
   set active = excluded.active,
       hold_reason = excluded.hold_reason,
       source_action_id = excluded.source_action_id,
