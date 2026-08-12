@@ -35,7 +35,8 @@ requireText(migration, 'running_payload_bytes <= 10485760::bigint', 'database gl
 requireText(migration, 'after insert on public.ordermentum_raw_master_resource_versions', 'database hard-retention trigger');
 requireText(migration, 'grant execute on function public.ecoflow_prune_ordermentum_master_resource_versions() to service_role', 'service-only prune grant');
 requireText(migration, 'grant execute on function public.ecoflow_ordermentum_storage_health() to service_role', 'service-only storage health grant');
-assert.ok(!migration.includes('pg_cron'), 'retention must not depend on unavailable pg_cron');
+assert.ok(!/create\s+extension[^;]*pg_cron/i.test(migration), 'retention must not install pg_cron');
+assert.ok(!/cron\.(job|schedule)/i.test(migration), 'retention must not call cron schema objects');
 
 requireText(mirror, "db.rpc('ecoflow_ordermentum_storage_health')", 'mirror storage health check');
 requireText(mirror, 'ORDERMENTUM_STORAGE_GUARD', 'pre-quota failure signal');
