@@ -1,0 +1,57 @@
+name: Ordermentum version retention guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ordermentum-version-retention-check.yml'
+      - 'scripts/ordermentum-master-data-sync.mjs'
+      - 'scripts/ordermentum-master-data-common.mjs'
+      - 'scripts/ordermentum-master-version-policy.mjs'
+      - 'scripts/ordermentum-master-version-policy.test.mjs'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/audit-ordermentum-version-retention.mjs'
+      - 'supabase/migrations/20260812130000_ordermentum_master_version_retention.sql'
+  push:
+    branches:
+      - main
+      - 'fix/ordermentum-version-retention'
+    paths:
+      - '.github/workflows/ordermentum-version-retention-check.yml'
+      - 'scripts/ordermentum-master-data-sync.mjs'
+      - 'scripts/ordermentum-master-data-common.mjs'
+      - 'scripts/ordermentum-master-version-policy.mjs'
+      - 'scripts/ordermentum-master-version-policy.test.mjs'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/audit-ordermentum-version-retention.mjs'
+      - 'supabase/migrations/20260812130000_ordermentum_master_version_retention.sql'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordermentum-version-retention-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retention-contract:
+    name: Bounded version-history contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check script syntax
+        run: |
+          node --check scripts/ordermentum-master-version-policy.mjs
+          node --check scripts/ordermentum-master-data-sync.mjs
+          node --check scripts/ordermentum-complete-mirror.mjs
+          node --check scripts/audit-ordermentum-version-retention.mjs
+      - name: Test version policy
+        run: node --test scripts/ordermentum-master-version-policy.test.mjs
+      - name: Audit storage contract
+        run: node scripts/audit-ordermentum-version-retention.mjs
