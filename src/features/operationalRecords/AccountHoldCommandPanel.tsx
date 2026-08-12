@@ -6,6 +6,7 @@ import {
   type AccountHoldState,
 } from '@/data/repositories/accountHoldAuthority';
 import { getOperationalDeviceId } from '@/operational/operationalDeviceIdentity';
+import './AccountHoldCommandPanel.css';
 
 const COMMAND_ROLES = new Set<EcoFlowAppRole>(['OWNER', 'ADMIN', 'ACCOUNT']);
 
