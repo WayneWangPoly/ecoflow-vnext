@@ -7,6 +7,7 @@ on:
       - 'src/data/repositories/returnCommandAuthority.ts'
       - 'src/features/operationalRecords/**'
       - 'scripts/transform-007c-return-command-frontend-contract.test.mjs'
+      - 'scripts/transform-007-operational-records-frontend-contract.test.mjs'
       - '.github/workflows/transform-007c-return-command-ui-check.yml'
   push:
     branches:
@@ -15,6 +16,7 @@ on:
       - 'src/data/repositories/returnCommandAuthority.ts'
       - 'src/features/operationalRecords/**'
       - 'scripts/transform-007c-return-command-frontend-contract.test.mjs'
+      - 'scripts/transform-007-operational-records-frontend-contract.test.mjs'
       - '.github/workflows/transform-007c-return-command-ui-check.yml'
 
 permissions:
