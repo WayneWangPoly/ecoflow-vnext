@@ -1,0 +1,146 @@
+name: TRANSFORM-007B production release verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/transform-007b-production-release-verify.sql'
+      - '.github/workflows/transform-007b-production-release-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/transform-007b-production-release-verify.sql'
+      - '.github/workflows/transform-007b-production-release-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    name: Rollback-only production verifier contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove verifier is rollback-only and bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          script='scripts/transform-007b-production-release-verify.sql'
+          test -f "$script"
+          if grep -Eiq '^[[:space:]]*commit[[:space:]]*;' "$script"; then
+            echo 'Production verifier must never COMMIT business-command smoke state.'
+            exit 1
+          fi
+          rollback_count="$(grep -Eic '^[[:space:]]*rollback[[:space:]]*;' "$script")"
+          test "$rollback_count" -ge 2
+          grep -Fq "set local statement_timeout = '8000ms'" "$script"
+          grep -Fq "ecoflow_read_operational_records_v1" "$script"
+          grep -Fq "ecoflow_set_account_release_hold_v1" "$script"
+          grep -Fq "ecoflow_read_account_hold_state_v1" "$script"
+          grep -Fq "ACCOUNTS_WORKSPACE_NOT_AUTHORISED" "$script"
+          grep -Fq "SOURCE_OWNED_AUTHENTICATED_DML=DENIED" "$script"
+          grep -Fq "ROLLBACK_PROOF=PASS" "$script"
+
+  production-verify:
+    name: Production rollback smoke
+    needs: static-contract
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+      STATUS_CONTEXT: TRANSFORM-007B production release verification
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Publish pending release verification
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context="$STATUS_CONTEXT" \
+            -f description='Rollback-only production verification is running' \
+            -f target_url="$RUN_URL"
+      - uses: actions/checkout@v4
+      - name: Require production database credential
+        shell: bash
+        run: |
+          test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$SUPABASE_PROJECT_REF"
+          test -n "$SUPABASE_POOLER_HOST"
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Construct masked production DB URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded="$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"],safe=""))')"
+          url="postgresql://postgres.${SUPABASE_PROJECT_REF}:${encoded}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+      - name: Require deployed Accounts timeout repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          applied="$(psql "$SUPABASE_DB_URL" -XqAt -v ON_ERROR_STOP=1 \
+            -c "select count(*) from supabase_migrations.schema_migrations where version::text='20260813010000'")"
+          test "$applied" = '1' || {
+            echo 'TRANSFORM-007B Accounts read repair is not recorded in production migration history.'
+            exit 1
+          }
+      - name: Execute rollback-only authenticated production smoke
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f scripts/transform-007b-production-release-verify.sql \
+            2>&1 | tee /tmp/transform-007b-production-release-verify.log
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transform-007b-production-release-verification
+          path: /tmp/transform-007b-production-release-verify.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-result:
+    name: Publish release gate result
+    needs: [static-contract, production-verify]
+    if: github.event_name != 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STATUS_CONTEXT: TRANSFORM-007B production release verification
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      VERIFY_RESULT: ${{ needs.production-verify.result }}
+    steps:
+      - name: Publish final status
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$VERIFY_RESULT" == success ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state='success' \
+              -f context="$STATUS_CONTEXT" \
+              -f description='Accounts read, auth boundary, rollback hold/clear and source-write denial passed' \
+              -f target_url="$RUN_URL"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state='failure' \
+              -f context="$STATUS_CONTEXT" \
+              -f description='Production release verification failed closed' \
+              -f target_url="$RUN_URL"
+            exit 1
+          fi
