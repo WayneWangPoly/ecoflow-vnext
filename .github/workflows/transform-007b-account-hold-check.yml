@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/*_transform_007b_account_hold_command.sql'
+      - 'supabase/migrations/*_transform_007b_store_authority_repair.sql'
       - 'scripts/audit-transform-007b-account-hold-command.mjs'
       - 'scripts/transform-007b-account-hold-fixture.sql'
       - 'scripts/transform-007b-account-hold-contract-test.sql'
@@ -66,5 +67,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-account-hold-fixture.sql
       - name: Apply exact 007B forward migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260812115000_transform_007b_account_hold_command.sql
-      - name: Verify CAS, replay, audit and authorization
+      - name: Apply production store-authority repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813020000_transform_007b_store_authority_repair.sql
+      - name: Verify CAS, replay, audit, store authority and authorization
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-account-hold-contract-test.sql
