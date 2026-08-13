@@ -1,0 +1,89 @@
+name: TRANSFORM-007B source DML diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/transform-007b-source-dml-diagnostic.sql'
+      - '.github/workflows/transform-007b-source-dml-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/transform-007b-source-dml-diagnostic.sql'
+      - '.github/workflows/transform-007b-source-dml-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    name: Read-only diagnostic contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove diagnostic is catalog-only and fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          script='scripts/transform-007b-source-dml-diagnostic.sql'
+          test -f "$script"
+          grep -Fq 'set transaction read only;' "$script"
+          grep -Fq 'has_table_privilege' "$script"
+          grep -Fq 'has_any_column_privilege' "$script"
+          grep -Fq 'TRANSFORM_007B_SOURCE_DML_DIAGNOSTIC_OPEN' "$script"
+          if grep -Eiq '^[[:space:]]*(insert|update|delete|truncate)[[:space:]]+public\.' "$script"; then
+            echo 'Source DML diagnostic must not mutate persistent public relations.'
+            exit 1
+          fi
+          if grep -Eiq '^[[:space:]]*commit[[:space:]]*;' "$script"; then
+            echo 'Source DML diagnostic must never commit.'
+            exit 1
+          fi
+          grep -Eiq '^[[:space:]]*rollback[[:space:]]*;' "$script"
+
+  production-diagnostic:
+    name: Production source DML report
+    needs: static-contract
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require production database credential
+        shell: bash
+        run: |
+          test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$SUPABASE_PROJECT_REF"
+          test -n "$SUPABASE_POOLER_HOST"
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Construct masked production DB URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded="$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"],safe=""))')"
+          url="postgresql://postgres.${SUPABASE_PROJECT_REF}:${encoded}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+      - name: Enumerate source-owned authenticated DML exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f scripts/transform-007b-source-dml-diagnostic.sql \
+            2>&1 | tee /tmp/transform-007b-source-dml-diagnostic.log
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transform-007b-source-dml-diagnostic
+          path: /tmp/transform-007b-source-dml-diagnostic.log
+          if-no-files-found: warn
+          retention-days: 30
