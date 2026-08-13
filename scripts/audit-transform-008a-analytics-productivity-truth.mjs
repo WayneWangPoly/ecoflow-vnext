@@ -28,8 +28,9 @@ forbid('direct business-table mutation', /\.from\s*\([^)]*\)[\s\S]{0,300}\.(?:in
 requireText('governed Saved Views read', panel, "repository.readSavedViews('analytics')", panelPath);
 requireText('governed Saved Views command path', panel, 'repository.applyCommand({', panelPath);
 requireText('Quick Actions', panel, 'quickActionDefinitions', panelPath);
-requireText('Saved Views read RPC', repository, 'get_intelligence_saved_views', repositoryPath);
-requireText('Saved Views command RPC', repository, 'apply_intelligence_saved_view_command', repositoryPath);
+requireText('analytics RPC schema boundary', repository, ".schema('analytics')", repositoryPath);
+requireText('Saved Views read RPC contract', repository, 'intelligenceSavedViewReadRpcName', repositoryPath);
+requireText('Saved Views command RPC contract', repository, 'intelligenceSavedViewCommandRpcName', repositoryPath);
 
 if (failures.length) {
   console.error('TRANSFORM-008A analytics productivity truth audit failed:');
@@ -38,6 +39,6 @@ if (failures.length) {
 }
 
 console.log('TRANSFORM-008A analytics productivity truth audit passed.');
-console.log('- Saved Views remain on server RPC authority.');
+console.log('- Saved Views remain on analytics-schema server RPC authority.');
 console.log('- Quick Actions remain navigation-only.');
 console.log('- Manual comparison authority and misleading exports are absent from the production panel.');
