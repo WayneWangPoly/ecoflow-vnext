@@ -68,3 +68,5 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811020000_transform_007_operational_records.sql
       - name: Execute PostgreSQL contracts
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-operational-records-contract-test.sql
+      - name: Prove trusted schema reader coverage stays read-only
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-shadow-reader-coverage-contract.sql
