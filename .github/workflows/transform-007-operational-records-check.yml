@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - 'agent/**'
+      - 'repair/transform-007b-accounts-read-timeout-rebased'
 
 permissions:
   contents: read
@@ -70,3 +71,9 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-operational-records-contract-test.sql
       - name: Prove trusted schema reader coverage stays read-only
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-shadow-reader-coverage-contract.sql
+      - name: Load Accounts scale fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-accounts-read-timeout-fixture.sql
+      - name: Apply TRANSFORM-007B Accounts read repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813010000_transform_007b_accounts_read_timeout_repair.sql
+      - name: Execute Accounts statement-timeout regression
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-accounts-read-timeout-contract-test.sql
