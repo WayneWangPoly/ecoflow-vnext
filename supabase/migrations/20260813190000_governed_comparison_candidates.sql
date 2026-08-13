@@ -55,38 +55,42 @@ begin
 
   return query
   with candidates as (
-    select distinct on (s.id)
+    select
       'COMMERCIAL_SKU'::text as candidate_kind,
       s.id::text as entity_id,
       concat_ws(' · ', nullif(btrim(coalesce(s.sku_code,'')),''), nullif(btrim(coalesce(s.display_name,'')),''))::text as label,
       jsonb_build_object(
         'skuCode',s.sku_code,
         'displayName',s.display_name,
-        'familyId',f.id,
-        'familyCode',f.family_code,
-        'familyName',f.display_name,
+        'familyId',authority.family_id,
+        'familyCode',authority.family_code,
+        'familyName',authority.family_name,
         'identityStatus','READY'
       ) as context,
       'ALLOWED'::text as permission,
       statement_timestamp() as read_at
     from public.skus s
-    join public.ecoflow_commercial_family_links l
-      on l.commercial_sku_id=s.id
-     and l.identity_status='ACTIVE'
-     and l.retired_at is null
-    join public.ecoflow_sku_families f
-      on f.id=l.sku_family_id
-     and f.identity_status='ACTIVE'
-     and f.retired_at is null
+    join lateral (
+      select f.id as family_id,f.family_code,f.display_name as family_name
+      from public.ecoflow_commercial_family_links l
+      join public.ecoflow_sku_families f
+        on f.id=l.sku_family_id
+       and f.identity_status='ACTIVE'
+       and f.retired_at is null
+      where l.commercial_sku_id=s.id
+        and l.identity_status='ACTIVE'
+        and l.retired_at is null
+      order by f.family_code,f.id
+      limit 1
+    ) authority on true
     where (v_kind is null or v_kind='COMMERCIAL_SKU')
       and (
         v_query=''
         or lower(coalesce(s.sku_code,'')) like '%'||v_query||'%'
         or lower(coalesce(s.display_name,'')) like '%'||v_query||'%'
-        or lower(coalesce(f.family_code,'')) like '%'||v_query||'%'
-        or lower(coalesce(f.display_name,'')) like '%'||v_query||'%'
+        or lower(coalesce(authority.family_code,'')) like '%'||v_query||'%'
+        or lower(coalesce(authority.family_name,'')) like '%'||v_query||'%'
       )
-    order by s.id,f.family_code
 
     union all
 
@@ -138,7 +142,8 @@ begin
       'ALLOWED'::text,
       statement_timestamp()
     from public.ecoflow_store_sites s
-    where (v_kind is null or v_kind='CUSTOMER')
+    where s.retailer_id is not null
+      and (v_kind is null or v_kind='CUSTOMER')
       and (
         v_query=''
         or lower(coalesce(s.store_name,'')) like '%'||v_query||'%'
