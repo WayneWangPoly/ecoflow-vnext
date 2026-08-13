@@ -1,5 +1,32 @@
 \set ON_ERROR_STOP on
 
+-- The production repair must not be allowed to regress back to the synthetic
+-- relation that masked the live failure.
+DO $$
+declare
+  v_def text;
+  v_reg regprocedure;
+begin
+  if to_regclass('public.ordermentum_stores') is not null then
+    raise exception '007B fixture recreated stale public.ordermentum_stores';
+  end if;
+
+  foreach v_reg in array array[
+    'public.ecoflow_read_account_hold_state_v1(text)'::regprocedure,
+    'public.ecoflow_set_account_release_hold_v1(text,boolean,bigint,uuid,text,text)'::regprocedure,
+    'public.ecoflow_record_accounts_statement_action(text,text,jsonb)'::regprocedure
+  ] loop
+    select pg_get_functiondef(v_reg) into v_def;
+    if position('ecoflow_store_sites' in v_def)=0 then
+      raise exception '007B repaired function % is not bound to ecoflow_store_sites',v_reg;
+    end if;
+    if position('ordermentum_stores' in v_def)>0 then
+      raise exception '007B repaired function % retained stale ordermentum_stores',v_reg;
+    end if;
+  end loop;
+end
+$$;
+
 -- OWNER: initial state is inactive/revision 0 and a hold applies as revision 1.
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', false);
@@ -8,14 +35,14 @@ DO $$
 declare
   r record;
 begin
-  select * into r from public.ecoflow_read_account_hold_state_v1('STORE-1');
+  select * into r from public.ecoflow_read_account_hold_state_v1('aaaaaaaa-0000-4000-8000-000000000001');
   if r.active is not false or r.revision <> 0 then
     raise exception '007B initial state mismatch: %', row_to_json(r);
   end if;
 
   select * into r
   from public.ecoflow_set_account_release_hold_v1(
-    'STORE-1', true, 0,
+    'aaaaaaaa-0000-4000-8000-000000000001', true, 0,
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'fixture-device-owner',
     'Credit review required'
@@ -35,7 +62,7 @@ declare
 begin
   select * into r
   from public.ecoflow_set_account_release_hold_v1(
-    'STORE-1', true, 0,
+    'aaaaaaaa-0000-4000-8000-000000000001', true, 0,
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'fixture-device-owner',
     'Credit review required'
@@ -56,7 +83,7 @@ begin
   begin
     perform *
     from public.ecoflow_set_account_release_hold_v1(
-      'STORE-1', false, 0,
+      'aaaaaaaa-0000-4000-8000-000000000001', false, 0,
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       'fixture-device-owner',
       'Different intent'
@@ -81,7 +108,7 @@ declare
 begin
   select * into r
   from public.ecoflow_set_account_release_hold_v1(
-    'STORE-1', false, 0,
+    'aaaaaaaa-0000-4000-8000-000000000001', false, 0,
     'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     'fixture-device-owner',
     'Stale release attempt'
@@ -127,7 +154,7 @@ declare
 begin
   select * into r
   from public.ecoflow_set_account_release_hold_v1(
-    'STORE-1', false, 1,
+    'aaaaaaaa-0000-4000-8000-000000000001', false, 1,
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     'fixture-device-admin',
     'Payment cleared'
@@ -144,7 +171,7 @@ DO $$
 begin
   if not exists (
     select 1 from public.ecoflow_account_release_holds h
-    where h.store_id = 'STORE-1'
+    where h.store_id = 'aaaaaaaa-0000-4000-8000-000000000001'
       and h.active is false
       and h.revision = 2
       and h.hold_reason = 'Payment cleared'
@@ -164,7 +191,7 @@ declare
 begin
   select * into r
   from public.ecoflow_set_account_release_hold_v1(
-    'STORE-1', true, 2,
+    'aaaaaaaa-0000-4000-8000-000000000001', true, 2,
     'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     'fixture-device-account',
     'Manual account review'
@@ -208,7 +235,7 @@ declare
 begin
   begin
     perform * from public.ecoflow_record_accounts_statement_action(
-      'STORE-1', 'RELEASE_HOLD', '{"reason":"legacy bypass"}'::jsonb
+      'aaaaaaaa-0000-4000-8000-000000000001', 'RELEASE_HOLD', '{"reason":"legacy bypass"}'::jsonb
     );
   exception when others then
     if sqlerrm = 'ACCOUNT_HOLD_COMMAND_REQUIRED' then
@@ -222,11 +249,12 @@ begin
   end if;
 
   perform * from public.ecoflow_record_accounts_statement_action(
-    'STORE-1', 'STATEMENT_VIEWED', '{}'::jsonb
+    'aaaaaaaa-0000-4000-8000-000000000001', 'STATEMENT_VIEWED', '{}'::jsonb
   );
   select count(*) into n
   from public.ecoflow_account_statement_actions
-  where store_id = 'STORE-1' and action_kind = 'STATEMENT_VIEWED';
+  where store_id = 'aaaaaaaa-0000-4000-8000-000000000001'
+    and action_kind = 'STATEMENT_VIEWED';
   if n <> 1 then
     raise exception '007B statement-only legacy behavior regressed';
   end if;
@@ -241,7 +269,7 @@ begin
   caught := false;
   begin
     perform * from public.ecoflow_set_account_release_hold_v1(
-      'STORE-2', true, 0,
+      'aaaaaaaa-0000-4000-8000-000000000002', true, 0,
       'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
       'fixture-device-owner', '   '
     );
@@ -253,7 +281,7 @@ begin
   caught := false;
   begin
     perform * from public.ecoflow_set_account_release_hold_v1(
-      'STORE-2', true, 0,
+      'aaaaaaaa-0000-4000-8000-000000000002', true, 0,
       'ffffffff-ffff-4fff-8fff-ffffffffffff',
       repeat('x', 129), 'Bounded device test'
     );
@@ -265,7 +293,7 @@ begin
   caught := false;
   begin
     perform * from public.ecoflow_set_account_release_hold_v1(
-      'UNKNOWN-STORE', true, 0,
+      'aaaaaaaa-0000-4000-8000-ffffffffffff', true, 0,
       '99999999-9999-4999-8999-999999999999',
       'fixture-device-owner', 'Unknown store test'
     );
@@ -283,7 +311,7 @@ declare
 begin
   begin
     insert into public.ecoflow_account_release_holds(store_id, active, revision)
-    values ('STORE-2', true, 1);
+    values ('aaaaaaaa-0000-4000-8000-000000000002', true, 1);
   exception when insufficient_privilege then
     caught := true;
   end;
@@ -299,7 +327,7 @@ DO $$
 declare caught boolean := false;
 begin
   begin
-    perform * from public.ecoflow_read_account_hold_state_v1('STORE-1');
+    perform * from public.ecoflow_read_account_hold_state_v1('aaaaaaaa-0000-4000-8000-000000000001');
   exception when others then
     if sqlerrm = 'ACCOUNT_HOLD_ROLE_FORBIDDEN' then caught := true; else raise; end if;
   end;
@@ -313,7 +341,7 @@ declare caught boolean := false;
 begin
   begin
     perform * from public.ecoflow_set_account_release_hold_v1(
-      'STORE-2', true, 0,
+      'aaaaaaaa-0000-4000-8000-000000000002', true, 0,
       '12121212-1212-4212-8212-121212121212',
       'warehouse-device', 'Warehouse must be denied'
     );
@@ -330,7 +358,7 @@ declare caught boolean := false;
 begin
   begin
     perform * from public.ecoflow_set_account_release_hold_v1(
-      'STORE-2', true, 0,
+      'aaaaaaaa-0000-4000-8000-000000000002', true, 0,
       '13131313-1313-4313-8313-131313131313',
       'driver-device', 'Driver must be denied'
     );
@@ -349,7 +377,7 @@ DO $$
 declare caught boolean := false;
 begin
   begin
-    perform * from public.ecoflow_read_account_hold_state_v1('STORE-1');
+    perform * from public.ecoflow_read_account_hold_state_v1('aaaaaaaa-0000-4000-8000-000000000001');
   exception when insufficient_privilege then
     caught := true;
   end;
@@ -363,7 +391,10 @@ begin
   if (select count(*) from public.ecoflow_account_hold_commands) <> 3 then
     raise exception '007B expected exactly three accepted command audit rows';
   end if;
-  if (select revision from public.ecoflow_account_release_holds where store_id = 'STORE-1') <> 3 then
+  if (
+    select revision from public.ecoflow_account_release_holds
+    where store_id = 'aaaaaaaa-0000-4000-8000-000000000001'
+  ) <> 3 then
     raise exception '007B final revision mismatch';
   end if;
 end
