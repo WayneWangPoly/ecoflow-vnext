@@ -1,0 +1,56 @@
+@import './AccountHoldCommandPanel.css';
+
+.return-command-panel {
+  align-content: start;
+}
+
+.return-command-form {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle, #d8dfdb);
+}
+
+.return-command-form h4 {
+  margin: 0;
+  font-size: .94rem;
+}
+
+.return-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.return-command-form input,
+.return-command-form select {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong, #8a9891);
+  border-radius: 9px;
+  background: var(--surface-base, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.return-command-form input:disabled,
+.return-command-form select:disabled,
+.return-command-form textarea:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.return-command-close {
+  margin-top: 2px;
+}
+
+.return-command-panel code {
+  overflow-wrap: anywhere;
+  font-size: .78rem;
+}
+
+@media (max-width: 680px) {
+  .return-command-grid {
+    grid-template-columns: 1fr;
+  }
+}
