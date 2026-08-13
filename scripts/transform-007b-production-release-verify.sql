@@ -64,18 +64,21 @@ order by user_id
 limit 1
 \gset
 
--- Choose only a currently inactive store. The subsequent hold/release pair is
--- still rollback-only, but this keeps the simulated transition identical to the
--- normal inactive -> held -> released operator path.
-select s.store_id as verify_store
-from public.ordermentum_stores s
+-- Choose only a currently inactive store from the same authority used by the
+-- Accounts customer directory and repaired 007B command functions.
+select s.retailer_id::text as verify_store
+from public.ecoflow_store_sites s
 left join public.ecoflow_account_release_holds h
-  on h.store_id=s.store_id
-where nullif(btrim(s.store_id),'') is not null
-  and coalesce(h.active,false)=false
-order by s.store_id
+  on h.store_id=s.retailer_id::text
+where coalesce(h.active,false)=false
+order by s.retailer_id
 limit 1
 \gset
+
+\if :{?verify_store}
+\else
+  \quit 1
+\endif
 
 select set_config('ecoflow.release_verify_store',:'verify_store',false) as store_context \gset
 select set_config('request.jwt.claim.role','authenticated',false) as jwt_role_context \gset
@@ -204,7 +207,8 @@ begin
   where n.nspname='public'
     and c.relkind in ('r','p','v','m','f')
     and (
-      c.relname like 'ordermentum\_%' escape '\'
+      c.relname='ecoflow_store_sites'
+      or c.relname like 'ordermentum\_%' escape '\'
       or c.relname like 'om\_%' escape '\'
       or c.relname like 'qbo\_%' escape '\'
       or c.relname like 'quickbooks\_%' escape '\'
