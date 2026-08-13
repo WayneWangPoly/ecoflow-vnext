@@ -77,8 +77,9 @@ order by s.store_id
 limit 1
 \gset
 
-select set_config('request.jwt.claim.role','authenticated',false) \gset
-select set_config('request.jwt.claim.sub',:'authorised_id',false) \gset
+select set_config('ecoflow.release_verify_store',:'verify_store',false) as store_context \gset
+select set_config('request.jwt.claim.role','authenticated',false) as jwt_role_context \gset
+select set_config('request.jwt.claim.sub',:'authorised_id',false) as jwt_sub_context \gset
 set local role authenticated;
 
 -- This is the exact Accounts list RPC that previously raised SQLSTATE 57014.
@@ -99,7 +100,7 @@ select round(
 \endif
 
 -- Viewer must still fail closed on Accounts.
-select set_config('request.jwt.claim.sub',:'viewer_id',false) \gset
+select set_config('request.jwt.claim.sub',:'viewer_id',false) as viewer_sub_context \gset
 
 do $$
 declare
@@ -124,7 +125,7 @@ $$;
 
 -- Authorised hold -> authoritative readback -> clear -> readback. All writes are
 -- inside this transaction and are rolled back below.
-select set_config('request.jwt.claim.sub',:'authorised_id',false) \gset
+select set_config('request.jwt.claim.sub',:'authorised_id',false) as authorised_sub_context \gset
 select active as initial_active, revision as initial_revision
 from public.ecoflow_read_account_hold_state_v1(:'verify_store')
 \gset
@@ -224,15 +225,13 @@ begin
 end
 $$;
 
--- Save the selected store in a session-only custom setting for the DO block.
--- (The value is never printed.)
 rollback;
 
 -- Prove the rollback restored the pre-smoke authoritative state.
 begin;
 set local statement_timeout='8000ms';
-select set_config('request.jwt.claim.role','authenticated',false) \gset
-select set_config('request.jwt.claim.sub',:'authorised_id',false) \gset
+select set_config('request.jwt.claim.role','authenticated',false) as rollback_jwt_role_context \gset
+select set_config('request.jwt.claim.sub',:'authorised_id',false) as rollback_jwt_sub_context \gset
 set local role authenticated;
 select active as after_active,revision as after_revision
 from public.ecoflow_read_account_hold_state_v1(:'verify_store')
