@@ -9,6 +9,7 @@ on:
       - 'agent/**'
       - 'repair/transform-007b-accounts-read-timeout-rebased'
       - 'repair/transform-007b-accounts-summary-timeout'
+      - 'repair/transform-007b-accounts-customer-timeout'
 
 permissions:
   contents: read
@@ -84,3 +85,9 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813030000_transform_007b_accounts_summary_timeout_repair.sql
       - name: Execute Accounts summary freshness and timeout regression
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-accounts-summary-timeout-contract.sql
+      - name: Load deliberately slow Accounts customer fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-accounts-customer-timeout-fixture.sql
+      - name: Apply persisted Accounts customer repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813040000_transform_007b_accounts_customer_timeout_repair.sql
+      - name: Execute Accounts customer freshness and timeout regression
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-accounts-customer-timeout-contract.sql
