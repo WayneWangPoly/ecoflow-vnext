@@ -191,6 +191,10 @@ $$;
 
 revoke all on function public.ecoflow_assert_accounts_statement_customer_snapshot()
   from public,anon,authenticated,service_role;
+-- The public customer view invokes this read-only freshness guard as the
+-- authenticated caller. It exposes no row data and has no mutation path.
+grant execute on function public.ecoflow_assert_accounts_statement_customer_snapshot()
+  to authenticated;
 
 create or replace function public.ecoflow_refresh_accounts_statement_customer_snapshot()
 returns integer
