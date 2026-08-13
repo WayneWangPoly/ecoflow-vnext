@@ -1,0 +1,68 @@
+name: TRANSFORM-008B Governed comparison
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20260813190000_governed_comparison_candidates.sql
+      - src/data/repositories/comparisonCandidates.ts
+      - src/features/intelligence/analytics/productivity/**
+      - scripts/intel-comparison-candidate-contract.test.mjs
+      - scripts/intel-personalisation-productivity-contract.test.mjs
+      - scripts/audit-transform-008b-governed-comparison.mjs
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - scripts/audit-intel-personalisation-productivity.mjs
+      - scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+      - docs/engineering/work-packages/TRANSFORM-008B-governed-comparison-read-model.md
+      - .github/workflows/transform-008b-governed-comparison.yml
+  push:
+    branches:
+      - main
+      - codex/transform-008b-governed-comparison-read-model
+    paths:
+      - supabase/migrations/20260813190000_governed_comparison_candidates.sql
+      - src/data/repositories/comparisonCandidates.ts
+      - src/features/intelligence/analytics/productivity/**
+      - scripts/intel-comparison-candidate-contract.test.mjs
+      - scripts/intel-personalisation-productivity-contract.test.mjs
+      - scripts/audit-transform-008b-governed-comparison.mjs
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - scripts/audit-intel-personalisation-productivity.mjs
+      - scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+      - docs/engineering/work-packages/TRANSFORM-008B-governed-comparison-read-model.md
+      - .github/workflows/transform-008b-governed-comparison.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transform-008b-governed-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governed-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exactly from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit governed comparison authority
+        run: node scripts/audit-transform-008b-governed-comparison.mjs
+
+      - name: Audit Phase 6 completion gate
+        run: node scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Vite production bundle
+        run: npm run build
