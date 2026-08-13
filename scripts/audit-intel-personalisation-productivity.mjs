@@ -1,3 +1,4 @@
+import './audit-transform-008a-analytics-productivity-truth.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -24,13 +25,21 @@ for (const marker of [
   assert.ok(contract.includes(marker), `Phase 6 contract marker missing: ${marker}`);
 }
 
-for (const marker of [
-  'Saved Views', 'Quick Actions', 'Comparison Tray', 'Bounded CSV Export',
-  'Command palette', '⌘/Ctrl K', 'Export current table view', 'Export selected records',
-  'Export current chart dataset', 'spreadsheet formula protection',
-]) {
-  assert.ok(panel.includes(marker), `Phase 6 presentation marker missing: ${marker}`);
+for (const marker of ['Saved Views', 'Quick Actions', 'Command palette', '⌘/Ctrl K']) {
+  assert.ok(panel.includes(marker), `Phase 6 governed presentation marker missing: ${marker}`);
 }
+for (const forbidden of [
+  'Comparison Tray',
+  'Side-by-side governed comparison',
+  'Export current table view',
+  'Export selected records',
+  'Export current chart dataset',
+]) {
+  assert.ok(!panel.includes(forbidden), `TRANSFORM-008A withdrawn presentation returned: ${forbidden}`);
+}
+assert.ok(!/permission\s*:\s*['"]ALLOWED['"]/.test(panel), 'Browser-declared comparison permission returned');
+assert.ok(!/Comparison entity ID|setEntityId\s*\(|createComparisonItem\s*\(|pinComparisonItem\s*\(/.test(panel), 'Browser-declared comparison candidate returned');
+assert.ok(!/buildCsvExport\s*\(|saveCsv\s*\(/.test(panel), 'Client-built current-data export returned');
 
 assert.ok(workspace.includes('<PersonalisationProductivityPanel />'), 'Phase 6 panel is not mounted in Analytics');
 assert.ok(repository.includes(".schema('analytics')"), 'Saved View repository must use analytics RPC schema');
@@ -77,4 +86,4 @@ if (testRun.stdout) process.stdout.write(testRun.stdout);
 if (testRun.stderr) process.stderr.write(testRun.stderr);
 assert.equal(testRun.status, 0, 'Phase 6 productivity contract tests failed');
 
-console.log('INTEL-PER-001 through INTEL-PER-004 personalisation and productivity audit passed.');
+console.log('INTEL-PER production audit passed: Saved Views and Quick Actions remain governed; manual comparison and misleading current-data exports remain withdrawn pending authoritative adapters.');
