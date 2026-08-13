@@ -247,7 +247,7 @@ async function expectWorkspace(page, path, heading) {
     await diagnosePage(page, path);
     throw error;
   }
-  await expect(page.getByText('1 exact records')).toBeVisible();
+  await expect(page.getByText('1 exact records', { exact: true })).toBeVisible();
 }
 
 async function captureListAndDetail(page, workspace, heading, recordLabel, screenshotPrefix) {
