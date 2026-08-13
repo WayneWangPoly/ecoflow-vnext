@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   contract:
@@ -30,6 +31,8 @@ jobs:
     env:
       TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
       UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      UPSTREAM_URL: ${{ github.event.workflow_run.html_url }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout target commit
         uses: actions/checkout@v4
@@ -37,39 +40,54 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
-      - name: Verify database and frontend release alignment
+      - name: Publish authoritative release-sync status
         shell: bash
         run: |
           set -euo pipefail
-          test "$UPSTREAM_CONCLUSION" = 'success' || {
-            echo "Supabase deployment workflow concluded '$UPSTREAM_CONCLUSION'."
-            exit 1
-          }
 
-          read -ra COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$TARGET_SHA")"
-          if [ "${#COMMIT_LINE[@]}" -gt 1 ]; then
-            FIRST_PARENT="${COMMIT_LINE[1]}"
-            FRONTEND_CHANGED="$(git diff --name-only "$FIRST_PARENT" "$TARGET_SHA" | node scripts/release-sync-frontend-paths.mjs)"
+          STATE='failure'
+          DESCRIPTION='Release sync authority did not reach a verified state'
+
+          if [ "$UPSTREAM_CONCLUSION" != 'success' ]; then
+            DESCRIPTION="RELEASE NOT SYNCHRONIZED: Supabase deployment concluded '$UPSTREAM_CONCLUSION'."
           else
-            FRONTEND_CHANGED="$(git ls-tree -r --name-only "$TARGET_SHA" | node scripts/release-sync-frontend-paths.mjs)"
+            read -ra COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$TARGET_SHA")"
+            if [ "${#COMMIT_LINE[@]}" -gt 1 ]; then
+              FIRST_PARENT="${COMMIT_LINE[1]}"
+              FRONTEND_CHANGED="$(git diff --name-only "$FIRST_PARENT" "$TARGET_SHA" | node scripts/release-sync-frontend-paths.mjs)"
+            else
+              FRONTEND_CHANGED="$(git ls-tree -r --name-only "$TARGET_SHA" | node scripts/release-sync-frontend-paths.mjs)"
+            fi
+
+            echo "frontend files changed against first parent: $FRONTEND_CHANGED"
+            if [ "$FRONTEND_CHANGED" = 'no' ]; then
+              STATE='success'
+              DESCRIPTION='No frontend changes against first parent; database deployment completed'
+            else
+              VERCEL_STATE=none
+              for i in $(seq 1 20); do
+                VERCEL_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/status" --jq '[.statuses[] | select(.context == "Vercel")][0].state // "none"' 2>/dev/null || echo api_error)"
+                echo "poll $i: Vercel status = $VERCEL_STATE"
+                case "$VERCEL_STATE" in
+                  success|failure|error) break ;;
+                esac
+                sleep 30
+              done
+
+              if [ "$VERCEL_STATE" = 'success' ]; then
+                STATE='success'
+                DESCRIPTION='Frontend and database deployed from the same commit'
+              else
+                DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' for a frontend-changing commit."
+              fi
+            fi
           fi
 
-          echo "frontend files changed against first parent: $FRONTEND_CHANGED"
-          if [ "$FRONTEND_CHANGED" = 'no' ]; then
-            exit 0
-          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state="$STATE" \
+            -f context='Release sync' \
+            -f description="$DESCRIPTION" \
+            -f target_url="$UPSTREAM_URL"
 
-          VERCEL_STATE=none
-          for i in $(seq 1 20); do
-            VERCEL_STATE="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/status" --jq '[.statuses[] | select(.context == "Vercel")][0].state // "none"' 2>/dev/null || echo api_error)"
-            echo "poll $i: Vercel status = $VERCEL_STATE"
-            case "$VERCEL_STATE" in
-              success|failure|error) break ;;
-            esac
-            sleep 30
-          done
-
-          test "$VERCEL_STATE" = 'success' || {
-            echo "DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' for a frontend-changing commit."
-            exit 1
-          }
+          echo "$DESCRIPTION"
+          test "$STATE" = 'success'
