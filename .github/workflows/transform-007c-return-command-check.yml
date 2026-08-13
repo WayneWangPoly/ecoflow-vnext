@@ -1,0 +1,65 @@
+name: TRANSFORM-007C return command contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/*_transform_007c_return_commands.sql'
+      - 'scripts/transform-007c-return-command-fixture.sql'
+      - 'scripts/transform-007c-return-command-production-acl-fixture.sql'
+      - 'scripts/transform-007c-return-command-contract.sql'
+      - 'scripts/transform-007c-return-command-security-contract.sql'
+      - '.github/workflows/transform-007c-return-command-check.yml'
+  push:
+    branches:
+      - main
+      - 'transform/007c-return-commands'
+    paths:
+      - 'supabase/migrations/*_transform_007c_return_commands.sql'
+      - 'scripts/transform-007c-return-command-fixture.sql'
+      - 'scripts/transform-007c-return-command-production-acl-fixture.sql'
+      - 'scripts/transform-007c-return-command-contract.sql'
+      - 'scripts/transform-007c-return-command-security-contract.sql'
+      - '.github/workflows/transform-007c-return-command-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Load Returns command fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007c-return-command-fixture.sql
+      - name: Mirror deployed legacy Returns ACL baseline
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007c-return-command-production-acl-fixture.sql
+      - name: Apply TRANSFORM-007C migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813060000_transform_007c_return_commands.sql
+      - name: Prove CAS, idempotency, authority and consequences
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007c-return-command-contract.sql
+      - name: Prove browser denial and trusted service authority
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007c-return-command-security-contract.sql
