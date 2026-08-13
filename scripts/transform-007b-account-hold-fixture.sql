@@ -47,12 +47,16 @@ $$;
 
 grant execute on function public.ecoflow_active_app_role() to public, anon, authenticated;
 
-create table public.ordermentum_stores (
-  store_id text primary key,
-  store_name text not null
+-- Production-shaped store authority. Accounts/customer store_id is
+-- ecoflow_store_sites.retailer_id::text; do not create the stale
+-- public.ordermentum_stores relation that masked the production failure.
+create table public.ecoflow_store_sites (
+  retailer_id uuid primary key,
+  store_name text not null,
+  source text not null default 'ordermentum'
 );
 
-grant select on public.ordermentum_stores to authenticated;
+grant select on public.ecoflow_store_sites to authenticated;
 
 create table public.ecoflow_account_release_holds (
   store_id text primary key,
@@ -125,7 +129,7 @@ insert into public.user_profiles (user_id, role) values
   ('55555555-5555-5555-5555-555555555555', 'WAREHOUSE'),
   ('66666666-6666-6666-6666-666666666666', 'DRIVER');
 
-insert into public.ordermentum_stores (store_id, store_name) values
-  ('STORE-1', 'Fixture Store One'),
-  ('STORE-2', 'Fixture Store Two'),
-  ('STORE-3', 'Fixture Store Three');
+insert into public.ecoflow_store_sites (retailer_id, store_name) values
+  ('aaaaaaaa-0000-4000-8000-000000000001', 'Fixture Store One'),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'Fixture Store Two'),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'Fixture Store Three');

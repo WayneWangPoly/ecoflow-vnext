@@ -4,11 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'supabase/migrations/*_transform_007b_store_authority_repair.sql'
       - 'scripts/transform-007b-production-release-verify.sql'
       - '.github/workflows/transform-007b-production-release-verify.yml'
   push:
     branches: [main]
     paths:
+      - 'supabase/migrations/*_transform_007b_store_authority_repair.sql'
       - 'scripts/transform-007b-production-release-verify.sql'
       - '.github/workflows/transform-007b-production-release-verify.yml'
   workflow_dispatch:
@@ -39,6 +41,11 @@ jobs:
           grep -Fq "ecoflow_read_operational_records_v1" "$script"
           grep -Fq "ecoflow_set_account_release_hold_v1" "$script"
           grep -Fq "ecoflow_read_account_hold_state_v1" "$script"
+          grep -Fq "public.ecoflow_store_sites" "$script"
+          if grep -Fq "public.ordermentum_stores" "$script"; then
+            echo 'Production verifier retained stale public.ordermentum_stores.'
+            exit 1
+          fi
           grep -Fq "ACCOUNTS_WORKSPACE_NOT_AUTHORISED" "$script"
           grep -Fq "SOURCE_OWNED_AUTHENTICATED_DML=DENIED" "$script"
           grep -Fq "ROLLBACK_PROOF=PASS" "$script"
@@ -86,16 +93,25 @@ jobs:
           url="postgresql://postgres.${SUPABASE_PROJECT_REF}:${encoded}@${SUPABASE_POOLER_HOST}:5432/postgres"
           echo "::add-mask::$url"
           echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
-      - name: Require deployed Accounts timeout repair
+      - name: Wait for deployed 007B repairs
         shell: bash
         run: |
           set -euo pipefail
-          applied="$(psql "$SUPABASE_DB_URL" -XqAt -v ON_ERROR_STOP=1 \
-            -c "select count(*) from supabase_migrations.schema_migrations where version::text='20260813010000'")"
-          test "$applied" = '1' || {
-            echo 'TRANSFORM-007B Accounts read repair is not recorded in production migration history.'
-            exit 1
-          }
+          for attempt in $(seq 1 15); do
+            applied="$(psql "$SUPABASE_DB_URL" -XqAt -v ON_ERROR_STOP=1 -c "
+              select count(*)
+              from supabase_migrations.schema_migrations
+              where version::text in ('20260813010000','20260813020000')
+            ")"
+            if [[ "$applied" == '2' ]]; then
+              echo 'Required 007B read-timeout and store-authority repairs are deployed.'
+              exit 0
+            fi
+            echo "Production migration history not ready yet (attempt $attempt/15)."
+            sleep 20
+          done
+          echo 'Required 007B store-authority repair did not reach production within the release-verification window.'
+          exit 1
       - name: Execute rollback-only authenticated production smoke
         id: smoke
         shell: bash
