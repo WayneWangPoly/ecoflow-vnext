@@ -17,6 +17,7 @@ import {
   type OperationalRecordsWorkspace,
 } from '@/data/repositories/operationalRecords';
 import { AccountHoldCommandPanel } from './AccountHoldCommandPanel';
+import { ReturnCommandPanel } from './ReturnCommandPanel';
 import './operationalRecordsWorkspace.css';
 
 const PAGE_SIZES = [10,20,25,50,100] as const;
@@ -276,7 +277,7 @@ function RecordDetail({
   return <aside className="operational-record-drawer" aria-label={`${WORKSPACE_COPY[workspace].title} record detail`}>
     <header><div><span className="section-eyebrow">AUTHORITATIVE DETAIL</span><h2>{text(summary?.store_name) || text(summary?.product_name) || text(summary?.return_code) || recordId}</h2><small>{recordId}</small></div><button type="button" onClick={()=>navigate(`${basePath(workspace)}${location.search}`)}>Close</button></header>
     {workspace==='accounts' ? <AccountHoldCommandPanel storeId={recordId} role={profile.app_role} onAuthorityChanged={refreshAfterCommand}/> : null}
-    {workspace==='returns' ? <div className="operational-record-command-gate">Commands remain withheld until the 007C CAS gate passes.</div> : null}
+    {workspace==='returns' ? <ReturnCommandPanel returnId={recordId} role={profile.app_role} onAuthorityChanged={refreshAfterCommand}/> : null}
     {workspace==='accounts' && summary ? <div className="operational-record-authority"><span>Release authority</span><strong>{display(summary.release_authority)}</strong></div> : null}
     {workspace==='returns' && summary ? <div className="operational-record-authority"><span>Inventory consequence</span><strong>{display(summary.inventory_consequence_status)}</strong></div> : null}
     <nav className="operational-record-detail-tabs" aria-label="Record detail sections">{tabs.map((tab)=><button key={tab.label} type="button" className={tab.label===active.label?'active':''} onClick={()=>setActiveTab(tab.label)}>{tab.label}</button>)}</nav>
@@ -338,7 +339,7 @@ export function OperationalRecordsWorkspace({
   const releaseNotice=workspace==='accounts'
     ? '007B Accounts hold/release uses server-owned revision, idempotency and audit authority. The UI waits for server acknowledgement and authoritative readback.'
     : workspace==='returns'
-      ? '007A Returns remains deliberately read-only. Return disposition commands stay unavailable until the separate 007C gate passes.'
+      ? '007C Returns disposition/close uses server-owned revision, idempotency, inventory consequence and audit authority. The UI waits for server acknowledgement and authoritative readback.'
       : undefined;
   return <NativeWorkspaceFrame
     eyebrow={copy.eyebrow}
