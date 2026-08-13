@@ -2,7 +2,9 @@
 
 -- This fixture is loaded after the ordinary TRANSFORM-007 operational fixture
 -- and 007A migration. Replace only the Accounts KPI source with a deliberately
--- slow live aggregate while keeping the Accounts row path cheap.
+-- slow live aggregate while keeping the Accounts row path cheap. Keep the KPI
+-- row shape aligned with production so later customer-snapshot regressions can
+-- also prove KPI refresh correctness.
 
 drop table public.v_ecoflow_accounts_live_ar_kpis;
 
@@ -25,6 +27,9 @@ select
   2::numeric as overdue_customers,
   5::numeric as open_invoices,
   2::numeric as overdue_invoices,
+  1800.75::numeric as statement_value_30d,
+  18::numeric as worst_overdue_days,
+  0::numeric as urgent_customers,
   1::numeric as held_customers,
   now()-interval '5 minutes' as latest_invoice_at;
 

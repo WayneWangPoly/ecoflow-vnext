@@ -6,6 +6,7 @@ on:
     paths:
       - 'supabase/migrations/*_transform_007b_store_authority_repair.sql'
       - 'supabase/migrations/*_transform_007b_accounts_summary_timeout_repair.sql'
+      - 'supabase/migrations/*_transform_007b_accounts_customer_timeout_repair.sql'
       - 'scripts/transform-007b-production-release-verify.sql'
       - '.github/workflows/transform-007b-production-release-verify.yml'
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'supabase/migrations/*_transform_007b_store_authority_repair.sql'
       - 'supabase/migrations/*_transform_007b_accounts_summary_timeout_repair.sql'
+      - 'supabase/migrations/*_transform_007b_accounts_customer_timeout_repair.sql'
       - 'scripts/transform-007b-production-release-verify.sql'
       - '.github/workflows/transform-007b-production-release-verify.yml'
   workflow_dispatch:
@@ -103,16 +105,16 @@ jobs:
             applied="$(psql "$SUPABASE_DB_URL" -XqAt -v ON_ERROR_STOP=1 -c "
               select count(*)
               from supabase_migrations.schema_migrations
-              where version::text in ('20260813010000','20260813020000','20260813030000')
+              where version::text in ('20260813010000','20260813020000','20260813030000','20260813040000')
             ")"
-            if [[ "$applied" == '3' ]]; then
-              echo 'Required 007B row, store-authority and summary-snapshot repairs are deployed.'
+            if [[ "$applied" == '4' ]]; then
+              echo 'Required 007B row, store-authority, summary and customer-snapshot repairs are deployed.'
               exit 0
             fi
             echo "Production migration history not ready yet (attempt $attempt/15)."
             sleep 20
           done
-          echo 'Required 007B Accounts summary repair did not reach production within the release-verification window.'
+          echo 'Required 007B Accounts customer repair did not reach production within the release-verification window.'
           exit 1
       - name: Execute rollback-only authenticated production smoke
         id: smoke
