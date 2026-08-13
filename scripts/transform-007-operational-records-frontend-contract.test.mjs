@@ -96,5 +96,7 @@ test('native surfaces expose the blueprint views and consequence evidence', () =
 
   assert.match(workspace, /Inventory consequence/);
   assert.match(workspace, /Release authority/);
-  assert.match(workspace, /Commands remain withheld until the (?:007C )?CAS gate passes/);
+  assert.match(workspace, /ReturnCommandPanel/);
+  assert.match(workspace, /007C Returns disposition\/close uses server-owned revision, idempotency, inventory consequence and audit authority/);
+  assert.doesNotMatch(workspace, /Commands remain withheld until the (?:007C )?CAS gate passes/);
 });
