@@ -13,6 +13,30 @@ create temp table transform_007c_release_actors(
   user_id uuid not null
 ) on commit drop;
 
+create temp table transform_007c_smoke_results(
+  disp_accepted boolean not null,
+  disp_replayed boolean not null,
+  disp_status text not null,
+  disp_revision bigint not null,
+  disp_inspection_line_id uuid not null,
+  disp_inventory_movement_id uuid not null,
+  disp_inventory_consequence_status text not null,
+  replay_accepted boolean not null,
+  replay_replayed boolean not null,
+  replay_status text not null,
+  replay_revision bigint not null,
+  stale_accepted boolean not null,
+  stale_status text not null,
+  stale_revision bigint not null,
+  close_accepted boolean not null,
+  close_replayed boolean not null,
+  close_status text not null,
+  close_revision bigint not null,
+  close_return_status text not null,
+  close_lifecycle_stage text not null,
+  close_inventory_consequence_status text not null
+) on commit drop;
+
 do $$
 declare
   v_user_id uuid;
@@ -147,11 +171,7 @@ set local role authenticated;
 do $$
 declare
   v_denied boolean:=false;
-  v_return_code text:=current_setting('ecoflow.007c.verify_return_code',true);
 begin
-  -- v_return_code is set immediately below after RESET ROLE; this branch is not
-  -- used. Keep the explicit guard here only to prevent accidental unauthorised
-  -- reads if the setup order changes.
   begin
     perform * from public.ecoflow_read_return_state_v1('TRANSFORM-007C-NO-SUCH-RETURN');
   exception when sqlstate '42501' then
@@ -162,10 +182,6 @@ end
 $$;
 reset role;
 
-select set_config('ecoflow.007c.verify_exception_id',:'verify_exception_id',false) as exception_context \gset
-select set_config('ecoflow.007c.verify_return_code',:'verify_return_code',false) as return_context \gset
-select set_config('ecoflow.007c.verify_barcode',:'verify_barcode',false) as barcode_context \gset
-select set_config('ecoflow.007c.verify_location',:'verify_location',false) as location_context \gset
 select set_config('request.jwt.claim.sub',:'authorised_id',false) as authorised_sub_context \gset
 set local role authenticated;
 
@@ -191,11 +207,6 @@ from public.ecoflow_record_return_disposition_v1(
   jsonb_build_object('releaseVerify',true,'evidence','synthetic-rollback')
 )
 \gset disp_
-
-\if :disp_accepted
-\else
-  \quit 1
-\endif
 
 -- Exact retry must replay and must not create another line or movement.
 select *
@@ -234,11 +245,24 @@ from public.ecoflow_close_return_v1(
 
 reset role;
 
+insert into transform_007c_smoke_results values(
+  :'disp_accepted'::boolean,:'disp_replayed'::boolean,:'disp_status',
+  :'disp_revision'::bigint,:'disp_inspection_line_id'::uuid,
+  :'disp_inventory_movement_id'::uuid,:'disp_inventory_consequence_status',
+  :'replay_accepted'::boolean,:'replay_replayed'::boolean,:'replay_status',
+  :'replay_revision'::bigint,
+  :'stale_accepted'::boolean,:'stale_status',:'stale_revision'::bigint,
+  :'close_accepted'::boolean,:'close_replayed'::boolean,:'close_status',
+  :'close_revision'::bigint,:'close_return_status',:'close_lifecycle_stage',
+  :'close_inventory_consequence_status'
+);
+
 -- Validate all durable effects before rollback while still using the privileged
 -- release-verification connection for catalog/ledger evidence.
 do $$
 declare
-  v_exception uuid:=current_setting('ecoflow.007c.verify_exception_id')::uuid;
+  v_exception uuid:=:'verify_exception_id'::uuid;
+  r transform_007c_smoke_results%rowtype;
   v_line_count bigint;
   v_move_count bigint;
   v_command_count bigint;
@@ -246,35 +270,37 @@ declare
   v_movement public.ecoflow_inventory_movements%rowtype;
   v_line public.ecoflow_delivery_return_inspection_lines%rowtype;
 begin
-  if :'disp_accepted'::boolean is not true
-     or :'disp_replayed'::boolean is not false
-     or :'disp_status'<>'APPLIED'
-     or :'disp_revision'::bigint<>:'initial_revision'::bigint+1
-     or nullif(:'disp_inventory_movement_id','') is null
-     or :'disp_inventory_consequence_status'<>'EXPLICIT' then
+  select * into r from transform_007c_smoke_results limit 1;
+
+  if r.disp_accepted is not true
+     or r.disp_replayed is not false
+     or r.disp_status<>'APPLIED'
+     or r.disp_revision<>:'initial_revision'::bigint+1
+     or r.disp_inventory_movement_id is null
+     or r.disp_inventory_consequence_status<>'EXPLICIT' then
     raise exception '007C_RELEASE_VERIFY_DISPOSITION_RESULT_INVALID';
   end if;
 
-  if :'replay_accepted'::boolean is not true
-     or :'replay_replayed'::boolean is not true
-     or :'replay_status'<>'REPLAYED'
-     or :'replay_revision'::bigint<>:'disp_revision'::bigint then
+  if r.replay_accepted is not true
+     or r.replay_replayed is not true
+     or r.replay_status<>'REPLAYED'
+     or r.replay_revision<>r.disp_revision then
     raise exception '007C_RELEASE_VERIFY_REPLAY_INVALID';
   end if;
 
-  if :'stale_accepted'::boolean is not false
-     or :'stale_status'<>'CONFLICT'
-     or :'stale_revision'::bigint<>:'disp_revision'::bigint then
+  if r.stale_accepted is not false
+     or r.stale_status<>'CONFLICT'
+     or r.stale_revision<>r.disp_revision then
     raise exception '007C_RELEASE_VERIFY_STALE_CONFLICT_INVALID';
   end if;
 
-  if :'close_accepted'::boolean is not true
-     or :'close_replayed'::boolean is not false
-     or :'close_status'<>'APPLIED'
-     or :'close_revision'::bigint<>:'disp_revision'::bigint+1
-     or :'close_return_status'<>'RESTOCKED'
-     or :'close_lifecycle_stage'<>'CLOSED'
-     or :'close_inventory_consequence_status'<>'EXPLICIT' then
+  if r.close_accepted is not true
+     or r.close_replayed is not false
+     or r.close_status<>'APPLIED'
+     or r.close_revision<>r.disp_revision+1
+     or r.close_return_status<>'RESTOCKED'
+     or r.close_lifecycle_stage<>'CLOSED'
+     or r.close_inventory_consequence_status<>'EXPLICIT' then
     raise exception '007C_RELEASE_VERIFY_CLOSE_RESULT_INVALID';
   end if;
 
@@ -295,15 +321,15 @@ begin
   end if;
 
   select * into v_movement from public.ecoflow_inventory_movements m
-  where m.id=:'disp_inventory_movement_id'::uuid;
+  where m.id=r.disp_inventory_movement_id;
   select * into v_line from public.ecoflow_delivery_return_inspection_lines l
-  where l.id=:'disp_inspection_line_id'::uuid;
+  where l.id=r.disp_inspection_line_id;
 
   if v_movement.id is null
      or v_movement.movement_type<>'RETURN_IN'
      or v_movement.reference_type<>'DELIVERY_RETURN'
      or v_movement.reference_id<>v_exception::text
-     or v_movement.to_location<>current_setting('ecoflow.007c.verify_location')
+     or v_movement.to_location<>:'verify_location'
      or v_line.movement_id<>v_movement.id
      or v_line.resolution<>'RESTOCK'
      or v_line.units_processed<>v_movement.quantity then
@@ -315,9 +341,13 @@ $$;
 rollback;
 
 -- Nothing synthetic may survive the release smoke.
-select count(*)::bigint as rollback_rows
-from public.ecoflow_delivery_exceptions
-where id=:'verify_exception_id'::uuid
+select (
+  (select count(*) from public.ecoflow_delivery_exceptions e where e.id=:'verify_exception_id'::uuid)
+  +(select count(*) from public.ecoflow_delivery_return_inspection_lines l where l.exception_id=:'verify_exception_id'::uuid)
+  +(select count(*) from public.ecoflow_inventory_movements m where m.reference_type='DELIVERY_RETURN' and m.reference_id=:'verify_exception_id')
+  +(select count(*) from public.ecoflow_return_commands c where c.exception_id=:'verify_exception_id'::uuid)
+  +(select count(*) from public.ecoflow_delivery_return_scans s where s.exception_id=:'verify_exception_id'::uuid)
+)::bigint as rollback_rows
 \gset
 
 \if :rollback_rows
