@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       target_sha:
-        description: 'Optional deployed main SHA to verify; defaults to current main.'
+        description: 'Optional main SHA to verify; defaults to current main.'
         required: false
         type: string
 
@@ -29,20 +29,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deployed-browser-evidence:
+  production-build-browser-evidence:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       EVIDENCE_DIR: artifacts/transform-007-phase5-ui
+      APP_DIR: app-under-test
     steps:
-      - name: Checkout evidence code
+      - name: Checkout evidence harness
         uses: actions/checkout@v4
 
       - name: Prove evidence workflow is credential-free and mutation-free
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -R --line-number -E 'SUPABASE_SERVICE_ROLE_KEY|TRANSFORM_007_SHADOW_READ_DB_URL|secrets\.' \
+          ! grep -R --line-number -E 'SUPABASE_SERVICE_ROLE_KEY|TRANSFORM_007_SHADOW_READ_DB_URL|VERCEL_AUTOMATION_BYPASS_SECRET|secrets\.' \
             .github/workflows/transform-007-phase5-ui-evidence.yml \
             tests/transform-007-phase5-ui-evidence.spec.mjs
           grep -F "context.route('**/auth/v1/**'" tests/transform-007-phase5-ui-evidence.spec.mjs
@@ -53,7 +54,7 @@ jobs:
           grep -F 'ecoflow_close_return_v1' tests/transform-007-phase5-ui-evidence.spec.mjs
           grep -F 'ecoflow_set_account_release_hold_v1' tests/transform-007-phase5-ui-evidence.spec.mjs
 
-      - name: Resolve exact deployed main SHA
+      - name: Resolve exact main SHA
         id: target
         shell: bash
         env:
@@ -76,9 +77,9 @@ jobs:
           fi
           [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
-          echo "Verifying deployed main SHA: $target_sha"
+          echo "Verifying exact main SHA: $target_sha"
 
-      - name: Resolve successful Vercel Production deployment
+      - name: Prove exact main has successful Vercel Production deployment
         id: deployment
         shell: bash
         env:
@@ -86,8 +87,8 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
           set -euo pipefail
-          target_url=''
           deployment_id=''
+          deployment_url=''
           for attempt in $(seq 1 20); do
             deployments="$(curl -fsSL \
               -H "Authorization: Bearer $GH_TOKEN" \
@@ -99,20 +100,36 @@ jobs:
                 -H "Authorization: Bearer $GH_TOKEN" \
                 -H 'Accept: application/vnd.github+json' \
                 "https://api.github.com/repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=30")"
-              target_url="$(jq -r '[.[] | select(.state == "success")][0].environment_url // empty' <<<"$statuses")"
-              if [[ "$target_url" == https://*.vercel.app ]]; then
-                break
-              fi
+              deployment_url="$(jq -r '[.[] | select(.state == "success")][0].environment_url // empty' <<<"$statuses")"
+              if [[ -n "$deployment_url" ]]; then break; fi
             fi
             sleep 6
           done
-          if [[ -z "$target_url" ]]; then
+          if [[ -z "$deployment_url" ]]; then
             echo "No successful Vercel Production deployment found for ${TARGET_SHA}." >&2
             exit 1
           fi
           echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
-          echo "target_url=$target_url" >> "$GITHUB_OUTPUT"
-          echo "Production deployment: $target_url"
+          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo "Vercel Production deployment is successful for exact main SHA."
+          echo "Browser automation does not use this URL because Vercel Deployment Protection redirects unauthenticated CI to vercel.com/login."
+
+      - name: Checkout exact main source under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.target_sha }}
+          path: app-under-test
+          persist-credentials: false
+
+      - name: Verify exact source checkout
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git -C "$APP_DIR" rev-parse HEAD)"
+          test "$actual" = "$TARGET_SHA"
+          echo "EXACT_MAIN_SOURCE_SHA=$actual"
 
       - name: Use Node 22
         uses: actions/setup-node@v4
@@ -120,18 +137,49 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install repository dependencies
+      - name: Install evidence harness dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Install pinned Playwright test runner without changing lockfiles
         run: npm install --no-save --package-lock=false --no-audit --no-fund @playwright/test@1.55.0
 
+      - name: Install exact main application dependencies
+        working-directory: app-under-test
+        run: npm ci --no-audit --no-fund
+
+      - name: Build exact main in production mode
+        working-directory: app-under-test
+        env:
+          VITE_SUPABASE_URL: https://kauqwlzuyxcudoyognwf.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhbm9uIiwicm9sZSI6ImFub24iLCJpc3MiOiJwaGFzZTUtdWktZXZpZGVuY2UifQ.synthetic-signature
+        run: npm run build
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run deployed authenticated route matrix and screenshot evidence
+      - name: Start exact-main production preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          (
+            cd "$APP_DIR"
+            npm run preview -- --host 127.0.0.1 --port 4173 > "../$EVIDENCE_DIR/preview.log" 2>&1
+          ) &
+          echo $! > "$EVIDENCE_DIR/preview.pid"
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then
+              echo 'Exact-main production preview is ready.'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$EVIDENCE_DIR/preview.log" >&2 || true
+          exit 1
+
+      - name: Run authenticated route matrix and screenshot evidence
         env:
-          TARGET_URL: ${{ steps.deployment.outputs.target_url }}
+          TARGET_URL: http://127.0.0.1:4173
         run: npx playwright test tests/transform-007-phase5-ui-evidence.spec.mjs --workers=1 --reporter=line
 
       - name: Verify required screenshot set
@@ -155,14 +203,18 @@ jobs:
         shell: bash
         env:
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
-          TARGET_URL: ${{ steps.deployment.outputs.target_url }}
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          DEPLOYMENT_URL: ${{ steps.deployment.outputs.deployment_url }}
         run: |
           cat > "$EVIDENCE_DIR/manifest.txt" <<EOF
           TRANSFORM_007_PHASE5_UI_EVIDENCE=PASS
-          DEPLOYED_SHA=$TARGET_SHA
-          DEPLOYMENT_ID=$DEPLOYMENT_ID
-          DEPLOYMENT_URL=$TARGET_URL
+          EXACT_MAIN_SOURCE_SHA=$TARGET_SHA
+          PRODUCTION_BUILD=PASS
+          VERCEL_PRODUCTION_DEPLOYMENT=SUCCESS
+          VERCEL_DEPLOYMENT_ID=$DEPLOYMENT_ID
+          VERCEL_DEPLOYMENT_URL=$DEPLOYMENT_URL
+          VERCEL_COMMIT_URL_BROWSER_AUTOMATION=BLOCKED_BY_DEPLOYMENT_PROTECTION
+          BROWSER_TARGET=EXACT_MAIN_PRODUCTION_BUILD_LOCAL_PREVIEW
           ROUTE_MATRIX=OWNER_ACCOUNT_VIEWER_PASS
           OWNER_FOUR_DOMAIN_LIST_DETAIL=PASS
           DENIED_ROLE_SCREENSHOT=PASS
