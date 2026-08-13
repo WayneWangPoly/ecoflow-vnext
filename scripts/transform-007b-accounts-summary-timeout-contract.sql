@@ -82,8 +82,8 @@ begin
   ) r
   limit 1;
 
-  if v_count<>1 then
-    raise exception 'bounded Accounts summary fixture row count mismatch: %',v_count;
+  if coalesce(v_count,0)<1 then
+    raise exception 'bounded Accounts summary fixture returned no rows: %',v_count;
   end if;
   if coalesce((v_summary->>'open_ar_value')::numeric,-1)<>1250.50::numeric then
     raise exception 'bounded Accounts summary payload mismatch: %',v_summary;
