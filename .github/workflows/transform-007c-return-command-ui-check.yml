@@ -1,0 +1,46 @@
+name: TRANSFORM-007C return command UI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/data/repositories/returnCommandAuthority.ts'
+      - 'src/features/operationalRecords/**'
+      - 'scripts/transform-007c-return-command-frontend-contract.test.mjs'
+      - 'scripts/transform-007-operational-records-frontend-contract.test.mjs'
+      - '.github/workflows/transform-007c-return-command-ui-check.yml'
+  push:
+    branches:
+      - 'transform/007c-return-command-ui'
+    paths:
+      - 'src/data/repositories/returnCommandAuthority.ts'
+      - 'src/features/operationalRecords/**'
+      - 'scripts/transform-007c-return-command-frontend-contract.test.mjs'
+      - 'scripts/transform-007-operational-records-frontend-contract.test.mjs'
+      - '.github/workflows/transform-007c-return-command-ui-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  application-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prove Returns command frontend contract
+        run: node --experimental-strip-types --test scripts/transform-007c-return-command-frontend-contract.test.mjs
+      - name: Existing operational-record frontend contract
+        run: node --experimental-strip-types --test scripts/transform-007-operational-records-frontend-contract.test.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build

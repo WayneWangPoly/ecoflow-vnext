@@ -54,8 +54,10 @@ test('device context stays stable even when localStorage is unavailable', () => 
   assert.match(device, /memoryDeviceId = freshDeviceId\(\)/);
 });
 
-test('007B is bounded to Accounts and does not open Returns', () => {
+test('007B remains bounded to Accounts after independent 007C release', () => {
   assert.match(workspace, /workspace==='accounts' \? <AccountHoldCommandPanel/);
-  assert.match(workspace, /Commands remain withheld until the 007C CAS gate passes/);
-  assert.doesNotMatch(workspace, /Return.*CommandPanel/);
+  assert.match(workspace, /workspace==='returns' \? <ReturnCommandPanel/);
+  assert.doesNotMatch(workspace, /workspace==='returns' \? <AccountHoldCommandPanel/);
+  assert.doesNotMatch(repository, /ecoflow_(?:read|recover|record|close)_return/);
+  assert.doesNotMatch(panel, /ReturnCommandPanel/);
 });
