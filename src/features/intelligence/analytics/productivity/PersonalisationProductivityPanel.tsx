@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { savedViewRepository, type SavedViewRepository } from '@/data/repositories/savedViewRepository';
+import {
+  comparisonCandidateKinds,
+  comparisonCandidateRepository,
+  type ComparisonCandidate,
+  type ComparisonCandidateKind,
+  type ComparisonCandidateRepository,
+} from '@/data/repositories/comparisonCandidates';
 import { parseWorkspaceQuery } from '@/features/intelligence/navigation/queryState';
 import {
+  comparisonKindLimits,
+  createComparisonItem,
+  pinComparisonItem,
   quickActionDefinitions,
+  removeComparisonItem,
+  type ComparisonTray,
   type DesktopRole,
   type SavedViewCommand,
   type SavedViewRecord,
@@ -10,7 +22,10 @@ import {
 } from './productivityContract';
 import './personalisationProductivityWorkspace.css';
 
-export type PersonalisationProductivityPanelProps = { repository?: SavedViewRepository };
+export type PersonalisationProductivityPanelProps = {
+  repository?: SavedViewRepository;
+  comparisonRepository?: ComparisonCandidateRepository;
+};
 
 function captureState(): SavedViewState {
   const query = parseWorkspaceQuery(globalThis.location?.search ?? '');
@@ -28,7 +43,17 @@ function scopeLabel(view: SavedViewRecord): string {
   return view.scope === 'PRIVATE' ? 'Private' : `${view.roleScope ?? 'Unknown'} default`;
 }
 
-export function PersonalisationProductivityPanel({ repository = savedViewRepository }: PersonalisationProductivityPanelProps) {
+function kindLabel(kind: ComparisonCandidateKind): string {
+  if (kind === 'COMMERCIAL_SKU') return 'Commercial SKU';
+  if (kind === 'PHYSICAL_SKU') return 'Physical SKU';
+  if (kind === 'DELIVERY_RUN') return 'Delivery run';
+  return 'Customer';
+}
+
+export function PersonalisationProductivityPanel({
+  repository = savedViewRepository,
+  comparisonRepository = comparisonCandidateRepository,
+}: PersonalisationProductivityPanelProps) {
   const [views, setViews] = useState<readonly SavedViewRecord[]>([]);
   const [readState, setReadState] = useState('loading');
   const [message, setMessage] = useState('');
@@ -40,6 +65,13 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteIndex, setPaletteIndex] = useState(0);
+
+  const [comparisonKind, setComparisonKind] = useState<ComparisonCandidateKind>('CUSTOMER');
+  const [comparisonQuery, setComparisonQuery] = useState('');
+  const [comparisonCandidates, setComparisonCandidates] = useState<readonly ComparisonCandidate[]>([]);
+  const [comparisonState, setComparisonState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+  const [comparisonMessage, setComparisonMessage] = useState('');
+  const [comparisonTray, setComparisonTray] = useState<ComparisonTray>({ items: [], maximum: 8 });
 
   useEffect(() => {
     let active = true;
@@ -60,6 +92,27 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
     });
     return () => { active = false; };
   }, [repository, reload]);
+
+  useEffect(() => {
+    let active = true;
+    const timer = globalThis.setTimeout(() => {
+      setComparisonState('loading');
+      setComparisonMessage('');
+      void comparisonRepository.readCandidates({ kind: comparisonKind, query: comparisonQuery, limit: 20 })
+        .then((candidates) => {
+          if (!active) return;
+          setComparisonCandidates(candidates);
+          setComparisonState(candidates.length ? 'ready' : 'empty');
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          setComparisonCandidates([]);
+          setComparisonState('error');
+          setComparisonMessage(error instanceof Error ? error.message : 'Comparison candidates unavailable.');
+        });
+    }, 180);
+    return () => { active = false; globalThis.clearTimeout(timer); };
+  }, [comparisonKind, comparisonQuery, comparisonRepository]);
 
   useEffect(() => {
     function shortcut(event: globalThis.KeyboardEvent) {
@@ -83,38 +136,32 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
   async function command(action: SavedViewCommand) {
     if (busy) return;
     setBusy(true);
-    const result = await repository.applyCommand({
-      action,
-      savedViewId: selectedId,
-      workspace: 'analytics',
-      name: name.trim() || null,
-      state: captureState(),
-      roleScope,
-    });
+    const result = await repository.applyCommand({ action, savedViewId: selectedId, workspace: 'analytics', name: name.trim() || null, state: captureState(), roleScope });
     setBusy(false);
-    if (!result.ok) {
-      setMessage(`${result.error.code}: ${result.error.message}`);
-      return;
-    }
+    if (!result.ok) { setMessage(`${result.error.code}: ${result.error.message}`); return; }
     setMessage(`${action} applied`);
     setName('');
     setReload((version) => version + 1);
   }
 
+  function addComparisonCandidate(candidate: ComparisonCandidate) {
+    const item = createComparisonItem(candidate);
+    if (!item) { setComparisonMessage('Candidate authority was rejected.'); return; }
+    const result = pinComparisonItem(comparisonTray, item);
+    if (result.issue) { setComparisonMessage(result.issue); return; }
+    setComparisonTray(result.tray);
+    setComparisonMessage('');
+  }
+
   function paletteKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setPaletteIndex((index) => Math.min(index + 1, Math.max(paletteActions.length - 1, 0)));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setPaletteIndex((index) => Math.max(index - 1, 0));
-    }
+    if (event.key === 'ArrowDown') { event.preventDefault(); setPaletteIndex((index) => Math.min(index + 1, Math.max(paletteActions.length - 1, 0))); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setPaletteIndex((index) => Math.max(index - 1, 0)); }
   }
 
   return (
     <section className="ef-productivity" aria-labelledby="ef-productivity-title">
       <header className="ef-productivity__header">
-        <div><span>PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Saved Views and navigation shortcuts use governed application paths.</p></div>
+        <div><span>PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Saved Views, governed comparisons and navigation shortcuts use server-authoritative paths.</p></div>
         <button type="button" onClick={() => setPaletteOpen(true)}>Command palette <kbd>⌘/Ctrl K</kbd></button>
       </header>
 
@@ -135,6 +182,26 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
         <article className="ef-productivity__panel">
           <header><span>INTEL-PER-002</span><h3>Quick Actions</h3></header>
           <div className="ef-productivity__quick-list">{quickActionDefinitions.map((action) => <a key={action.key} href={action.path}><span>{action.label}</span><kbd>{action.shortcut}</kbd></a>)}</div>
+        </article>
+
+        <article className="ef-productivity__panel ef-productivity__panel--wide">
+          <header><span>INTEL-PER-003</span><h3>Comparison Tray</h3></header>
+          <div className="ef-productivity__controls ef-productivity__controls--comparison">
+            <select aria-label="Comparison entity kind" value={comparisonKind} onChange={(event) => setComparisonKind(event.target.value as ComparisonCandidateKind)}>
+              {comparisonCandidateKinds.map((kind) => <option key={kind} value={kind}>{kindLabel(kind)} · max {comparisonKindLimits[kind]}</option>)}
+            </select>
+            <input aria-label="Search governed comparison candidates" value={comparisonQuery} onChange={(event) => setComparisonQuery(event.target.value)} maxLength={120} placeholder="Search candidates" />
+          </div>
+          <div className="ef-productivity__comparison-status"><strong>{comparisonTray.items.length} selected</strong><span>{kindLabel(comparisonKind)} authority · {comparisonState}</span></div>
+          <div className="ef-productivity__comparison-table">
+            <table><caption>Server-authorised candidates</caption><thead><tr><th>Candidate</th><th>Type</th><th>Action</th></tr></thead><tbody>
+              {comparisonCandidates.map((candidate) => <tr key={`${candidate.kind}:${candidate.entityId}`}><td>{candidate.label}</td><td>{kindLabel(candidate.kind)}</td><td><button type="button" disabled={comparisonTray.items.some((item) => item.key === `${candidate.kind}:${candidate.entityId}`)} onClick={() => addComparisonCandidate(candidate)}>Add</button></td></tr>)}
+              {comparisonState === 'loading' ? <tr><td colSpan={3}>Loading candidates…</td></tr> : null}
+              {comparisonState === 'empty' ? <tr><td colSpan={3}>No governed candidates.</td></tr> : null}
+            </tbody></table>
+          </div>
+          {comparisonTray.items.length ? <div className="ef-productivity__comparison-table"><table><caption>Selected comparison entities</caption><thead><tr><th>Entity</th><th>Type</th><th>Action</th></tr></thead><tbody>{comparisonTray.items.map((item) => <tr key={item.key}><td>{item.label}</td><td>{kindLabel(item.kind)}</td><td><button type="button" onClick={() => setComparisonTray((tray) => removeComparisonItem(tray, item.key))}>Remove</button></td></tr>)}</tbody></table></div> : null}
+          {comparisonMessage ? <p className="ef-productivity__message" role="status">{comparisonMessage}</p> : null}
         </article>
       </div>
 
