@@ -1,0 +1,159 @@
+name: TRANSFORM-007C production release verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/*_transform_007c_return_commands.sql'
+      - 'scripts/transform-007c-production-release-verify.sql'
+      - '.github/workflows/transform-007c-production-release-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/*_transform_007c_return_commands.sql'
+      - 'scripts/transform-007c-production-release-verify.sql'
+      - '.github/workflows/transform-007c-production-release-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    name: Rollback-only 007C verifier contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove verifier is bounded, synthetic and rollback-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          script='scripts/transform-007c-production-release-verify.sql'
+          test -f "$script"
+          if grep -Eiq '^[[:space:]]*commit[[:space:]]*;' "$script"; then
+            echo '007C production verifier must never COMMIT synthetic return state.'
+            exit 1
+          fi
+          grep -Eiq '^[[:space:]]*rollback[[:space:]]*;' "$script"
+          grep -Fq "set local statement_timeout='8000ms'" "$script"
+          grep -Fq 'TRANSFORM-007C synthetic rollback case' "$script"
+          grep -Fq 'ecoflow_read_return_state_v1' "$script"
+          grep -Fq 'ecoflow_record_return_disposition_v1' "$script"
+          grep -Fq 'ecoflow_close_return_v1' "$script"
+          grep -Fq "'RETURN_IN'" "$script"
+          grep -Fq "'DELIVERY_RETURN'" "$script"
+          grep -Fq 'RETURN_COMMAND_ROLE_FORBIDDEN' "$script"
+          grep -Fq 'RETURN_BROWSER_BYPASS=DENIED' "$script"
+          grep -Fq 'SYNTHETIC_RETURN_ROLLBACK=PASS' "$script"
+
+  production-verify:
+    name: Production rollback smoke
+    needs: static-contract
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+      SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+      STATUS_CONTEXT: TRANSFORM-007C production release verification
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Publish pending release verification
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context="$STATUS_CONTEXT" \
+            -f description='Rollback-only Returns command verification is running' \
+            -f target_url="$RUN_URL"
+      - uses: actions/checkout@v4
+      - name: Require production database credential
+        shell: bash
+        run: |
+          test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$SUPABASE_PROJECT_REF"
+          test -n "$SUPABASE_POOLER_HOST"
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Construct masked production DB URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded="$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"],safe=""))')"
+          url="postgresql://postgres.${SUPABASE_PROJECT_REF}:${encoded}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+      - name: Wait for deployed 007C command migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 15); do
+            applied="$(psql "$SUPABASE_DB_URL" -XqAt -v ON_ERROR_STOP=1 -c "
+              select count(*)
+              from supabase_migrations.schema_migrations
+              where version::text='20260813060000'
+            ")"
+            if [[ "$applied" == '1' ]]; then
+              echo 'TRANSFORM-007C return command migration is deployed.'
+              exit 0
+            fi
+            echo "Production migration history not ready yet (attempt $attempt/15)."
+            sleep 20
+          done
+          echo 'TRANSFORM-007C return command migration did not reach production within the verification window.'
+          exit 1
+      - name: Execute rollback-only authenticated Returns smoke
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f scripts/transform-007c-production-release-verify.sql \
+            2>&1 | tee /tmp/transform-007c-production-release-verify.log
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transform-007c-production-release-verification
+          path: /tmp/transform-007c-production-release-verify.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-result:
+    name: Publish release gate result
+    needs: [static-contract,production-verify]
+    if: github.event_name != 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STATUS_CONTEXT: TRANSFORM-007C production release verification
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      VERIFY_RESULT: ${{ needs.production-verify.result }}
+    steps:
+      - name: Publish final status
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$VERIFY_RESULT" == success ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state='success' \
+              -f context="$STATUS_CONTEXT" \
+              -f description='Returns CAS, replay, restock movement, close and rollback verification passed' \
+              -f target_url="$RUN_URL"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state='failure' \
+              -f context="$STATUS_CONTEXT" \
+              -f description='TRANSFORM-007C production release verification failed closed' \
+              -f target_url="$RUN_URL"
+            exit 1
+          fi
