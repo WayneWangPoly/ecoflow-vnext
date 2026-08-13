@@ -1,0 +1,180 @@
+name: TRANSFORM-007 Phase 5 UI evidence
+
+on:
+  push:
+    branches:
+      - 'transform/007-phase5-ui-evidence'
+    paths:
+      - 'tests/transform-007-phase5-ui-evidence.spec.mjs'
+      - '.github/workflows/transform-007-phase5-ui-evidence.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/transform-007-phase5-ui-evidence.spec.mjs'
+      - '.github/workflows/transform-007-phase5-ui-evidence.yml'
+      - 'docs/engineering/work-packages/TRANSFORM-007-operational-records.md'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Optional deployed main SHA to verify; defaults to current main.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: transform-007-phase5-ui-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deployed-browser-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVIDENCE_DIR: artifacts/transform-007-phase5-ui
+    steps:
+      - name: Checkout evidence code
+        uses: actions/checkout@v4
+
+      - name: Prove evidence workflow is credential-free and mutation-free
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R --line-number -E 'SUPABASE_SERVICE_ROLE_KEY|TRANSFORM_007_SHADOW_READ_DB_URL|secrets\.' \
+            .github/workflows/transform-007-phase5-ui-evidence.yml \
+            tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F "context.route('**/auth/v1/**'" tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F "context.route('**/rest/v1/**'" tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F "context.route('**/functions/v1/**'" tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F 'forbiddenBusinessWrites' tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F 'ecoflow_record_return_disposition_v1' tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F 'ecoflow_close_return_v1' tests/transform-007-phase5-ui-evidence.spec.mjs
+          grep -F 'ecoflow_set_account_release_hold_v1' tests/transform-007-phase5-ui-evidence.spec.mjs
+
+      - name: Resolve exact deployed main SHA
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SHA: ${{ inputs.target_sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_SHA:-}" ]]; then
+            target_sha="$INPUT_SHA"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" && -n "${PR_BASE_SHA:-}" ]]; then
+            target_sha="$PR_BASE_SHA"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            target_sha="$GITHUB_SHA"
+          else
+            target_sha="$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/main" | jq -r '.sha')"
+          fi
+          [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+          echo "Verifying deployed main SHA: $target_sha"
+
+      - name: Resolve successful Vercel Production deployment
+        id: deployment
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          target_url=''
+          deployment_id=''
+          for attempt in $(seq 1 20); do
+            deployments="$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/deployments?sha=${TARGET_SHA}&per_page=30")"
+            deployment_id="$(jq -r '[.[] | select(.environment == "Production")][0].id // empty' <<<"$deployments")"
+            if [[ -n "$deployment_id" ]]; then
+              statuses="$(curl -fsSL \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=30")"
+              target_url="$(jq -r '[.[] | select(.state == "success")][0].environment_url // empty' <<<"$statuses")"
+              if [[ "$target_url" == https://*.vercel.app ]]; then
+                break
+              fi
+            fi
+            sleep 6
+          done
+          if [[ -z "$target_url" ]]; then
+            echo "No successful Vercel Production deployment found for ${TARGET_SHA}." >&2
+            exit 1
+          fi
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+          echo "target_url=$target_url" >> "$GITHUB_OUTPUT"
+          echo "Production deployment: $target_url"
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install repository dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install pinned Playwright test runner without changing lockfiles
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @playwright/test@1.55.0
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deployed authenticated route matrix and screenshot evidence
+        env:
+          TARGET_URL: ${{ steps.deployment.outputs.target_url }}
+        run: npx playwright test tests/transform-007-phase5-ui-evidence.spec.mjs --workers=1 --reporter=line
+
+      - name: Verify required screenshot set
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            owner-inventory-list.png owner-inventory-detail.png
+            owner-customers-list.png owner-customers-detail.png
+            owner-accounts-list.png owner-accounts-detail.png
+            owner-returns-list.png owner-returns-detail.png
+            viewer-accounts-denied.png
+          )
+          for file in "${required[@]}"; do
+            test -s "$EVIDENCE_DIR/$file"
+            echo "PASS screenshot: $file"
+          done
+          test "$(find "$EVIDENCE_DIR" -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 9
+
+      - name: Write evidence manifest
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+          TARGET_URL: ${{ steps.deployment.outputs.target_url }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+        run: |
+          cat > "$EVIDENCE_DIR/manifest.txt" <<EOF
+          TRANSFORM_007_PHASE5_UI_EVIDENCE=PASS
+          DEPLOYED_SHA=$TARGET_SHA
+          DEPLOYMENT_ID=$DEPLOYMENT_ID
+          DEPLOYMENT_URL=$TARGET_URL
+          ROUTE_MATRIX=OWNER_ACCOUNT_VIEWER_PASS
+          OWNER_FOUR_DOMAIN_LIST_DETAIL=PASS
+          DENIED_ROLE_SCREENSHOT=PASS
+          BUSINESS_MUTATION_DURING_EVIDENCE=0
+          SUPABASE_PRODUCTION_DATA_REQUESTS=0
+          EOF
+          cat "$EVIDENCE_DIR/manifest.txt"
+
+      - name: Upload Phase 5 UI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: transform-007-phase5-ui-evidence-${{ steps.target.outputs.target_sha }}
+          path: artifacts/transform-007-phase5-ui
+          if-no-files-found: error
+          retention-days: 30
