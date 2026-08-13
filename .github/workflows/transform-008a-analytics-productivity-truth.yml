@@ -1,0 +1,54 @@
+name: TRANSFORM-008A Analytics productivity truth
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/features/intelligence/analytics/productivity/**
+      - src/data/repositories/savedViewRepository.ts
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - docs/engineering/work-packages/TRANSFORM-008A-analytics-productivity-truth.md
+      - package.json
+      - package-lock.json
+      - .github/workflows/transform-008a-analytics-productivity-truth.yml
+  push:
+    branches:
+      - main
+      - 'transform/008a-analytics-productivity-truth'
+    paths:
+      - src/features/intelligence/analytics/productivity/**
+      - src/data/repositories/savedViewRepository.ts
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - docs/engineering/work-packages/TRANSFORM-008A-analytics-productivity-truth.md
+      - package.json
+      - package-lock.json
+      - .github/workflows/transform-008a-analytics-productivity-truth.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transform-008a-analytics-productivity-truth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  truth-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exactly from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit analytics productivity truth boundary
+        run: npm run audit:transform-008a
+
+      - name: Build production application
+        run: npm run build

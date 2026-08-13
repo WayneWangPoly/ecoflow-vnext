@@ -2,14 +2,7 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { savedViewRepository, type SavedViewRepository } from '@/data/repositories/savedViewRepository';
 import { parseWorkspaceQuery } from '@/features/intelligence/navigation/queryState';
 import {
-  buildCsvExport,
-  comparisonAlignment,
-  comparisonEntityKinds,
-  createComparisonItem,
-  pinComparisonItem,
   quickActionDefinitions,
-  type ComparisonEntityKind,
-  type ComparisonTray,
   type DesktopRole,
   type SavedViewCommand,
   type SavedViewRecord,
@@ -18,7 +11,6 @@ import {
 import './personalisationProductivityWorkspace.css';
 
 export type PersonalisationProductivityPanelProps = { repository?: SavedViewRepository };
-const EMPTY_TRAY: ComparisonTray = { items: [], maximum: 4 };
 
 function captureState(): SavedViewState {
   const query = parseWorkspaceQuery(globalThis.location?.search ?? '');
@@ -36,17 +28,6 @@ function scopeLabel(view: SavedViewRecord): string {
   return view.scope === 'PRIVATE' ? 'Private' : `${view.roleScope ?? 'Unknown'} default`;
 }
 
-function saveCsv(filename: string, csv: string): boolean {
-  if (!globalThis.document || !globalThis.URL?.createObjectURL) return false;
-  const href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  const anchor = document.createElement('a');
-  anchor.href = href;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(href);
-  return true;
-}
-
 export function PersonalisationProductivityPanel({ repository = savedViewRepository }: PersonalisationProductivityPanelProps) {
   const [views, setViews] = useState<readonly SavedViewRecord[]>([]);
   const [readState, setReadState] = useState('loading');
@@ -59,12 +40,6 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteIndex, setPaletteIndex] = useState(0);
-  const [tray, setTray] = useState<ComparisonTray>(EMPTY_TRAY);
-  const [kind, setKind] = useState<ComparisonEntityKind>('PRODUCT');
-  const [entityId, setEntityId] = useState('');
-  const [entityLabel, setEntityLabel] = useState('');
-  const [trayMessage, setTrayMessage] = useState('');
-  const [exportMessage, setExportMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -100,7 +75,6 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
 
   const selected = views.find((view) => view.savedViewId === selectedId) ?? null;
   const canManageDefaults = views.some((view) => view.canManageRoleDefaults);
-  const alignment = comparisonAlignment(tray.items);
   const paletteActions = useMemo(() => {
     const query = paletteQuery.trim().toLowerCase();
     return query ? quickActionDefinitions.filter((action) => action.label.toLowerCase().includes(query)) : [...quickActionDefinitions];
@@ -137,49 +111,10 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
     }
   }
 
-  function pin() {
-    const item = createComparisonItem({
-      kind,
-      entityId,
-      label: entityLabel,
-      permission: 'ALLOWED',
-      dimensionKeys: ['identity'],
-      values: { identity: entityId },
-    });
-    if (!item) {
-      setTrayMessage('Invalid entity identity or label.');
-      return;
-    }
-    const result = pinComparisonItem(tray, item);
-    setTray(result.tray);
-    setTrayMessage(result.issue ?? '');
-    if (!result.issue) {
-      setEntityId('');
-      setEntityLabel('');
-    }
-  }
-
-  function exportData(mode: 'table' | 'selected' | 'chart') {
-    const viewRows = views.map((view) => ({ key: view.savedViewId, name: view.name, scope: scopeLabel(view), workspace: view.workspace, updatedAt: view.updatedAt }));
-    const entityRows = tray.items.map((item) => ({ key: item.key, label: item.label, kind: item.kind, entityId: item.entityId, permission: item.permission }));
-    const chartRows = tray.items.flatMap((item) => item.dimensionKeys.map((dimension) => ({ key: `${item.key}:${dimension}`, series: item.label, dimension, value: item.values[dimension] ?? null })));
-    const result = mode === 'table'
-      ? buildCsvExport({ columns: [{ key: 'name', label: 'Name' }, { key: 'scope', label: 'Scope' }, { key: 'workspace', label: 'Workspace' }, { key: 'updatedAt', label: 'Updated at' }], rows: viewRows })
-      : mode === 'selected'
-        ? buildCsvExport({ columns: [{ key: 'label', label: 'Label' }, { key: 'kind', label: 'Kind' }, { key: 'entityId', label: 'Entity ID' }, { key: 'permission', label: 'Permission' }], rows: entityRows, selectedKeys: entityRows.map((row) => row.key) })
-        : buildCsvExport({ columns: [{ key: 'series', label: 'Series' }, { key: 'dimension', label: 'Dimension' }, { key: 'value', label: 'Value' }], rows: chartRows });
-    if (!result.ok) {
-      setExportMessage(result.issue);
-      return;
-    }
-    setExportMessage(saveCsv(`ecoflow-${mode}.csv`, result.csv)
-      ? `${result.rowCount} row(s) exported.` : 'CSV generated; browser download unavailable.');
-  }
-
   return (
     <section className="ef-productivity" aria-labelledby="ef-productivity-title">
       <header className="ef-productivity__header">
-        <div><span>PHASE 6 · PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Private state, bounded comparison and permission-aware export remain separate from operational commands.</p></div>
+        <div><span>PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Saved Views and navigation shortcuts use governed application paths.</p></div>
         <button type="button" onClick={() => setPaletteOpen(true)}>Command palette <kbd>⌘/Ctrl K</kbd></button>
       </header>
 
@@ -200,22 +135,6 @@ export function PersonalisationProductivityPanel({ repository = savedViewReposit
         <article className="ef-productivity__panel">
           <header><span>INTEL-PER-002</span><h3>Quick Actions</h3></header>
           <div className="ef-productivity__quick-list">{quickActionDefinitions.map((action) => <a key={action.key} href={action.path}><span>{action.label}</span><kbd>{action.shortcut}</kbd></a>)}</div>
-        </article>
-
-        <article className="ef-productivity__panel ef-productivity__panel--wide">
-          <header><span>INTEL-PER-003</span><h3>Comparison Tray</h3></header>
-          <div className="ef-productivity__controls ef-productivity__controls--comparison"><select aria-label="Comparison entity kind" value={kind} onChange={(event) => setKind(event.target.value as ComparisonEntityKind)}>{comparisonEntityKinds.map((candidate) => <option key={candidate}>{candidate}</option>)}</select><input aria-label="Comparison entity ID" value={entityId} onChange={(event) => setEntityId(event.target.value)} maxLength={120} placeholder="Verified entity ID" /><input aria-label="Comparison label" value={entityLabel} onChange={(event) => setEntityLabel(event.target.value)} maxLength={120} placeholder="Label" /><button type="button" onClick={pin}>Pin</button></div>
-          <div className="ef-productivity__comparison-status"><strong>{tray.items.length} / {tray.maximum}</strong><span>{alignment.state}</span><small>{alignment.sharedDimensions.join(', ') || 'No shared dimension'}</small></div>
-          <div className="ef-productivity__comparison-table"><table><caption>Side-by-side governed comparison</caption><thead><tr><th scope="col">Field</th>{tray.items.map((item) => <th scope="col" key={item.key}>{item.label}</th>)}</tr></thead><tbody><tr><th scope="row">Kind</th>{tray.items.map((item) => <td key={item.key}>{item.kind}</td>)}</tr><tr><th scope="row">Identity</th>{tray.items.map((item) => <td key={item.key}><code>{item.entityId}</code></td>)}</tr><tr><th scope="row">Permission</th>{tray.items.map((item) => <td key={item.key}>{item.permission}</td>)}</tr><tr><th scope="row">Dimensions</th>{tray.items.map((item) => <td key={item.key}>{item.dimensionKeys.join(', ') || 'Unavailable'}</td>)}</tr></tbody></table></div>
-          <div className="ef-productivity__actions">{tray.items.map((item) => <button type="button" key={item.key} onClick={() => setTray({ ...tray, items: tray.items.filter((candidate) => candidate.key !== item.key) })}>Remove {item.label}</button>)}</div>
-          {trayMessage ? <p className="ef-productivity__message" role="status">{trayMessage}</p> : null}
-        </article>
-
-        <article className="ef-productivity__panel ef-productivity__panel--wide">
-          <header><span>INTEL-PER-004</span><h3>Bounded CSV Export</h3></header>
-          <div className="ef-productivity__export-actions"><button type="button" onClick={() => exportData('table')}>Export current table view</button><button type="button" disabled={!tray.items.length} onClick={() => exportData('selected')}>Export selected records</button><button type="button" onClick={() => exportData('chart')}>Export current chart dataset</button></div>
-          <p>CSV only · 5,000 rows · 50 columns · spreadsheet formula protection.</p>
-          {exportMessage ? <p className="ef-productivity__message" role="status">{exportMessage}</p> : null}
         </article>
       </div>
 

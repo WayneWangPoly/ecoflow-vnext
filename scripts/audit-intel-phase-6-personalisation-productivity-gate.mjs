@@ -74,23 +74,30 @@ for (const marker of ['Command palette', '⌘/Ctrl K', 'quickActionDefinitions']
   assert.ok(panel.includes(marker), `Phase 6 Quick Action presentation missing: ${marker}`);
 }
 
+// Historical comparison/export contracts remain available for future governed adapters,
+// but TRANSFORM-008A intentionally withdraws their browser-authored production presentation.
 const comparisonKinds = ['PRODUCT', 'CUSTOMER', 'STORE', 'ORDER', 'DELIVERY_RUN', 'METRIC'];
 for (const kind of comparisonKinds) {
-  assert.ok(contract.includes(`'${kind}'`), `Phase 6 Comparison Tray kind missing: ${kind}`);
+  assert.ok(contract.includes(`'${kind}'`), `Phase 6 comparison contract kind missing: ${kind}`);
 }
 for (const marker of ['maximum: 4', 'TRAY_LIMIT_REACHED', 'DUPLICATE_ITEM', 'comparisonAlignment', 'PERMISSION_']) {
-  assert.ok(contract.includes(marker), `Phase 6 Comparison Tray boundary missing: ${marker}`);
+  assert.ok(contract.includes(marker), `Phase 6 comparison contract boundary missing: ${marker}`);
 }
-for (const marker of ['Side-by-side governed comparison', 'Permission', 'Dimensions']) {
-  assert.ok(panel.includes(marker), `Phase 6 Comparison Tray presentation missing: ${marker}`);
-}
-
 for (const marker of ['5_000', '50', '4_000', "text = `'${text}`", 'ROW_LIMIT_EXCEEDED', 'NO_SELECTED_ROWS']) {
-  assert.ok(contract.includes(marker), `Phase 6 Export boundary missing: ${marker}`);
+  assert.ok(contract.includes(marker), `Phase 6 export contract boundary missing: ${marker}`);
 }
-for (const marker of ['Export current table view', 'Export selected records', 'Export current chart dataset', 'spreadsheet formula protection']) {
-  assert.ok(panel.includes(marker), `Phase 6 Export presentation missing: ${marker}`);
+for (const forbidden of [
+  'Side-by-side governed comparison',
+  'Comparison Tray',
+  'Export current table view',
+  'Export selected records',
+  'Export current chart dataset',
+]) {
+  assert.ok(!panel.includes(forbidden), `TRANSFORM-008A withdrawn production presentation returned: ${forbidden}`);
 }
+assert.ok(!/permission\s*:\s*['"]ALLOWED['"]/.test(panel), 'Browser-declared comparison permission returned');
+assert.ok(!/Comparison entity ID|setEntityId\s*\(|createComparisonItem\s*\(|pinComparisonItem\s*\(/.test(panel), 'Browser-declared comparison candidate returned');
+assert.ok(!/buildCsvExport\s*\(|saveCsv\s*\(/.test(panel), 'Client-built current-data export returned');
 
 assert.ok(repository.includes(".schema('analytics')"), 'Saved View repository is not using analytics RPC schema');
 assert.ok(repository.includes('intelligenceSavedViewReadRpcName'), 'Saved View read repository contract missing');
@@ -135,4 +142,4 @@ for (const marker of [
   assert.ok(documentation.toLowerCase().includes(marker.toLowerCase()), `Phase 6 documentation marker missing: ${marker}`);
 }
 
-console.log('INTEL-GATE-006 Phase 6 Personalisation & Productivity completion gate passed: 4/4 roadmap packages, durable private views, role defaults, bounded comparison and CSV export.');
+console.log('INTEL-GATE-006 production truth gate passed: durable Saved Views and Quick Actions remain active; comparison/export contracts are retained but their browser-authored production presentation is withdrawn pending authoritative adapters.');
