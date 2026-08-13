@@ -11,7 +11,6 @@ const NOW = '2026-08-13T04:30:00.000Z';
 
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 test.use({ viewport: { width: 1440, height: 1000 } });
-
 test.describe.configure({ mode: 'serial' });
 
 const roleProfiles = {
@@ -213,7 +212,6 @@ async function installSupabaseBoundary(context, appRole) {
   });
 
   await context.route('**/functions/v1/**', (route) => json(route, { message: 'Function network disabled in deterministic UI evidence.' }, 503));
-
   return { forbiddenBusinessWrites, unexpectedRestCalls };
 }
 
@@ -226,9 +224,29 @@ async function openRole(browser, appRole) {
   return { context, page, pageErrors, ...network };
 }
 
+async function diagnosePage(page, path) {
+  const body = await page.locator('body').innerText().catch(() => '<body unavailable>');
+  const storage = await page.evaluate((key) => ({
+    hasAuthStorage: window.localStorage.getItem(key) !== null,
+    authStoragePrefix: (window.localStorage.getItem(key) || '').slice(0, 180),
+    keys: Object.keys(window.localStorage),
+  }), AUTH_STORAGE_KEY).catch(() => ({ hasAuthStorage: false, authStoragePrefix: '', keys: [] }));
+  console.log(`PHASE5_UI_DIAGNOSTIC_PATH=${path}`);
+  console.log(`PHASE5_UI_DIAGNOSTIC_URL=${page.url()}`);
+  console.log(`PHASE5_UI_DIAGNOSTIC_AUTH_STORAGE=${JSON.stringify(storage)}`);
+  console.log(`PHASE5_UI_DIAGNOSTIC_BODY=${body.slice(0, 3000).replaceAll('\n', ' | ')}`);
+  await page.screenshot({ path: `${EVIDENCE_DIR}/diagnostic-${path.replaceAll('/', '-') || 'root'}.png`, fullPage: true }).catch(() => null);
+}
+
 async function expectWorkspace(page, path, heading) {
   await page.goto(new URL(path, TARGET_URL).href, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible({ timeout: 15000 });
+  const locator = page.getByRole('heading', { name: heading, exact: true });
+  try {
+    await expect(locator).toBeVisible({ timeout: 15000 });
+  } catch (error) {
+    await diagnosePage(page, path);
+    throw error;
+  }
   await expect(page.getByText('1 exact records')).toBeVisible();
 }
 
@@ -246,7 +264,7 @@ test('Owner deployed bundle renders all four Phase 5 list/detail surfaces withou
     await captureListAndDetail(state.page, 'inventory', 'Inventory', 'SKU-E2E-12W', 'owner-inventory');
     await captureListAndDetail(state.page, 'customers', 'Customers', 'Phase 5 Café', 'owner-customers');
     await captureListAndDetail(state.page, 'accounts', 'Accounts', 'Phase 5 Café', 'owner-accounts');
-    await expect(state.page.getByLabel('Account command authority')).toBeVisible();
+    await expect(state.page.getByLabel('Account hold command')).toBeVisible();
     await captureListAndDetail(state.page, 'returns', 'Returns', 'RET-E2E-001', 'owner-returns');
     await expect(state.page.getByLabel('Return command authority')).toBeVisible();
 
