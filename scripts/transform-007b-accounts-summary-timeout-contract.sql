@@ -75,11 +75,12 @@ declare
   v_count bigint;
   v_summary jsonb;
 begin
-  select max(r.total_count),max(r.summary_data)
+  select r.total_count,r.summary_data
     into v_count,v_summary
   from public.ecoflow_read_operational_records_v1(
     'accounts','overview',1,25,null,null,null
-  ) r;
+  ) r
+  limit 1;
 
   if v_count<>1 then
     raise exception 'bounded Accounts summary fixture row count mismatch: %',v_count;
@@ -140,10 +141,11 @@ do $$
 declare
   v_summary jsonb;
 begin
-  select max(r.summary_data) into v_summary
+  select r.summary_data into v_summary
   from public.ecoflow_read_operational_records_v1(
     'accounts','overview',1,25,null,null,null
-  ) r;
+  ) r
+  limit 1;
   if coalesce((v_summary->>'open_ar_value')::numeric,-1)<>1250.50::numeric then
     raise exception 'refreshed bounded Accounts summary payload mismatch: %',v_summary;
   end if;
