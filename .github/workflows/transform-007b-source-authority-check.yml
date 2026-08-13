@@ -1,0 +1,57 @@
+name: TRANSFORM-007B source authority hardening
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/*_transform_007b_source_authority_hardening.sql'
+      - 'scripts/transform-007b-source-authority-fixture.sql'
+      - 'scripts/transform-007b-source-authority-contract.sql'
+      - '.github/workflows/transform-007b-source-authority-check.yml'
+  push:
+    branches:
+      - main
+      - 'repair/transform-007b-source-authority-hardening'
+    paths:
+      - 'supabase/migrations/*_transform_007b_source_authority_hardening.sql'
+      - 'scripts/transform-007b-source-authority-fixture.sql'
+      - 'scripts/transform-007b-source-authority-contract.sql'
+      - '.github/workflows/transform-007b-source-authority-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Load broad-grant source fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-source-authority-fixture.sql
+      - name: Apply source-authority hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813050000_transform_007b_source_authority_hardening.sql
+      - name: Execute browser read-only contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-source-authority-contract.sql
