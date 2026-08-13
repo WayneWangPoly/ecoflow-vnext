@@ -53,7 +53,8 @@ test('007C UI preserves command identity under transport uncertainty', () => {
     'const reusable = retryMatchesClose',
     'setRetryIntent(intent)',
     'readReturnAuthorityState(returnId)',
-    "result.status === 'CONFLICT'",
+    'await refreshAfterCommand(result.status)',
+    "status === 'CONFLICT'",
     "status === 'REPLAYED'",
   ]);
   assert.match(panel, /reusable \?\? \{[\s\S]*?idempotencyKey: commandId\(\),[\s\S]*?expectedRevision: state\.revision/);
