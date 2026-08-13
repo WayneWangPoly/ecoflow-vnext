@@ -3,10 +3,12 @@ name: TRANSFORM-007 Phase 5 UI evidence
 on:
   push:
     branches:
+      - main
       - 'transform/007-phase5-ui-evidence'
     paths:
       - 'tests/transform-007-phase5-ui-evidence.spec.mjs'
       - '.github/workflows/transform-007-phase5-ui-evidence.yml'
+      - 'docs/engineering/work-packages/TRANSFORM-007-operational-records.md'
   pull_request:
     branches: [main]
     paths:
