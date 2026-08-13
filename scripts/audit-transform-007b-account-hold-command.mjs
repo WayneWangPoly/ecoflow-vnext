@@ -51,7 +51,8 @@ requireText('panel', 'maxLength={500}', 'reason must remain bounded client-side 
 requireText('panel', 'disabled={pending || !reason.trim()}', 'blank reasons must not be submitted');
 
 requireText('workspace', "workspace==='accounts' ? <AccountHoldCommandPanel", 'Accounts detail must mount the 007B command surface');
-requireText('workspace', "workspace==='returns' ? <div className=\"operational-record-command-gate\">Commands remain withheld until the 007C CAS gate passes.", '007C must remain withheld');
+requireText('workspace', "workspace==='returns' ? <ReturnCommandPanel", 'Returns must remain isolated behind its independent 007C command surface once 007C is released');
+forbidText('workspace', "workspace==='returns' ? <AccountHoldCommandPanel", '007B Accounts command authority must never be reused for Returns');
 requireText('device', "ecoflow:operational-device:v1", 'device identity must be stable across commands');
 requireText('device', 'crypto.randomUUID()', 'device id should use a UUID where available');
 requireText('device', 'let memoryDeviceId: string | null = null', 'storage denial must not rotate device context within the app session');
