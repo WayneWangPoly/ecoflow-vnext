@@ -25,10 +25,10 @@ begin
       and c.relkind in ('r','p')
       and (
         c.relname='ecoflow_store_sites'
-        or c.relname like 'ordermentum\_%' escape '\'
-        or c.relname like 'om\_%' escape '\'
-        or c.relname like 'qbo\_%' escape '\'
-        or c.relname like 'quickbooks\_%' escape '\'
+        or left(c.relname,length('ordermentum_'))='ordermentum_'
+        or left(c.relname,length('om_'))='om_'
+        or left(c.relname,length('qbo_'))='qbo_'
+        or left(c.relname,length('quickbooks_'))='quickbooks_'
       )
   loop
     execute format(
@@ -55,10 +55,10 @@ begin
       and c.relkind in ('r','p')
       and (
         c.relname='ecoflow_store_sites'
-        or c.relname like 'ordermentum\_%' escape '\'
-        or c.relname like 'om\_%' escape '\'
-        or c.relname like 'qbo\_%' escape '\'
-        or c.relname like 'quickbooks\_%' escape '\'
+        or left(c.relname,length('ordermentum_'))='ordermentum_'
+        or left(c.relname,length('om_'))='om_'
+        or left(c.relname,length('qbo_'))='qbo_'
+        or left(c.relname,length('quickbooks_'))='quickbooks_'
       )
       and (
         has_table_privilege(v_role,c.oid,'INSERT')
