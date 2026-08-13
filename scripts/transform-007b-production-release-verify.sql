@@ -187,45 +187,53 @@ $$;
 
 reset role;
 
--- Authenticated clients must retain zero direct DML capability on the Accounts
+-- Both browser roles must retain zero direct DML capability on the Accounts
 -- authority and on source-owned Ordermentum / OM / QBO / QuickBooks relations.
 do $$
 declare
   v_source_write_relations bigint;
+  v_role text;
 begin
-  if has_table_privilege('authenticated','public.ecoflow_account_release_holds','INSERT')
-     or has_table_privilege('authenticated','public.ecoflow_account_release_holds','UPDATE')
-     or has_table_privilege('authenticated','public.ecoflow_account_release_holds','DELETE')
-     or has_any_column_privilege('authenticated','public.ecoflow_account_release_holds','INSERT')
-     or has_any_column_privilege('authenticated','public.ecoflow_account_release_holds','UPDATE') then
-    raise exception '007B_RELEASE_VERIFY_DIRECT_AUTHORITY_DML_OPEN';
-  end if;
+  foreach v_role in array array['anon','authenticated'] loop
+    if has_table_privilege(v_role,'public.ecoflow_account_release_holds','INSERT')
+       or has_table_privilege(v_role,'public.ecoflow_account_release_holds','UPDATE')
+       or has_table_privilege(v_role,'public.ecoflow_account_release_holds','DELETE')
+       or has_table_privilege(v_role,'public.ecoflow_account_release_holds','TRUNCATE')
+       or has_table_privilege(v_role,'public.ecoflow_account_release_holds','TRIGGER')
+       or has_any_column_privilege(v_role,'public.ecoflow_account_release_holds','INSERT')
+       or has_any_column_privilege(v_role,'public.ecoflow_account_release_holds','UPDATE') then
+      raise exception '007B_RELEASE_VERIFY_DIRECT_AUTHORITY_DML_OPEN:%',v_role;
+    end if;
 
-  select count(*) into v_source_write_relations
-  from pg_catalog.pg_class c
-  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
-  where n.nspname='public'
-    and c.relkind in ('r','p','v','m','f')
-    and (
-      c.relname='ecoflow_store_sites'
-      or c.relname like 'ordermentum\_%' escape '\'
-      or c.relname like 'om\_%' escape '\'
-      or c.relname like 'qbo\_%' escape '\'
-      or c.relname like 'quickbooks\_%' escape '\'
-    )
-    and (
-      has_table_privilege('authenticated',c.oid,'INSERT')
-      or has_table_privilege('authenticated',c.oid,'UPDATE')
-      or has_table_privilege('authenticated',c.oid,'DELETE')
-      or has_table_privilege('authenticated',c.oid,'TRUNCATE')
-      or has_table_privilege('authenticated',c.oid,'TRIGGER')
-      or has_any_column_privilege('authenticated',c.oid,'INSERT')
-      or has_any_column_privilege('authenticated',c.oid,'UPDATE')
-    );
+    select count(*) into v_source_write_relations
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public'
+      and c.relkind in ('r','p','v','m','f')
+      and (
+        c.relname='ecoflow_store_sites'
+        or c.relname like 'ordermentum\_%' escape '\'
+        or c.relname like 'om\_%' escape '\'
+        or c.relname like 'qbo\_%' escape '\'
+        or c.relname like 'quickbooks\_%' escape '\'
+      )
+      and (
+        has_table_privilege(v_role,c.oid,'INSERT')
+        or has_table_privilege(v_role,c.oid,'UPDATE')
+        or has_table_privilege(v_role,c.oid,'DELETE')
+        or has_table_privilege(v_role,c.oid,'TRUNCATE')
+        or has_table_privilege(v_role,c.oid,'REFERENCES')
+        or has_table_privilege(v_role,c.oid,'TRIGGER')
+        or has_table_privilege(v_role,c.oid,'MAINTAIN')
+        or has_any_column_privilege(v_role,c.oid,'INSERT')
+        or has_any_column_privilege(v_role,c.oid,'UPDATE')
+        or has_any_column_privilege(v_role,c.oid,'REFERENCES')
+      );
 
-  if v_source_write_relations<>0 then
-    raise exception '007B_RELEASE_VERIFY_SOURCE_DML_OPEN:%',v_source_write_relations;
-  end if;
+    if v_source_write_relations<>0 then
+      raise exception '007B_RELEASE_VERIFY_SOURCE_DML_OPEN:%:%',v_role,v_source_write_relations;
+    end if;
+  end loop;
 end
 $$;
 
@@ -260,5 +268,5 @@ select (
 \echo ACCOUNTS_RPC_MS=:accounts_rpc_ms
 \echo VIEWER_ACCOUNTS_FAIL_CLOSED=PASS
 \echo HOLD_READBACK_CLEAR_ROLLBACK=PASS
-\echo SOURCE_OWNED_AUTHENTICATED_DML=DENIED
+\echo SOURCE_OWNED_BROWSER_DML=DENIED
 \echo ROLLBACK_PROOF=PASS
