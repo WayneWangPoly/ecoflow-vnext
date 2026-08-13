@@ -11,19 +11,23 @@ function read(path) {
 const root = 'src/features/intelligence/analytics/productivity';
 const contract = read(`${root}/productivityContract.ts`);
 const panel = read(`${root}/PersonalisationProductivityPanel.tsx`);
+const exportPanel = read(`${root}/AuthoritativeExportPanel.tsx`);
 const style = read(`${root}/personalisationProductivityWorkspace.css`);
 const savedViewRepository = read('src/data/repositories/savedViewRepository.ts');
 const comparisonRepository = read('src/data/repositories/comparisonCandidates.ts');
+const exportRepository = read('src/data/repositories/authoritativeExport.ts');
 const workspace = read('src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx');
 const migration = read('supabase/migrations/20260731160000_intelligence_saved_views.sql');
 const accessMigration = read('supabase/migrations/20260731160100_intelligence_saved_view_schema_access.sql');
 const comparisonMigration = read('supabase/migrations/20260813190000_governed_comparison_candidates.sql');
+const exportMigration = read('supabase/migrations/20260813200000_authoritative_export.sql');
 const sqlTest = read('scripts/intelligence-saved-view-contract-test.sql');
 const workflow = read('.github/workflows/intelligence-productivity-check.yml');
 
 for (const packageId of ['INTEL-PER-001', 'INTEL-PER-002', 'INTEL-PER-003']) {
   assert.ok(panel.includes(packageId), `Phase 6 package missing: ${packageId}`);
 }
+assert.ok(exportPanel.includes('INTEL-PER-004'), 'Phase 6 authoritative export package missing: INTEL-PER-004');
 
 for (const marker of ["'CREATE'","'DUPLICATE'","'RENAME'","'DELETE'","'SET_ROLE_DEFAULT'","'CLEAR_ROLE_DEFAULT'",'filters','sort','visibleColumns','dateRange','comparisonSettings','searchTerm']) {
   assert.ok(contract.includes(marker), `Phase 6 Saved View marker missing: ${marker}`);
@@ -64,10 +68,15 @@ assert.ok(!/permission\s*:\s*['"]ALLOWED['"]/.test(panel), 'Browser-declared com
 for (const marker of ['5_000','50','4_000',"text=`'${text}`",'ROW_LIMIT_EXCEEDED','NO_SELECTED_ROWS']) {
   assert.ok(contract.replaceAll(' ', '').includes(marker.replaceAll(' ', '')) || contract.includes(marker), `Dormant export safety contract missing: ${marker}`);
 }
-for (const forbidden of ['Export current table view','Export selected records','Export current chart dataset']) {
-  assert.ok(!panel.includes(forbidden), `008C export presentation leaked into 008B: ${forbidden}`);
+assert.ok(panel.includes('<AuthoritativeExportPanel'), 'Authoritative Export is not mounted');
+for (const marker of ['Export current governed table','Export selected governed records','Export governed chart dataset']) assert.ok(exportPanel.includes(marker), `Authoritative export presentation missing: ${marker}`);
+assert.ok(exportRepository.includes("rpc('ecoflow_read_authoritative_export_v1'"), 'Authoritative export RPC missing');
+assert.ok(!exportRepository.includes('.from('), 'Authoritative export repository crossed RPC-only boundary');
+for (const marker of ["('TABLE_VIEW','SELECTED_RECORDS','CHART_DATASET')",'public.ecoflow_read_comparison_candidates_v1','AUTHORITATIVE_EXPORT_SELECTOR_STALE_OR_FORBIDDEN','analytics.get_initial_kpi_shadow_projection',"public.ecoflow_active_app_role() not in ('OWNER','ADMIN')",'grant execute on function public.ecoflow_read_authoritative_export_v1']) {
+  assert.ok(exportMigration.includes(marker), `Authoritative export server boundary missing: ${marker}`);
 }
-assert.ok(!/buildCsvExport\s*\(|saveCsv\s*\(/.test(panel), 'Client-built current-data export returned');
+assert.ok(!/buildCsvExport\s*\(|saveCsv\s*\(/.test(`${panel}\n${exportPanel}`), 'Browser current-data CSV builder returned');
+for (const forbidden of ['tableExportRows','selectedRecordExportRows','chartExportRows','exportColumns']) assert.ok(!`${exportRepository}\n${panel}\n${exportPanel}`.includes(forbidden), `Browser export authority detected: ${forbidden}`);
 
 assert.ok(savedViewRepository.includes(".schema('analytics')"), 'Saved View repository is not using analytics RPC schema');
 for (const forbidden of [/\.from\s*\(/,/\.insert\s*\(/,/\.update\s*\(/,/\.delete\s*\(/]) assert.ok(!forbidden.test(savedViewRepository), `Saved View repository crossed RPC-only boundary: ${forbidden}`);
@@ -79,7 +88,7 @@ for (const marker of ['Audit Phase 6 completion gate','TypeScript check','Vite p
   assert.ok(workflow.includes(marker), `Phase 6 CI marker missing: ${marker}`);
 }
 for (const forbidden of ['localStorage','sessionStorage','indexedDB','xlsx','exceljs','sheetjs']) {
-  assert.ok(!`${contract}\n${panel}\n${savedViewRepository}\n${comparisonRepository}`.toLowerCase().includes(forbidden.toLowerCase()), `Phase 6 forbidden persistence/dependency detected: ${forbidden}`);
+  assert.ok(!`${contract}\n${panel}\n${exportPanel}\n${savedViewRepository}\n${comparisonRepository}\n${exportRepository}`.toLowerCase().includes(forbidden.toLowerCase()), `Phase 6 forbidden persistence/dependency detected: ${forbidden}`);
 }
 
-console.log('INTEL-GATE-006 passed: durable Saved Views, Quick Actions and governed Comparison are active; authoritative export remains gated behind TRANSFORM-008C.');
+console.log('INTEL-GATE-006 passed: durable Saved Views, Quick Actions, governed Comparison and authoritative Export are active.');
