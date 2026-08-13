@@ -20,6 +20,7 @@ import {
   type SavedViewRecord,
   type SavedViewState,
 } from './productivityContract';
+import { AuthoritativeExportPanel } from './AuthoritativeExportPanel';
 import './personalisationProductivityWorkspace.css';
 
 export type PersonalisationProductivityPanelProps = {
@@ -161,7 +162,7 @@ export function PersonalisationProductivityPanel({
   return (
     <section className="ef-productivity" aria-labelledby="ef-productivity-title">
       <header className="ef-productivity__header">
-        <div><span>PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Saved Views, governed comparisons and navigation shortcuts use server-authoritative paths.</p></div>
+        <div><span>PERSONALISATION & PRODUCTIVITY</span><h2 id="ef-productivity-title">Personal operating workspace</h2><p>Saved Views, governed comparisons, authoritative exports and navigation shortcuts use server-authoritative paths.</p></div>
         <button type="button" onClick={() => setPaletteOpen(true)}>Command palette <kbd>⌘/Ctrl K</kbd></button>
       </header>
 
@@ -203,6 +204,12 @@ export function PersonalisationProductivityPanel({
           {comparisonTray.items.length ? <div className="ef-productivity__comparison-table"><table><caption>Selected comparison entities</caption><thead><tr><th>Entity</th><th>Type</th><th>Action</th></tr></thead><tbody>{comparisonTray.items.map((item) => <tr key={item.key}><td>{item.label}</td><td>{kindLabel(item.kind)}</td><td><button type="button" onClick={() => setComparisonTray((tray) => removeComparisonItem(tray, item.key))}>Remove</button></td></tr>)}</tbody></table></div> : null}
           {comparisonMessage ? <p className="ef-productivity__message" role="status">{comparisonMessage}</p> : null}
         </article>
+
+        <AuthoritativeExportPanel
+          comparisonKind={comparisonKind}
+          comparisonQuery={comparisonQuery}
+          comparisonTray={comparisonTray}
+        />
       </div>
 
       {paletteOpen ? <div className="ef-productivity__palette" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPaletteOpen(false); }}><section role="dialog" aria-modal="true" aria-labelledby="command-palette-title"><header><h3 id="command-palette-title">Command palette</h3><button type="button" onClick={() => setPaletteOpen(false)}>Close</button></header><input autoFocus aria-label="Search quick actions" value={paletteQuery} onChange={(event) => { setPaletteQuery(event.target.value); setPaletteIndex(0); }} onKeyDown={paletteKey} /><div role="listbox">{paletteActions.map((action, index) => <a key={action.key} href={action.path} role="option" aria-selected={index === paletteIndex}><span>{action.label}</span><kbd>{action.shortcut}</kbd></a>)}</div></section></div> : null}

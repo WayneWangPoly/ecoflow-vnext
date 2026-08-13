@@ -1,0 +1,73 @@
+name: TRANSFORM-008C Authoritative export
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - supabase/migrations/20260813200000_authoritative_export.sql
+      - src/data/repositories/authoritativeExport.ts
+      - src/features/intelligence/analytics/productivity/**
+      - scripts/intel-authoritative-export-contract.test.mjs
+      - scripts/audit-transform-008c-authoritative-export.mjs
+      - scripts/audit-transform-008b-governed-comparison.mjs
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - scripts/audit-intel-personalisation-productivity.mjs
+      - scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+      - docs/engineering/work-packages/TRANSFORM-008C-authoritative-export.md
+      - docs/INTEL-PHASE-6-PERSONALISATION-PRODUCTIVITY.md
+      - .github/workflows/transform-008c-authoritative-export.yml
+  push:
+    branches:
+      - main
+      - codex/transform-008c-authoritative-export
+    paths:
+      - supabase/migrations/20260813200000_authoritative_export.sql
+      - src/data/repositories/authoritativeExport.ts
+      - src/features/intelligence/analytics/productivity/**
+      - scripts/intel-authoritative-export-contract.test.mjs
+      - scripts/audit-transform-008c-authoritative-export.mjs
+      - scripts/audit-transform-008b-governed-comparison.mjs
+      - scripts/audit-transform-008a-analytics-productivity-truth.mjs
+      - scripts/audit-intel-personalisation-productivity.mjs
+      - scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+      - docs/engineering/work-packages/TRANSFORM-008C-authoritative-export.md
+      - docs/INTEL-PHASE-6-PERSONALISATION-PRODUCTIVITY.md
+      - .github/workflows/transform-008c-authoritative-export.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transform-008c-authoritative-export-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authoritative-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exactly from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Test authoritative export contract
+        run: node --test scripts/intel-authoritative-export-contract.test.mjs
+
+      - name: Audit authoritative export authority
+        run: node scripts/audit-transform-008c-authoritative-export.mjs
+
+      - name: Audit Phase 6 completion gate
+        run: node scripts/audit-intel-phase-6-personalisation-productivity-gate.mjs
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Vite production bundle
+        run: npm run build

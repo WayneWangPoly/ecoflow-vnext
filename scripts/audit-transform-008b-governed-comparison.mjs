@@ -7,6 +7,8 @@ const migration = read('supabase/migrations/20260813190000_governed_comparison_c
 const repository = read('src/data/repositories/comparisonCandidates.ts');
 const contract = read('src/features/intelligence/analytics/productivity/productivityContract.ts');
 const panel = read('src/features/intelligence/analytics/productivity/PersonalisationProductivityPanel.tsx');
+const exportPanel = read('src/features/intelligence/analytics/productivity/AuthoritativeExportPanel.tsx');
+const exportRepository = read('src/data/repositories/authoritativeExport.ts');
 
 for (const marker of [
   'ecoflow_can_read_comparison_candidates',
@@ -38,7 +40,9 @@ assert.ok(panel.includes('comparisonRepository.readCandidates'), 'Panel does not
 assert.ok(panel.includes('Comparison Tray'), 'Comparison Tray is not restored');
 assert.ok(!/Comparison entity ID|setEntityId\s*\(/.test(panel), 'Arbitrary comparison ID input returned');
 assert.ok(!/permission\s*:\s*['"]ALLOWED['"]/.test(panel), 'Panel declares its own ALLOWED permission');
-assert.ok(!/Export current table view|Export selected records|Export current chart dataset|buildCsvExport\s*\(|saveCsv\s*\(/.test(panel), '008C export leaked into 008B');
+assert.ok(exportPanel.includes('comparisonTray.items.map'), 'Selected export must derive only stable selectors from governed tray');
+assert.ok(exportRepository.includes("rpc('ecoflow_read_authoritative_export_v1'"), '008C export must remain behind its server authority');
+for (const forbidden of ['tableExportRows','selectedRecordExportRows','chartExportRows','exportColumns']) assert.ok(!`${panel}\n${exportPanel}\n${exportRepository}`.includes(forbidden), `Unsafe browser export authority detected: ${forbidden}`);
 
 for (const testFile of ['scripts/intel-comparison-candidate-contract.test.mjs','scripts/intel-personalisation-productivity-contract.test.mjs']) {
   const run = spawnSync(process.execPath, ['--experimental-strip-types','--test',testFile], { encoding:'utf8' });
