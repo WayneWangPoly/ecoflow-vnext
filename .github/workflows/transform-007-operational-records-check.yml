@@ -8,6 +8,7 @@ on:
       - main
       - 'agent/**'
       - 'repair/transform-007b-accounts-read-timeout-rebased'
+      - 'repair/transform-007b-accounts-summary-timeout'
 
 permissions:
   contents: read
@@ -37,7 +38,7 @@ jobs:
 
   database:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 24
     services:
       postgres:
         image: postgres:16
@@ -77,3 +78,9 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813010000_transform_007b_accounts_read_timeout_repair.sql
       - name: Execute Accounts statement-timeout regression
         run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007-accounts-read-timeout-contract-test.sql
+      - name: Load deliberately slow Accounts summary fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-accounts-summary-timeout-fixture.sql
+      - name: Apply persisted Accounts summary repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260813030000_transform_007b_accounts_summary_timeout_repair.sql
+      - name: Execute Accounts summary freshness and timeout regression
+        run: psql -v ON_ERROR_STOP=1 -f scripts/transform-007b-accounts-summary-timeout-contract.sql
