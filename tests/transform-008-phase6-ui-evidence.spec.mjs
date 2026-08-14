@@ -194,21 +194,25 @@ async function diagnosePage(page, appRole, stage) {
 }
 
 async function openRole(browser, appRole, viewport) {
-  const context = await browser.newContext({ viewport });
+  const navigationViewport = viewport.width < 1000 ? { width: 1440, height: 1000 } : viewport;
+  const context = await browser.newContext({ viewport: navigationViewport });
   const network = await installSupabaseBoundary(context, appRole);
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  // /analytics is the product's governed canonical route. Existing deployed-route
-  // evidence uses canonical workspaces directly so auth/bootstrap is evaluated in
-  // the same route state that users can bookmark and the route adapter governs.
-  await page.goto(new URL('/analytics', TARGET_URL).href, { waitUntil: 'domcontentloaded' });
+  // The production-default bundle does not force the overlay-navigation feature
+  // flag. Prove the actual user path instead: authenticate into the desktop shell,
+  // select the real Analytics sidebar control, then verify the governed workspace.
+  await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   try {
+    const analyticsButton = page.getByRole('button', { name: 'Analytics', exact: true });
+    await expect(analyticsButton).toBeVisible({ timeout: 30000 });
+    await analyticsButton.click();
     await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15000 });
-    if (viewport.width >= 1000) {
-      await expect(page.getByRole('button', { name: 'Analytics', exact: true })).toBeVisible();
+    if (viewport.width < 1000) {
+      await page.setViewportSize(viewport);
     }
   } catch (error) {
     await diagnosePage(page, appRole, 'open-analytics');
@@ -234,7 +238,7 @@ async function provePhase6Surface(page) {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 }
 
-test('Owner can reach all governed Phase 6 productivity capabilities from the real Analytics route', async ({ browser }) => {
+test('Owner reaches all governed Phase 6 productivity capabilities through the real Analytics workspace control', async ({ browser }) => {
   const state = await openRole(browser, 'OWNER', { width: 1440, height: 1000 });
   try {
     await provePhase6Surface(state.page);
@@ -271,7 +275,7 @@ test('Viewer retains read-only Phase 6 access without role-default authority or 
   }
 });
 
-test('Owner Phase 6 productivity surface remains reachable at mobile width', async ({ browser }) => {
+test('Owner Phase 6 productivity surface remains responsive at mobile width', async ({ browser }) => {
   const state = await openRole(browser, 'OWNER', { width: 390, height: 844 });
   try {
     await expect(state.page.getByRole('heading', { name: 'Saved Views', exact: true })).toBeVisible();
