@@ -167,18 +167,49 @@ jobs:
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc \
             "select pg_get_functiondef('public.ecoflow_refresh_ui_active_order_keys()'::regprocedure);" \
             > /tmp/active-key-function.sql
-          if grep -Fq 'v_ecoflow_order_operations_v' /tmp/active-key-function.sql; then
-            echo 'Production active-key refresh still scans the expensive operations view.'
-            cat /tmp/active-key-function.sql
-            exit 1
-          fi
-          if grep -Fq 'delete from public.ecoflow_ui_active_order_keys' /tmp/active-key-function.sql; then
-            echo 'Production active-key refresh still deletes the cache during rebuild.'
-            cat /tmp/active-key-function.sql
-            exit 1
-          fi
-          grep -Fq 'from public.om_orders o' /tmp/active-key-function.sql
-          echo 'Lightweight active-key function is installed in production.'
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path('/tmp/active-key-function.sql').read_text().lower()
+
+          if 'v_ecoflow_order_operations_v' in source:
+              raise SystemExit('Production active-key refresh still scans the expensive operations view.')
+
+          required = [
+              'pg_advisory_xact_lock',
+              'from public.om_orders o',
+              'ecoflow_ordermentum_source_presence',
+              "presence.domain='order'",
+              "coalesce(presence.source_status, 'present') <> 'source_missing'",
+              "now() - interval '60 days'",
+              'insert into public.ecoflow_ui_active_order_keys(order_key)',
+              'on conflict(order_key) do nothing',
+              'delete from public.ecoflow_ui_active_order_keys existing',
+              'where existing.order_key is not null',
+              'not exists (',
+          ]
+          missing = [contract for contract in required if contract not in source]
+          if missing:
+              raise SystemExit(f'Production active-key delta contract is incomplete: {missing}')
+
+          if 'on conflict(order_key) do update' in source:
+              raise SystemExit('Production active-key refresh rewrites unchanged cache members.')
+          if re.search(r'\bupdate\s+public\.ecoflow_ui_active_order_keys\b', source):
+              raise SystemExit('Production active-key refresh directly updates cache rows.')
+
+          deletes = re.findall(
+              r'delete\s+from\s+public\.ecoflow_ui_active_order_keys\b[\s\S]*?;',
+              source,
+          )
+          if len(deletes) != 1:
+              raise SystemExit(f'Expected exactly one bounded active-key prune, found {len(deletes)}.')
+          prune = deletes[0]
+          if not re.search(r'\bwhere\b', prune) or not re.search(r'\bnot\s+exists\s*\(', prune):
+              raise SystemExit('Active-key cache DELETE is not the bounded NOT EXISTS delta prune.')
+
+          print('Production active-key delta function is installed: lightweight source read, insert-only delta, bounded stale-key prune.')
+          PY
 
       - name: Deploy required Edge Functions
         shell: bash
