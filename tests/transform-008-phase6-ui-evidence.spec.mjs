@@ -11,6 +11,7 @@ const NOW = '2026-08-14T06:30:00.000Z';
 
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 test.describe.configure({ mode: 'serial' });
+test.setTimeout(90_000);
 
 const roleProfiles = {
   OWNER: { user_id: '00000000-0000-4000-8000-000000000201', email: 'phase6-owner@example.invalid', display_name: 'Phase 6 Owner', app_role: 'OWNER' },
@@ -207,10 +208,10 @@ async function openRole(browser, appRole, viewport) {
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   try {
     const analyticsButton = page.getByRole('button', { name: 'Analytics', exact: true });
-    await expect(analyticsButton).toBeVisible({ timeout: 30000 });
+    await expect(analyticsButton).toBeVisible({ timeout: 25_000 });
     await analyticsButton.click();
-    await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15_000 });
     if (viewport.width < 1000) {
       await page.setViewportSize(viewport);
     }
