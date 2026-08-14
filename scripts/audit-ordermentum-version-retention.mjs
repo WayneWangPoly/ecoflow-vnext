@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 
 const source = await readFile('scripts/ordermentum-master-data-sync.mjs', 'utf8');
+const invoiceDetail = await readFile('scripts/ordermentum-invoice-detail-sync.mjs', 'utf8');
 const common = await readFile('scripts/ordermentum-master-data-common.mjs', 'utf8');
 const policy = await readFile('scripts/ordermentum-master-version-policy.mjs', 'utf8');
 const mirror = await readFile('scripts/ordermentum-complete-mirror.mjs', 'utf8');
@@ -33,6 +35,34 @@ assert.ok(payloadLoadCallIndex >= 0 && archiveIndex >= 0 && payloadLoadCallIndex
 assert.ok(archiveIndex >= 0 && currentUpsertIndex >= 0 && archiveIndex < currentUpsertIndex,
   'prior state must be archived before current-state upsert');
 
+// Invoice detail must follow the same payload-sparse contract. Bulk catalog reads
+// use only identity/hash/timestamp metadata; a full payload may be loaded for one
+// existing detail only after a fetched payload is proven to have changed.
+requireText(invoiceDetail, "select('external_id,payload_hash,remote_updated_at')", 'invoice detail metadata-only bulk read');
+assert.ok(!invoiceDetail.includes("select('external_id,payload,payload_hash,remote_created_at,remote_updated_at,last_synced_at')"),
+  'invoice detail bulk reads must never load payload JSON');
+requireText(invoiceDetail, 'isStatementTimeout(error)', 'invoice detail statement-timeout detection');
+requireText(invoiceDetail, 'currentPageSize > minPageSize', 'invoice detail adaptive read bound');
+requireText(invoiceDetail, 'Math.max(minPageSize, Math.floor(currentPageSize / 2))', 'invoice detail adaptive page shrink');
+requireText(invoiceDetail, 'Invoice detail metadata read exhausted minimum page size', 'invoice detail fail-closed minimum page signal');
+requireText(invoiceDetail, 'shouldArchivePreviousVersion(current, payloadHash)', 'invoice detail prior-state decision');
+requireText(invoiceDetail, 'const previous = await loadCurrentDetailWithPayload(externalId)', 'invoice detail single-row prior payload read');
+requireText(invoiceDetail, '.insert(buildArchivedVersion(previous, { supplierId, sourceEndpoint, syncRunId: runId }))', 'invoice detail prior-state archive');
+requireText(invoiceDetail, 'await touchUnchangedDetail(externalId', 'invoice detail metadata-only unchanged touch');
+
+const invoiceUnchangedIndex = invoiceDetail.indexOf('if (!changed)');
+const invoicePriorPayloadIndex = invoiceDetail.indexOf('const previous = await loadCurrentDetailWithPayload(externalId)');
+const invoiceArchiveIndex = invoiceDetail.indexOf('const archived = await archivePreviousVersion(previous, result.path)');
+const invoiceCurrentUpsertIndex = invoiceDetail.indexOf(".from('ordermentum_raw_master_resources')\n        .upsert(row");
+assert.ok(invoiceUnchangedIndex >= 0 && invoicePriorPayloadIndex >= 0 && invoiceUnchangedIndex < invoicePriorPayloadIndex,
+  'unchanged fetched invoice details must not load the old JSON payload');
+assert.ok(invoicePriorPayloadIndex >= 0 && invoiceArchiveIndex >= 0 && invoicePriorPayloadIndex < invoiceArchiveIndex,
+  'changed invoice details must load the prior state before archiving it');
+assert.ok(invoiceArchiveIndex >= 0 && invoiceCurrentUpsertIndex >= 0 && invoiceArchiveIndex < invoiceCurrentUpsertIndex,
+  'invoice detail prior state must be archived before replacing current state');
+assert.ok(!invoiceDetail.includes(".from('ordermentum_raw_master_resource_versions')\n        .insert({"),
+  'invoice detail history must not insert the incoming/current payload as a duplicate version');
+
 requireText(policy, 'maxVersionsPerResource: 1', 'version count policy');
 requireText(policy, 'maxAgeDays: 7', 'version age policy');
 requireText(policy, 'maxPayloadBytes: 2 * 1024 * 1024', 'global version payload policy');
@@ -57,4 +87,9 @@ requireText(mirror, 'await verifyStorageHeadroom()', 'verification storage gate'
 requireText(mirror, "`--touch-unchanged=${scope === 'full_history' ? 'true' : 'false'}`", 'scope-aware unchanged write policy');
 requireText(common, "crypto.createHash('sha256').update(JSON.stringify(payload ?? null)).digest('hex')", 'legacy payload hash compatibility');
 
-console.log('Ordermentum version-retention audit passed: incremental writes are payload-sparse, full-history remains verifiable, history is bounded to 1/7/2MiB, and the 475 MiB guard remains fail-closed.');
+for (const script of ['scripts/ordermentum-master-data-sync.mjs', 'scripts/ordermentum-invoice-detail-sync.mjs']) {
+  const syntax = spawnSync(process.execPath, ['--check', script], { encoding: 'utf8' });
+  assert.equal(syntax.status, 0, `${script} syntax error: ${syntax.stderr || syntax.stdout}`);
+}
+
+console.log('Ordermentum version-retention audit passed: master and invoice-detail syncs are payload-sparse, 57014 reads shrink boundedly and fail closed, prior state is archived without duplicating current JSON, history is bounded to 1/7/2MiB, and the 475 MiB guard remains fail-closed.');
