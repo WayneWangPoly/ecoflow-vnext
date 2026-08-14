@@ -18,7 +18,10 @@ const comparisonRepository = read('src/data/repositories/comparisonCandidates.ts
 const exportRepository = read('src/data/repositories/authoritativeExport.ts');
 const savedViewsRepository = read('src/data/repositories/savedViewRepository.ts');
 
-assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Analytics desktop route must render the exported AnalyticsHealthConsole product workspace.');
+assert.ok(app.includes("{ id: 'analytics', label: 'Analytics' }"), 'Desktop shell must retain the Analytics workspace control.');
+assert.ok(app.includes('availableDesktopTabs(role).map((item) => ('), 'Desktop shell must derive visible workspace controls from the role-aware tab set.');
+assert.ok(app.includes('onClick={() => setTab(item.id)}'), 'Desktop workspace controls must continue to select their governed tab through setTab.');
+assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Selecting Analytics must render the exported AnalyticsHealthConsole product workspace.');
 assert.ok(analyticsIndex.includes("export * from './healthConsole';"), 'Analytics barrel must expose the health-console product workspace.');
 assert.ok(healthIndex.includes('OperationalPulseReadinessWorkspace as AnalyticsHealthConsole'), 'AnalyticsHealthConsole must remain the governed OperationalPulseReadinessWorkspace alias.');
 assert.ok(workspace.includes("import { PersonalisationProductivityPanel } from './productivity';"), 'Real Analytics product workspace must import the governed Phase 6 productivity surface.');
@@ -59,6 +62,7 @@ for (const forbiddenRpc of [
 }
 
 console.log('TRANSFORM-008 Phase 6 closure audit passed.');
-console.log('- Real Analytics export chain resolves to OperationalPulseReadinessWorkspace.');
+console.log('- Role-aware desktop shell retains the real Analytics workspace control.');
+console.log('- Analytics export chain resolves to OperationalPulseReadinessWorkspace.');
 console.log('- PersonalisationProductivityPanel is mounted exactly once in the real product workspace.');
 console.log('- Saved Views, comparison and export remain governed server-authoritative capabilities.');
