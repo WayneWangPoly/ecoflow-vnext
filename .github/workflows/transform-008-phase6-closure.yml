@@ -1,0 +1,234 @@
+name: TRANSFORM-008 Phase 6 closure
+
+on:
+  push:
+    branches:
+      - main
+      - 'transform/008-phase6-closure'
+    paths:
+      - 'src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx'
+      - 'src/features/intelligence/analytics/productivity/**'
+      - 'src/data/repositories/savedViewRepository.ts'
+      - 'src/data/repositories/comparisonCandidates.ts'
+      - 'src/data/repositories/authoritativeExport.ts'
+      - 'scripts/audit-transform-008-phase6-closure.mjs'
+      - 'tests/transform-008-phase6-ui-evidence.spec.mjs'
+      - '.github/workflows/transform-008-phase6-closure.yml'
+      - 'docs/engineering/work-packages/TRANSFORM-008-phase6-programme-completion.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx'
+      - 'src/features/intelligence/analytics/productivity/**'
+      - 'src/data/repositories/savedViewRepository.ts'
+      - 'src/data/repositories/comparisonCandidates.ts'
+      - 'src/data/repositories/authoritativeExport.ts'
+      - 'scripts/audit-transform-008-phase6-closure.mjs'
+      - 'tests/transform-008-phase6-ui-evidence.spec.mjs'
+      - '.github/workflows/transform-008-phase6-closure.yml'
+      - 'docs/engineering/work-packages/TRANSFORM-008-phase6-programme-completion.md'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: 'Optional exact SHA to verify.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: transform-008-phase6-closure-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-source-closure-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EVIDENCE_DIR: artifacts/transform-008-phase6-ui
+    steps:
+      - name: Resolve exact source SHA
+        id: target
+        shell: bash
+        env:
+          INPUT_SHA: ${{ inputs.target_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_SHA:-}" ]]; then
+            target_sha="$INPUT_SHA"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            target_sha="$PR_HEAD_SHA"
+          else
+            target_sha="$GITHUB_SHA"
+          fi
+          [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+          echo "EXACT_SOURCE_SHA=$target_sha"
+
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+
+      - name: Prove closure harness is credential-free and mutation-free
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R --line-number -E 'SUPABASE_SERVICE_ROLE_KEY|DATABASE_URL|VERCEL_AUTOMATION_BYPASS_SECRET|secrets\.' \
+            .github/workflows/transform-008-phase6-closure.yml \
+            tests/transform-008-phase6-ui-evidence.spec.mjs
+          grep -F "context.route('**/auth/v1/**'" tests/transform-008-phase6-ui-evidence.spec.mjs
+          grep -F "context.route('**/rest/v1/**'" tests/transform-008-phase6-ui-evidence.spec.mjs
+          grep -F 'forbiddenBusinessWrites' tests/transform-008-phase6-ui-evidence.spec.mjs
+          grep -F 'ecoflow_read_comparison_candidates_v1' tests/transform-008-phase6-ui-evidence.spec.mjs
+          grep -F 'ecoflow_read_authoritative_export_v1' tests/transform-008-phase6-ui-evidence.spec.mjs
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run TRANSFORM-008 authority and closure audits
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/audit-transform-008a-analytics-productivity-truth.mjs
+          node scripts/audit-transform-008b-governed-comparison.mjs
+          node scripts/audit-transform-008c-authoritative-export.mjs
+          node scripts/audit-transform-008-phase6-closure.mjs
+
+      - name: TypeScript and production build
+        env:
+          VITE_SUPABASE_URL: https://kauqwlzuyxcudoyognwf.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhbm9uIiwicm9sZSI6ImFub24iLCJpc3MiOiJwaGFzZTYtY2xvc3VyZS1ldmlkZW5jZSJ9.synthetic-signature
+        run: npm run build
+
+      - name: Install pinned Playwright runner and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start exact-source production preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          npm run preview -- --host 127.0.0.1 --port 4173 > "$EVIDENCE_DIR/preview.log" 2>&1 &
+          echo $! > "$EVIDENCE_DIR/preview.pid"
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then
+              echo 'Exact-source production preview is ready.'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$EVIDENCE_DIR/preview.log" >&2 || true
+          exit 1
+
+      - name: Run authenticated Phase 6 route and browser evidence
+        env:
+          TARGET_URL: http://127.0.0.1:4173
+        run: npx playwright test tests/transform-008-phase6-ui-evidence.spec.mjs --workers=1 --reporter=line
+
+      - name: Verify required screenshot set
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            owner-analytics-phase6-desktop.png
+            viewer-analytics-phase6-desktop.png
+            owner-analytics-phase6-mobile.png
+          )
+          for file in "${required[@]}"; do
+            test -s "$EVIDENCE_DIR/$file"
+            echo "PASS screenshot: $file"
+          done
+          test "$(find "$EVIDENCE_DIR" -maxdepth 1 -type f -name '*.png' | wc -l)" -eq 3
+
+      - name: Prove successful Vercel Production deployment for post-main evidence
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        id: deployment
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          deployment_id=''
+          deployment_url=''
+          for attempt in $(seq 1 20); do
+            deployments="$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/deployments?sha=${TARGET_SHA}&per_page=30")"
+            deployment_id="$(jq -r '[.[] | select(.environment == "Production")][0].id // empty' <<<"$deployments")"
+            if [[ -n "$deployment_id" ]]; then
+              statuses="$(curl -fsSL \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=30")"
+              deployment_url="$(jq -r '[.[] | select(.state == "success")][0].environment_url // empty' <<<"$statuses")"
+              if [[ -n "$deployment_url" ]]; then break; fi
+            fi
+            sleep 6
+          done
+          test -n "$deployment_url"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Write evidence manifest
+        shell: bash
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          DEPLOYMENT_URL: ${{ steps.deployment.outputs.deployment_url }}
+        run: |
+          deployment_state='PRE_MERGE_NOT_APPLICABLE'
+          if [[ "${GITHUB_REF}" == "refs/heads/main" && "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            deployment_state='SUCCESS'
+          fi
+          cat > "$EVIDENCE_DIR/manifest.txt" <<EOF
+          TRANSFORM_008_PHASE6_CLOSURE=PASS
+          EXACT_SOURCE_SHA=$TARGET_SHA
+          PRODUCTION_BUILD=PASS
+          ANALYTICS_ROUTE_PRODUCTIVITY_REACHABLE=PASS
+          SAVED_VIEWS_SERVER_READ=PASS
+          GOVERNED_COMPARISON_SERVER_READ=PASS
+          AUTHORITATIVE_EXPORT_SERVER_REREAD=PASS
+          VIEWER_ROLE_BOUNDARY=PASS
+          DESKTOP_RESPONSIVE_EVIDENCE=PASS
+          MOBILE_RESPONSIVE_EVIDENCE=PASS
+          BUSINESS_MUTATION_DURING_EVIDENCE=0
+          SUPABASE_PRODUCTION_DATA_REQUESTS=0
+          VERCEL_PRODUCTION_DEPLOYMENT=$deployment_state
+          VERCEL_DEPLOYMENT_ID=${DEPLOYMENT_ID:-}
+          VERCEL_DEPLOYMENT_URL=${DEPLOYMENT_URL:-}
+          EOF
+          cat "$EVIDENCE_DIR/manifest.txt"
+
+      - name: Upload Phase 6 closure evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: transform-008-phase6-closure-${{ steps.target.outputs.target_sha }}
+          path: artifacts/transform-008-phase6-ui
+          if-no-files-found: error
+          retention-days: 30
