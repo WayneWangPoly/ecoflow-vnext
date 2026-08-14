@@ -71,6 +71,7 @@ console.log(JSON.stringify({ action: 'complete_mirror_start', mode, mirrorStart,
 async function runFinalisationData({ scope, historyRunId = null }) {
   await timed('complete Ordermentum master mirror', () => runNode('scripts/ordermentum-master-data-sync.mjs', [
     '--resources=purchasers,price_groups,products,variants,invoices,stock_locations', '--page-size=50', '--max-pages=200', '--detail', '--detail-changed-only', '--delay-ms=300',
+    `--touch-unchanged=${scope === 'full_history' ? 'true' : 'false'}`,
   ]));
   await timed('complete invoice detail mirror', () => runNode('scripts/ordermentum-invoice-detail-sync.mjs', ['--page-size=500', '--limit=10000', '--delay-ms=300']));
   await timed('project raw orders', () => runNode('scripts/project-ordermentum-raw-orders.mjs', ['--batch-limit', '100', '--min-batch-limit', '5', '--max-batches', '400', '--delay-ms', '100']));
