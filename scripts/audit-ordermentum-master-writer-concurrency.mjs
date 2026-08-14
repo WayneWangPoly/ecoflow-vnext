@@ -10,6 +10,7 @@ const SHARED_GROUP = 'ordermentum-cloud-sync';
 const KNOWN_MASTER_WRITERS = new Set([
   'ordermentum-cloud-sync.yml',
   'ordermentum-complete-mirror.yml',
+  'recover-supabase-migration-ordering.yml',
   'refresh-master-catalog-after-migrations.yml',
   'refresh-customer-stores-on-release.yml',
 ]);
@@ -109,6 +110,14 @@ for (const expected of KNOWN_MASTER_WRITERS) {
   }
 }
 
+const recovery = read(path.join(WORKFLOW_DIR, 'recover-supabase-migration-ordering.yml'));
+if (!/^concurrency:\n  group: ecoflow-supabase-production-migrations\n  cancel-in-progress: false$/m.test(recovery)) {
+  failures.push('recover-supabase-migration-ordering.yml must retain the production migration concurrency boundary.');
+}
+if (!/\n  complete-mirror:\n[\s\S]*?\n    concurrency:\n      group: ordermentum-cloud-sync\n      cancel-in-progress: false\n/.test(recovery)) {
+  failures.push('recover-supabase-migration-ordering.yml complete-mirror job must additionally acquire ordermentum-cloud-sync.');
+}
+
 const maintenance = read(path.join(WORKFLOW_DIR, 'ordermentum-storage-maintenance.yml'));
 failures.push(...serializationProblems('ordermentum-storage-maintenance.yml', maintenance));
 
@@ -135,4 +144,5 @@ if (failures.length) {
 }
 
 console.log('Ordermentum master writer concurrency audit passed.');
+console.log('Recovery retains the Supabase migration mutex and adds the Ordermentum writer mutex for its mirror job.');
 console.log('Storage maintenance remains serialized on the same Ordermentum I/O boundary.');
