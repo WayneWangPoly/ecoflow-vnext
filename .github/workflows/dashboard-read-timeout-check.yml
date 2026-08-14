@@ -8,7 +8,9 @@ on:
       - 'src/data/repositories/dashboardReadiness.ts'
       - 'scripts/project-ordermentum-raw-orders.mjs'
       - 'scripts/audit-dashboard-read-timeout-hardening.mjs'
+      - 'scripts/audit-accounts-snapshot-safe-refresh.mjs'
       - 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql'
+      - 'supabase/migrations/20260814143000_accounts_snapshot_safe_refresh.sql'
       - '.github/workflows/dashboard-read-timeout-check.yml'
   push:
     branches:
@@ -19,7 +21,9 @@ on:
       - 'src/data/repositories/dashboardReadiness.ts'
       - 'scripts/project-ordermentum-raw-orders.mjs'
       - 'scripts/audit-dashboard-read-timeout-hardening.mjs'
+      - 'scripts/audit-accounts-snapshot-safe-refresh.mjs'
       - 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql'
+      - 'supabase/migrations/20260814143000_accounts_snapshot_safe_refresh.sql'
       - '.github/workflows/dashboard-read-timeout-check.yml'
 
 permissions:
@@ -46,6 +50,8 @@ jobs:
         run: npm ci
       - name: Audit read boundaries
         run: node scripts/audit-dashboard-read-timeout-hardening.mjs
+      - name: Audit Accounts snapshot safe refresh
+        run: node scripts/audit-accounts-snapshot-safe-refresh.mjs
       - name: Check projection script syntax
         run: node --check scripts/project-ordermentum-raw-orders.mjs
       - name: TypeScript
