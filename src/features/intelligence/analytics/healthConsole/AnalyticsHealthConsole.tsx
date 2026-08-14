@@ -16,6 +16,7 @@ import {
   AnalyticsMetricFrame,
   type AnalyticsTableColumn,
 } from '../primitives';
+import { PersonalisationProductivityPanel } from '../productivity';
 import {
   analyticsHealthReadout,
   analyticsHealthTone,
@@ -381,6 +382,8 @@ export function AnalyticsHealthConsole({ repository = analyticsRepository }: Ana
           ) : <ResourceEmpty title="No visible metrics" />}
         </AnalyticsMetricFrame>
       </div>
+
+      <PersonalisationProductivityPanel />
     </section>
   );
 }
