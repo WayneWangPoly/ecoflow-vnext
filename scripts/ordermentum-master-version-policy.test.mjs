@@ -63,11 +63,11 @@ test('archived versions use safe fallbacks for legacy current rows', () => {
   });
 });
 
-test('storage policy stays inside the Free-plan incident headroom', () => {
+test('storage policy keeps only minimal operational rollback history', () => {
   assert.deepEqual(ORDERMENTUM_VERSION_RETENTION, {
-    maxVersionsPerResource: 3,
-    maxAgeDays: 30,
-    maxPayloadBytes: 10 * 1024 * 1024,
+    maxVersionsPerResource: 1,
+    maxAgeDays: 7,
+    maxPayloadBytes: 2 * 1024 * 1024,
   });
   assert.equal(ORDERMENTUM_DATABASE_GUARD_BYTES, 475 * 1024 * 1024);
 });
