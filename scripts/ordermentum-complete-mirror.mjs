@@ -82,6 +82,14 @@ async function runFinalisationData({ scope, historyRunId = null }) {
 }
 
 async function verifyStorageHeadroom() {
+  const inventoryResult = await db.rpc('ecoflow_ordermentum_storage_inventory');
+  if (inventoryResult.error) throw inventoryResult.error;
+  const inventory = Array.isArray(inventoryResult.data) ? inventoryResult.data[0] : inventoryResult.data;
+  if (!inventory || typeof inventory !== 'object') {
+    throw new Error(`Ordermentum storage inventory returned invalid metrics: ${JSON.stringify(inventoryResult.data)}`);
+  }
+  console.log(JSON.stringify({ action: 'ordermentum_storage_inventory', ...inventory }, null, 2));
+
   const result = await db.rpc('ecoflow_ordermentum_storage_health');
   if (result.error) throw result.error;
   const row = Array.isArray(result.data) ? result.data[0] : result.data;
