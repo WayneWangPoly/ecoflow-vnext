@@ -5,8 +5,21 @@ import { intelligenceFeatureFlags } from '../featureFlags';
 import {
   deriveDesktopRouteAdapterModel,
   desktopTabNavigationTarget,
+  resolveIntelligenceRoute,
   type DesktopRouteBoundaryState,
 } from './routeContract';
+
+function initialLegacyTab(pathname: string, role: Role): DesktopTab {
+  const resolution = resolveIntelligenceRoute(pathname, role);
+  if (
+    resolution.status === 'READY'
+    && resolution.route.workspace === 'analytics'
+    && resolution.route.legacyDesktopTab === 'analytics'
+  ) {
+    return 'analytics';
+  }
+  return 'dashboard';
+}
 
 export function useDesktopRouteAdapter(role: Role): {
   tab: DesktopTab;
@@ -16,7 +29,7 @@ export function useDesktopRouteAdapter(role: Role): {
 } {
   const location = useLocation();
   const navigate = useNavigate();
-  const [legacyTab, setLegacyTab] = useState<DesktopTab>('dashboard');
+  const [legacyTab, setLegacyTab] = useState<DesktopTab>(() => initialLegacyTab(location.pathname, role));
   const enabled = intelligenceFeatureFlags.overlay_navigation_v1;
 
   const model = useMemo(
