@@ -174,7 +174,7 @@ jobs:
             updated_at timestamptz default now()
           );
           create table if not exists storage.objects (
-            id uuid primary key,
+            id uuid primary key default gen_random_uuid(),
             bucket_id text,
             name text,
             owner uuid,
