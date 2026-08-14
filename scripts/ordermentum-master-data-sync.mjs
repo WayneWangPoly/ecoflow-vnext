@@ -14,6 +14,7 @@ if (!supabase && !args['dry-run']) throw new Error('SUPABASE_URL and SUPABASE_SE
 const supplierId = process.env.ORDERMENTUM_SUPPLIER_ID || args.supplierId || requireEnv('ORDERMENTUM_SUPPLIER_ID');
 const token = await getLegacyBearerToken();
 const dryRun = Boolean(args['dry-run'] || args.dryRun);
+const touchUnchanged = args['touch-unchanged'] === true || String(args['touch-unchanged'] || args.touchUnchanged || '').toLowerCase() === 'true';
 const resources = String(args.resources || Object.keys(RESOURCE_DEFINITIONS).filter((r) => r !== 'leads').join(',')).split(',').map((x) => x.trim()).filter(Boolean);
 const pageSize = Number(args['page-size'] || args.pageSize || 50);
 const maxPages = Number(args['max-pages'] || args.maxPages || 50);
@@ -23,14 +24,30 @@ const delayMs = Number(args['delay-ms'] || args.delayMs || 300);
 let runId = null;
 const counters = {
   endpointsAttempted: 0, pagesSeen: 0, recordsSeen: 0, recordsUpserted: 0, recordsChanged: 0,
+  recordsUnchanged: 0, recordsTouchedUnchanged: 0,
   versionsArchived: 0, versionsArchiveDeduped: 0,
   detailAttempted: 0, detailSucceeded: 0, detailFailed: 0, detailSkippedUnchanged: 0, storesProjected: 0,
 };
 const resourcesSucceeded = []; const resourcesFailed = []; const resourcesUnavailable = [];
 const errors = []; const warnings = []; const detailFailuresByResource = {}; const detailSkippedByResource = {};
 
+function errorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const detail = error;
+    return [
+      detail.message || detail.error_description || detail.error || 'Unknown structured error',
+      detail.code ? `code=${detail.code}` : null,
+      detail.details ? `details=${detail.details}` : null,
+      detail.hint ? `hint=${detail.hint}` : null,
+      detail.status || detail.statusCode ? `status=${detail.status || detail.statusCode}` : null,
+    ].filter(Boolean).join(' | ');
+  }
+  return String(error);
+}
+
 function isOptionalCapabilityUnavailable(resource, error) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return RESOURCE_DEFINITIONS[resource]?.optionalCapability === true && /failed\s+(404|405)\b/i.test(message);
 }
 
@@ -76,6 +93,25 @@ async function archivePreviousVersion(existing, resourceType, externalId, source
   counters.versionsArchived += 1;
 }
 
+async function loadExistingPayload(resourceType, externalId) {
+  const result = await supabase.from('ordermentum_raw_master_resources')
+    .select('resource_type,external_id,supplier_id,source_endpoint,payload,payload_hash,sync_run_id')
+    .eq('resource_type', resourceType).eq('external_id', externalId).single();
+  if (result.error) throw result.error;
+  return result.data;
+}
+
+async function touchExisting(resourceType, externalId, now) {
+  const result = await supabase.from('ordermentum_raw_master_resources').update({
+    last_seen_at: now,
+    last_synced_at: now,
+    is_deleted_or_missing: false,
+    sync_run_id: runId,
+  }).eq('resource_type', resourceType).eq('external_id', externalId);
+  if (result.error) throw result.error;
+  counters.recordsTouchedUnchanged += 1;
+}
+
 async function upsertRaw(resourceType, sourceEndpoint, requestQuery, item) {
   const externalId = extractExternalId(item, resourceType);
   const payloadHash = hashPayload(item);
@@ -83,27 +119,39 @@ async function upsertRaw(resourceType, sourceEndpoint, requestQuery, item) {
   const remoteUpdatedAt = extractTimestamp(item, ['updatedAt', 'updated_at', 'modifiedAt', 'lastModifiedAt', 'product.updatedAt', 'retailer.updatedAt']);
   counters.recordsSeen += 1;
   if (dryRun || !supabase) return { externalId, changed: false };
+
+  // Hash comparison intentionally avoids reading the potentially large JSON payload.
+  // The payload is loaded only when a genuine change must be archived.
   const existing = await supabase.from('ordermentum_raw_master_resources')
-    .select('resource_type,external_id,supplier_id,source_endpoint,payload,payload_hash,sync_run_id')
+    .select('resource_type,external_id,supplier_id,source_endpoint,payload_hash,sync_run_id')
     .eq('resource_type', resourceType).eq('external_id', externalId).maybeSingle();
   if (existing.error) throw existing.error;
 
   const changed = !existing.data || existing.data.payload_hash !== payloadHash;
-  const archivePrevious = shouldArchivePreviousVersion(existing.data, payloadHash);
+  if (!changed) {
+    counters.recordsUnchanged += 1;
+    if (touchUnchanged) await touchExisting(resourceType, externalId, new Date().toISOString());
+    return { externalId, changed: false };
+  }
 
-  if (archivePrevious) await archivePreviousVersion(existing.data, resourceType, externalId, sourceEndpoint);
+  if (shouldArchivePreviousVersion(existing.data, payloadHash)) {
+    const previous = await loadExistingPayload(resourceType, externalId);
+    await archivePreviousVersion(previous, resourceType, externalId, sourceEndpoint);
+  }
 
+  const now = new Date().toISOString();
   const row = {
     resource_type: resourceType, external_id: externalId, supplier_id: supplierId, source_endpoint: sourceEndpoint,
     source_method: 'GET', request_query: requestQuery, payload: item, payload_hash: payloadHash,
     previous_payload_hash: existing.data?.payload_hash || null, remote_created_at: remoteCreatedAt,
-    remote_updated_at: remoteUpdatedAt, last_seen_at: new Date().toISOString(), last_synced_at: new Date().toISOString(),
+    remote_updated_at: remoteUpdatedAt, last_seen_at: now, last_synced_at: now,
     is_deleted_or_missing: false, sync_run_id: runId,
   };
   const saved = await supabase.from('ordermentum_raw_master_resources').upsert(row, { onConflict: 'resource_type,external_id' });
-  if (saved.error) throw saved.error; counters.recordsUpserted += 1;
-  if (changed) counters.recordsChanged += 1;
-  return { externalId, changed };
+  if (saved.error) throw saved.error;
+  counters.recordsUpserted += 1;
+  counters.recordsChanged += 1;
+  return { externalId, changed: true };
 }
 
 async function syncResource(resource) {
@@ -153,12 +201,12 @@ try {
   for (const resource of resources) {
     try { const count = await syncResource(resource); resourcesSucceeded.push(resource); console.log(`[${resource}] completed: ${count}`); }
     catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       if (isOptionalCapabilityUnavailable(resource, error)) { resourcesUnavailable.push(resource); warnings.push({ resource, message }); console.warn(`[${resource}] optional capability unavailable: ${message}`); }
       else { resourcesFailed.push(resource); errors.push({ resource, message }); console.error(`[${resource}] failed: ${message}`); }
     }
   }
-  try { await projectStores(); } catch (error) { const message = error instanceof Error ? error.message : String(error); resourcesFailed.push('store_projection'); errors.push({ resource: 'store_projection', message }); }
+  try { await projectStores(); } catch (error) { const message = errorMessage(error); resourcesFailed.push('store_projection'); errors.push({ resource: 'store_projection', message }); }
   const status = dryRun ? 'DRY_RUN' : resourcesFailed.length ? 'PARTIAL' : 'SUCCEEDED';
   if (supabase && runId) await supabase.from('ordermentum_master_sync_runs').update({
     status, resources_succeeded: resourcesSucceeded, resources_failed: resourcesFailed,
@@ -166,11 +214,11 @@ try {
     records_upserted: counters.recordsUpserted, records_changed: counters.recordsChanged,
     detail_attempted: counters.detailAttempted, detail_succeeded: counters.detailSucceeded, detail_failed: counters.detailFailed,
     finished_at: new Date().toISOString(), last_error: errors.length ? JSON.stringify(errors).slice(0, 2000) : null,
-    notes: { errors, warnings, resourcesUnavailable, detailFailuresByResource, detailSkippedByResource, detailSkippedUnchanged: counters.detailSkippedUnchanged, storesProjected: counters.storesProjected, versionsArchived: counters.versionsArchived, versionsArchiveDeduped: counters.versionsArchiveDeduped },
+    notes: { errors, warnings, resourcesUnavailable, detailFailuresByResource, detailSkippedByResource, detailSkippedUnchanged: counters.detailSkippedUnchanged, recordsUnchanged: counters.recordsUnchanged, recordsTouchedUnchanged: counters.recordsTouchedUnchanged, touchUnchanged, storesProjected: counters.storesProjected, versionsArchived: counters.versionsArchived, versionsArchiveDeduped: counters.versionsArchiveDeduped },
   }).eq('id', runId);
-  console.log(JSON.stringify({ runId, dryRun, supplierId, resources, resourcesSucceeded, resourcesUnavailable, resourcesFailed, ...counters, detailChangedOnly, detailFailuresByResource, detailSkippedByResource, warnings, errors }, null, 2));
+  console.log(JSON.stringify({ runId, dryRun, supplierId, resources, resourcesSucceeded, resourcesUnavailable, resourcesFailed, ...counters, touchUnchanged, detailChangedOnly, detailFailuresByResource, detailSkippedByResource, warnings, errors }, null, 2));
   if (resourcesFailed.length) process.exitCode = 2;
 } catch (error) {
-  if (supabase && runId) await supabase.from('ordermentum_master_sync_runs').update({ status: 'FAILED', finished_at: new Date().toISOString(), last_error: error.message }).eq('id', runId);
+  if (supabase && runId) await supabase.from('ordermentum_master_sync_runs').update({ status: 'FAILED', finished_at: new Date().toISOString(), last_error: errorMessage(error) }).eq('id', runId);
   throw error;
 }
