@@ -16,6 +16,7 @@ concurrency:
 
 env:
   SUPABASE_CLI_VERSION: 2.107.0
+  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
 
 jobs:
   recover:
@@ -53,8 +54,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID; do
-            test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID SUPABASE_POOLER_HOST; do
+            test -n "${!name}" || { echo "Missing required runtime value: $name"; exit 1; }
           done
 
       - name: Isolate legacy SQL archives
@@ -128,9 +129,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          POOLER_TEMPLATE="$(tr -d '[:space:]' < supabase/.temp/pooler-url)"
           ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
-          SUPABASE_DB_URL="${POOLER_TEMPLATE/@/:${ENCODED_PASSWORD}@}"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
           echo "::add-mask::$SUPABASE_DB_URL"
           echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
 
