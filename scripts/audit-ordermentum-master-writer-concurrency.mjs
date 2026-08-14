@@ -126,6 +126,31 @@ if (!recovery.includes('postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_
 if (recovery.includes('supabase/.temp/pooler-url')) {
   failures.push('recover-supabase-migration-ordering.yml must not depend on checkout-local Supabase .temp pooler metadata.');
 }
+for (const invariant of [
+  "'pg_advisory_xact_lock'",
+  "'from public.om_orders o'",
+  "'ecoflow_ordermentum_source_presence'",
+  '"presence.domain=\'order\'"',
+  '"coalesce(presence.source_status, \'present\') <> \'source_missing\'"',
+  '"now() - interval \'60 days\'"',
+  "'insert into public.ecoflow_ui_active_order_keys(order_key)'",
+  "'on conflict(order_key) do nothing'",
+  "'delete from public.ecoflow_ui_active_order_keys existing'",
+  "'where existing.order_key is not null'",
+  "'not exists ('",
+  "'on conflict(order_key) do update'",
+  "r'\\bupdate\\s+public\\.ecoflow_ui_active_order_keys\\b'",
+  "r'delete\\s+from\\s+public\\.ecoflow_ui_active_order_keys\\b[\\s\\S]*?;'",
+  "r'\\bwhere\\b'",
+  "r'\\bnot\\s+exists\\s*\\('",
+]) {
+  if (!recovery.includes(invariant)) {
+    failures.push(`Recovery active-key semantic verifier is missing contract code: ${invariant}`);
+  }
+}
+if (recovery.includes("if grep -Fq 'delete from public.ecoflow_ui_active_order_keys'")) {
+  failures.push('Recovery must not reject every active-key DELETE; the canonical delta writer requires a bounded NOT EXISTS prune.');
+}
 
 const maintenance = read(path.join(WORKFLOW_DIR, 'ordermentum-storage-maintenance.yml'));
 failures.push(...serializationProblems('ordermentum-storage-maintenance.yml', maintenance));
@@ -155,4 +180,5 @@ if (failures.length) {
 console.log('Ordermentum master writer concurrency audit passed.');
 console.log('Recovery retains the Supabase migration mutex and adds the Ordermentum writer mutex for its mirror job.');
 console.log('Recovery pooler URL is resolved from the same stable runtime configuration proven by production deployment.');
+console.log('Recovery validates the canonical active-key delta writer: insert-only membership changes plus bounded NOT EXISTS prune.');
 console.log('Storage maintenance remains serialized on the same Ordermentum I/O boundary.');
