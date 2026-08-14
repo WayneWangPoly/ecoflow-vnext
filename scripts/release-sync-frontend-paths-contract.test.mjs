@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { hasFrontendChanges } from './release-sync-frontend-paths.mjs';
 
 const workflow = readFileSync(new URL('../.github/workflows/release-sync-authority.yml', import.meta.url), 'utf8');
+const deployWorkflow = readFileSync(new URL('../.github/workflows/deploy-supabase-migrations.yml', import.meta.url), 'utf8');
 
 test('frontend path classifier covers release-bearing files', () => {
   assert.equal(hasFrontendChanges(['src/features/example.tsx']), true);
@@ -48,4 +49,21 @@ test('authoritative workflow runs after the database deployment workflow', () =>
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /workflows: \['Deploy Supabase migrations'\]/);
   assert.match(workflow, /context='Release sync'/);
+});
+
+test('release-sync control-plane changes require fresh production deployment proof', () => {
+  for (const path of [
+    'scripts/release-sync-frontend-paths.mjs',
+    'scripts/release-sync-frontend-paths-contract.test.mjs',
+    '.github/workflows/release-sync-authority.yml',
+  ]) {
+    assert.ok(
+      deployWorkflow.includes(`- '${path}'`),
+      `Deploy Supabase migrations must run when ${path} changes on main`,
+    );
+  }
+  assert.ok(
+    workflow.includes("- '.github/workflows/deploy-supabase-migrations.yml'"),
+    'Release sync contract must run when the production proof trigger wiring changes',
+  );
 });
