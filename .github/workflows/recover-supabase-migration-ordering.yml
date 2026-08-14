@@ -188,16 +188,7 @@ jobs:
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" 2>&1 | tee -a /tmp/recovery-deploy.log
           done
 
-      - name: Install application dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Run full-history complete mirror
-        shell: bash
-        run: |
-          set -o pipefail
-          node scripts/ordermentum-complete-mirror.mjs --scope=full_history 2>&1 | tee /tmp/ordermentum-complete-mirror.log
-
-      - name: Publish recovery summary
+      - name: Publish recovery deployment summary
         if: always()
         shell: bash
         run: |
@@ -208,21 +199,82 @@ jobs:
             echo '```text'
             tail -n 50 /tmp/recovery-deploy.log 2>/dev/null || true
             echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload recovery deployment logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-migration-ordering-recovery-deploy-${{ github.run_id }}
+          path: |
+            /tmp/recovery-deploy.log
+            /tmp/active-key-function.sql
+          if-no-files-found: warn
+          retention-days: 30
+
+  complete-mirror:
+    needs: recover
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: production
+    concurrency:
+      group: ordermentum-cloud-sync
+      cancel-in-progress: false
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+      ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+      ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+      ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+      ORDERMENTUM_ORDER_DETAIL_URL_TEMPLATE: ${{ secrets.ORDERMENTUM_ORDER_DETAIL_URL_TEMPLATE }}
+      ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE: ${{ secrets.ORDERMENTUM_INVOICE_DETAIL_URL_TEMPLATE }}
+      ORDERMENTUM_FULL_SYNC_FROM: ${{ secrets.ORDERMENTUM_FULL_SYNC_FROM }}
+      NODE_OPTIONS: '--dns-result-order=ipv4first'
+      ORDERMENTUM_FETCH_TIMEOUT_MS: '60000'
+      SUPABASE_FETCH_TIMEOUT_MS: '60000'
+      ORDERMENTUM_FETCH_RETRIES: '3'
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run full-history complete mirror
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/ordermentum-complete-mirror.mjs --scope=full_history 2>&1 | tee /tmp/ordermentum-complete-mirror.log
+
+      - name: Publish complete mirror summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Recovery complete mirror'
             echo
-            echo '### Complete mirror tail'
             echo '```text'
             tail -n 100 /tmp/ordermentum-complete-mirror.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload recovery logs
+      - name: Upload recovery complete mirror log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: supabase-migration-ordering-recovery-${{ github.run_id }}
-          path: |
-            /tmp/recovery-deploy.log
-            /tmp/active-key-function.sql
-            /tmp/ordermentum-complete-mirror.log
+          name: supabase-migration-ordering-recovery-mirror-${{ github.run_id }}
+          path: /tmp/ordermentum-complete-mirror.log
           if-no-files-found: warn
           retention-days: 30
