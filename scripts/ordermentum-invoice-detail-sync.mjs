@@ -254,6 +254,7 @@ try {
         counters.fetchedUnchanged += 1;
         counters.metadataTouched += 1;
         counters.succeeded += 1;
+        if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
 
