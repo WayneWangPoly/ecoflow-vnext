@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "Reconcile recent data or resume the durable full-history checkpoint"
+        description: "Reconcile recent data or explicitly resume the durable full-history checkpoint"
         required: true
-        default: "full_history"
+        default: "recent"
         type: choice
         options:
           - recent
@@ -21,7 +21,6 @@ on:
       - 'ops/complete-mirror-status-trigger.md'
   schedule:
     - cron: "30 17 * * *"
-    - cron: "45 18 * * 6"
 
 permissions:
   contents: read
@@ -75,16 +74,12 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Resume after successful Supabase production deployment" >> "$GITHUB_ENV"
+            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Incremental verification after successful Supabase production deployment" >> "$GITHUB_ENV"
             echo "MIRROR_STATUS_SHA=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
           elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Release verification after complete-mirror workflow update" >> "$GITHUB_ENV"
-            echo "MIRROR_STATUS_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
-          elif [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "45 18 * * 6" ]; then
-            echo "MIRROR_SCOPE=full_history" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Weekly history window reconciliation" >> "$GITHUB_ENV"
+            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Incremental release verification after complete-mirror workflow update" >> "$GITHUB_ENV"
             echo "MIRROR_STATUS_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
           elif [ "${{ github.event_name }}" = "schedule" ]; then
             echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
