@@ -22,14 +22,16 @@ requireText(source, 'recordsUnchanged', 'unchanged resource telemetry');
 requireText(source, 'recordsTouchedUnchanged', 'full-history touch telemetry');
 
 const hashReadIndex = source.indexOf("select('resource_type,external_id,supplier_id,source_endpoint,payload_hash,sync_run_id')");
-const payloadReadIndex = source.indexOf('async function loadExistingPayload');
 const unchangedIndex = source.indexOf('if (!changed)');
+const payloadLoadCallIndex = source.indexOf('const previous = await loadExistingPayload(resourceType, externalId)');
 const archiveIndex = source.indexOf('await archivePreviousVersion(previous, resourceType, externalId, sourceEndpoint)');
 const currentUpsertIndex = source.indexOf("const saved = await supabase.from('ordermentum_raw_master_resources').upsert");
-assert.ok(hashReadIndex >= 0 && payloadReadIndex >= 0 && hashReadIndex < payloadReadIndex,
-  'routine hash comparison must happen without loading full JSON payloads');
-assert.ok(unchangedIndex >= 0 && archiveIndex >= 0 && unchangedIndex < archiveIndex,
-  'unchanged resources must exit before any history payload read/archive');
+assert.ok(hashReadIndex >= 0 && unchangedIndex >= 0 && hashReadIndex < unchangedIndex,
+  'routine sync must perform the hash-only read before deciding whether a row changed');
+assert.ok(unchangedIndex >= 0 && payloadLoadCallIndex >= 0 && unchangedIndex < payloadLoadCallIndex,
+  'unchanged resources must exit before any full JSON payload is loaded');
+assert.ok(payloadLoadCallIndex >= 0 && archiveIndex >= 0 && payloadLoadCallIndex < archiveIndex,
+  'a changed resource must load its previous payload before archiving it');
 assert.ok(archiveIndex >= 0 && currentUpsertIndex >= 0 && archiveIndex < currentUpsertIndex,
   'previous state must be archived before the current mirror is replaced');
 
