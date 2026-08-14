@@ -6,7 +6,10 @@ on:
       - main
       - 'transform/008-phase6-closure'
     paths:
-      - 'src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx'
+      - 'src/app/App.tsx'
+      - 'src/features/intelligence/analytics/index.ts'
+      - 'src/features/intelligence/analytics/healthConsole/**'
+      - 'src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx'
       - 'src/features/intelligence/analytics/productivity/**'
       - 'src/data/repositories/savedViewRepository.ts'
       - 'src/data/repositories/comparisonCandidates.ts'
@@ -18,7 +21,10 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx'
+      - 'src/app/App.tsx'
+      - 'src/features/intelligence/analytics/index.ts'
+      - 'src/features/intelligence/analytics/healthConsole/**'
+      - 'src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx'
       - 'src/features/intelligence/analytics/productivity/**'
       - 'src/data/repositories/savedViewRepository.ts'
       - 'src/data/repositories/comparisonCandidates.ts'
