@@ -79,35 +79,38 @@ function reachesMasterWriter(initialScripts) {
   return false;
 }
 
-function assertSerialized(workflowName, source) {
+function serializationProblems(workflowName, source) {
+  const problems = [];
   if (!/^concurrency:\s*$/m.test(source)) {
-    throw new Error(`${workflowName}: production master writer has no concurrency block.`);
+    problems.push(`${workflowName}: production master writer has no concurrency block.`);
   }
   if (!new RegExp(`^\\s*group:\\s*${SHARED_GROUP}\\s*$`, 'm').test(source)) {
-    throw new Error(`${workflowName}: production master writer must use concurrency group ${SHARED_GROUP}.`);
+    problems.push(`${workflowName}: production master writer must use concurrency group ${SHARED_GROUP}.`);
   }
   if (!/^\s*cancel-in-progress:\s*false\s*$/m.test(source)) {
-    throw new Error(`${workflowName}: production master writer must retain cancel-in-progress: false.`);
+    problems.push(`${workflowName}: production master writer must retain cancel-in-progress: false.`);
   }
+  return problems;
 }
 
 const discoveredWriters = new Set();
+const failures = [];
 for (const workflowName of listFiles(WORKFLOW_DIR, ['.yml', '.yaml'])) {
   const source = read(path.join(WORKFLOW_DIR, workflowName));
   const entryScripts = workflowExecutedScripts(source);
   if (!entryScripts.size || !reachesMasterWriter(entryScripts)) continue;
   discoveredWriters.add(workflowName);
-  assertSerialized(workflowName, source);
+  failures.push(...serializationProblems(workflowName, source));
 }
 
 for (const expected of KNOWN_MASTER_WRITERS) {
   if (!discoveredWriters.has(expected)) {
-    throw new Error(`Expected master writer workflow was not discovered: ${expected}`);
+    failures.push(`Expected master writer workflow was not discovered: ${expected}`);
   }
 }
 
 const maintenance = read(path.join(WORKFLOW_DIR, 'ordermentum-storage-maintenance.yml'));
-assertSerialized('ordermentum-storage-maintenance.yml', maintenance);
+failures.push(...serializationProblems('ordermentum-storage-maintenance.yml', maintenance));
 
 const masterPolicy = read(path.join(SCRIPT_DIR, 'ordermentum-master-data-sync.mjs'));
 for (const invariant of [
@@ -116,13 +119,20 @@ for (const invariant of [
   'shouldArchivePreviousVersion',
 ]) {
   if (!masterPolicy.includes(invariant)) {
-    throw new Error(`Master writer storage/backstop invariant missing: ${invariant}`);
+    failures.push(`Master writer storage/backstop invariant missing: ${invariant}`);
   }
 }
 
-console.log('Ordermentum master writer concurrency audit passed.');
 console.log(`Shared concurrency group: ${SHARED_GROUP}`);
 console.log(`Direct master writer scripts: ${[...directWriterScripts].sort().join(', ')}`);
-console.log(`Serialized writer workflows: ${[...discoveredWriters].sort().join(', ')}`);
+console.log(`Discovered writer workflows: ${[...discoveredWriters].sort().join(', ')}`);
 console.log('Static audit workflows are excluded unless they actually execute a writer entry script.');
+
+if (failures.length) {
+  console.error('Ordermentum master writer concurrency audit failed:');
+  for (const failure of failures) console.error(`- ${failure}`);
+  process.exit(1);
+}
+
+console.log('Ordermentum master writer concurrency audit passed.');
 console.log('Storage maintenance remains serialized on the same Ordermentum I/O boundary.');
