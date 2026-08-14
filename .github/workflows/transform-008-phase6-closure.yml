@@ -88,7 +88,6 @@ jobs:
         run: |
           set -euo pipefail
           ! grep -R --line-number -E 'SUPABASE_SERVICE_ROLE_KEY|DATABASE_URL|VERCEL_AUTOMATION_BYPASS_SECRET|secrets\.' \
-            .github/workflows/transform-008-phase6-closure.yml \
             tests/transform-008-phase6-ui-evidence.spec.mjs
           grep -F "context.route('**/auth/v1/**'" tests/transform-008-phase6-ui-evidence.spec.mjs
           grep -F "context.route('**/rest/v1/**'" tests/transform-008-phase6-ui-evidence.spec.mjs
