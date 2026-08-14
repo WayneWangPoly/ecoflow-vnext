@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const repairPath = 'supabase/migrations/20260814143000_accounts_snapshot_safe_refresh.sql';
+const repairPath = 'supabase/migrations/20260814143000_transform_007b_accounts_snapshot_safe_refresh.sql';
 const customerSourcePath = 'supabase/migrations/20260813040000_transform_007b_accounts_customer_timeout_repair.sql';
 const kpiSourcePath = 'supabase/migrations/20260813030000_transform_007b_accounts_summary_timeout_repair.sql';
 const existingSafeRefreshPath = 'supabase/migrations/20260807223500_control_room_snapshot_safe_refresh.sql';
