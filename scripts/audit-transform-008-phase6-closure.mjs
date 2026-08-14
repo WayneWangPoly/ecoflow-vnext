@@ -6,6 +6,10 @@ const read = (path) => {
   return fs.readFileSync(path, 'utf8');
 };
 
+const main = read('src/main.tsx');
+const shell = read('src/features/navigation/OperationalAppShell.tsx');
+const routeAdapter = read('src/features/intelligence/navigation/useDesktopRouteAdapter.ts');
+const routeContract = read('src/features/intelligence/navigation/routeContract.ts');
 const app = read('src/app/App.tsx');
 const analyticsIndex = read('src/features/intelligence/analytics/index.ts');
 const healthIndex = read('src/features/intelligence/analytics/healthConsole/index.ts');
@@ -18,10 +22,18 @@ const comparisonRepository = read('src/data/repositories/comparisonCandidates.ts
 const exportRepository = read('src/data/repositories/authoritativeExport.ts');
 const savedViewsRepository = read('src/data/repositories/savedViewRepository.ts');
 
-assert.ok(app.includes("{ id: 'analytics', label: 'Analytics' }"), 'Desktop shell must retain the Analytics workspace control.');
-assert.ok(app.includes('availableDesktopTabs(role).map((item) => ('), 'Desktop shell must derive visible workspace controls from the role-aware tab set.');
-assert.ok(app.includes('onClick={() => setTab(item.id)}'), 'Desktop workspace controls must continue to select their governed tab through setTab.');
-assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Selecting Analytics must render the exported AnalyticsHealthConsole product workspace.');
+assert.ok(main.includes("if (location.pathname === '/') return <Navigate to=\"/control-room\" replace />;"), 'Production root must still enter the unified operational shell.');
+assert.ok(shell.includes("ANALYTICS: { label: 'Analytics', path: '/analytics', workspace: 'analytics' }"), 'Unified operational navigation must retain the governed Analytics link.');
+assert.ok(shell.includes('ACTION_PATHS.ANALYTICS'), 'Analytics link must remain part of operational navigation.');
+assert.ok(shell.includes('OPERATIONAL_NAVIGATION.filter((item) => mayAccessOperationalWorkspace(role, item.workspace))'), 'Operational shell must retain role-filtered navigation authority.');
+assert.ok(routeContract.includes("{ path: '/analytics', workspace: 'analytics', legacyDesktopTab: 'analytics' }"), 'Canonical Analytics route contract missing.');
+assert.ok(routeAdapter.includes('resolveIntelligenceRoute,'), 'Legacy bridge must resolve Analytics through the governed route contract.');
+assert.ok(routeAdapter.includes("resolution.route.workspace === 'analytics'"), 'Legacy bridge must scope direct-route initialisation to Analytics only.');
+assert.ok(routeAdapter.includes("resolution.route.legacyDesktopTab === 'analytics'"), 'Legacy bridge must require the canonical Analytics desktop tab.');
+assert.ok(routeAdapter.includes('useState<DesktopTab>(() => initialLegacyTab(location.pathname, role))'), 'Analytics direct route must initialise the legacy workspace from authenticated route authority.');
+assert.ok(routeAdapter.includes("return 'dashboard';"), 'Non-Analytics legacy initialisation must retain the existing Dashboard default.');
+assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Resolved Analytics tab must render the exported AnalyticsHealthConsole product workspace.');
+
 assert.ok(analyticsIndex.includes("export * from './healthConsole';"), 'Analytics barrel must expose the health-console product workspace.');
 assert.ok(healthIndex.includes('OperationalPulseReadinessWorkspace as AnalyticsHealthConsole'), 'AnalyticsHealthConsole must remain the governed OperationalPulseReadinessWorkspace alias.');
 assert.ok(workspace.includes("import { PersonalisationProductivityPanel } from './productivity';"), 'Real Analytics product workspace must import the governed Phase 6 productivity surface.');
@@ -62,7 +74,8 @@ for (const forbiddenRpc of [
 }
 
 console.log('TRANSFORM-008 Phase 6 closure audit passed.');
-console.log('- Role-aware desktop shell retains the real Analytics workspace control.');
+console.log('- Unified operational shell retains the role-governed /analytics navigation link.');
+console.log('- Overlay-disabled legacy bridge initialises only authorised Analytics deep links as Analytics.');
 console.log('- Analytics export chain resolves to OperationalPulseReadinessWorkspace.');
 console.log('- PersonalisationProductivityPanel is mounted exactly once in the real product workspace.');
 console.log('- Saved Views, comparison and export remain governed server-authoritative capabilities.');
