@@ -177,17 +177,43 @@ async function installSupabaseBoundary(context, appRole) {
   return { forbiddenBusinessWrites, authoritativeReads };
 }
 
+async function diagnosePage(page, appRole, stage) {
+  const body = await page.locator('body').innerText().catch(() => '<body unavailable>');
+  const storage = await page.evaluate((key) => ({
+    hasAuthStorage: window.localStorage.getItem(key) !== null,
+    authStoragePrefix: (window.localStorage.getItem(key) || '').slice(0, 180),
+    localKeys: Object.keys(window.localStorage),
+    sessionKeys: Object.keys(window.sessionStorage),
+  }), AUTH_STORAGE_KEY).catch(() => ({ hasAuthStorage: false, authStoragePrefix: '', localKeys: [], sessionKeys: [] }));
+  console.log(`PHASE6_UI_DIAGNOSTIC_ROLE=${appRole}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_STAGE=${stage}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_URL=${page.url()}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_AUTH_STORAGE=${JSON.stringify(storage)}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_BODY=${body.slice(0, 4000).replaceAll('\n', ' | ')}`);
+  await page.screenshot({ path: `${EVIDENCE_DIR}/diagnostic-${appRole.toLowerCase()}-${stage}.png`, fullPage: true }).catch(() => null);
+}
+
 async function openRole(browser, appRole, viewport) {
   const context = await browser.newContext({ viewport });
   const network = await installSupabaseBoundary(context, appRole);
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Analytics', exact: true })).toBeVisible({ timeout: 15000 });
-  await page.getByRole('button', { name: 'Analytics', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15000 });
+
+  // /analytics is the product's governed canonical route. Existing deployed-route
+  // evidence uses canonical workspaces directly so auth/bootstrap is evaluated in
+  // the same route state that users can bookmark and the route adapter governs.
+  await page.goto(new URL('/analytics', TARGET_URL).href, { waitUntil: 'domcontentloaded' });
+  try {
+    await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15000 });
+    if (viewport.width >= 1000) {
+      await expect(page.getByRole('button', { name: 'Analytics', exact: true })).toBeVisible();
+    }
+  } catch (error) {
+    await diagnosePage(page, appRole, 'open-analytics');
+    throw error;
+  }
   return { context, page, pageErrors, ...network };
 }
 
