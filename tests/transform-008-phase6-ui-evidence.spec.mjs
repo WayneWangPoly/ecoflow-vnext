@@ -170,7 +170,6 @@ async function installSupabaseBoundary(context, appRole) {
       return json(route, { message: 'Mutation forbidden in TRANSFORM-008 Phase 6 UI evidence.' }, 409);
     }
 
-    // Other app bootstrap reads are intentionally empty, deterministic and intercepted.
     return json(route, []);
   });
 
@@ -182,21 +181,20 @@ async function diagnosePage(page, appRole, stage) {
   const body = await page.locator('body').innerText().catch(() => '<body unavailable>');
   const storage = await page.evaluate((key) => ({
     hasAuthStorage: window.localStorage.getItem(key) !== null,
-    authStoragePrefix: (window.localStorage.getItem(key) || '').slice(0, 180),
     localKeys: Object.keys(window.localStorage),
     sessionKeys: Object.keys(window.sessionStorage),
-  }), AUTH_STORAGE_KEY).catch(() => ({ hasAuthStorage: false, authStoragePrefix: '', localKeys: [], sessionKeys: [] }));
-  const sidebarButtons = await page.locator('.sidebar-nav button').evaluateAll((nodes) => nodes.map((node) => ({
+  }), AUTH_STORAGE_KEY).catch(() => ({ hasAuthStorage: false, localKeys: [], sessionKeys: [] }));
+  const sidebarLinks = await page.locator('.sidebar-nav a').evaluateAll((nodes) => nodes.map((node) => ({
     text: node.textContent?.trim() ?? '',
     tag: node.tagName,
-    disabled: 'disabled' in node ? Boolean(node.disabled) : false,
+    href: node.getAttribute('href'),
     ariaHidden: node.getAttribute('aria-hidden'),
   }))).catch(() => []);
   console.log(`PHASE6_UI_DIAGNOSTIC_ROLE=${appRole}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_STAGE=${stage}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_URL=${page.url()}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_AUTH_STORAGE=${JSON.stringify(storage)}`);
-  console.log(`PHASE6_UI_DIAGNOSTIC_SIDEBAR_BUTTONS=${JSON.stringify(sidebarButtons)}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_SIDEBAR_LINKS=${JSON.stringify(sidebarLinks)}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_BODY=${body.slice(0, 4000).replaceAll('\n', ' | ')}`);
   await page.screenshot({ path: `${EVIDENCE_DIR}/diagnostic-${appRole.toLowerCase()}-${stage}.png`, fullPage: true }).catch(() => null);
 }
@@ -209,20 +207,16 @@ async function openRole(browser, appRole, viewport) {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  // The production-default bundle does not force the overlay-navigation feature
-  // flag. Prove the actual user path instead: authenticate into the desktop shell,
-  // select the real Analytics sidebar control, then verify the governed workspace.
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   try {
-    const analyticsButton = page.locator('.sidebar-nav button').filter({ hasText: /^Analytics$/ });
-    await expect(analyticsButton).toHaveCount(1, { timeout: 25_000 });
-    await expect(analyticsButton).toBeVisible();
-    await analyticsButton.click();
+    const analyticsLink = page.locator('nav[aria-label="Primary navigation"] a[href="/analytics"]');
+    await expect(analyticsLink).toHaveCount(1, { timeout: 25_000 });
+    await expect(analyticsLink).toBeVisible();
+    await analyticsLink.click();
+    await expect(page).toHaveURL(/\/analytics(?:[?#]|$)/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15_000 });
-    if (viewport.width < 1000) {
-      await page.setViewportSize(viewport);
-    }
+    if (viewport.width < 1000) await page.setViewportSize(viewport);
   } catch (error) {
     await diagnosePage(page, appRole, 'open-analytics');
     throw error;
@@ -247,7 +241,7 @@ async function provePhase6Surface(page) {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 }
 
-test('Owner reaches all governed Phase 6 productivity capabilities through the real Analytics workspace control', async ({ browser }) => {
+test('Owner reaches all governed Phase 6 productivity capabilities through the real Analytics navigation link', async ({ browser }) => {
   const state = await openRole(browser, 'OWNER', { width: 1440, height: 1000 });
   try {
     await provePhase6Surface(state.page);
