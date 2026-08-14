@@ -191,10 +191,10 @@ export async function createHistoryContext(args) {
         .order('completed_at', { ascending: false })
         .limit(1)
         .maybeSingle());
-      const restartAfterDays = positiveInteger(process.env.ORDERMENTUM_HISTORY_RESTART_AFTER_DAYS, 6, 1, 30);
-      const completedAt = completed.data?.completed_at ? new Date(completed.data.completed_at).getTime() : 0;
-      const aged = completedAt > 0 && Date.now() - completedAt >= restartAfterDays * 86_400_000;
-      ctx.run = !completed.data || aged ? await createRun() : completed.data;
+      // A completed history run is the durable baseline. Routine resume must never
+      // create a fresh full-history run just because that baseline has aged; only
+      // an explicit restart is allowed to rebuild history.
+      ctx.run = completed.data || await createRun();
     }
   }
   return ctx;
