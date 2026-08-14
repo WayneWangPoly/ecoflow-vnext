@@ -6,7 +6,11 @@ on:
       - main
       - 'transform/008-phase6-closure'
     paths:
+      - 'src/main.tsx'
       - 'src/app/App.tsx'
+      - 'src/features/navigation/OperationalAppShell.tsx'
+      - 'src/features/intelligence/navigation/useDesktopRouteAdapter.ts'
+      - 'src/features/intelligence/navigation/routeContract.ts'
       - 'src/features/intelligence/analytics/index.ts'
       - 'src/features/intelligence/analytics/healthConsole/**'
       - 'src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx'
@@ -21,7 +25,11 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'src/main.tsx'
       - 'src/app/App.tsx'
+      - 'src/features/navigation/OperationalAppShell.tsx'
+      - 'src/features/intelligence/navigation/useDesktopRouteAdapter.ts'
+      - 'src/features/intelligence/navigation/routeContract.ts'
       - 'src/features/intelligence/analytics/index.ts'
       - 'src/features/intelligence/analytics/healthConsole/**'
       - 'src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx'
