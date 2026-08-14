@@ -10,7 +10,7 @@ on:
       - 'scripts/audit-dashboard-read-timeout-hardening.mjs'
       - 'scripts/audit-accounts-snapshot-safe-refresh.mjs'
       - 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql'
-      - 'supabase/migrations/20260814143000_accounts_snapshot_safe_refresh.sql'
+      - 'supabase/migrations/20260814143000_transform_007b_accounts_snapshot_safe_refresh.sql'
       - '.github/workflows/dashboard-read-timeout-check.yml'
   push:
     branches:
@@ -23,7 +23,7 @@ on:
       - 'scripts/audit-dashboard-read-timeout-hardening.mjs'
       - 'scripts/audit-accounts-snapshot-safe-refresh.mjs'
       - 'supabase/migrations/20260805225500_dashboard_read_timeout_hardening.sql'
-      - 'supabase/migrations/20260814143000_accounts_snapshot_safe_refresh.sql'
+      - 'supabase/migrations/20260814143000_transform_007b_accounts_snapshot_safe_refresh.sql'
       - '.github/workflows/dashboard-read-timeout-check.yml'
 
 permissions:
