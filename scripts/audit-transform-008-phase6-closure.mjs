@@ -8,7 +8,9 @@ const read = (path) => {
 
 const app = read('src/app/App.tsx');
 const analyticsIndex = read('src/features/intelligence/analytics/index.ts');
-const consoleSource = read('src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx');
+const healthIndex = read('src/features/intelligence/analytics/healthConsole/index.ts');
+const workspace = read('src/features/intelligence/analytics/OperationalPulseReadinessWorkspace.tsx');
+const baseConsole = read('src/features/intelligence/analytics/healthConsole/AnalyticsHealthConsole.tsx');
 const productivityIndex = read('src/features/intelligence/analytics/productivity/index.ts');
 const panel = read('src/features/intelligence/analytics/productivity/PersonalisationProductivityPanel.tsx');
 const exportPanel = read('src/features/intelligence/analytics/productivity/AuthoritativeExportPanel.tsx');
@@ -16,11 +18,13 @@ const comparisonRepository = read('src/data/repositories/comparisonCandidates.ts
 const exportRepository = read('src/data/repositories/authoritativeExport.ts');
 const savedViewsRepository = read('src/data/repositories/savedViewRepository.ts');
 
-assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Analytics desktop route must render AnalyticsHealthConsole.');
-assert.ok(analyticsIndex.includes("export { AnalyticsHealthConsole } from './healthConsole/AnalyticsHealthConsole';"), 'Analytics route export missing.');
+assert.ok(app.includes("{tab === 'analytics' ? <AnalyticsHealthConsole /> : null}"), 'Analytics desktop route must render the exported AnalyticsHealthConsole product workspace.');
+assert.ok(analyticsIndex.includes("export * from './healthConsole';"), 'Analytics barrel must expose the health-console product workspace.');
+assert.ok(healthIndex.includes('OperationalPulseReadinessWorkspace as AnalyticsHealthConsole'), 'AnalyticsHealthConsole must remain the governed OperationalPulseReadinessWorkspace alias.');
+assert.ok(workspace.includes("import { PersonalisationProductivityPanel } from './productivity';"), 'Real Analytics product workspace must import the governed Phase 6 productivity surface.');
+assert.equal((workspace.match(/<PersonalisationProductivityPanel\s*\/>/g) || []).length, 1, 'Real Analytics product workspace must render the Phase 6 productivity surface exactly once.');
+assert.equal((baseConsole.match(/<PersonalisationProductivityPanel\s*\/>/g) || []).length, 0, 'Base health console must not duplicate the Phase 6 productivity surface.');
 assert.ok(productivityIndex.includes("export { PersonalisationProductivityPanel } from './PersonalisationProductivityPanel';"), 'Productivity panel export missing.');
-assert.ok(consoleSource.includes("import { PersonalisationProductivityPanel } from '../productivity';"), 'Analytics console must import the governed Phase 6 productivity surface.');
-assert.equal((consoleSource.match(/<PersonalisationProductivityPanel\s*\/>/g) || []).length, 1, 'Analytics console must render the Phase 6 productivity surface exactly once.');
 
 for (const marker of ['Saved Views', 'Quick Actions', 'Comparison Tray', 'Command palette']) {
   assert.ok(panel.includes(marker), `Phase 6 surface missing: ${marker}`);
@@ -55,3 +59,6 @@ for (const forbiddenRpc of [
 }
 
 console.log('TRANSFORM-008 Phase 6 closure audit passed.');
+console.log('- Real Analytics export chain resolves to OperationalPulseReadinessWorkspace.');
+console.log('- PersonalisationProductivityPanel is mounted exactly once in the real product workspace.');
+console.log('- Saved Views, comparison and export remain governed server-authoritative capabilities.');
