@@ -34,11 +34,12 @@ jobs:
       UPSTREAM_URL: ${{ github.event.workflow_run.html_url }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout target commit
+      - name: Checkout trusted default branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_SHA }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Publish authoritative release-sync status
         shell: bash
@@ -48,7 +49,13 @@ jobs:
           STATE='failure'
           DESCRIPTION='Release sync authority did not reach a verified state'
 
-          if [ "$UPSTREAM_CONCLUSION" != 'success' ]; then
+          TRUSTED_RUNTIME_SHA="$(git rev-parse HEAD)"
+          echo "trusted runtime SHA: $TRUSTED_RUNTIME_SHA"
+          echo "historical release target SHA: $TARGET_SHA"
+
+          if ! git cat-file -e "$TARGET_SHA^{commit}" 2>/dev/null; then
+            DESCRIPTION="RELEASE NOT SYNCHRONIZED: target commit '$TARGET_SHA' is unavailable to trusted release authority."
+          elif [ "$UPSTREAM_CONCLUSION" != 'success' ]; then
             DESCRIPTION="RELEASE NOT SYNCHRONIZED: Supabase deployment concluded '$UPSTREAM_CONCLUSION'."
           else
             read -ra COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$TARGET_SHA")"
