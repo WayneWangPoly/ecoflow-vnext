@@ -9,34 +9,39 @@ function requireText(source, text, label) {
   assert.ok(source.includes(text), `${label} is missing required contract: ${text}`);
 }
 
-// Preserve the deliberate verification/reconciliation paths.
+// Preserve explicit recovery and post-deployment verification paths.
 requireText(workflow, 'workflow_dispatch:', 'complete-mirror workflow');
 requireText(workflow, 'workflows: ["Deploy Supabase migrations"]', 'post-migration verification');
 requireText(workflow, '- cron: "30 17 * * *"', 'daily recent reconciliation');
-requireText(workflow, '- cron: "45 18 * * 6"', 'weekly full-history verification');
-requireText(workflow, 'MIRROR_SCOPE=full_history', 'full-history verification path');
-requireText(workflow, 'MIRROR_SCOPE=recent', 'recent reconciliation path');
-requireText(workflow, 'Resume after successful Supabase production deployment', 'post-migration verification reason');
-requireText(workflow, 'Weekly history window reconciliation', 'weekly history reason');
+requireText(workflow, '- full_history', 'manual full-history option');
+requireText(workflow, 'MIRROR_SCOPE=${{ inputs.scope }}', 'manual scope selection');
+requireText(workflow, 'MIRROR_SCOPE=recent', 'automatic recent reconciliation');
+requireText(workflow, 'Incremental verification after successful Supabase production deployment', 'post-migration incremental reason');
 requireText(workflow, 'Daily recent commercial reconciliation', 'daily recent reason');
 
-// A completed history mirror must not wake up every two hours just to re-read
-// its checkpoint and completeness counters. Manual dispatch and the weekly gate
-// remain available if the durable history job ever needs to be resumed.
-assert.ok(
-  !workflow.includes('17 */2 * * *'),
-  'completed full-history mirror must not be scheduled every two hours',
-);
-assert.ok(
-  !workflow.includes('Automatic two-hour checkpoint resume'),
-  'two-hour checkpoint-resume branch must be removed with its cron trigger',
-);
+// Routine automation is incremental-first. Full history is an explicit operator
+// action only; it must never be awakened by cadence, deployment or workflow edits.
+assert.ok(!workflow.includes('45 18 * * 6'), 'weekly full-history schedule must stay removed');
+assert.ok(!workflow.includes('Weekly history window reconciliation'), 'weekly full-history branch must stay removed');
+assert.ok(!workflow.includes('Resume after successful Supabase production deployment'), 'post-deployment path must not auto-resume full history');
+assert.ok(!workflow.includes('MIRROR_REASON=Release verification after complete-mirror workflow update'), 'workflow updates must not auto-run full history');
+assert.ok(!workflow.includes('17 */2 * * *'), 'completed full-history mirror must not be scheduled every two hours');
+assert.ok(!workflow.includes('Automatic two-hour checkpoint resume'), 'two-hour checkpoint-resume branch must stay removed');
 
-// Keep the recovery mechanisms in the underlying runner intact; this hotfix is
-// a cadence change only, not a change to mirror semantics.
+const automatedBlock = workflow.slice(
+  workflow.indexOf('if [ "${{ github.event_name }}" = "workflow_run" ]'),
+  workflow.indexOf('else\n            echo "MIRROR_SCOPE=${{ inputs.scope }}"'),
+);
+assert.ok(automatedBlock.length > 0, 'automatic scope-resolution block must be discoverable');
+assert.ok(!automatedBlock.includes('MIRROR_SCOPE=full_history'), 'no automatic event may select full_history');
+
+// Keep fail-closed recovery mechanisms in the runner intact. Manual full-history
+// remains resumable and must still require successful history verification.
 requireText(mirror, "legacyScope === 'full_history' ? 'resume_history' : 'recent'", 'mirror scope mapping');
 requireText(mirror, "'resume_history'", 'manual/full-history resume mode');
+requireText(mirror, "'restart_history'", 'explicit full-history restart mode');
 requireText(mirror, "if (history.state === 'COMPLETE')", 'completed-history verification path');
 requireText(mirror, 'await verifyMirror(true)', 'history completeness verification');
+requireText(mirror, 'ORDERMENTUM_STORAGE_GUARD', 'fail-closed storage guard');
 
-console.log('Ordermentum background IO cadence audit passed: no two-hour full-history wake-up; daily, weekly, manual and post-migration safety paths remain.');
+console.log('Ordermentum background IO cadence audit passed: automatic runs are recent-only; full history remains explicit, resumable and fail-closed.');
