@@ -28,13 +28,25 @@ function listFiles(dir, suffixes) {
 const scriptNames = listFiles(SCRIPT_DIR, ['.mjs']);
 const scriptSources = new Map(scriptNames.map((name) => [name, read(path.join(SCRIPT_DIR, name))]));
 
-function referencedScripts(source) {
+function addKnownScript(refs, candidate) {
+  const basename = path.basename(candidate);
+  if (scriptSources.has(basename)) refs.add(basename);
+}
+
+function workflowExecutedScripts(source) {
   const refs = new Set();
-  const regex = /scripts\/([A-Za-z0-9._/-]+\.mjs)/g;
-  for (const match of source.matchAll(regex)) {
-    const basename = path.basename(match[1]);
-    if (scriptSources.has(basename)) refs.add(basename);
-  }
+  const regex = /\bnode\s+scripts\/([A-Za-z0-9._/-]+\.mjs)\b/g;
+  for (const match of source.matchAll(regex)) addKnownScript(refs, match[1]);
+  return refs;
+}
+
+function scriptExecutedScripts(source) {
+  const refs = new Set();
+  const runNodeRegex = /\b(?:runNode|runScript)\(\s*['"]scripts\/([A-Za-z0-9._/-]+\.mjs)['"]/g;
+  for (const match of source.matchAll(runNodeRegex)) addKnownScript(refs, match[1]);
+
+  const spawnRegex = /\bspawn\(\s*process\.execPath\s*,\s*\[\s*['"]scripts\/([A-Za-z0-9._/-]+\.mjs)['"]/g;
+  for (const match of source.matchAll(spawnRegex)) addKnownScript(refs, match[1]);
   return refs;
 }
 
@@ -62,7 +74,7 @@ function reachesMasterWriter(initialScripts) {
     if (directWriterScripts.has(script)) return true;
     const source = scriptSources.get(script);
     if (!source) continue;
-    for (const child of referencedScripts(source)) queue.push(child);
+    for (const child of scriptExecutedScripts(source)) queue.push(child);
   }
   return false;
 }
@@ -82,7 +94,7 @@ function assertSerialized(workflowName, source) {
 const discoveredWriters = new Set();
 for (const workflowName of listFiles(WORKFLOW_DIR, ['.yml', '.yaml'])) {
   const source = read(path.join(WORKFLOW_DIR, workflowName));
-  const entryScripts = referencedScripts(source);
+  const entryScripts = workflowExecutedScripts(source);
   if (!entryScripts.size || !reachesMasterWriter(entryScripts)) continue;
   discoveredWriters.add(workflowName);
   assertSerialized(workflowName, source);
@@ -112,4 +124,5 @@ console.log('Ordermentum master writer concurrency audit passed.');
 console.log(`Shared concurrency group: ${SHARED_GROUP}`);
 console.log(`Direct master writer scripts: ${[...directWriterScripts].sort().join(', ')}`);
 console.log(`Serialized writer workflows: ${[...discoveredWriters].sort().join(', ')}`);
+console.log('Static audit workflows are excluded unless they actually execute a writer entry script.');
 console.log('Storage maintenance remains serialized on the same Ordermentum I/O boundary.');
