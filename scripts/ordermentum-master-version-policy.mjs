@@ -1,7 +1,7 @@
 export const ORDERMENTUM_VERSION_RETENTION = Object.freeze({
-  maxVersionsPerResource: 3,
-  maxAgeDays: 30,
-  maxPayloadBytes: 10 * 1024 * 1024,
+  maxVersionsPerResource: 1,
+  maxAgeDays: 7,
+  maxPayloadBytes: 2 * 1024 * 1024,
 });
 
 export const ORDERMENTUM_DATABASE_GUARD_BYTES = 475 * 1024 * 1024;
