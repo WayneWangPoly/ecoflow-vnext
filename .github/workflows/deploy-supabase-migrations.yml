@@ -9,6 +9,9 @@ on:
       - 'supabase/functions/**'
       - 'scripts/run-transient-supabase-command.mjs'
       - 'scripts/transient-supabase-command-contract.test.mjs'
+      - 'scripts/release-sync-frontend-paths.mjs'
+      - 'scripts/release-sync-frontend-paths-contract.test.mjs'
+      - '.github/workflows/release-sync-authority.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
 
 permissions:
