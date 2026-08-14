@@ -17,7 +17,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: ecoflow-customer-store-release-refresh
+  group: ordermentum-cloud-sync
   cancel-in-progress: false
 
 jobs:
