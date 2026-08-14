@@ -117,6 +117,15 @@ if (!/^concurrency:\n  group: ecoflow-supabase-production-migrations\n  cancel-i
 if (!/\n  complete-mirror:\n[\s\S]*?\n    concurrency:\n      group: ordermentum-cloud-sync\n      cancel-in-progress: false\n/.test(recovery)) {
   failures.push('recover-supabase-migration-ordering.yml complete-mirror job must additionally acquire ordermentum-cloud-sync.');
 }
+if (!/^  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2\.pooler\.supabase\.com$/m.test(recovery)) {
+  failures.push('recover-supabase-migration-ordering.yml must use the production-proven IPv4 pooler host.');
+}
+if (!recovery.includes('postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres')) {
+  failures.push('recover-supabase-migration-ordering.yml must construct its pooler URL from stable runtime values.');
+}
+if (recovery.includes('supabase/.temp/pooler-url')) {
+  failures.push('recover-supabase-migration-ordering.yml must not depend on checkout-local Supabase .temp pooler metadata.');
+}
 
 const maintenance = read(path.join(WORKFLOW_DIR, 'ordermentum-storage-maintenance.yml'));
 failures.push(...serializationProblems('ordermentum-storage-maintenance.yml', maintenance));
@@ -145,4 +154,5 @@ if (failures.length) {
 
 console.log('Ordermentum master writer concurrency audit passed.');
 console.log('Recovery retains the Supabase migration mutex and adds the Ordermentum writer mutex for its mirror job.');
+console.log('Recovery pooler URL is resolved from the same stable runtime configuration proven by production deployment.');
 console.log('Storage maintenance remains serialized on the same Ordermentum I/O boundary.');
