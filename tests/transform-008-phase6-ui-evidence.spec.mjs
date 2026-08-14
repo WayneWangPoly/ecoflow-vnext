@@ -186,10 +186,17 @@ async function diagnosePage(page, appRole, stage) {
     localKeys: Object.keys(window.localStorage),
     sessionKeys: Object.keys(window.sessionStorage),
   }), AUTH_STORAGE_KEY).catch(() => ({ hasAuthStorage: false, authStoragePrefix: '', localKeys: [], sessionKeys: [] }));
+  const sidebarButtons = await page.locator('.sidebar-nav button').evaluateAll((nodes) => nodes.map((node) => ({
+    text: node.textContent?.trim() ?? '',
+    tag: node.tagName,
+    disabled: 'disabled' in node ? Boolean(node.disabled) : false,
+    ariaHidden: node.getAttribute('aria-hidden'),
+  }))).catch(() => []);
   console.log(`PHASE6_UI_DIAGNOSTIC_ROLE=${appRole}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_STAGE=${stage}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_URL=${page.url()}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_AUTH_STORAGE=${JSON.stringify(storage)}`);
+  console.log(`PHASE6_UI_DIAGNOSTIC_SIDEBAR_BUTTONS=${JSON.stringify(sidebarButtons)}`);
   console.log(`PHASE6_UI_DIAGNOSTIC_BODY=${body.slice(0, 4000).replaceAll('\n', ' | ')}`);
   await page.screenshot({ path: `${EVIDENCE_DIR}/diagnostic-${appRole.toLowerCase()}-${stage}.png`, fullPage: true }).catch(() => null);
 }
@@ -207,8 +214,9 @@ async function openRole(browser, appRole, viewport) {
   // select the real Analytics sidebar control, then verify the governed workspace.
   await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   try {
-    const analyticsButton = page.getByRole('button', { name: 'Analytics', exact: true });
-    await expect(analyticsButton).toBeVisible({ timeout: 25_000 });
+    const analyticsButton = page.locator('.sidebar-nav button').filter({ hasText: /^Analytics$/ });
+    await expect(analyticsButton).toHaveCount(1, { timeout: 25_000 });
+    await expect(analyticsButton).toBeVisible();
     await analyticsButton.click();
     await expect(page.getByRole('heading', { name: 'Health & readiness', exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Personal operating workspace', exact: true })).toBeVisible({ timeout: 15_000 });
