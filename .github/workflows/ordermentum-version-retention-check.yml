@@ -5,26 +5,39 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/ordermentum-version-retention-check.yml'
+      - '.github/workflows/ordermentum-storage-maintenance.yml'
+      - 'ops/ordermentum-storage-maintenance-trigger.md'
       - 'scripts/ordermentum-master-data-sync.mjs'
       - 'scripts/ordermentum-master-data-common.mjs'
       - 'scripts/ordermentum-master-version-policy.mjs'
       - 'scripts/ordermentum-master-version-policy.test.mjs'
       - 'scripts/ordermentum-complete-mirror.mjs'
       - 'scripts/audit-ordermentum-version-retention.mjs'
+      - 'scripts/audit-ordermentum-storage-maintenance.mjs'
+      - 'supabase/migrations/20260714010000_slim_om_orders_raw_json.sql'
       - 'supabase/migrations/20260812130000_ordermentum_master_version_retention.sql'
+      - 'supabase/migrations/20260814100000_ordermentum_master_version_retention_v2.sql'
+      - 'supabase/migrations/20260814132000_ordermentum_invoice_projection_checkpoint.sql'
   push:
     branches:
       - main
       - 'fix/ordermentum-version-retention'
+      - 'fix/ordermentum-storage-compaction'
     paths:
       - '.github/workflows/ordermentum-version-retention-check.yml'
+      - '.github/workflows/ordermentum-storage-maintenance.yml'
+      - 'ops/ordermentum-storage-maintenance-trigger.md'
       - 'scripts/ordermentum-master-data-sync.mjs'
       - 'scripts/ordermentum-master-data-common.mjs'
       - 'scripts/ordermentum-master-version-policy.mjs'
       - 'scripts/ordermentum-master-version-policy.test.mjs'
       - 'scripts/ordermentum-complete-mirror.mjs'
       - 'scripts/audit-ordermentum-version-retention.mjs'
+      - 'scripts/audit-ordermentum-storage-maintenance.mjs'
+      - 'supabase/migrations/20260714010000_slim_om_orders_raw_json.sql'
       - 'supabase/migrations/20260812130000_ordermentum_master_version_retention.sql'
+      - 'supabase/migrations/20260814100000_ordermentum_master_version_retention_v2.sql'
+      - 'supabase/migrations/20260814132000_ordermentum_invoice_projection_checkpoint.sql'
 
 permissions:
   contents: read
@@ -51,7 +64,10 @@ jobs:
           node --check scripts/ordermentum-master-data-sync.mjs
           node --check scripts/ordermentum-complete-mirror.mjs
           node --check scripts/audit-ordermentum-version-retention.mjs
+          node --check scripts/audit-ordermentum-storage-maintenance.mjs
       - name: Test version policy
         run: node --test scripts/ordermentum-master-version-policy.test.mjs
       - name: Audit storage contract
         run: node scripts/audit-ordermentum-version-retention.mjs
+      - name: Audit explicit physical-maintenance contract
+        run: node scripts/audit-ordermentum-storage-maintenance.mjs

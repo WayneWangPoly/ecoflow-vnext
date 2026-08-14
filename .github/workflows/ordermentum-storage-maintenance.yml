@@ -1,0 +1,154 @@
+name: Ordermentum storage maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Inspect storage or explicitly compact the already-slim Ordermentum projection tables"
+        required: true
+        default: "inspect"
+        type: choice
+        options:
+          - inspect
+          - compact_projection_tables
+  push:
+    branches: [main]
+    paths:
+      - 'ops/ordermentum-storage-maintenance-trigger.md'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+
+env:
+  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+  SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+  ORDERMENTUM_DATABASE_GUARD_BYTES: "498073600"
+
+jobs:
+  maintenance:
+    name: Explicit production projection compaction
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve explicit maintenance mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "MAINTENANCE_MODE=compact_projection_tables" >> "$GITHUB_ENV"
+            echo "MAINTENANCE_REASON=Audited one-time storage repair marker merged to main" >> "$GITHUB_ENV"
+          else
+            echo "MAINTENANCE_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
+            echo "MAINTENANCE_REASON=Owner or Admin explicitly dispatched storage maintenance" >> "$GITHUB_ENV"
+          fi
+
+      - name: Require production database credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+          test -n "$SUPABASE_POOLER_HOST" || { echo 'Missing SUPABASE_POOLER_HOST'; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo 'Missing SUPABASE_PROJECT_REF'; exit 1; }
+
+      - name: Construct IPv4 pooler database URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+
+      - name: Capture pre-maintenance identity and storage evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_database_size(current_database())::bigint")"
+          ORDERS_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_orders'::regclass)::bigint")"
+          ITEMS_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_order_items'::regclass)::bigint")"
+          ORDERS_PRE="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_orders")"
+          ITEMS_PRE="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_order_items")"
+
+          echo "maintenance_mode=$MAINTENANCE_MODE"
+          echo "maintenance_reason=$MAINTENANCE_REASON"
+          echo "database_bytes_before=$DB_BEFORE"
+          echo "om_orders_total_bytes_before=$ORDERS_BYTES_BEFORE"
+          echo "om_order_items_total_bytes_before=$ITEMS_BYTES_BEFORE"
+          echo "om_orders_identity_before=$ORDERS_PRE"
+          echo "om_order_items_identity_before=$ITEMS_PRE"
+
+          echo "DB_BEFORE=$DB_BEFORE" >> "$GITHUB_ENV"
+          echo "ORDERS_BYTES_BEFORE=$ORDERS_BYTES_BEFORE" >> "$GITHUB_ENV"
+          echo "ITEMS_BYTES_BEFORE=$ITEMS_BYTES_BEFORE" >> "$GITHUB_ENV"
+          echo "ORDERS_PRE=$ORDERS_PRE" >> "$GITHUB_ENV"
+          echo "ITEMS_PRE=$ITEMS_PRE" >> "$GITHUB_ENV"
+
+      - name: Compact already-slim projection relation files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$MAINTENANCE_MODE" != "compact_projection_tables" ]; then
+            echo "Inspect-only mode; no physical rewrite requested."
+            exit 0
+          fi
+
+          if [ "$DB_BEFORE" -lt "$ORDERMENTUM_DATABASE_GUARD_BYTES" ]; then
+            echo "Database is already below the 475 MiB pre-quota guard; physical rewrite is unnecessary."
+            exit 0
+          fi
+
+          echo "Compacting public.om_order_items without changing rows or raw Ordermentum authority..."
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=20min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "VACUUM (FULL, ANALYZE, VERBOSE) public.om_order_items;"
+
+          echo "Compacting public.om_orders without changing rows or raw Ordermentum authority..."
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=20min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "VACUUM (FULL, ANALYZE, VERBOSE) public.om_orders;"
+
+      - name: Verify row identity and recovered storage headroom
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_database_size(current_database())::bigint")"
+          ORDERS_BYTES_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_orders'::regclass)::bigint")"
+          ITEMS_BYTES_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_order_items'::regclass)::bigint")"
+          ORDERS_POST="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_orders")"
+          ITEMS_POST="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_order_items")"
+
+          echo "database_bytes_after=$DB_AFTER"
+          echo "database_bytes_reclaimed=$((DB_BEFORE - DB_AFTER))"
+          echo "om_orders_total_bytes_after=$ORDERS_BYTES_AFTER"
+          echo "om_orders_bytes_reclaimed=$((ORDERS_BYTES_BEFORE - ORDERS_BYTES_AFTER))"
+          echo "om_order_items_total_bytes_after=$ITEMS_BYTES_AFTER"
+          echo "om_order_items_bytes_reclaimed=$((ITEMS_BYTES_BEFORE - ITEMS_BYTES_AFTER))"
+          echo "om_orders_identity_after=$ORDERS_POST"
+          echo "om_order_items_identity_after=$ITEMS_POST"
+
+          test "$ORDERS_PRE" = "$ORDERS_POST" || { echo "om_orders row identity changed during physical maintenance"; exit 1; }
+          test "$ITEMS_PRE" = "$ITEMS_POST" || { echo "om_order_items row identity changed during physical maintenance"; exit 1; }
+
+          if [ "$MAINTENANCE_MODE" = "compact_projection_tables" ] && [ "$DB_AFTER" -ge "$ORDERMENTUM_DATABASE_GUARD_BYTES" ]; then
+            echo "ORDERMENTUM_STORAGE_GUARD: physical compaction completed but database remains at or above the unchanged 475 MiB guard."
+            exit 1
+          fi
+
+      - name: Dispatch fresh recent Complete Mirror verification
+        if: env.MAINTENANCE_MODE == 'compact_projection_tables'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ordermentum-complete-mirror.yml --ref main -f scope=recent
+          echo "Fresh recent Complete Mirror verification dispatched after successful explicit storage maintenance."
