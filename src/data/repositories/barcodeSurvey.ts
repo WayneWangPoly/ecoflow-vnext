@@ -3,12 +3,22 @@ import { supabase } from '@/lib/supabaseClient';
 
 export type BarcodeSurveySleeveStatus = 'SCANNED' | 'NO_SEPARATE_BARCODE' | 'NOT_CHECKED';
 
+export type BarcodeSurveySkuSuggestion = {
+  sku: string;
+  productName: string | null;
+  category: string | null;
+  fixedShelf: string | null;
+  primaryBarcode: string | null;
+};
+
 export type BarcodeSurveyCommandResult = {
   accepted: true;
   replayed: boolean;
   status: 'APPLIED' | 'REPLAYED';
   commandId: string;
   observationId: string;
+  skuContext: string | null;
+  skuProductName: string | null;
   cartonBarcode: string;
   sleeveStatus: BarcodeSurveySleeveStatus;
   sleeveBarcode: string | null;
@@ -17,6 +27,7 @@ export type BarcodeSurveyCommandResult = {
 
 export type RecordBarcodeSurveyInput = {
   commandId: string;
+  skuContext?: string | null;
   cartonBarcode: string;
   sleeveStatus: BarcodeSurveySleeveStatus;
   sleeveBarcode?: string | null;
@@ -73,6 +84,9 @@ export function getBarcodeSurveyDeviceId() {
 }
 
 export function validateBarcodeSurveyInput(input: Omit<RecordBarcodeSurveyInput, 'commandId' | 'deviceId'>) {
+  const skuContext = normalizedOptional(input.skuContext);
+  if (skuContext && skuContext.length > 128) throw new Error('SKU is invalid.');
+
   const cartonBarcode = input.cartonBarcode.trim();
   if (!cartonBarcode || cartonBarcode.length > 128) throw new Error('Carton barcode is required and must be 128 characters or fewer.');
 
@@ -87,7 +101,7 @@ export function validateBarcodeSurveyInput(input: Omit<RecordBarcodeSurveyInput,
   const note = normalizedOptional(input.note);
   if (note && note.length > 2000) throw new Error('Note must be 2000 characters or fewer.');
 
-  return { cartonBarcode, sleeveBarcode, note };
+  return { skuContext, cartonBarcode, sleeveBarcode, note };
 }
 
 function parseResult(row: Record<string, unknown> | undefined): BarcodeSurveyCommandResult {
@@ -105,6 +119,8 @@ function parseResult(row: Record<string, unknown> | undefined): BarcodeSurveyCom
     status,
     commandId: String(row.command_id || ''),
     observationId: String(row.observation_id || ''),
+    skuContext: typeof row.sku_context === 'string' ? row.sku_context : null,
+    skuProductName: typeof row.sku_product_name === 'string' ? row.sku_product_name : null,
     cartonBarcode: String(row.carton_barcode || ''),
     sleeveStatus: sleeveStatus as BarcodeSurveySleeveStatus,
     sleeveBarcode: typeof row.sleeve_barcode === 'string' ? row.sleeve_barcode : null,
@@ -112,12 +128,32 @@ function parseResult(row: Record<string, unknown> | undefined): BarcodeSurveyCom
   };
 }
 
+export async function searchBarcodeSurveySkus(query: string, client?: SupabaseClient | null) {
+  const normalized = query.trim();
+  if (!normalized) return [];
+  if (normalized.length > 128) throw new Error('SKU search is too long.');
+  const rows = await rpc<Array<Record<string, unknown>>>('ecoflow_search_barcode_survey_skus_v1', {
+    p_query: normalized,
+    p_limit: 12,
+  }, client) ?? [];
+  return rows
+    .filter((row) => typeof row.sku === 'string' && row.sku.trim())
+    .map((row) => ({
+      sku: String(row.sku),
+      productName: typeof row.product_name === 'string' ? row.product_name : null,
+      category: typeof row.category === 'string' ? row.category : null,
+      fixedShelf: typeof row.fixed_shelf === 'string' ? row.fixed_shelf : null,
+      primaryBarcode: typeof row.primary_barcode === 'string' ? row.primary_barcode : null,
+    } satisfies BarcodeSurveySkuSuggestion));
+}
+
 export async function recordBarcodeSurveyObservation(input: RecordBarcodeSurveyInput, client?: SupabaseClient | null) {
   if (!input.commandId) throw new Error('Barcode Survey command ID is required.');
   if (!input.deviceId.trim() || input.deviceId.trim().length > 128) throw new Error('Barcode Survey device ID is invalid.');
   const normalized = validateBarcodeSurveyInput(input);
-  const rows = await rpc<Array<Record<string, unknown>>>('ecoflow_record_barcode_survey_observation_v1', {
+  const rows = await rpc<Array<Record<string, unknown>>>('ecoflow_record_barcode_survey_observation_v2', {
     p_idempotency_key: input.commandId,
+    p_sku_context: normalized.skuContext,
     p_carton_barcode: normalized.cartonBarcode,
     p_sleeve_status: input.sleeveStatus,
     p_sleeve_barcode: normalized.sleeveBarcode,
