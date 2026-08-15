@@ -93,5 +93,6 @@ jobs:
           grep -q "window.location.assign" src/main.tsx
           grep -q 'if (isUnifiedOperationalPath(location.pathname))' src/main.tsx
           grep -q 'return <App />;' src/main.tsx
-          ! grep -q "pathname === '/delivery'" src/main.tsx
-          ! grep -q "pathname === '/analytics'" src/main.tsx
+          grep -q "pathname === '/delivery'" src/main.tsx
+          grep -q "pathname === '/analytics'" src/main.tsx
+          grep -q 'if (routeSurface(destination.pathname) === routeSurface(window.location.pathname)) return;' src/main.tsx

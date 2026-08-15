@@ -9,6 +9,7 @@ const lacks = (source, text, message) => assert.ok(!source.includes(text), messa
 
 const main = read('src/main.tsx');
 const unified = read('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+const delivery = read('src/features/delivery/DeliveryOperationsWorkspace.tsx');
 const session = read('src/features/navigation/OperationalSessionContext.tsx');
 const appShell = read('src/features/navigation/OperationalAppShell.tsx');
 const query = read('src/features/navigation/useWorkspaceQueryState.ts');
@@ -25,9 +26,11 @@ has(main, 'const UnifiedOperationalRoutes', 'Unified operational route root is l
 has(main, '<OperationalSessionProvider>', 'Migrated routes share one session provider');
 has(main, '<Route path="*" element={<ApplicationSurfaceRouter />} />', 'A single router element remains mounted across workspace navigation');
 has(main, 'isUnifiedOperationalPath', 'Production entry point owns an explicit unified-route boundary');
-for (const route of ['/control-room', '/ordermentum', '/orders', '/inventory', '/customers', '/stores', '/exceptions', '/logs', '/settings', '/warehouse-control']) {
+for (const route of ['/control-room', '/ordermentum', '/orders', '/inventory', '/customers', '/stores', '/exceptions', '/delivery', '/analytics', '/logs', '/settings', '/warehouse-control']) {
   has(main, `pathname === '${route}'`, `Unified route boundary includes ${route}`);
 }
+has(main, "pathname.startsWith('/delivery/')", 'Delivery run routes stay inside the unified application surface');
+has(main, 'if (routeSurface(destination.pathname) === routeSurface(window.location.pathname)) return;', 'Cross-surface bridge leaves unified-to-unified navigation to React Router');
 has(main, 'WarehouseMapRoute', 'Warehouse Map remains a separately protected route feature');
 lacks(main, "import('./features/operationalRoutes/NativeOperationalRoutes')", 'Old NativeOperationalRoutes root is not mounted in production');
 lacks(main, "import('./features/operationalStability/OperationalStabilityRoute')", 'Old OperationalStabilityRoute root is not mounted in production');
@@ -60,6 +63,8 @@ for (const marker of [
   "pathname === '/orders' || pathname.startsWith('/orders/')",
   "pathname === '/inventory' || pathname.startsWith('/inventory/')",
   "pathname === '/customers' || pathname.startsWith('/customers/')",
+  "pathname === '/delivery' || pathname.startsWith('/delivery/')",
+  "pathname === '/analytics'",
   "pathname === '/exceptions'",
   "pathname === '/logs'",
   "pathname === '/settings'",
@@ -71,6 +76,12 @@ has(unified, '<OperationalAppShell', 'All desktop migrated workspaces render thr
 has(unified, '<OperationalPagedWorkspace', 'Stability business workspaces are retained inside unified route ownership');
 has(unified, '<DashboardPage', 'Control Room remains a native workspace inside unified route ownership');
 has(unified, '<OrdermentumWorkspacePage', 'Ordermentum remains a native workspace inside unified route ownership');
+has(unified, '<DeliveryOperationsWorkspace', 'Delivery renders its operational controls inside the unified AppShell');
+has(unified, '<AnalyticsHealthConsole', 'Analytics renders its health console inside the unified AppShell');
+has(delivery, '<DeliveryDispatchCommandSurface', 'Unified Delivery retains the server-authoritative dispatch command surface');
+has(delivery, 'lockDeliveryRouteSnapshot', 'Unified Delivery retains route-lock authority');
+has(delivery, 'loadActiveDispatchDrivers', 'Unified Delivery retains authenticated Driver assignment');
+lacks(delivery, 'window.location.assign', 'Unified Delivery never hard-navigates out of the operational shell');
 
 for (const [name, source] of [['stores', stores], ['inventory', inventory], ['ordermentum', ordermentum]]) {
   has(source, 'useWorkspaceQueryState', `${name} owns URL query state`);
@@ -96,4 +107,4 @@ lacks(warehouseRoute, 'createPortal', 'Warehouse Map route does not portal-repla
 has(documentation, 'Phase 9C — Native Operational Routes', 'Prior route migration documentation remains available');
 has(documentation, 'production module graph', 'Runtime removal boundary is documented');
 
-console.log('Native operational route audit passed: one shared session/AppShell owns migrated workspaces with typed role and URL boundaries.');
+console.log('Native operational route audit passed: one shared session/AppShell owns migrated workspaces, including Delivery and Analytics, with typed role and URL boundaries.');
