@@ -1,0 +1,26 @@
+name: Supabase migration incident hygiene check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/collect-supabase-migration-failure.yml'
+      - '.github/workflows/supabase-migration-incident-hygiene-check.yml'
+      - 'scripts/supabase-migration-incident-hygiene-contract.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify migration incident lifecycle contract
+        run: node --test scripts/supabase-migration-incident-hygiene-contract.test.mjs
