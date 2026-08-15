@@ -131,8 +131,8 @@ function NativeUnifiedWorkspace({
       }).catch((error) => setLoadError(error instanceof Error ? error.message : String(error)));
       return () => { active = false; };
     }
-    // Ordermentum and Delivery still require the aggregate operational model.
-    // Control Room owns its separate bounded bootstrap path.
+    // Ordermentum and Delivery still need their aggregate operational model. Control Room owns the
+    // bounded bootstrap introduced by TRANSFORM-001 and keeps reloadViews only as secondary flow enrichment.
     if (workspace === 'ordermentum') void reloadViews();
     if (workspace === 'delivery') void reloadViews();
     return undefined;
