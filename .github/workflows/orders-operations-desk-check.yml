@@ -8,7 +8,7 @@ on:
       - 'src/features/operationalStability/OperationalPagedWorkspaceV3.tsx'
       - 'supabase/migrations/20260808161000_orders_operations_desk.sql'
       - 'supabase/migrations/20260808161100_orders_operations_exception_key_guard.sql'
-      - 'supabase/migrations/20260815183000_orders_operations_bounded_exception_enrichment.sql'
+      - 'supabase/migrations/20260815183000_transform_007_orders_operations_bounded_exception_enrichment.sql'
       - 'scripts/audit-orders-operations-desk.mjs'
       - '.github/workflows/orders-operations-desk-check.yml'
   workflow_dispatch:
@@ -130,13 +130,13 @@ jobs:
           set -euo pipefail
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808161000_orders_operations_desk.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808161100_orders_operations_exception_key_guard.sql
-          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260815183000_orders_operations_bounded_exception_enrichment.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260815183000_transform_007_orders_operations_bounded_exception_enrichment.sql
 
       - name: Verify 57014 bounded enrichment contract
         run: |
           set -euo pipefail
-          grep -q "set statement_timeout='8s'" supabase/migrations/20260815183000_orders_operations_bounded_exception_enrichment.sql
-          if grep -Eq "set statement_timeout='(9s|[1-9][0-9]+s)'" supabase/migrations/20260815183000_orders_operations_bounded_exception_enrichment.sql; then
+          grep -q "set statement_timeout='8s'" supabase/migrations/20260815183000_transform_007_orders_operations_bounded_exception_enrichment.sql
+          if grep -Eq "set statement_timeout='(9s|[1-9][0-9]+s)'" supabase/migrations/20260815183000_transform_007_orders_operations_bounded_exception_enrichment.sql; then
             echo 'Orders repair must not raise statement_timeout.' >&2
             exit 1
           fi
