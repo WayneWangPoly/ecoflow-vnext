@@ -133,7 +133,8 @@ function NativeUnifiedWorkspace({
     }
     // Ordermentum and Delivery still require the aggregate operational model.
     // Control Room owns its separate bounded bootstrap path.
-    if (workspace === 'ordermentum' || workspace === 'delivery') void reloadViews();
+    if (workspace === 'ordermentum') void reloadViews();
+    if (workspace === 'delivery') void reloadViews();
     return undefined;
   }, [reloadViews, workspace]);
 
