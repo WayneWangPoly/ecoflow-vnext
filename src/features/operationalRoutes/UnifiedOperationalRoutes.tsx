@@ -11,6 +11,8 @@ import { BrandMark } from '@/app/Brand';
 import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
+import { DeliveryOperationsWorkspace } from '@/features/delivery/DeliveryOperationsWorkspace';
+import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
 import { ProductIdentityCommissioningWorkspace } from '@/features/productIdentity/ProductIdentityCommissioningWorkspace';
 import { OperationalRecordsWorkspace } from '@/features/operationalRecords/OperationalRecordsWorkspace';
@@ -42,14 +44,16 @@ type UnifiedWorkspace =
   | 'inventory'
   | 'product-identity'
   | 'stores'
-  | 'accounts'
+  | 'delivery'
   | 'returns'
+  | 'accounts'
+  | 'analytics'
   | 'exceptions'
   | 'logs'
   | 'settings'
   | 'warehouse-control';
 
-type NativeWorkspace = Extract<UnifiedWorkspace, 'dashboard' | 'ordermentum'>;
+type NativeWorkspace = Extract<UnifiedWorkspace, 'dashboard' | 'ordermentum' | 'delivery' | 'analytics'>;
 
 export function unifiedOperationalWorkspace(pathname: string): UnifiedWorkspace | null {
   if (pathname === '/control-room') return 'dashboard';
@@ -58,8 +62,10 @@ export function unifiedOperationalWorkspace(pathname: string): UnifiedWorkspace 
   if (pathname === '/inventory' || pathname.startsWith('/inventory/')) return 'inventory';
   if (pathname === '/commissioning/product-identity') return 'product-identity';
   if (pathname === '/customers' || pathname.startsWith('/customers/') || pathname === '/stores' || pathname.startsWith('/stores/')) return 'stores';
+  if (pathname === '/delivery' || pathname.startsWith('/delivery/')) return 'delivery';
   if (pathname === '/accounts' || pathname.startsWith('/accounts/')) return 'accounts';
   if (pathname === '/returns' || pathname.startsWith('/returns/')) return 'returns';
+  if (pathname === '/analytics') return 'analytics';
   if (pathname === '/exceptions') return 'exceptions';
   if (pathname === '/logs') return 'logs';
   if (pathname === '/settings') return 'settings';
@@ -125,10 +131,9 @@ function NativeUnifiedWorkspace({
       }).catch((error) => setLoadError(error instanceof Error ? error.message : String(error)));
       return () => { active = false; };
     }
-    // Ordermentum still needs its aggregate operational model today. Control
-    // Room owns the bounded bootstrap introduced by TRANSFORM-001 and calls
-    // reloadViews only as secondary flow enrichment.
-    if (workspace === 'ordermentum') void reloadViews();
+    // Ordermentum and Delivery still require the aggregate operational model.
+    // Control Room owns its separate bounded bootstrap path.
+    if (workspace === 'ordermentum' || workspace === 'delivery') void reloadViews();
     return undefined;
   }, [reloadViews, workspace]);
 
@@ -153,6 +158,26 @@ function NativeUnifiedWorkspace({
         healthNotice={healthNotice || undefined}
         onReload={reloadViews}
         onOpenTab={openTab}
+      />
+    );
+  }
+
+  if (workspace === 'analytics') return <AnalyticsHealthConsole />;
+
+  if (workspace === 'delivery') {
+    if (snapshotLoading && !snapshotReady) {
+      return <OperationalAccessState title="Loading Delivery" detail="EcoFlow is loading the trusted operational snapshot for route planning." />;
+    }
+    if (loadError && !snapshotReady) {
+      return <OperationalAccessState title="Delivery unavailable" detail={loadError} actions={<button type="button" onClick={() => void reloadViews()}>Retry</button>} />;
+    }
+    return (
+      <DeliveryOperationsWorkspace
+        orders={effectiveOrders}
+        day={day}
+        setDay={setDay}
+        businessDay={data.businessDay}
+        canPlan={role === 'owner' || role === 'admin' || role === 'account'}
       />
     );
   }
@@ -326,7 +351,7 @@ export default function UnifiedOperationalRoutes() {
 
   const businessDay = businessDateFromIso(new Date().toISOString());
   let content;
-  if (workspace === 'dashboard' || workspace === 'ordermentum') {
+  if (workspace === 'dashboard' || workspace === 'ordermentum' || workspace === 'delivery' || workspace === 'analytics') {
     content = <NativeUnifiedWorkspace workspace={workspace} role={role} profile={profile} />;
   } else if (workspace === 'settings') {
     content = <OperationalSettingsWorkspace profile={profile} />;
