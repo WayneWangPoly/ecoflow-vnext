@@ -44,10 +44,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 22
+      - name: Use Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -57,18 +57,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Static authority contract
-        run: node --test scripts/warehouse-survey-001-contract.test.mjs
+        run: node --test scripts/warehouse-survey-001-contract.test.mjs scripts/warehouse-survey-001-sku-context-contract.test.mjs
 
-      - name: Load isolated auth and role fixture
+      - name: Load isolated auth, role and SKU read-surface fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-001-migration-fixture.sql
 
-      - name: Apply candidate migration in PostgreSQL 17
+      - name: Apply original deployed migration in PostgreSQL 17
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260815050000_warehouse_survey_001_barcode_evidence.sql
 
-      - name: Execute RPC, role, replay and DML contract
+      - name: Execute original RPC, role, replay and DML contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-001-db-contract-test.sql
 
-      - name: Concurrent same-command retry creates one observation
+      - name: Apply SKU-context forward migration in PostgreSQL 17
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260816061000_warehouse_survey_001_sku_context.sql
+
+      - name: Execute SKU lookup, validation and compatibility contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-001-sku-context-db-contract-test.sql
+
+      - name: Concurrent legacy same-command retry still creates one observation
         shell: bash
         run: |
           set -euo pipefail
