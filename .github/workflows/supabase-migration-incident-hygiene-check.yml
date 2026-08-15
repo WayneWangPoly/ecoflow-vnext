@@ -7,6 +7,12 @@ on:
       - '.github/workflows/collect-supabase-migration-failure.yml'
       - '.github/workflows/supabase-migration-incident-hygiene-check.yml'
       - 'scripts/supabase-migration-incident-hygiene-contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/collect-supabase-migration-failure.yml'
+      - '.github/workflows/supabase-migration-incident-hygiene-check.yml'
+      - 'scripts/supabase-migration-incident-hygiene-contract.test.mjs'
 
 permissions:
   contents: read
@@ -24,3 +30,72 @@ jobs:
           node-version: 22
       - name: Verify migration incident lifecycle contract
         run: node --test scripts/supabase-migration-incident-hygiene-contract.test.mjs
+
+  reconcile-existing-incidents:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve latest successful production migration run
+        id: recovered
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow deploy-supabase-migrations.yml \
+              --status success \
+              --limit 1 \
+              --json number,url \
+              --jq '.[0]'
+          )"
+          test -n "$latest" && test "$latest" != 'null'
+          recovered_run_number="$(jq -r '.number' <<< "$latest")"
+          recovered_run_url="$(jq -r '.url' <<< "$latest")"
+          [[ "$recovered_run_number" =~ ^[0-9]+$ ]]
+          [[ "$recovered_run_url" == https://github.com/*/actions/runs/* ]]
+          echo "run_number=$recovered_run_number" >> "$GITHUB_OUTPUT"
+          echo "run_url=$recovered_run_url" >> "$GITHUB_OUTPUT"
+
+      - name: Close incidents superseded by the latest successful run
+        env:
+          RECOVERED_RUN_NUMBER: ${{ steps.recovered.outputs.run_number }}
+          RECOVERED_RUN_URL: ${{ steps.recovered.outputs.run_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          open_failures="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 1000 \
+              --json number,title \
+              --jq '.[] | select(.title | startswith("Supabase migration failure · run ")) | [.number,.title] | @tsv'
+          )"
+
+          while IFS=$'\t' read -r issue_number issue_title; do
+            if [[ -z "$issue_number" ]]; then
+              continue
+            fi
+            if [[ ! "$issue_title" =~ ^Supabase\ migration\ failure\ ·\ run\ ([0-9]+)$ ]]; then
+              continue
+            fi
+            failed_run_number="${BASH_REMATCH[1]}"
+            if (( failed_run_number > RECOVERED_RUN_NUMBER )); then
+              echo "Preserving newer failure run $failed_run_number after recovered run $RECOVERED_RUN_NUMBER"
+              continue
+            fi
+            gh issue comment "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Resolved by later successful Supabase deployment workflow run $RECOVERED_RUN_NUMBER: $RECOVERED_RUN_URL. Historical failure evidence for run $failed_run_number is retained in this issue."
+            gh issue close "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --reason completed
+          done <<< "$open_failures"
