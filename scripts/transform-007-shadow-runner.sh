@@ -14,7 +14,7 @@ input_dir="$2"
 validate_target() {
   local path="$1"
   local version="$2"
-  [[ "$path" =~ ^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\.sql$ ]] || {
+  [[ "$path" =~ ^supabase/migrations/[0-9]{14}_[a-z0-9][a-z0-9_-]*\.sql$ ]] || {
     echo 'TRANSFORM_007_TARGET_PATH_INVALID'
     exit 64
   }
@@ -354,7 +354,7 @@ SQL
   test "$migrator_contract" = 'transform_007_shadow|transform_007_shadow|0|0|0|0|0'
 
   psql "$SHADOW_MIGRATOR_DB_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f "$input_dir/candidate.sql"
-  echo "TRANSFORM-007 production-schema shadow passed for $EXPECTED_TARGET_PATH without production writes."
+  echo "Supabase production-schema shadow passed for $EXPECTED_TARGET_PATH without production writes."
 }
 
 case "$mode" in

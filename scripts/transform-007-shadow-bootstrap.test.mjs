@@ -32,6 +32,7 @@ const headA = 'a'.repeat(40);
 const mergeA = 'c'.repeat(40);
 const blobA = 'e'.repeat(40);
 const targetPath = 'supabase/migrations/20260812010000_transform_007b_account_hold_command.sql';
+const warehouseTargetPath = 'supabase/migrations/20260816061000_warehouse_survey_001_sku_context.sql';
 
 function pullRequest({ changedFiles = 1 } = {}) {
   return {
@@ -109,7 +110,7 @@ test('credentialed workflow remains default-branch workflow_run only', () => {
   assert.doesNotMatch(trusted.match(/\n  shadow:[\s\S]*?\n  finalize:/)?.[0] ?? '', /secrets\.|environment:|statuses: write/);
 });
 
-test('resolver accepts one newly added sequenced TRANSFORM-007 migration', () => {
+test('resolver accepts one newly added sequenced migration', () => {
   const output = runResolver([migration()]);
   assert.equal(output.verdict, 'run');
   assert.equal(output.reason, 'TARGET_MIGRATION_REQUIRES_SHADOW');
@@ -118,13 +119,22 @@ test('resolver accepts one newly added sequenced TRANSFORM-007 migration', () =>
   assert.equal(output.candidate_blob_sha, blobA);
 });
 
-test('resolver makes unrelated PRs not applicable', () => {
-  const output = runResolver([{ filename: 'src/example.ts', status: 'modified', sha: blobA }]);
-  assert.equal(output.verdict, 'not_applicable');
-  assert.equal(output.reason, 'TRANSFORM_007_MIGRATION_NOT_CHANGED');
+test('resolver accepts WAREHOUSE-SURVEY-001 migration instead of reporting false not-applicable', () => {
+  const output = runResolver([migration(warehouseTargetPath)]);
+  assert.equal(output.verdict, 'run');
+  assert.equal(output.reason, 'TARGET_MIGRATION_REQUIRES_SHADOW');
+  assert.equal(output.target_path, warehouseTargetPath);
+  assert.equal(output.target_version, '20260816061000');
+  assert.equal(output.candidate_blob_sha, blobA);
 });
 
-test('resolver forbids editing a deployed TRANSFORM-007 migration', () => {
+test('resolver makes migration-free PRs not applicable', () => {
+  const output = runResolver([{ filename: 'src/example.ts', status: 'modified', sha: blobA }]);
+  assert.equal(output.verdict, 'not_applicable');
+  assert.equal(output.reason, 'SUPABASE_MIGRATION_NOT_CHANGED');
+});
+
+test('resolver forbids editing a deployed migration', () => {
   const output = runResolver([migration(targetPath, 'modified')]);
   assert.equal(output.verdict, 'blocked');
   assert.equal(output.reason, 'DEPLOYED_MIGRATION_EDIT_FORBIDDEN');
@@ -137,6 +147,12 @@ test('resolver forbids additional migration files beside the candidate', () => {
   ]);
   assert.equal(output.verdict, 'blocked');
   assert.equal(output.reason, 'ADDITIONAL_MIGRATION_FORBIDDEN');
+});
+
+test('resolver fails closed for a non-sequenced migration filename', () => {
+  const output = runResolver([migration('supabase/migrations/warehouse_survey_change.sql')]);
+  assert.equal(output.verdict, 'blocked');
+  assert.equal(output.reason, 'TARGET_MIGRATION_FILENAME_INVALID');
 });
 
 test('resolver protects trusted workflow, runner, bootstrap and ownership files', () => {
@@ -156,6 +172,7 @@ test('trusted resolver binds same-repository current PR and exact candidate blob
   assert.match(trusted, /REQUEST_PR_CHANGED/);
   assert.match(trusted, /TRUST_BOUNDARY_CHANGED/);
   assert.match(trusted, /ADDITIONAL_MIGRATION_FORBIDDEN/);
+  assert.match(trusted, /TARGET_MIGRATION_FILENAME_INVALID/);
   assert.match(trusted, /DEPLOYED_MIGRATION_EDIT_FORBIDDEN/);
   assert.match(trusted, /candidate_blob_sha/);
   assert.match(trusted, /git hash-object .*candidate\.sql/);
@@ -182,9 +199,10 @@ test('reader identity and direct-mutation denial remain pinned', () => {
   assert.match(runner, /--no-owner --no-acl --no-publications --no-subscriptions/);
 });
 
-test('runner binds dynamic target and production migration parity before reading schema', () => {
+test('runner binds generic sequenced target and production migration parity before reading schema', () => {
   assert.match(runner, /TRANSFORM_007_TARGET_PATH/);
   assert.match(runner, /TRANSFORM_007_TARGET_VERSION/);
+  assert.ok(runner.includes('[0-9]{14}_[a-z0-9][a-z0-9_-]*\\.sql'));
   assert.match(runner, /TARGET_MIGRATION_ALREADY_IN_TRUSTED_MAIN/);
   assert.match(runner, /TARGET_MIGRATION_ALREADY_DEPLOYED/);
   assert.match(runner, /MAIN_MIGRATION_NOT_DEPLOYED/);
@@ -219,4 +237,5 @@ test('finalizer publishes fail-closed status to exact head and test-merge', () =
   assert.match(finalizer, /for target_sha in \"\$HEAD_SHA\" \"\$MERGE_SHA\"/);
   assert.match(finalizer, /test \"\$final_state\" = success/);
   assert.match(trusted, /STATUS_CONTEXT: Supabase shadow gate \(required\)/);
+  assert.match(trusted, /Supabase migration shadow is not applicable to this PR/);
 });

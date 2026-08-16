@@ -147,22 +147,22 @@ jobs:
           fi
 
           changed_migration_count="$(jq '[.[] | select((.filename | test("^supabase/migrations/[^/]+\\.sql$")) or ((.previous_filename // "") | test("^supabase/migrations/[^/]+\\.sql$")))] | length' /tmp/transform-007-pr-files.json)"
-          target_count="$(jq '[.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\\.sql$"))] | length' /tmp/transform-007-pr-files.json)"
+          target_count="$(jq '[.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_[a-z0-9][a-z0-9_-]*\\.sql$"))] | length' /tmp/transform-007-pr-files.json)"
 
-          if [[ "$target_count" == 0 ]]; then
-            emit not_applicable TRANSFORM_007_MIGRATION_NOT_CHANGED "$pr_number" "$head_sha" "$merge_sha"
-            exit 0
-          fi
-          if [[ "$target_count" != 1 ]]; then
-            emit blocked TARGET_MIGRATION_AMBIGUOUS "$pr_number" "$head_sha" "$merge_sha"
+          if [[ "$changed_migration_count" == 0 ]]; then
+            emit not_applicable SUPABASE_MIGRATION_NOT_CHANGED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
           if [[ "$changed_migration_count" != 1 ]]; then
             emit blocked ADDITIONAL_MIGRATION_FORBIDDEN "$pr_number" "$head_sha" "$merge_sha"
             exit 0
           fi
+          if [[ "$target_count" != 1 ]]; then
+            emit blocked TARGET_MIGRATION_FILENAME_INVALID "$pr_number" "$head_sha" "$merge_sha"
+            exit 0
+          fi
 
-          target_path="$(jq -r '.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\\.sql$")) | .filename' /tmp/transform-007-pr-files.json)"
+          target_path="$(jq -r '.[] | select(.filename | test("^supabase/migrations/[0-9]{14}_[a-z0-9][a-z0-9_-]*\\.sql$")) | .filename' /tmp/transform-007-pr-files.json)"
           target_status="$(jq -r --arg path "$target_path" '.[] | select(.filename == $path) | .status' /tmp/transform-007-pr-files.json)"
           candidate_blob_sha="$(jq -r --arg path "$target_path" '.[] | select(.filename == $path) | .sha' /tmp/transform-007-pr-files.json)"
           target_version="$(basename "$target_path" | cut -c1-14)"
@@ -221,7 +221,7 @@ jobs:
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CANDIDATE_BLOB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$TARGET_MIGRATION_PATH" =~ ^supabase/migrations/[0-9]{14}_transform_007[a-z0-9_-]*\.sql$ ]]
+          [[ "$TARGET_MIGRATION_PATH" =~ ^supabase/migrations/[0-9]{14}_[a-z0-9][a-z0-9_-]*\.sql$ ]]
           [[ "$TARGET_MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]
 
           metadata="$(gh api "/repos/$GITHUB_REPOSITORY/contents/$TARGET_MIGRATION_PATH?ref=$HEAD_SHA")"
@@ -347,7 +347,7 @@ jobs:
           final_description="Shadow blocked: ${REASON:-UNKNOWN_CONTEXT}"
           if [[ "$VERDICT" == not_applicable ]]; then
             final_state=success
-            final_description='TRANSFORM-007 migration shadow is not applicable to this PR'
+            final_description='Supabase migration shadow is not applicable to this PR'
           elif [[ "$VERDICT" == run && "$PREPARE_RESULT" == success && "$SHADOW_RESULT" == success ]]; then
             final_state=success
             final_description='Production-schema shadow passed in isolated PostgreSQL 17'
