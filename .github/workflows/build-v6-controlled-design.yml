@@ -1,0 +1,44 @@
+name: Build V6 controlled design
+
+on:
+  push:
+    branches:
+      - website-v6-controlled-design-20260818
+    paths:
+      - 'website-v6/bundle/**'
+      - '.github/workflows/build-v6-controlled-design.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout temporary design branch
+        uses: actions/checkout@v4
+        with:
+          ref: website-v6-controlled-design-20260818
+
+      - name: Reconstruct self-contained HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat website-v6/bundle/00.b64 website-v6/bundle/01.b64 website-v6/bundle/02.b64 website-v6/bundle/03.b64 > /tmp/ecoflow-v6.html.gz.b64
+          base64 -d /tmp/ecoflow-v6.html.gz.b64 | gunzip > website-v6/index.html
+          test "$(wc -c < website-v6/index.html)" -eq 65854
+          grep -q '<title>EcoFlow Packaging — V6 Design Master</title>' website-v6/index.html
+          grep -q '</html>' website-v6/index.html
+
+      - name: Commit generated design file
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- website-v6/index.html && git ls-files --error-unmatch website-v6/index.html >/dev/null 2>&1; then
+            exit 0
+          fi
+          git config user.name 'ecoflow-v6-builder'
+          git config user.email 'actions@users.noreply.github.com'
+          git add website-v6/index.html
+          git commit -m 'chore(website-v6): assemble controlled design master'
+          git push origin HEAD:website-v6-controlled-design-20260818
