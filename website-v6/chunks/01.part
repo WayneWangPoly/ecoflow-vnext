@@ -1,0 +1,77 @@
+card);border-radius:28px;padding:36px;min-height:280px;border:1px solid var(--line)}
+.material-no{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--kraft);color:var(--green);font-weight:800;margin-bottom:30px}
+.material-card h3{font-size:26px;margin-bottom:13px}
+.material-card p{color:var(--muted);font-size:15px;line-height:1.68}
+.proof{background:var(--green);color:white}
+.proof .eyebrow{color:#c8d9d0}
+.proof .section-head p{color:#cad9d1}
+.proof-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.proof-card{border:1px solid rgba(255,255,255,.18);border-radius:26px;padding:30px 25px;background:rgba(255,255,255,.055);min-height:170px}
+.proof-card b{font-size:20px;display:block;margin-bottom:9px}
+.proof-card span{font-size:14px;line-height:1.55;color:#c8d8d0}
+.reviews{background:#fff}
+.review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.review{border-radius:28px;background:var(--paper);padding:34px;min-height:290px;display:flex;flex-direction:column;justify-content:space-between}
+.stars{font-size:15px;letter-spacing:.08em;color:var(--green);margin-bottom:23px}
+.quote{font-size:18px;line-height:1.58;letter-spacing:-.01em}
+.prototype{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:18px;border-top:1px solid var(--line)}
+.final{background:var(--kraft);padding:75px 68px}
+.final-inner{max-width:1184px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:35px}
+.final h2{font-size:42px;letter-spacing:-.04em;line-height:1.06;margin-bottom:0;max-width:620px}
+.final-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.footer{background:#112c25;color:#d9e4df;padding:38px 68px}
+.footer-inner{max-width:1184px;margin:auto;display:flex;justify-content:space-between;gap:30px;font-size:13px}
+.footer span{color:#9db3aa}
+.mobile-menu{display:none}
+@media(max-width:1020px){
+ .nav{padding:0 30px} .navlinks{display:none} .mobile-menu{display:inline-flex}
+ .hero{padding:60px 30px 72px;grid-template-columns:1fr;min-height:0} .hero-copy{max-width:700px} .hero-visual{height:570px}
+ .section{padding:82px 30px} .category-grid{grid-template-columns:repeat(2,1fr)} .order-panel{margin:0;grid-template-columns:1fr;padding:46px 40px} .order-side{display:none}
+ .custom-grid{grid-template-columns:1fr} .custom-main{min-height:420px}
+ .proof-grid{grid-template-columns:1fr 1fr} .final{padding:65px 30px} .final-inner{align-items:flex-start;flex-direction:column} .final-actions{justify-content:flex-start}
+}
+@media(max-width:660px){
+ .nav{height:68px;padding:0 18px} .brand{font-size:19px} .brandmark{width:30px;height:30px} .nav .orange{padding:12px 13px;font-size:12px}
+ .hero{padding:42px 18px 58px;gap:32px} h1{font-size:50px} .hero-copy p{font-size:17px} .hero-actions{flex-direction:column;align-items:stretch} .hero-actions .btn{width:100%}
+ .hero-visual{height:455px;border-radius:28px} .hero-tile.one{width:49%;height:45%} .hero-tile.two{width:42%;height:36%} .hero-tile.three{width:42%;height:35%} .hero-badge{left:6%;bottom:5%;max-width:210px}
+ .microproof{gap:13px;display:grid;grid-template-columns:1fr 1fr}
+ .section{padding:62px 18px} .section-head{display:block;margin-bottom:32px} .section-head h2{font-size:39px;margin-bottom:18px} .category-grid{gap:14px} .category{border-radius:23px;padding:9px 9px 21px} .catimg{border-radius:19px} .category h3{font-size:17px;margin-top:17px}
+ .order-panel{padding:34px 24px;border-radius:27px} .order-panel h2{font-size:37px} .order-benefits{grid-template-columns:1fr} .order-benefits div{padding:15px}
+ .custom-main{padding:30px;min-height:420px} .custom-main h3{font-size:34px} .custom-products{width:82%;height:55%;right:-55px} .custom-list{grid-template-columns:1fr} .custom-card{min-height:auto}
+ .material-grid,.review-grid{grid-template-columns:1fr} .material-card,.review{min-height:auto} .proof-grid{grid-template-columns:1fr}
+ .final{padding:52px 18px} .final h2{font-size:35px} .final-actions{width:100%;flex-direction:column} .final-actions .btn{width:100%} .footer{padding:31px 18px} .footer-inner{display:block} .footer-inner span{display:block;margin-top:8px}
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <nav class="nav">
+    <a class="brand" href="#top"><span class="brandmark"></span><span>EcoFlow Packaging</span></a>
+    <div class="navlinks">
+      <a href="#products">Products</a>
+      <a href="#custom">Custom Print</a>
+      <a href="#sustainability">Sustainability</a>
+      <a href="#about">About</a>
+    </div>
+    <a class="btn orange" href="https://www.ordermentum.com/order/supplier/ecoflow-packaging">Order on Ordermentum →</a>
+  </nav>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Premium sustainable hospitality supply</div>
+    <h1>Sustainable packaging. Built for busy hospitality.</h1>
+    <p>Food and beverage packaging, custom print and fast supply for cafés, restaurants and hospitality businesses.</p>
+    <div class="hero-actions">
+      <a class="btn" href="#products">Explore the Range →</a>
+      <a class="btn outline" href="#ordermentum">Order on Ordermentum</a>
+    </div>
+    <div class="microproof">
+      <div><strong>Adelaide stock</strong>Local operational proof</div>
+      <div><strong>10PM cut-off</strong>Built around hospitality</div>
+      <div><strong>Custom print</strong>Brand-ready packaging</div>
+    </div>
+  </div>
+  <div class="hero-visual" aria-label="EcoFlow packaging product collection">
+    <div class="hero-tile one"><img src="data:image/jpeg;base64,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
