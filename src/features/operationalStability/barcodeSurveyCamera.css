@@ -1,0 +1,260 @@
+.barcode-survey-scan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.barcode-survey-scan-row > label {
+  min-width: 0;
+}
+
+.barcode-survey-camera-button {
+  min-height: 46px;
+  min-width: 92px;
+  padding: 0 14px;
+  border: 1px solid var(--ef-border-strong, #c6d2cb);
+  border-radius: 8px;
+  background: var(--ef-pine-900, #0a2e22);
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.barcode-survey-camera-button:hover {
+  background: var(--ef-pine-800, #114635);
+}
+
+.warehouse-camera-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: end center;
+  padding: 14px;
+  background: rgba(5, 18, 13, .84);
+  backdrop-filter: blur(6px);
+}
+
+.warehouse-camera-sheet {
+  width: min(620px, 100%);
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 18px;
+  background: #0a1913;
+  color: #fff;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .48);
+}
+
+.warehouse-camera-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.warehouse-camera-sheet header div {
+  display: grid;
+  gap: 3px;
+}
+
+.warehouse-camera-sheet h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.warehouse-camera-sheet header button,
+.warehouse-camera-actions button {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+  padding: 0 16px;
+  font-weight: 650;
+}
+
+.warehouse-camera-view {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.warehouse-camera-view video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.warehouse-camera-reticle {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 29%;
+  height: 42%;
+  border: 2px solid #65d79e;
+  border-radius: 10px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, .32);
+}
+
+.warehouse-camera-reticle::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 2px;
+  background: #65d79e;
+  box-shadow: 0 0 12px rgba(101, 215, 158, .8);
+}
+
+.warehouse-camera-sheet p,
+.warehouse-camera-error {
+  margin: 0;
+  padding: 14px 16px;
+  color: rgba(255, 255, 255, .72);
+  font-size: 13px;
+}
+
+.warehouse-camera-error {
+  color: #ffd6cc;
+  background: rgba(176, 51, 37, .18);
+}
+
+.warehouse-camera-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.warehouse-camera-actions button:disabled {
+  opacity: .42;
+}
+
+@supports (height: 100dvh) {
+  .warehouse-camera-overlay {
+    min-height: 100dvh;
+  }
+
+  .warehouse-camera-sheet {
+    max-height: calc(100dvh - 28px);
+  }
+}
+
+@media (max-width: 640px) {
+  .barcode-survey-scan-row {
+    grid-template-columns: minmax(0, 1fr) 92px;
+  }
+
+  .barcode-survey-camera-button {
+    min-height: 48px;
+    padding-inline: 10px;
+  }
+
+  .warehouse-camera-overlay {
+    inset: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0;
+    place-items: stretch;
+    overflow: hidden;
+    background: #07130e;
+    backdrop-filter: none;
+  }
+
+  .warehouse-camera-sheet {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .warehouse-camera-sheet header {
+    min-height: 60px;
+    padding: max(10px, env(safe-area-inset-top)) 12px 10px;
+    background: #0a1913;
+  }
+
+  .warehouse-camera-sheet header button {
+    min-height: 42px;
+    padding-inline: 14px;
+  }
+
+  .warehouse-camera-view {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .warehouse-camera-reticle {
+    left: 5%;
+    right: 5%;
+    top: 33%;
+    height: 34%;
+  }
+
+  .warehouse-camera-sheet > p,
+  .warehouse-camera-error {
+    max-height: 86px;
+    overflow-y: auto;
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+
+  .warehouse-camera-actions {
+    position: relative;
+    z-index: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    padding: 8px 10px max(10px, env(safe-area-inset-bottom));
+    background: #0a1913;
+  }
+
+  .warehouse-camera-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 380px), (max-height: 620px) {
+  .warehouse-camera-sheet header {
+    min-height: 52px;
+    padding-bottom: 6px;
+  }
+
+  .warehouse-camera-sheet h2 {
+    font-size: 17px;
+  }
+
+  .warehouse-camera-actions {
+    gap: 5px;
+    padding-top: 6px;
+  }
+
+  .warehouse-camera-actions button {
+    min-height: 42px;
+    font-size: 12px;
+  }
+
+  .warehouse-camera-sheet > p,
+  .warehouse-camera-error {
+    max-height: 62px;
+    padding-block: 7px;
+  }
+}
