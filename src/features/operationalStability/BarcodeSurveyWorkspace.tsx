@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { WarehouseCameraScanner } from '@/WarehouseCameraScanner';
 import {
   createBarcodeSurveyCommandId,
   getBarcodeSurveyDeviceId,
@@ -7,8 +8,17 @@ import {
   type BarcodeSurveySkuSuggestion,
   type BarcodeSurveySleeveStatus,
 } from '@/data/repositories/barcodeSurvey';
+import './barcodeSurveyCamera.css';
 
 type SleeveChoice = BarcodeSurveySleeveStatus | '';
+
+const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
+const CARTON_INPUT_ID = 'barcode-survey-carton-input';
+const SLEEVE_INPUT_ID = 'barcode-survey-sleeve-input';
+
+function requestCameraScan(inputId: string) {
+  window.dispatchEvent(new CustomEvent(CAMERA_SCAN_EVENT, { detail: { inputId } }));
+}
 
 export function BarcodeSurveyWorkspace() {
   const skuRef = useRef<HTMLInputElement>(null);
@@ -147,6 +157,8 @@ export function BarcodeSurveyWorkspace() {
 
   return (
     <section className="native-control-card barcode-survey-card" aria-labelledby="barcode-survey-title">
+      <WarehouseCameraScanner />
+
       <div>
         <p className="workspace-eyebrow">PHYSICAL EVIDENCE ONLY</p>
         <h2 id="barcode-survey-title">Barcode Survey</h2>
@@ -201,20 +213,31 @@ export function BarcodeSurveyWorkspace() {
           </div>
         ) : null}
 
-        <label>
-          <span>2. Scan carton barcode</span>
-          <input
-            ref={cartonRef}
-            autoComplete="off"
-            enterKeyHint="next"
-            maxLength={128}
-            name="cartonBarcode"
-            value={cartonBarcode}
-            onChange={(event) => { draftChanged(); setCartonBarcode(event.target.value); }}
-            placeholder="Scan outer / carton barcode"
-            required
-          />
-        </label>
+        <div className="barcode-survey-scan-row">
+          <label htmlFor={CARTON_INPUT_ID}>
+            <span>2. Scan carton barcode</span>
+            <input
+              id={CARTON_INPUT_ID}
+              ref={cartonRef}
+              autoComplete="off"
+              enterKeyHint="next"
+              maxLength={128}
+              name="cartonBarcode"
+              value={cartonBarcode}
+              onChange={(event) => { draftChanged(); setCartonBarcode(event.target.value); }}
+              placeholder="Scan outer / carton barcode"
+              required
+            />
+          </label>
+          <button
+            className="barcode-survey-camera-button"
+            type="button"
+            aria-label="Open camera to scan carton barcode"
+            onClick={() => requestCameraScan(CARTON_INPUT_ID)}
+          >
+            Camera
+          </button>
+        </div>
 
         <fieldset>
           <legend>3. Sleeve barcode?</legend>
@@ -226,19 +249,30 @@ export function BarcodeSurveyWorkspace() {
         </fieldset>
 
         {sleeveStatus === 'SCANNED' ? (
-          <label>
-            <span>Scan sleeve barcode</span>
-            <input
-              ref={sleeveRef}
-              autoComplete="off"
-              maxLength={128}
-              name="sleeveBarcode"
-              value={sleeveBarcode}
-              onChange={(event) => { draftChanged(); setSleeveBarcode(event.target.value); }}
-              placeholder="Scan the distinct sleeve barcode"
-              required
-            />
-          </label>
+          <div className="barcode-survey-scan-row">
+            <label htmlFor={SLEEVE_INPUT_ID}>
+              <span>Scan sleeve barcode</span>
+              <input
+                id={SLEEVE_INPUT_ID}
+                ref={sleeveRef}
+                autoComplete="off"
+                maxLength={128}
+                name="sleeveBarcode"
+                value={sleeveBarcode}
+                onChange={(event) => { draftChanged(); setSleeveBarcode(event.target.value); }}
+                placeholder="Scan the distinct sleeve barcode"
+                required
+              />
+            </label>
+            <button
+              className="barcode-survey-camera-button"
+              type="button"
+              aria-label="Open camera to scan sleeve barcode"
+              onClick={() => requestCameraScan(SLEEVE_INPUT_ID)}
+            >
+              Camera
+            </button>
+          </div>
         ) : null}
 
         <label>
