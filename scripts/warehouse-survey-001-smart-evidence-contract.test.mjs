@@ -6,12 +6,16 @@ const migrationPath = 'supabase/migrations/20260820104500_warehouse_survey_001_s
 const repositoryPath = 'src/data/repositories/barcodeSurvey.ts';
 const uiPath = 'src/features/operationalStability/BarcodeSurveyWorkspace.tsx';
 const cameraPath = 'src/WarehouseCameraScanner.tsx';
+const vendorScriptPath = 'scripts/warehouse-survey-001-vendor-scanner-assets.mjs';
+const packagePath = 'package.json';
 
-const [migration, repository, ui, camera] = await Promise.all([
+const [migration, repository, ui, camera, vendorScript, packageJson] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(uiPath, 'utf8'),
   readFile(cameraPath, 'utf8'),
+  readFile(vendorScriptPath, 'utf8'),
+  readFile(packagePath, 'utf8'),
 ]);
 
 test('smart evidence remains non-authoritative staging evidence', () => {
@@ -101,7 +105,7 @@ test('iPhone barcode scanning requires the rear environment camera and fails clo
 });
 
 test('scanner v2 uses centre ROI multi-profile ZXing-C++ WASM decoding with a legacy runtime fallback', () => {
-  assert.match(camera, /zxing-wasm@\$\{ZXING_WASM_VERSION\}\/dist\/iife\/reader\/index\.js/);
+  assert.match(camera, /ZXING_WASM_READER_URL = `\/vendor\/zxing-wasm\/\$\{ZXING_WASM_VERSION\}\/reader\/index\.js`/);
   assert.match(camera, /const ZXING_WASM_VERSION = '2\.0\.2'/);
   assert.match(camera, /readBarcodes\?: \(source: ImageData/);
   assert.match(camera, /const SCAN_PROFILES: ScanProfile\[\]/);
@@ -115,5 +119,38 @@ test('scanner v2 uses centre ROI multi-profile ZXing-C++ WASM decoding with a le
   assert.match(camera, /maxNumberOfSymbols: 1/);
   assert.match(camera, /scanProfileForAttempt\(scanAttemptRef\.current\)/);
   assert.match(camera, /startLegacyIphoneFallback/);
-  assert.match(camera, /Scanner v2 is analysing the centre area/);
+  assert.match(camera, /Fast scanner ready/);
+});
+
+test('scanner v2.1 self-hosts both runtime engines and recovers from a poisoned WASM runtime', () => {
+  assert.match(camera, /ZXING_FALLBACK_URL = `\/vendor\/zxing-browser\/\$\{ZXING_BROWSER_VERSION\}\/zxing-browser\.min\.js`/);
+  assert.match(camera, /ZXING_WASM_BINARY_URL = `\/vendor\/zxing-wasm\/\$\{ZXING_WASM_VERSION\}\/reader\/zxing_reader\.wasm`/);
+  assert.doesNotMatch(camera, /https:\/\/(?:cdn|fastly)\.jsdelivr\.net/);
+  assert.doesNotMatch(camera, /https:\/\/unpkg\.com/);
+  assert.match(camera, /prepareZXingModule/);
+  assert.match(camera, /fireImmediately: true/);
+  assert.match(camera, /locateFile: \(path, prefix\) => path\.endsWith\('\.wasm'\) \? ZXING_WASM_BINARY_URL/);
+  assert.match(camera, /const WASM_RUNTIME_FAILURE_LIMIT = 2/);
+  assert.match(camera, /const WASM_RECOVERY_LIMIT = 1/);
+  assert.match(camera, /purgeZXingModule/);
+  assert.match(camera, /equalityFn: \(\) => false/);
+  assert.match(camera, /recoverZxingWasmReader/);
+  assert.match(camera, /activateLegacyFallback/);
+  assert.match(camera, /wasmRuntimeFailureRef\.current = 0/);
+  assert.match(camera, /Backup scanner active/);
+});
+
+test('scanner runtime assets are pinned, integrity-checked at build time and emitted under public vendor paths', () => {
+  assert.match(vendorScript, /const ZXING_WASM_VERSION = '2\.0\.2'/);
+  assert.match(vendorScript, /const ZXING_BROWSER_VERSION = '0\.2\.1'/);
+  assert.match(vendorScript, /public\/vendor\/zxing-wasm\/\$\{ZXING_WASM_VERSION\}\/reader\/index\.js/);
+  assert.match(vendorScript, /public\/vendor\/zxing-wasm\/\$\{ZXING_WASM_VERSION\}\/reader\/zxing_reader\.wasm/);
+  assert.match(vendorScript, /public\/vendor\/zxing-browser\/\$\{ZXING_BROWSER_VERSION\}\/zxing-browser\.min\.js/);
+  assert.match(vendorScript, /createHash\('sha256'\)/);
+  assert.match(vendorScript, /bytes\[0\] === 0x00/);
+  assert.match(vendorScript, /bytes\[1\] === 0x61/);
+  assert.match(vendorScript, /embeddedSha256\.includes\(actualSha256\)/);
+  assert.match(vendorScript, /https:\/\/cdn\.jsdelivr\.net\/npm\/zxing-wasm@\$\{ZXING_WASM_VERSION\}/);
+  assert.match(vendorScript, /https:\/\/unpkg\.com\/zxing-wasm@\$\{ZXING_WASM_VERSION\}/);
+  assert.match(packageJson, /"prebuild": "node scripts\/warehouse-survey-001-vendor-scanner-assets\.mjs"/);
 });
