@@ -142,25 +142,33 @@ test('scanner v2.1 self-hosts both runtime engines and recovers from a poisoned 
   assert.match(camera, /Backup scanner active/);
 });
 
-test('scanner v2.2 keeps carton fast profiles, adds sleeve micro-ROI, and opens without the soft keyboard', () => {
+test('scanner v2.2.1 preserves the field-proven carton target lifecycle while keeping sleeve micro-ROI', () => {
   assert.match(camera, /const SLEEVE_INPUT_ID = 'barcode-survey-sleeve-input'/);
   assert.match(camera, /const SLEEVE_SCAN_PROFILES: ScanProfile\[\]/);
   assert.match(camera, /widthFraction: 0\.46, heightFraction: 0\.20, contrast: 1\.10, upscale: 1\.80, maxWidth: 1920/);
   assert.match(camera, /widthFraction: 0\.36, heightFraction: 0\.16, contrast: 1\.35, upscale: 2\.20, maxWidth: 1920/);
   assert.match(camera, /widthFraction: 0\.28, heightFraction: 0\.14, contrast: 1\.55, upscale: 2\.50, maxWidth: 1920/);
+  assert.match(camera, /\.\.\.SCAN_PROFILES/);
   assert.match(camera, /targetKind === 'sleeve' \? SLEEVE_SCAN_PROFILES : SCAN_PROFILES/);
-  assert.match(camera, /targetInputRef = useRef<HTMLInputElement \| null>/);
-  assert.match(camera, /function dismissSoftKeyboard\(input: HTMLInputElement\)/);
-  assert.match(camera, /input\.blur\(\)/);
-  assert.doesNotMatch(camera, /requested\.focus\(\)/);
-  assert.doesNotMatch(camera, /input\.focus\(\)/);
-  assert.match(camera, /document\.documentElement\.classList\.add\('warehouse-camera-open'\)/);
-  assert.match(camera, /document\.body\.classList\.add\('warehouse-camera-open'\)/);
-  assert.match(camera, /warehouse-camera-reticle\$\{targetKind === 'sleeve' \? ' sleeve' : ''\}/);
-  assert.match(cameraCss, /html\.warehouse-camera-open/);
-  assert.match(cameraCss, /body\.warehouse-camera-open/);
-  assert.match(cameraCss, /overscroll-behavior: none/);
-  assert.match(cameraCss, /height: 100dvh/);
+
+  // The known-good v2.1 behaviour targets the active barcode input. The keyboard
+  // guard must preserve that active element instead of replacing it with a detached ref.
+  assert.match(camera, /const target = barcodeInput\(\);/);
+  assert.match(camera, /function focusBarcodeInputWithoutKeyboard\(input: HTMLInputElement\)/);
+  assert.match(camera, /input\.readOnly = true/);
+  assert.match(camera, /input\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(camera, /guardBarcodeTarget\(requested\)/);
+  assert.match(camera, /releaseBarcodeInputFocus/);
+  assert.doesNotMatch(camera, /targetInputRef/);
+  assert.doesNotMatch(camera, /dismissSoftKeyboard/);
+  assert.doesNotMatch(camera, /document\.documentElement\.classList\.add\('warehouse-camera-open'\)/);
+  assert.doesNotMatch(camera, /document\.body\.classList\.add\('warehouse-camera-open'\)/);
+
+  // The mobile layout itself stays on the previously working v2.1 viewport rules;
+  // only the sleeve reticle is narrower.
+  assert.doesNotMatch(cameraCss, /html\.warehouse-camera-open/);
+  assert.doesNotMatch(cameraCss, /body\.warehouse-camera-open/);
+  assert.doesNotMatch(cameraCss, /contain: layout paint size/);
   assert.match(cameraCss, /\.warehouse-camera-reticle\.sleeve/);
   assert.match(cameraCss, /left: 27%/);
   assert.match(cameraCss, /height: 20%/);
