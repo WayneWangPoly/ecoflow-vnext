@@ -169,14 +169,19 @@ function cameraScore(device: MediaDeviceInfo) {
 function bestRearCamera(devices: MediaDeviceInfo[]) {
   return devices
     .filter((device) => device.kind === 'videoinput' && Boolean(device.deviceId))
-    .sort((left, right) => cameraScore(right) - cameraScore(left))[0] ?? null;
+    .map((device) => ({ device, score: cameraScore(device) }))
+    .filter(({ device, score }) => score > 0 && !/(front|user|facetime)/i.test(device.label))
+    .sort((left, right) => right.score - left.score)[0]?.device ?? null;
 }
 
-function cameraConstraints(deviceId?: string): MediaStreamConstraints {
+function cameraConstraints(deviceId?: string, strictEnvironment = false): MediaStreamConstraints {
+  const selection: MediaTrackConstraints = deviceId
+    ? { deviceId: { exact: deviceId } }
+    : { facingMode: strictEnvironment ? { exact: 'environment' } : { ideal: 'environment' } };
   return {
     audio: false,
     video: {
-      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+      ...selection,
       width: { ideal: 1920 },
       height: { ideal: 1080 },
       aspectRatio: { ideal: 16 / 9 },
@@ -193,34 +198,65 @@ async function enumerateVideoDevices() {
   }
 }
 
-async function openBestRearStream() {
-  const knownDevices = await enumerateVideoDevices();
-  const knownRear = bestRearCamera(knownDevices.filter((device) => Boolean(device.label)));
-  let stream: MediaStream;
+function stopStream(stream: MediaStream) {
+  stream.getTracks().forEach((track) => track.stop());
+}
 
+function selectedFrontCamera(track?: MediaStreamTrack) {
+  const settingsFacingMode = track?.getSettings().facingMode?.toLowerCase() || '';
+  const label = track?.label.toLowerCase() || '';
+  return settingsFacingMode === 'user' || /(front|user|facetime)/.test(label);
+}
+
+function selectedPoorRearLens(track?: MediaStreamTrack) {
+  const label = track?.label.toLowerCase() || '';
+  return /(ultra[\s-]?wide|0\.5x|telephoto|tele\b)/.test(label);
+}
+
+async function requestEnvironmentStream() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia(cameraConstraints(knownRear?.deviceId));
-  } catch (error) {
-    if (!knownRear?.deviceId) throw error;
-    stream = await navigator.mediaDevices.getUserMedia(cameraConstraints());
-  }
-
-  const track = stream.getVideoTracks()[0];
-  const selectedLabel = track?.label.toLowerCase() || '';
-  const poorSelection = /(ultra[\s-]?wide|0\.5x|front|facetime)/.test(selectedLabel);
-  if (!poorSelection) return stream;
-
-  const permittedDevices = await enumerateVideoDevices();
-  const betterRear = bestRearCamera(permittedDevices.filter((device) => !/(ultra[\s-]?wide|0\.5x|front|facetime)/i.test(device.label)));
-  const currentDeviceId = track?.getSettings().deviceId;
-  if (!betterRear?.deviceId || betterRear.deviceId === currentDeviceId) return stream;
-
-  stream.getTracks().forEach((item) => item.stop());
-  try {
-    return await navigator.mediaDevices.getUserMedia(cameraConstraints(betterRear.deviceId));
+    return await navigator.mediaDevices.getUserMedia(cameraConstraints(undefined, true));
   } catch {
-    return navigator.mediaDevices.getUserMedia(cameraConstraints());
+    return navigator.mediaDevices.getUserMedia(cameraConstraints(undefined, false));
   }
+}
+
+async function openBestRearStream() {
+  // Prefer the browser's semantic rear-camera constraint first. This is more reliable on iOS
+  // than pre-permission device labels, which can be empty or generic and previously let the
+  // first/front camera win.
+  let stream = await requestEnvironmentStream();
+  let track = stream.getVideoTracks()[0];
+
+  if (!selectedFrontCamera(track) && !selectedPoorRearLens(track)) return stream;
+
+  // Permission should now expose more useful labels. Only choose a device that we can
+  // positively identify as rear-facing; never treat an arbitrary first device as "rear".
+  const permittedDevices = await enumerateVideoDevices();
+  const betterRear = bestRearCamera(permittedDevices);
+  const currentDeviceId = track?.getSettings().deviceId;
+
+  if (betterRear?.deviceId && betterRear.deviceId !== currentDeviceId) {
+    stopStream(stream);
+    stream = await navigator.mediaDevices.getUserMedia(cameraConstraints(betterRear.deviceId));
+    track = stream.getVideoTracks()[0];
+    if (!selectedFrontCamera(track)) return stream;
+  }
+
+  if (!selectedFrontCamera(track)) return stream;
+
+  // If Safari still handed us the user-facing camera, fail closed instead of silently
+  // scanning with the selfie camera. Retry the strict environment constraint once after
+  // permission, when iOS has the best chance of resolving the rear camera correctly.
+  stopStream(stream);
+  try {
+    const rearStream = await navigator.mediaDevices.getUserMedia(cameraConstraints(undefined, true));
+    if (!selectedFrontCamera(rearStream.getVideoTracks()[0])) return rearStream;
+    stopStream(rearStream);
+  } catch {
+    // Surface a clear error below rather than falling back to the front camera.
+  }
+  throw new Error('Rear camera could not be selected. Check Safari camera permission and try again.');
 }
 
 async function applyAdvancedConstraint(track: MediaStreamTrack, constraint: ExtendedConstraintSet) {
