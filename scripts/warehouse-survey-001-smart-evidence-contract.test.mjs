@@ -99,3 +99,21 @@ test('iPhone barcode scanning requires the rear environment camera and fails clo
   assert.match(camera, /getUserMedia\(cameraConstraints\(undefined, true\)\)/);
   assert.doesNotMatch(camera, /sort\([^\n]+\)\[0\] \?\? null/);
 });
+
+test('scanner v2 uses centre ROI multi-profile ZXing-C++ WASM decoding with a legacy runtime fallback', () => {
+  assert.match(camera, /zxing-wasm@\$\{ZXING_WASM_VERSION\}\/dist\/iife\/reader\/index\.js/);
+  assert.match(camera, /const ZXING_WASM_VERSION = '2\.0\.2'/);
+  assert.match(camera, /readBarcodes\?: \(source: ImageData/);
+  assert.match(camera, /const SCAN_PROFILES: ScanProfile\[\]/);
+  assert.match(camera, /widthFraction: 0\.82, heightFraction: 0\.34/);
+  assert.match(camera, /widthFraction: 1, heightFraction: 1/);
+  assert.match(camera, /captureBarcodeCandidate/);
+  assert.match(camera, /getImageData\(0, 0, targetWidth, targetHeight\)/);
+  assert.match(camera, /applyBarcodeContrast/);
+  assert.match(camera, /formats: WAREHOUSE_WASM_FORMATS/);
+  assert.match(camera, /tryHarder: true/);
+  assert.match(camera, /maxNumberOfSymbols: 1/);
+  assert.match(camera, /scanProfileForAttempt\(scanAttemptRef\.current\)/);
+  assert.match(camera, /startLegacyIphoneFallback/);
+  assert.match(camera, /Scanner v2 is analysing the centre area/);
+});
