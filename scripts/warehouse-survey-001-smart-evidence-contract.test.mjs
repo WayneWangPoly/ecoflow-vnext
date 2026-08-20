@@ -5,11 +5,13 @@ import test from 'node:test';
 const migrationPath = 'supabase/migrations/20260820104500_warehouse_survey_001_smart_packaging_evidence.sql';
 const repositoryPath = 'src/data/repositories/barcodeSurvey.ts';
 const uiPath = 'src/features/operationalStability/BarcodeSurveyWorkspace.tsx';
+const cameraPath = 'src/WarehouseCameraScanner.tsx';
 
-const [migration, repository, ui] = await Promise.all([
+const [migration, repository, ui, camera] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(uiPath, 'utf8'),
+  readFile(cameraPath, 'utf8'),
 ]);
 
 test('smart evidence remains non-authoritative staging evidence', () => {
@@ -85,4 +87,15 @@ test('camera scanning contract remains mounted and targets the same stable input
   assert.match(ui, /barcode-survey-sleeve-input/);
   assert.match(ui, /requestCameraScan\(CARTON_INPUT_ID\)/);
   assert.match(ui, /requestCameraScan\(SLEEVE_INPUT_ID\)/);
+});
+
+test('iPhone barcode scanning requires the rear environment camera and fails closed on front camera', () => {
+  assert.match(camera, /facingMode: strictEnvironment \? \{ exact: 'environment' \} : \{ ideal: 'environment' \}/);
+  assert.match(camera, /getSettings\(\)\.facingMode/);
+  assert.match(camera, /settingsFacingMode === 'user'/);
+  assert.match(camera, /score > 0/);
+  assert.match(camera, /never treat an arbitrary first device as "rear"/i);
+  assert.match(camera, /Rear camera could not be selected/);
+  assert.match(camera, /getUserMedia\(cameraConstraints\(undefined, true\)\)/);
+  assert.doesNotMatch(camera, /sort\([^\n]+\)\[0\] \?\? null/);
 });
