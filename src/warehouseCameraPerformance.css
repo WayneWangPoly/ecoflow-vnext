@@ -1,3 +1,16 @@
+html.warehouse-camera-open,
+body.warehouse-camera-open {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  height: 100%;
+}
+
+.warehouse-camera-overlay {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  contain: layout paint size;
+}
+
 .warehouse-camera-view {
   aspect-ratio: 16 / 9;
   min-height: 0;
@@ -13,6 +26,13 @@
   right: 4%;
   top: 29%;
   height: 42%;
+}
+
+.warehouse-camera-reticle.sleeve {
+  left: 27%;
+  right: 27%;
+  top: 40%;
+  height: 20%;
 }
 
 .warehouse-camera-actions {
@@ -58,6 +78,7 @@
 @supports (height: 100dvh) {
   .warehouse-camera-overlay {
     min-height: 100dvh;
+    height: 100dvh;
   }
 
   .warehouse-camera-sheet {
@@ -70,6 +91,8 @@
     inset: 0;
     min-height: 100vh;
     min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
     padding: 0;
     place-items: stretch;
     overflow: hidden;
@@ -119,6 +142,13 @@
     right: 5%;
     top: 33%;
     height: 34%;
+  }
+
+  .warehouse-camera-reticle.sleeve {
+    left: 27%;
+    right: 27%;
+    top: 40%;
+    height: 20%;
   }
 
   .warehouse-camera-sheet > p,
