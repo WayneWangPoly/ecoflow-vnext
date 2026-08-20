@@ -142,8 +142,13 @@ type ScanProfile = {
   maxWidth?: number;
 };
 
-// Keep the carton profiles unchanged. They are field-verified to scan the current
-// outer cartons quickly and must not regress while sleeve recognition is tuned.
+type KeyboardFocusGuard = {
+  input: HTMLInputElement;
+  wasReadOnly: boolean;
+};
+
+// These carton profiles are the field-verified v2.1 path. Do not tune them as part
+// of sleeve work: the outer cartons were already scanning in about one second.
 const SCAN_PROFILES: ScanProfile[] = [
   { widthFraction: 0.82, heightFraction: 0.34, contrast: 1, upscale: 1 },
   { widthFraction: 0.82, heightFraction: 0.34, contrast: 1.45, upscale: 1 },
@@ -152,15 +157,15 @@ const SCAN_PROFILES: ScanProfile[] = [
   { widthFraction: 1, heightFraction: 1, contrast: 1.15, upscale: 1 },
 ];
 
-// Sleeve labels are physically much smaller than carton labels. Their dedicated
-// profiles progressively concentrate native camera pixels into a narrow central ROI
-// before expanding outward, instead of asking the decoder to search the whole frame.
+// Sleeve labels are much smaller. Concentrate camera pixels into a tighter central
+// ROI first, then widen back out. This is the only recognition path changed from v2.1.
 const SLEEVE_SCAN_PROFILES: ScanProfile[] = [
   { widthFraction: 0.46, heightFraction: 0.20, contrast: 1.10, upscale: 1.80, maxWidth: 1920 },
   { widthFraction: 0.36, heightFraction: 0.16, contrast: 1.35, upscale: 2.20, maxWidth: 1920 },
   { widthFraction: 0.28, heightFraction: 0.14, contrast: 1.55, upscale: 2.50, maxWidth: 1920 },
   { widthFraction: 0.58, heightFraction: 0.24, contrast: 1.40, upscale: 1.70, maxWidth: 1920 },
   { widthFraction: 0.72, heightFraction: 0.30, contrast: 1.25, upscale: 1.35, maxWidth: 1800 },
+  ...SCAN_PROFILES,
 ];
 
 const ZXING_WASM_MODULE_OVERRIDES: ZxingWasmModuleOverrides = {
@@ -286,10 +291,21 @@ function scannerTargetKind(input: HTMLInputElement): ScannerTargetKind {
   return 'generic';
 }
 
-function dismissSoftKeyboard(input: HTMLInputElement) {
+function focusBarcodeInputWithoutKeyboard(input: HTMLInputElement): KeyboardFocusGuard {
+  const guard = { input, wasReadOnly: input.readOnly };
+  // iOS dismisses the editing keyboard when the control becomes read-only, but it
+  // can still remain the active element. That preserves the v2.1 scanner's proven
+  // active-input targeting semantics without letting the keyboard cover the camera.
   input.blur();
-  const active = document.activeElement;
-  if (active instanceof HTMLElement) active.blur();
+  input.readOnly = true;
+  input.focus({ preventScroll: true });
+  return guard;
+}
+
+function releaseBarcodeInputFocus(guard: KeyboardFocusGuard | null) {
+  if (!guard) return;
+  guard.input.blur();
+  guard.input.readOnly = guard.wasReadOnly;
 }
 
 function setReactInputValue(input: HTMLInputElement, value: string) {
@@ -297,6 +313,7 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
   setter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
+  input.focus({ preventScroll: true });
 }
 
 function nextFrame() {
@@ -502,7 +519,7 @@ export function WarehouseCameraScanner() {
   const detectorRef = useRef<Detector | null>(null);
   const wasmReaderRef = useRef<ZxingWasmGlobal | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
-  const targetInputRef = useRef<HTMLInputElement | null>(null);
+  const keyboardFocusGuardRef = useRef<KeyboardFocusGuard | null>(null);
   const targetKindRef = useRef<ScannerTargetKind>('generic');
   const scanningRef = useRef(false);
   const decodeBusyRef = useRef(false);
@@ -528,15 +545,16 @@ export function WarehouseCameraScanner() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    document.documentElement.classList.add('warehouse-camera-open');
-    document.body.classList.add('warehouse-camera-open');
-    return () => {
-      document.documentElement.classList.remove('warehouse-camera-open');
-      document.body.classList.remove('warehouse-camera-open');
-    };
-  }, [open]);
+  function releaseKeyboardGuard() {
+    releaseBarcodeInputFocus(keyboardFocusGuardRef.current);
+    keyboardFocusGuardRef.current = null;
+  }
+
+  function guardBarcodeTarget(target: HTMLInputElement) {
+    if (keyboardFocusGuardRef.current?.input === target) return;
+    releaseKeyboardGuard();
+    keyboardFocusGuardRef.current = focusBarcodeInputWithoutKeyboard(target);
+  }
 
   function stopCamera() {
     scanningRef.current = false;
@@ -563,7 +581,7 @@ export function WarehouseCameraScanner() {
 
   function closeScanner() {
     stopCamera();
-    targetInputRef.current = null;
+    releaseKeyboardGuard();
     targetKindRef.current = 'generic';
     setTargetKind('generic');
     setOpen(false);
@@ -572,7 +590,7 @@ export function WarehouseCameraScanner() {
 
   async function acceptBarcode(value: string) {
     if (acceptedRef.current) return;
-    const target = targetInputRef.current ?? barcodeInput();
+    const target = barcodeInput();
     if (!target) {
       setError('Open a barcode field before scanning.');
       return;
@@ -762,14 +780,13 @@ export function WarehouseCameraScanner() {
     }
   }
 
-  async function startCamera(explicitTarget?: HTMLInputElement) {
-    const target = explicitTarget && isVisible(explicitTarget) ? explicitTarget : barcodeInput();
+  async function startCamera() {
+    const target = barcodeInput();
     if (!target) return;
+    guardBarcodeTarget(target);
     const nextTargetKind = scannerTargetKind(target);
-    targetInputRef.current = target;
     targetKindRef.current = nextTargetKind;
     setTargetKind(nextTargetKind);
-    dismissSoftKeyboard(target);
     acceptedRef.current = false;
     scanAttemptRef.current = 0;
     setOpen(true);
@@ -779,6 +796,7 @@ export function WarehouseCameraScanner() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Camera access is not available in this browser.');
       setStarting(false);
+      releaseKeyboardGuard();
       return;
     }
     try {
@@ -791,6 +809,7 @@ export function WarehouseCameraScanner() {
     } catch (cameraError) {
       setError(cameraError instanceof Error ? `${cameraError.message} Enter the barcode manually if needed.` : 'Camera could not be opened.');
       stopCamera();
+      releaseKeyboardGuard();
     }
   }
 
@@ -798,9 +817,8 @@ export function WarehouseCameraScanner() {
     function handleCameraRequest(event: Event) {
       const detail = (event as CustomEvent<CameraScanRequestDetail>).detail;
       const requested = detail?.inputId ? document.getElementById(detail.inputId) : null;
-      const target = requested instanceof HTMLInputElement && isVisible(requested) ? requested : null;
-      if (target) dismissSoftKeyboard(target);
-      void startCamera(target ?? undefined);
+      if (requested instanceof HTMLInputElement && isVisible(requested)) guardBarcodeTarget(requested);
+      void startCamera();
     }
 
     window.addEventListener(CAMERA_SCAN_EVENT, handleCameraRequest);
@@ -840,7 +858,10 @@ export function WarehouseCameraScanner() {
     }
   }
 
-  useEffect(() => () => stopCamera(), []);
+  useEffect(() => () => {
+    stopCamera();
+    releaseKeyboardGuard();
+  }, []);
 
   const scannerMessage = starting
     ? targetKind === 'sleeve'
