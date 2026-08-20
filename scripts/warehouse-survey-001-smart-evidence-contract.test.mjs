@@ -6,14 +6,16 @@ const migrationPath = 'supabase/migrations/20260820104500_warehouse_survey_001_s
 const repositoryPath = 'src/data/repositories/barcodeSurvey.ts';
 const uiPath = 'src/features/operationalStability/BarcodeSurveyWorkspace.tsx';
 const cameraPath = 'src/WarehouseCameraScanner.tsx';
+const cameraCssPath = 'src/warehouseCameraPerformance.css';
 const vendorScriptPath = 'scripts/warehouse-survey-001-vendor-scanner-assets.mjs';
 const packagePath = 'package.json';
 
-const [migration, repository, ui, camera, vendorScript, packageJson] = await Promise.all([
+const [migration, repository, ui, camera, cameraCss, vendorScript, packageJson] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(uiPath, 'utf8'),
   readFile(cameraPath, 'utf8'),
+  readFile(cameraCssPath, 'utf8'),
   readFile(vendorScriptPath, 'utf8'),
   readFile(packagePath, 'utf8'),
 ]);
@@ -117,7 +119,7 @@ test('scanner v2 uses centre ROI multi-profile ZXing-C++ WASM decoding with a le
   assert.match(camera, /formats: WAREHOUSE_WASM_FORMATS/);
   assert.match(camera, /tryHarder: true/);
   assert.match(camera, /maxNumberOfSymbols: 1/);
-  assert.match(camera, /scanProfileForAttempt\(scanAttemptRef\.current\)/);
+  assert.match(camera, /scanProfileForAttempt\(scanAttemptRef\.current, targetKindRef\.current\)/);
   assert.match(camera, /startLegacyIphoneFallback/);
   assert.match(camera, /Fast scanner ready/);
 });
@@ -138,6 +140,30 @@ test('scanner v2.1 self-hosts both runtime engines and recovers from a poisoned 
   assert.match(camera, /activateLegacyFallback/);
   assert.match(camera, /wasmRuntimeFailureRef\.current = 0/);
   assert.match(camera, /Backup scanner active/);
+});
+
+test('scanner v2.2 keeps carton fast profiles, adds sleeve micro-ROI, and opens without the soft keyboard', () => {
+  assert.match(camera, /const SLEEVE_INPUT_ID = 'barcode-survey-sleeve-input'/);
+  assert.match(camera, /const SLEEVE_SCAN_PROFILES: ScanProfile\[\]/);
+  assert.match(camera, /widthFraction: 0\.46, heightFraction: 0\.20, contrast: 1\.10, upscale: 1\.80, maxWidth: 1920/);
+  assert.match(camera, /widthFraction: 0\.36, heightFraction: 0\.16, contrast: 1\.35, upscale: 2\.20, maxWidth: 1920/);
+  assert.match(camera, /widthFraction: 0\.28, heightFraction: 0\.14, contrast: 1\.55, upscale: 2\.50, maxWidth: 1920/);
+  assert.match(camera, /targetKind === 'sleeve' \? SLEEVE_SCAN_PROFILES : SCAN_PROFILES/);
+  assert.match(camera, /targetInputRef = useRef<HTMLInputElement \| null>/);
+  assert.match(camera, /function dismissSoftKeyboard\(input: HTMLInputElement\)/);
+  assert.match(camera, /input\.blur\(\)/);
+  assert.doesNotMatch(camera, /requested\.focus\(\)/);
+  assert.doesNotMatch(camera, /input\.focus\(\)/);
+  assert.match(camera, /document\.documentElement\.classList\.add\('warehouse-camera-open'\)/);
+  assert.match(camera, /document\.body\.classList\.add\('warehouse-camera-open'\)/);
+  assert.match(camera, /warehouse-camera-reticle\$\{targetKind === 'sleeve' \? ' sleeve' : ''\}/);
+  assert.match(cameraCss, /html\.warehouse-camera-open/);
+  assert.match(cameraCss, /body\.warehouse-camera-open/);
+  assert.match(cameraCss, /overscroll-behavior: none/);
+  assert.match(cameraCss, /height: 100dvh/);
+  assert.match(cameraCss, /\.warehouse-camera-reticle\.sleeve/);
+  assert.match(cameraCss, /left: 27%/);
+  assert.match(cameraCss, /height: 20%/);
 });
 
 test('scanner runtime assets are pinned, integrity-checked at build time and emitted under public vendor paths', () => {

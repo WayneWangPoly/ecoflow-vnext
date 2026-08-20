@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 
 const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
+const SLEEVE_INPUT_ID = 'barcode-survey-sleeve-input';
+const CARTON_INPUT_ID = 'barcode-survey-carton-input';
 const ZXING_BROWSER_VERSION = '0.2.1';
 const ZXING_FALLBACK_URL = `/vendor/zxing-browser/${ZXING_BROWSER_VERSION}/zxing-browser.min.js`;
 const ZXING_WASM_VERSION = '2.0.2';
@@ -130,20 +132,35 @@ type ExtendedConstraintSet = MediaTrackConstraintSet & {
 
 type ZoomRange = NumericCapability;
 type ScannerEngineStatus = 'idle' | 'native' | 'fast' | 'recovering' | 'fallback';
+type ScannerTargetKind = 'carton' | 'sleeve' | 'generic';
 
 type ScanProfile = {
   widthFraction: number;
   heightFraction: number;
   contrast: number;
   upscale: number;
+  maxWidth?: number;
 };
 
+// Keep the carton profiles unchanged. They are field-verified to scan the current
+// outer cartons quickly and must not regress while sleeve recognition is tuned.
 const SCAN_PROFILES: ScanProfile[] = [
   { widthFraction: 0.82, heightFraction: 0.34, contrast: 1, upscale: 1 },
   { widthFraction: 0.82, heightFraction: 0.34, contrast: 1.45, upscale: 1 },
   { widthFraction: 0.68, heightFraction: 0.28, contrast: 1.3, upscale: 1.35 },
   { widthFraction: 0.94, heightFraction: 0.55, contrast: 1.35, upscale: 1 },
   { widthFraction: 1, heightFraction: 1, contrast: 1.15, upscale: 1 },
+];
+
+// Sleeve labels are physically much smaller than carton labels. Their dedicated
+// profiles progressively concentrate native camera pixels into a narrow central ROI
+// before expanding outward, instead of asking the decoder to search the whole frame.
+const SLEEVE_SCAN_PROFILES: ScanProfile[] = [
+  { widthFraction: 0.46, heightFraction: 0.20, contrast: 1.10, upscale: 1.80, maxWidth: 1920 },
+  { widthFraction: 0.36, heightFraction: 0.16, contrast: 1.35, upscale: 2.20, maxWidth: 1920 },
+  { widthFraction: 0.28, heightFraction: 0.14, contrast: 1.55, upscale: 2.50, maxWidth: 1920 },
+  { widthFraction: 0.58, heightFraction: 0.24, contrast: 1.40, upscale: 1.70, maxWidth: 1920 },
+  { widthFraction: 0.72, heightFraction: 0.30, contrast: 1.25, upscale: 1.35, maxWidth: 1800 },
 ];
 
 const ZXING_WASM_MODULE_OVERRIDES: ZxingWasmModuleOverrides = {
@@ -263,12 +280,23 @@ function warehouseSurfaceVisible() {
     || Boolean(Array.from(document.querySelectorAll<HTMLElement>('.warehouse-receive-screen, .barcode-sprint-screen, .first-stocktake-screen, .mobile-title')).find(isVisible));
 }
 
+function scannerTargetKind(input: HTMLInputElement): ScannerTargetKind {
+  if (input.id === SLEEVE_INPUT_ID) return 'sleeve';
+  if (input.id === CARTON_INPUT_ID) return 'carton';
+  return 'generic';
+}
+
+function dismissSoftKeyboard(input: HTMLInputElement) {
+  input.blur();
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
+}
+
 function setReactInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  input.focus();
 }
 
 function nextFrame() {
@@ -411,8 +439,9 @@ async function optimiseCameraTrack(track: MediaStreamTrack) {
   };
 }
 
-function scanProfileForAttempt(attempt: number) {
-  return SCAN_PROFILES[attempt % SCAN_PROFILES.length];
+function scanProfileForAttempt(attempt: number, targetKind: ScannerTargetKind) {
+  const profiles = targetKind === 'sleeve' ? SLEEVE_SCAN_PROFILES : SCAN_PROFILES;
+  return profiles[attempt % profiles.length];
 }
 
 function applyBarcodeContrast(imageData: ImageData, contrast: number) {
@@ -438,7 +467,8 @@ function captureBarcodeCandidate(video: HTMLVideoElement, canvas: HTMLCanvasElem
   const sourceX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
   const sourceY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
   const requestedWidth = Math.round(cropWidth * profile.upscale);
-  const targetWidth = Math.max(320, Math.min(MAX_SCAN_CANVAS_WIDTH, requestedWidth));
+  const maxCanvasWidth = profile.maxWidth ?? MAX_SCAN_CANVAS_WIDTH;
+  const targetWidth = Math.max(320, Math.min(maxCanvasWidth, requestedWidth));
   const targetHeight = Math.max(160, Math.round(targetWidth * (cropHeight / cropWidth)));
 
   if (canvas.width !== targetWidth) canvas.width = targetWidth;
@@ -465,12 +495,15 @@ export function WarehouseCameraScanner() {
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [engineStatus, setEngineStatus] = useState<ScannerEngineStatus>('idle');
+  const [targetKind, setTargetKind] = useState<ScannerTargetKind>('generic');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
   const wasmReaderRef = useRef<ZxingWasmGlobal | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
+  const targetInputRef = useRef<HTMLInputElement | null>(null);
+  const targetKindRef = useRef<ScannerTargetKind>('generic');
   const scanningRef = useRef(false);
   const decodeBusyRef = useRef(false);
   const acceptedRef = useRef(false);
@@ -494,6 +527,16 @@ export function WarehouseCameraScanner() {
       window.removeEventListener('focusin', refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    document.documentElement.classList.add('warehouse-camera-open');
+    document.body.classList.add('warehouse-camera-open');
+    return () => {
+      document.documentElement.classList.remove('warehouse-camera-open');
+      document.body.classList.remove('warehouse-camera-open');
+    };
+  }, [open]);
 
   function stopCamera() {
     scanningRef.current = false;
@@ -520,13 +563,16 @@ export function WarehouseCameraScanner() {
 
   function closeScanner() {
     stopCamera();
+    targetInputRef.current = null;
+    targetKindRef.current = 'generic';
+    setTargetKind('generic');
     setOpen(false);
     setError('');
   }
 
   async function acceptBarcode(value: string) {
     if (acceptedRef.current) return;
-    const target = barcodeInput();
+    const target = targetInputRef.current ?? barcodeInput();
     if (!target) {
       setError('Open a barcode field before scanning.');
       return;
@@ -545,7 +591,7 @@ export function WarehouseCameraScanner() {
     if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return '';
     const canvas = canvasRef.current ?? document.createElement('canvas');
     canvasRef.current = canvas;
-    const profile = scanProfileForAttempt(scanAttemptRef.current);
+    const profile = scanProfileForAttempt(scanAttemptRef.current, targetKindRef.current);
     scanAttemptRef.current += 1;
     const candidate = captureBarcodeCandidate(video, canvas, profile);
     if (!candidate) return '';
@@ -716,10 +762,16 @@ export function WarehouseCameraScanner() {
     }
   }
 
-  async function startCamera() {
-    const target = barcodeInput();
+  async function startCamera(explicitTarget?: HTMLInputElement) {
+    const target = explicitTarget && isVisible(explicitTarget) ? explicitTarget : barcodeInput();
     if (!target) return;
+    const nextTargetKind = scannerTargetKind(target);
+    targetInputRef.current = target;
+    targetKindRef.current = nextTargetKind;
+    setTargetKind(nextTargetKind);
+    dismissSoftKeyboard(target);
     acceptedRef.current = false;
+    scanAttemptRef.current = 0;
     setOpen(true);
     setError('');
     setEngineStatus('idle');
@@ -746,8 +798,9 @@ export function WarehouseCameraScanner() {
     function handleCameraRequest(event: Event) {
       const detail = (event as CustomEvent<CameraScanRequestDetail>).detail;
       const requested = detail?.inputId ? document.getElementById(detail.inputId) : null;
-      if (requested instanceof HTMLInputElement && isVisible(requested)) requested.focus();
-      void startCamera();
+      const target = requested instanceof HTMLInputElement && isVisible(requested) ? requested : null;
+      if (target) dismissSoftKeyboard(target);
+      void startCamera(target ?? undefined);
     }
 
     window.addEventListener(CAMERA_SCAN_EVENT, handleCameraRequest);
@@ -790,23 +843,29 @@ export function WarehouseCameraScanner() {
   useEffect(() => () => stopCamera(), []);
 
   const scannerMessage = starting
-    ? 'Opening camera and warming scanner…'
+    ? targetKind === 'sleeve'
+      ? 'Opening camera and warming small-code scanner…'
+      : 'Opening camera and warming scanner…'
     : engineStatus === 'fast'
-      ? 'Fast scanner ready — hold one barcode inside the green frame.'
+      ? targetKind === 'sleeve'
+        ? 'Small-code mode ready — centre the sleeve barcode inside the narrow green frame.'
+        : 'Fast scanner ready — hold one barcode inside the green frame.'
       : engineStatus === 'recovering'
         ? 'Recovering fast scanner… keep the barcode inside the green frame.'
         : engineStatus === 'fallback'
           ? 'Backup scanner active — hold one barcode inside the green frame.'
-          : 'Hold one barcode inside the green frame.';
+          : targetKind === 'sleeve'
+            ? 'Centre the sleeve barcode inside the narrow green frame.'
+            : 'Hold one barcode inside the green frame.';
 
   return (
     <>
       {available && !open ? <button className="warehouse-camera-scan-launch" type="button" onClick={() => void startCamera()}>Scan barcode</button> : null}
       {open ? (
-        <div className="warehouse-camera-overlay" role="dialog" aria-modal="true" aria-label="Scan warehouse barcode">
+        <div className={`warehouse-camera-overlay warehouse-camera-overlay-${targetKind}`} role="dialog" aria-modal="true" aria-label={targetKind === 'sleeve' ? 'Scan sleeve barcode' : 'Scan warehouse barcode'}>
           <div className="warehouse-camera-sheet">
-            <header><div><h2>Scan barcode</h2></div><button type="button" onClick={closeScanner}>Close</button></header>
-            <div className="warehouse-camera-view"><video ref={videoRef} playsInline muted /><div className="warehouse-camera-reticle" /></div>
+            <header><div><h2>{targetKind === 'sleeve' ? 'Scan sleeve barcode' : 'Scan barcode'}</h2></div><button type="button" onClick={closeScanner}>Close</button></header>
+            <div className="warehouse-camera-view"><video ref={videoRef} playsInline muted /><div className={`warehouse-camera-reticle${targetKind === 'sleeve' ? ' sleeve' : ''}`} /></div>
             {error ? <div className="warehouse-camera-error">{error}</div> : <p>{scannerMessage}</p>}
             <div className="warehouse-camera-actions">
               {zoomRange ? <button type="button" disabled={zoomLevel <= zoomRange.min + 0.01} onClick={() => void changeZoom(-1)}>Zoom −</button> : null}
