@@ -3,8 +3,26 @@ import { observeBody } from '@/lib/domObserver';
 
 const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
 const ZXING_FALLBACK_URL = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/umd/zxing-browser.min.js';
+const ZXING_WASM_VERSION = '2.0.2';
+const ZXING_WASM_READER_URL = `https://cdn.jsdelivr.net/npm/zxing-wasm@${ZXING_WASM_VERSION}/dist/iife/reader/index.js`;
 const NATIVE_SCAN_INTERVAL_MS = 90;
+const WASM_SCAN_INTERVAL_MS = 110;
 const ZXING_SCAN_INTERVAL_MS = 80;
+const MAX_SCAN_CANVAS_WIDTH = 1600;
+
+const WAREHOUSE_WASM_FORMATS = [
+  'EAN13',
+  'EAN8',
+  'UPCA',
+  'UPCE',
+  'Code128',
+  'Code39',
+  'Code93',
+  'Codabar',
+  'ITF',
+  'ITF14',
+  'DataBar',
+];
 
 type Detector = {
   detect: (source: CanvasImageSource) => Promise<Array<{ rawValue?: string }>>;
@@ -49,6 +67,22 @@ type ZxingBrowserGlobal = {
   BrowserMultiFormatReader?: ZxingReaderConstructor;
 };
 
+type ZxingWasmReadResult = {
+  text?: string;
+  error?: string;
+  isValid?: boolean;
+};
+
+type ZxingWasmReaderOptions = {
+  formats?: string[];
+  tryHarder?: boolean;
+  maxNumberOfSymbols?: number;
+};
+
+type ZxingWasmGlobal = {
+  readBarcodes?: (source: ImageData, options?: ZxingWasmReaderOptions) => Promise<ZxingWasmReadResult[]>;
+};
+
 type CameraScanRequestDetail = {
   inputId?: string;
 };
@@ -79,10 +113,30 @@ type ExtendedConstraintSet = MediaTrackConstraintSet & {
 
 type ZoomRange = NumericCapability;
 
+type ScanProfile = {
+  widthFraction: number;
+  heightFraction: number;
+  contrast: number;
+  upscale: number;
+};
+
+const SCAN_PROFILES: ScanProfile[] = [
+  { widthFraction: 0.82, heightFraction: 0.34, contrast: 1, upscale: 1 },
+  { widthFraction: 0.82, heightFraction: 0.34, contrast: 1.45, upscale: 1 },
+  { widthFraction: 0.68, heightFraction: 0.28, contrast: 1.3, upscale: 1.35 },
+  { widthFraction: 0.94, heightFraction: 0.55, contrast: 1.35, upscale: 1 },
+  { widthFraction: 1, heightFraction: 1, contrast: 1.15, upscale: 1 },
+];
+
 let zxingLoadPromise: Promise<ZxingBrowserGlobal> | null = null;
+let zxingWasmLoadPromise: Promise<ZxingWasmGlobal> | null = null;
 
 function zxingGlobal() {
   return (window as unknown as { ZXingBrowser?: ZxingBrowserGlobal }).ZXingBrowser ?? null;
+}
+
+function zxingWasmGlobal() {
+  return (window as unknown as { ZXingWASM?: ZxingWasmGlobal }).ZXingWASM ?? null;
 }
 
 function loadZxingFallback() {
@@ -109,6 +163,43 @@ function loadZxingFallback() {
   });
 
   return zxingLoadPromise;
+}
+
+function loadZxingWasmReader() {
+  const loaded = zxingWasmGlobal();
+  if (loaded?.readBarcodes) return Promise.resolve(loaded);
+  if (zxingWasmLoadPromise) return zxingWasmLoadPromise;
+
+  zxingWasmLoadPromise = new Promise<ZxingWasmGlobal>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-wasm="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => {
+        const api = zxingWasmGlobal();
+        if (api?.readBarcodes) resolve(api);
+        else reject(new Error('Warehouse scanner engine did not initialise.'));
+      }, { once: true });
+      existing.addEventListener('error', () => reject(new Error('Warehouse scanner engine could not load.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = ZXING_WASM_READER_URL;
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.dataset.ecoflowBarcodeWasm = 'true';
+    script.onload = () => {
+      const api = zxingWasmGlobal();
+      if (api?.readBarcodes) resolve(api);
+      else reject(new Error('Warehouse scanner engine did not initialise.'));
+    };
+    script.onerror = () => reject(new Error('Warehouse scanner engine could not load.'));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    zxingWasmLoadPromise = null;
+    throw error;
+  });
+
+  return zxingWasmLoadPromise;
 }
 
 function createZxingReader(api: ZxingBrowserGlobal) {
@@ -279,10 +370,58 @@ async function optimiseCameraTrack(track: MediaStreamTrack) {
   const zoom = capabilities.zoom;
   if (!zoom || !Number.isFinite(zoom.min) || !Number.isFinite(zoom.max) || zoom.max <= zoom.min) return null;
   const settings = track.getSettings() as ExtendedTrackSettings;
+  const current = Math.min(zoom.max, Math.max(zoom.min, settings.zoom ?? zoom.min));
+  const preferred = Math.min(zoom.max, Math.max(current, Math.max(zoom.min, Math.min(1.5, Math.max(1.25, zoom.min + 0.35)))));
+  if (preferred > current + 0.01) await applyAdvancedConstraint(track, { zoom: preferred });
   return {
     range: zoom,
-    value: Math.min(zoom.max, Math.max(zoom.min, settings.zoom ?? zoom.min)),
+    value: preferred,
   };
+}
+
+function scanProfileForAttempt(attempt: number) {
+  return SCAN_PROFILES[attempt % SCAN_PROFILES.length];
+}
+
+function applyBarcodeContrast(imageData: ImageData, contrast: number) {
+  if (contrast <= 1.01) return imageData;
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const luminance = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const value = Math.max(0, Math.min(255, Math.round((luminance - 128) * contrast + 128)));
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  return imageData;
+}
+
+function captureBarcodeCandidate(video: HTMLVideoElement, canvas: HTMLCanvasElement, profile: ScanProfile) {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  if (!sourceWidth || !sourceHeight) return null;
+
+  const cropWidth = Math.max(1, Math.round(sourceWidth * profile.widthFraction));
+  const cropHeight = Math.max(1, Math.round(sourceHeight * profile.heightFraction));
+  const sourceX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
+  const sourceY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
+  const requestedWidth = Math.round(cropWidth * profile.upscale);
+  const targetWidth = Math.max(320, Math.min(MAX_SCAN_CANVAS_WIDTH, requestedWidth));
+  const targetHeight = Math.max(160, Math.round(targetWidth * (cropHeight / cropWidth)));
+
+  if (canvas.width !== targetWidth) canvas.width = targetWidth;
+  if (canvas.height !== targetHeight) canvas.height = targetHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+
+  context.imageSmoothingEnabled = requestedWidth <= cropWidth;
+  context.drawImage(video, sourceX, sourceY, cropWidth, cropHeight, 0, 0, targetWidth, targetHeight);
+  const imageData = context.getImageData(0, 0, targetWidth, targetHeight);
+  if (profile.contrast > 1.01) {
+    applyBarcodeContrast(imageData, profile.contrast);
+    context.putImageData(imageData, 0, 0);
+  }
+  return { canvas, imageData };
 }
 
 export function WarehouseCameraScanner() {
@@ -294,13 +433,17 @@ export function WarehouseCameraScanner() {
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
+  const wasmReaderRef = useRef<ZxingWasmGlobal | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const scanningRef = useRef(false);
+  const decodeBusyRef = useRef(false);
   const acceptedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const lastDetectRef = useRef(0);
+  const scanAttemptRef = useRef(0);
 
   useEffect(() => {
     function refresh() {
@@ -318,6 +461,7 @@ export function WarehouseCameraScanner() {
 
   function stopCamera() {
     scanningRef.current = false;
+    decodeBusyRef.current = false;
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     void zxingControlsRef.current?.stop();
@@ -325,6 +469,8 @@ export function WarehouseCameraScanner() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     detectorRef.current = null;
+    wasmReaderRef.current = null;
+    scanAttemptRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
     setTorchOn(false);
     setZoomRange(null);
@@ -354,24 +500,53 @@ export function WarehouseCameraScanner() {
     }
   }
 
-  async function scanFrame() {
-    if (!scanningRef.current || !videoRef.current || !detectorRef.current) return;
+  async function decodeCurrentFrame() {
     const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return '';
+    const canvas = canvasRef.current ?? document.createElement('canvas');
+    canvasRef.current = canvas;
+    const profile = scanProfileForAttempt(scanAttemptRef.current);
+    scanAttemptRef.current += 1;
+    const candidate = captureBarcodeCandidate(video, canvas, profile);
+    if (!candidate) return '';
+
+    if (wasmReaderRef.current?.readBarcodes) {
+      const results = await wasmReaderRef.current.readBarcodes(candidate.imageData, {
+        formats: WAREHOUSE_WASM_FORMATS,
+        tryHarder: true,
+        maxNumberOfSymbols: 1,
+      });
+      return results.find((result) => result.isValid !== false && result.text?.trim())?.text?.trim() ?? '';
+    }
+
+    if (detectorRef.current) {
+      const results = await detectorRef.current.detect(candidate.canvas);
+      return results.find((result) => result.rawValue)?.rawValue?.trim() ?? '';
+    }
+
+    return '';
+  }
+
+  async function scanFrame() {
+    if (!scanningRef.current) return;
+    const interval = wasmReaderRef.current ? WASM_SCAN_INTERVAL_MS : NATIVE_SCAN_INTERVAL_MS;
     const now = performance.now();
-    if (now - lastDetectRef.current >= NATIVE_SCAN_INTERVAL_MS && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    if (!decodeBusyRef.current && now - lastDetectRef.current >= interval) {
       lastDetectRef.current = now;
+      decodeBusyRef.current = true;
       try {
-        const results = await detectorRef.current.detect(video);
-        const code = results.find((result) => result.rawValue)?.rawValue?.trim();
+        const code = await decodeCurrentFrame();
         if (code) {
           await acceptBarcode(code);
           return;
         }
       } catch {
-        // The camera may still be focusing. Keep scanning.
+        // Real cartons can have glare, folds or motion blur. Rotate through scan profiles and keep trying.
+      } finally {
+        decodeBusyRef.current = false;
       }
     }
-    rafRef.current = window.requestAnimationFrame(() => void scanFrame());
+    if (scanningRef.current) rafRef.current = window.requestAnimationFrame(() => void scanFrame());
   }
 
   async function mountedVideo() {
@@ -408,10 +583,9 @@ export function WarehouseCameraScanner() {
     void scanFrame();
   }
 
-  async function startIphoneScanner(video: HTMLVideoElement) {
+  async function startLegacyIphoneFallback(video: HTMLVideoElement, stream: MediaStream) {
     const api = await loadZxingFallback();
     const reader = createZxingReader(api);
-    const stream = await prepareStream();
     const controls = await reader.decodeFromStream(
       stream,
       video,
@@ -421,6 +595,22 @@ export function WarehouseCameraScanner() {
       },
     );
     zxingControlsRef.current = controls;
+  }
+
+  async function startIphoneScanner(video: HTMLVideoElement) {
+    const wasmPromise = loadZxingWasmReader();
+    const stream = await prepareStream();
+    video.srcObject = stream;
+    await video.play();
+
+    try {
+      wasmReaderRef.current = await wasmPromise;
+      scanningRef.current = true;
+      void scanFrame();
+    } catch {
+      // Keep the old JS decoder as a last-resort runtime fallback if the pinned WASM reader CDN is unavailable.
+      await startLegacyIphoneFallback(video, stream);
+    }
   }
 
   async function startCamera() {
@@ -503,7 +693,7 @@ export function WarehouseCameraScanner() {
           <div className="warehouse-camera-sheet">
             <header><div><h2>Scan barcode</h2></div><button type="button" onClick={closeScanner}>Close</button></header>
             <div className="warehouse-camera-view"><video ref={videoRef} playsInline muted /><div className="warehouse-camera-reticle" /></div>
-            {error ? <div className="warehouse-camera-error">{error}</div> : <p>{starting ? 'Opening camera…' : 'Fill the green frame with one barcode.'}</p>}
+            {error ? <div className="warehouse-camera-error">{error}</div> : <p>{starting ? 'Opening camera…' : 'Hold one barcode inside the green frame. Scanner v2 is analysing the centre area.'}</p>}
             <div className="warehouse-camera-actions">
               {zoomRange ? <button type="button" disabled={zoomLevel <= zoomRange.min + 0.01} onClick={() => void changeZoom(-1)}>Zoom −</button> : null}
               {zoomRange ? <button type="button" disabled={zoomLevel >= zoomRange.max - 0.01} onClick={() => void changeZoom(1)}>Zoom +</button> : null}
