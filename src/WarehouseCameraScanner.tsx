@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { observeBody } from '@/lib/domObserver';
 
 const CAMERA_SCAN_EVENT = 'ecoflow:warehouse-camera-scan';
-const ZXING_FALLBACK_URL = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/umd/zxing-browser.min.js';
+const ZXING_BROWSER_VERSION = '0.2.1';
+const ZXING_FALLBACK_URL = `/vendor/zxing-browser/${ZXING_BROWSER_VERSION}/zxing-browser.min.js`;
 const ZXING_WASM_VERSION = '2.0.2';
-const ZXING_WASM_READER_URL = `https://cdn.jsdelivr.net/npm/zxing-wasm@${ZXING_WASM_VERSION}/dist/iife/reader/index.js`;
+const ZXING_WASM_READER_URL = `/vendor/zxing-wasm/${ZXING_WASM_VERSION}/reader/index.js`;
+const ZXING_WASM_BINARY_URL = `/vendor/zxing-wasm/${ZXING_WASM_VERSION}/reader/zxing_reader.wasm`;
 const NATIVE_SCAN_INTERVAL_MS = 90;
 const WASM_SCAN_INTERVAL_MS = 110;
 const ZXING_SCAN_INTERVAL_MS = 80;
 const MAX_SCAN_CANVAS_WIDTH = 1600;
+const WASM_RUNTIME_FAILURE_LIMIT = 2;
+const WASM_RECOVERY_LIMIT = 1;
 
 const WAREHOUSE_WASM_FORMATS = [
   'EAN13',
@@ -79,8 +83,21 @@ type ZxingWasmReaderOptions = {
   maxNumberOfSymbols?: number;
 };
 
+type ZxingWasmModuleOverrides = {
+  locateFile?: (path: string, prefix: string) => string;
+};
+
+type ZxingWasmPrepareOptions = {
+  overrides?: ZxingWasmModuleOverrides;
+  equalityFn?: (left: ZxingWasmModuleOverrides, right: ZxingWasmModuleOverrides) => boolean;
+  fireImmediately?: boolean;
+};
+
 type ZxingWasmGlobal = {
   readBarcodes?: (source: ImageData, options?: ZxingWasmReaderOptions) => Promise<ZxingWasmReadResult[]>;
+  prepareZXingModule?: (options?: ZxingWasmPrepareOptions) => void | Promise<unknown>;
+  purgeZXingModule?: () => void;
+  ZXING_WASM_VERSION?: string;
 };
 
 type CameraScanRequestDetail = {
@@ -112,6 +129,7 @@ type ExtendedConstraintSet = MediaTrackConstraintSet & {
 };
 
 type ZoomRange = NumericCapability;
+type ScannerEngineStatus = 'idle' | 'native' | 'fast' | 'recovering' | 'fallback';
 
 type ScanProfile = {
   widthFraction: number;
@@ -127,6 +145,10 @@ const SCAN_PROFILES: ScanProfile[] = [
   { widthFraction: 0.94, heightFraction: 0.55, contrast: 1.35, upscale: 1 },
   { widthFraction: 1, heightFraction: 1, contrast: 1.15, upscale: 1 },
 ];
+
+const ZXING_WASM_MODULE_OVERRIDES: ZxingWasmModuleOverrides = {
+  locateFile: (path, prefix) => path.endsWith('.wasm') ? ZXING_WASM_BINARY_URL : `${prefix}${path}`,
+};
 
 let zxingLoadPromise: Promise<ZxingBrowserGlobal> | null = null;
 let zxingWasmLoadPromise: Promise<ZxingWasmGlobal> | null = null;
@@ -145,20 +167,21 @@ function loadZxingFallback() {
   if (zxingLoadPromise) return zxingLoadPromise;
 
   zxingLoadPromise = new Promise<ZxingBrowserGlobal>((resolve, reject) => {
+    document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-fallback="true"]')?.remove();
     const script = document.createElement('script');
     script.src = ZXING_FALLBACK_URL;
     script.async = true;
-    script.crossOrigin = 'anonymous';
     script.dataset.ecoflowBarcodeFallback = 'true';
     script.onload = () => {
       const api = zxingGlobal();
       if (api) resolve(api);
-      else reject(new Error('The iPhone barcode scanner did not initialise.'));
+      else reject(new Error('The backup barcode scanner did not initialise.'));
     };
-    script.onerror = () => reject(new Error('The iPhone barcode scanner could not load.'));
+    script.onerror = () => reject(new Error('The backup barcode scanner could not load.'));
     document.head.appendChild(script);
   }).catch((error) => {
     zxingLoadPromise = null;
+    document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-fallback="true"]')?.remove();
     throw error;
   });
 
@@ -171,21 +194,10 @@ function loadZxingWasmReader() {
   if (zxingWasmLoadPromise) return zxingWasmLoadPromise;
 
   zxingWasmLoadPromise = new Promise<ZxingWasmGlobal>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-wasm="true"]');
-    if (existing) {
-      existing.addEventListener('load', () => {
-        const api = zxingWasmGlobal();
-        if (api?.readBarcodes) resolve(api);
-        else reject(new Error('Warehouse scanner engine did not initialise.'));
-      }, { once: true });
-      existing.addEventListener('error', () => reject(new Error('Warehouse scanner engine could not load.')), { once: true });
-      return;
-    }
-
+    document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-wasm="true"]')?.remove();
     const script = document.createElement('script');
     script.src = ZXING_WASM_READER_URL;
     script.async = true;
-    script.crossOrigin = 'anonymous';
     script.dataset.ecoflowBarcodeWasm = 'true';
     script.onload = () => {
       const api = zxingWasmGlobal();
@@ -196,15 +208,35 @@ function loadZxingWasmReader() {
     document.head.appendChild(script);
   }).catch((error) => {
     zxingWasmLoadPromise = null;
+    document.querySelector<HTMLScriptElement>('script[data-ecoflow-barcode-wasm="true"]')?.remove();
     throw error;
   });
 
   return zxingWasmLoadPromise;
 }
 
+async function prepareZxingWasmReader(api: ZxingWasmGlobal, forceReinitialise = false) {
+  if (!api.readBarcodes || !api.prepareZXingModule) throw new Error('Warehouse scanner engine API is incomplete.');
+  if (api.ZXING_WASM_VERSION && api.ZXING_WASM_VERSION !== ZXING_WASM_VERSION) {
+    throw new Error(`Warehouse scanner engine version mismatch: ${api.ZXING_WASM_VERSION}.`);
+  }
+
+  if (forceReinitialise) api.purgeZXingModule?.();
+  await api.prepareZXingModule({
+    overrides: ZXING_WASM_MODULE_OVERRIDES,
+    fireImmediately: true,
+    ...(forceReinitialise ? { equalityFn: () => false } : {}),
+  });
+  return api;
+}
+
+async function loadPreparedZxingWasmReader() {
+  return prepareZxingWasmReader(await loadZxingWasmReader());
+}
+
 function createZxingReader(api: ZxingBrowserGlobal) {
   const Reader = api.BrowserMultiFormatOneDReader ?? api.BrowserMultiFormatReader;
-  if (!Reader) throw new Error('The iPhone barcode scanner is unavailable.');
+  if (!Reader) throw new Error('The backup iPhone barcode scanner is unavailable.');
   return new Reader(undefined, {
     delayBetweenScanAttempts: ZXING_SCAN_INTERVAL_MS,
     delayBetweenScanSuccess: 0,
@@ -432,6 +464,7 @@ export function WarehouseCameraScanner() {
   const [starting, setStarting] = useState(false);
   const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [engineStatus, setEngineStatus] = useState<ScannerEngineStatus>('idle');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -441,9 +474,12 @@ export function WarehouseCameraScanner() {
   const scanningRef = useRef(false);
   const decodeBusyRef = useRef(false);
   const acceptedRef = useRef(false);
+  const fallbackStartingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const lastDetectRef = useRef(0);
   const scanAttemptRef = useRef(0);
+  const wasmRuntimeFailureRef = useRef(0);
+  const wasmRecoveryAttemptRef = useRef(0);
 
   useEffect(() => {
     function refresh() {
@@ -462,6 +498,7 @@ export function WarehouseCameraScanner() {
   function stopCamera() {
     scanningRef.current = false;
     decodeBusyRef.current = false;
+    fallbackStartingRef.current = false;
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     void zxingControlsRef.current?.stop();
@@ -471,10 +508,13 @@ export function WarehouseCameraScanner() {
     detectorRef.current = null;
     wasmReaderRef.current = null;
     scanAttemptRef.current = 0;
+    wasmRuntimeFailureRef.current = 0;
+    wasmRecoveryAttemptRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
     setTorchOn(false);
     setZoomRange(null);
     setZoomLevel(1);
+    setEngineStatus('idle');
     setStarting(false);
   }
 
@@ -516,6 +556,7 @@ export function WarehouseCameraScanner() {
         tryHarder: true,
         maxNumberOfSymbols: 1,
       });
+      wasmRuntimeFailureRef.current = 0;
       return results.find((result) => result.isValid !== false && result.text?.trim())?.text?.trim() ?? '';
     }
 
@@ -525,6 +566,58 @@ export function WarehouseCameraScanner() {
     }
 
     return '';
+  }
+
+  async function recoverZxingWasmReader() {
+    const api = wasmReaderRef.current ?? zxingWasmGlobal();
+    if (!api?.readBarcodes) throw new Error('Fast scanner engine is unavailable for recovery.');
+    wasmRecoveryAttemptRef.current += 1;
+    setEngineStatus('recovering');
+    await prepareZxingWasmReader(api, true);
+    if (!streamRef.current) return;
+    wasmReaderRef.current = api;
+    wasmRuntimeFailureRef.current = 0;
+    setEngineStatus('fast');
+  }
+
+  async function activateLegacyFallback() {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream || fallbackStartingRef.current || zxingControlsRef.current) return;
+
+    fallbackStartingRef.current = true;
+    scanningRef.current = false;
+    wasmReaderRef.current = null;
+    if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    setEngineStatus('fallback');
+    try {
+      await startLegacyIphoneFallback(video, stream);
+    } catch (fallbackError) {
+      if (streamRef.current === stream) {
+        setError(fallbackError instanceof Error
+          ? `${fallbackError.message} Enter the barcode manually if needed.`
+          : 'Backup barcode scanner is unavailable. Enter the barcode manually if needed.');
+      }
+    } finally {
+      fallbackStartingRef.current = false;
+    }
+  }
+
+  async function handleWasmRuntimeFailure() {
+    if (!wasmReaderRef.current) return;
+    wasmRuntimeFailureRef.current += 1;
+    if (wasmRuntimeFailureRef.current < WASM_RUNTIME_FAILURE_LIMIT) return;
+
+    if (wasmRecoveryAttemptRef.current < WASM_RECOVERY_LIMIT) {
+      try {
+        await recoverZxingWasmReader();
+        return;
+      } catch {
+        // A failed reinitialisation is an engine-health failure, not a barcode miss.
+      }
+    }
+    await activateLegacyFallback();
   }
 
   async function scanFrame() {
@@ -541,7 +634,7 @@ export function WarehouseCameraScanner() {
           return;
         }
       } catch {
-        // Real cartons can have glare, folds or motion blur. Rotate through scan profiles and keep trying.
+        if (wasmReaderRef.current) await handleWasmRuntimeFailure();
       } finally {
         decodeBusyRef.current = false;
       }
@@ -579,6 +672,7 @@ export function WarehouseCameraScanner() {
     const stream = await prepareStream();
     video.srcObject = stream;
     await video.play();
+    setEngineStatus('native');
     scanningRef.current = true;
     void scanFrame();
   }
@@ -595,20 +689,29 @@ export function WarehouseCameraScanner() {
       },
     );
     zxingControlsRef.current = controls;
+    setEngineStatus('fallback');
   }
 
   async function startIphoneScanner(video: HTMLVideoElement) {
-    const wasmPromise = loadZxingWasmReader();
+    // Start self-hosted ZXing-C++ initialisation while the camera opens. fireImmediately
+    // prewarms the local WASM before we declare the fast scanner ready.
+    const wasmPromise = loadPreparedZxingWasmReader();
     const stream = await prepareStream();
     video.srcObject = stream;
     await video.play();
 
     try {
-      wasmReaderRef.current = await wasmPromise;
+      const api = await wasmPromise;
+      if (streamRef.current !== stream) return;
+      wasmReaderRef.current = api;
+      wasmRuntimeFailureRef.current = 0;
+      wasmRecoveryAttemptRef.current = 0;
+      setEngineStatus('fast');
       scanningRef.current = true;
       void scanFrame();
     } catch {
-      // Keep the old JS decoder as a last-resort runtime fallback if the pinned WASM reader CDN is unavailable.
+      // Same-origin WASM failed to initialise. Move explicitly to the same-origin backup
+      // decoder instead of leaving a dead WASM reader in an endless silent retry loop.
       await startLegacyIphoneFallback(video, stream);
     }
   }
@@ -619,6 +722,7 @@ export function WarehouseCameraScanner() {
     acceptedRef.current = false;
     setOpen(true);
     setError('');
+    setEngineStatus('idle');
     setStarting(true);
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Camera access is not available in this browser.');
@@ -685,6 +789,16 @@ export function WarehouseCameraScanner() {
 
   useEffect(() => () => stopCamera(), []);
 
+  const scannerMessage = starting
+    ? 'Opening camera and warming scanner…'
+    : engineStatus === 'fast'
+      ? 'Fast scanner ready — hold one barcode inside the green frame.'
+      : engineStatus === 'recovering'
+        ? 'Recovering fast scanner… keep the barcode inside the green frame.'
+        : engineStatus === 'fallback'
+          ? 'Backup scanner active — hold one barcode inside the green frame.'
+          : 'Hold one barcode inside the green frame.';
+
   return (
     <>
       {available && !open ? <button className="warehouse-camera-scan-launch" type="button" onClick={() => void startCamera()}>Scan barcode</button> : null}
@@ -693,7 +807,7 @@ export function WarehouseCameraScanner() {
           <div className="warehouse-camera-sheet">
             <header><div><h2>Scan barcode</h2></div><button type="button" onClick={closeScanner}>Close</button></header>
             <div className="warehouse-camera-view"><video ref={videoRef} playsInline muted /><div className="warehouse-camera-reticle" /></div>
-            {error ? <div className="warehouse-camera-error">{error}</div> : <p>{starting ? 'Opening camera…' : 'Hold one barcode inside the green frame. Scanner v2 is analysing the centre area.'}</p>}
+            {error ? <div className="warehouse-camera-error">{error}</div> : <p>{scannerMessage}</p>}
             <div className="warehouse-camera-actions">
               {zoomRange ? <button type="button" disabled={zoomLevel <= zoomRange.min + 0.01} onClick={() => void changeZoom(-1)}>Zoom −</button> : null}
               {zoomRange ? <button type="button" disabled={zoomLevel >= zoomRange.max - 0.01} onClick={() => void changeZoom(1)}>Zoom +</button> : null}
