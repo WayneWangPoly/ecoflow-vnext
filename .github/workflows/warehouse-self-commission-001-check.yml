@@ -1,0 +1,44 @@
+name: WAREHOUSE-SELF-COMMISSION-001 safety contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/warehouse-self-commission-001-check.yml'
+      - 'scripts/warehouse-self-commission-001-contract.test.mjs'
+      - 'src/data/repositories/productIdentityBarcodeResolution.ts'
+      - 'src/data/repositories/warehouseFirstSeenCommissioning.ts'
+      - 'src/features/operationalStability/WarehouseControlWorkspaceV3.tsx'
+      - 'src/features/operationalStability/WarehouseFirstSeenCommissioningPanel.tsx'
+      - 'src/features/operationalStability/warehouseFirstSeenCommissioning.css'
+      - 'supabase/migrations/20260826124500_warehouse_first_seen_commissioning.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: First-seen safety contract
+        run: node --test scripts/warehouse-self-commission-001-contract.test.mjs
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build

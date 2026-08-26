@@ -126,7 +126,7 @@ export async function resolveOperationalBarcode(
 }
 
 export function operationalBarcodeFailureMessage(result: OperationalBarcodeResolution) {
-  if (result.resolutionStatus === 'UNKNOWN') return 'Unknown barcode. Commission and publish it in Product Identity before warehouse use.';
+  if (result.resolutionStatus === 'UNKNOWN') return 'Unknown barcode. Open Warehouse Control → Live Barcode, set it up once, then retry this operation.';
   if (result.resolutionStatus === 'RETIRED') return 'This barcode is retired. Scan the current published packaging code.';
   if (result.resolutionStatus === 'COMMERCIAL_MISMATCH') return 'This physical product is not approved for the selected Commercial SKU.';
   if (result.resolutionStatus === 'COMMERCIAL_AMBIGUOUS') return 'This physical product has an ambiguous Commercial SKU contract. Resolve Product Identity before continuing.';
