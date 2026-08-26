@@ -1,0 +1,177 @@
+name: WAREHOUSE-SURVEY-002 reconciliation authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/warehouse-survey-002-reconciliation-check.yml'
+      - 'scripts/warehouse-survey-002-*'
+      - 'src/data/repositories/barcodeSurveyReconciliation.ts'
+      - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconciliation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Static reconciliation authority contract
+        run: node --test scripts/warehouse-survey-002-contract.test.mjs
+
+      - name: Prepare production-shaped Product Identity and Survey fixture
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema auth;
+          create role authenticated noinherit;
+          create role service_role noinherit;
+          create role anon noinherit;
+
+          create or replace function auth.uid() returns uuid language sql stable as $$
+            select '11111111-1111-4111-8111-111111111111'::uuid
+          $$;
+          create or replace function public.ecoflow_active_app_role() returns text language sql stable as $$
+            select coalesce(nullif(current_setting('app.test_role',true),''),'OWNER')::text
+          $$;
+
+          create table public.skus (
+            id uuid primary key,
+            sku_code text not null unique,
+            display_name text,
+            category text,
+            setup_status text
+          );
+          create table public.external_product_mappings (
+            id uuid primary key default gen_random_uuid(),
+            provider text not null,
+            external_product_code text not null,
+            internal_sku_id uuid references public.skus(id),
+            default_unit_level text,
+            confidence text,
+            is_active boolean not null default true,
+            updated_at timestamptz not null default now(),
+            unique(provider,external_product_code)
+          );
+          create table public.ecoflow_sku_master_overrides (
+            external_sku_code text primary key,
+            internal_sku_id uuid,
+            classification text,
+            is_service_item boolean not null default false,
+            preferred_pick_level text,
+            status text,
+            notes text
+          );
+          create table public.ecoflow_sku_barcode_registry (
+            id uuid primary key default gen_random_uuid(),
+            sku text not null,
+            barcode text not null unique,
+            package_level text not null,
+            units_per_barcode numeric not null default 1,
+            product_name text,
+            fixed_shelf text,
+            is_active boolean not null default true,
+            first_scanned_at timestamptz not null default now(),
+            last_scanned_at timestamptz not null default now()
+          );
+          create table public.ecoflow_inventory_movements (
+            id uuid primary key default gen_random_uuid(),
+            marker text not null
+          );
+
+          create table public._warehouse_survey_002_sku_fixture (
+            sku text primary key,
+            product_name text,
+            category text,
+            fixed_shelf text,
+            primary_barcode text
+          );
+          insert into public._warehouse_survey_002_sku_fixture(sku,product_name,category,fixed_shelf,primary_barcode) values
+            ('CUP-12W','12oz White Compostable Cup','Cups','A1',null),
+            ('CUP-16W','16oz White Compostable Cup','Cups','A2',null);
+          create view public.v_ecoflow_inventory_sku_control as
+          select sku,product_name,category,fixed_shelf,primary_barcode
+          from public._warehouse_survey_002_sku_fixture;
+
+          insert into public.skus(id,sku_code,display_name,category,setup_status) values
+            ('aaaaaaaa-0000-4000-8000-000000000001','COM-CUP-12','12oz White Cup','Cups','active');
+          insert into public.external_product_mappings(provider,external_product_code,internal_sku_id,default_unit_level,confidence,is_active) values
+            ('ORDERMENTUM','CUP-12W','aaaaaaaa-0000-4000-8000-000000000001','carton','VERIFIED',true);
+          insert into public.ecoflow_sku_master_overrides(external_sku_code,internal_sku_id,classification,is_service_item,status) values
+            ('CUP-12W','aaaaaaaa-0000-4000-8000-000000000001','PRODUCT',false,'ACTIVE');
+          insert into public.ecoflow_inventory_movements(marker) values('survey-002-inventory-sentinel');
+          SQL
+
+      - name: Apply canonical Product Identity authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260808180500_product_identity_authority.sql
+
+      - name: Apply Owner/Admin submit hardening
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260811002000_product_identity_submit_role_hardening.sql
+
+      - name: Apply Barcode Survey evidence authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260815050000_warehouse_survey_001_barcode_evidence.sql
+
+      - name: Apply validated Survey SKU context
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260816061000_warehouse_survey_001_sku_context.sql
+
+      - name: Apply Smart Packaging Evidence
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260820104500_warehouse_survey_001_smart_packaging_evidence.sql
+
+      - name: Apply Survey-to-Product-Identity reconciliation authority
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql
+
+      - name: Execute reconciliation, role, provenance, conflict and publication contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-db-contract-test.sql
+
+      - name: Static no-quantity-mutation gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql
+          if grep -Eiq '^[[:space:]]*(insert[[:space:]]+into|update|delete[[:space:]]+from)[[:space:]]+public\.(ecoflow_inventory_movements|ecoflow_inventory_balances|ecoflow_warehouse_receiving|ecoflow_stocktake|ecoflow_pick|ecoflow_delivery)' "$file"; then
+            echo 'Survey reconciliation must never mutate operational quantities.' >&2
+            exit 1
+          fi
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
