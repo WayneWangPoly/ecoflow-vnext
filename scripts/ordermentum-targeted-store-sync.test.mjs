@@ -111,3 +111,25 @@ test('implementation cannot fall back to full purchaser projection or persistent
   assert.match(source, /databaseWrites:\s*0/);
   assert.match(source, /process\.exit\(0\)/);
 });
+
+test('dedicated workflow is manual-only and retains one day of evidence', async () => {
+  const workflow = await readFile('.github/workflows/ordermentum-targeted-store-sync.yml', 'utf8');
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /\n\s*schedule:\s*\n/);
+  assert.doesNotMatch(workflow, /\n\s*push:\s*\n/);
+  assert.doesNotMatch(workflow, /\n\s*workflow_run:\s*\n/);
+  assert.match(workflow, /--external-id="\$\{\{ inputs\.external_id \}\}"/);
+  assert.match(workflow, /retention-days:\s*1/);
+  assert.doesNotMatch(workflow, /--mode stores_only|--mode sku_only|ordermentum-master-data-sync/);
+});
+
+test('Edge Function is owner-admin only and does not create persistent operational jobs', async () => {
+  const source = await readFile('supabase/functions/trigger-ordermentum-targeted-sync/index.ts', 'utf8');
+  assert.match(source, /\['OWNER', 'ADMIN'\]\.includes\(actorProfile\.app_role\)/);
+  assert.match(source, /resource !== 'purchaser'/);
+  assert.match(source, /INVALID_PURCHASER_ID/);
+  assert.match(source, /ordermentum-targeted-store-sync\.yml/);
+  assert.match(source, /external_id: externalId/);
+  assert.doesNotMatch(source, /ecoflow_operational_sync_jobs/);
+  assert.match(source, /app_security_audit_events/);
+});
