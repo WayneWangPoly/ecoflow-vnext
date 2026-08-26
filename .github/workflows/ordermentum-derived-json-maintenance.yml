@@ -1,0 +1,201 @@
+name: Ordermentum derived JSON maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Inspect or explicitly reclaim duplicated derived JSON"
+        required: true
+        default: "inspect"
+        type: choice
+        options:
+          - inspect
+          - compact_derived_json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+
+env:
+  SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
+  SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+  DATABASE_QUOTA_BYTES: "524288000"
+  TRANSIENT_MARGIN_BYTES: "4194304"
+  MAX_ACCEPTABLE_BYTES_AFTER: "445644800"
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require production database credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Missing SUPABASE_DB_PASSWORD'; exit 1; }
+          ENCODED_PASSWORD="$(python3 -c 'import urllib.parse, os; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')"
+          SUPABASE_DB_URL="postgresql://postgres.${SUPABASE_PROJECT_REF}:${ENCODED_PASSWORD}@${SUPABASE_POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+
+      - name: Capture pre-maintenance contract evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/tmp/ordermentum-derived-json-maintenance.log
+          : > "$LOG"
+          echo "mode=${{ inputs.mode }}" | tee -a "$LOG"
+
+          TRIGGER_COUNT="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*) from pg_trigger where not tgisinternal and tgname in ('ecoflow_slim_om_invoice_raw_json','ecoflow_slim_om_order_item_raw_json')")"
+          test "$TRIGGER_COUNT" = "2" || { echo "Required derived-JSON slimming triggers are not deployed" | tee -a "$LOG"; exit 1; }
+
+          DB_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_database_size(current_database())::bigint")"
+          ITEM_HEAP_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_relation_size('public.om_order_items'::regclass)::bigint")"
+          ITEM_INDEX_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_indexes_size('public.om_order_items'::regclass)::bigint")"
+          ITEM_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_order_items'::regclass)::bigint")"
+          INVOICE_HEAP_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_relation_size('public.om_invoices'::regclass)::bigint")"
+          INVOICE_INDEX_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_indexes_size('public.om_invoices'::regclass)::bigint")"
+          INVOICE_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_invoices'::regclass)::bigint")"
+          ITEM_RAW_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(sum(pg_column_size(raw_json)),0)::bigint from public.om_order_items")"
+          INVOICE_RAW_BYTES_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(sum(pg_column_size(raw_json)),0)::bigint from public.om_invoices")"
+          ITEM_IDENTITY_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_order_items")"
+          INVOICE_IDENTITY_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_invoices")"
+          ITEM_STRUCTURED_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(concat_ws('|', id::text, order_id::text, product_id::text, variant_id::text, sku, name, quantity::text, price::text, rate_price::text, subtotal::text, gst::text, tax::text, total::text, unit, uom, packing_unit::text, batch_code, description, image_url), E'\\n' order by id)), md5('')) from public.om_order_items")"
+          INVOICE_STRUCTURED_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(concat_ws('|', id::text, supplier_id::text, purchaser_id::text, retailer_id::text, number, reference, status, payment_status, invoice_status, payment_method, payment_transaction_id, settlement_reference, paid_at::text, paid_supplier_at::text, due_at::text, charge_at::text, date::text, subtotal::text, total_gst::text, total_freight::text, surcharge::text, total_discount::text, total::text, total_due::text, total_charge::text, credit::text, is_outstanding::text), E'\\n' order by id)), md5('')) from public.om_invoices")"
+          FINANCIAL_BEFORE="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(to_jsonb(v)::text, E'\\n' order by source_order_id)), md5('')) from public.v_ecoflow_order_financial_truth_v1 v")"
+
+          HEADROOM_BEFORE=$((DATABASE_QUOTA_BYTES - DB_BEFORE))
+          ITEM_TRANSIENT_REQUIRED=$((2 * (ITEM_HEAP_BYTES + ITEM_INDEX_BYTES) + TRANSIENT_MARGIN_BYTES))
+          {
+            echo "database_bytes_before=$DB_BEFORE"
+            echo "quota_headroom_before=$HEADROOM_BEFORE"
+            echo "line_item_transient_required=$ITEM_TRANSIENT_REQUIRED"
+            echo "om_order_items_total_bytes_before=$ITEM_BYTES_BEFORE"
+            echo "om_order_items_live_raw_json_bytes_before=$ITEM_RAW_BYTES_BEFORE"
+            echo "om_invoices_total_bytes_before=$INVOICE_BYTES_BEFORE"
+            echo "om_invoices_live_raw_json_bytes_before=$INVOICE_RAW_BYTES_BEFORE"
+            echo "item_identity_before=$ITEM_IDENTITY_BEFORE"
+            echo "invoice_identity_before=$INVOICE_IDENTITY_BEFORE"
+            echo "item_structured_before=$ITEM_STRUCTURED_BEFORE"
+            echo "invoice_structured_before=$INVOICE_STRUCTURED_BEFORE"
+            echo "financial_view_before=$FINANCIAL_BEFORE"
+          } | tee -a "$LOG"
+
+          if [ "${{ inputs.mode }}" = "compact_derived_json" ]; then
+            test "$DB_BEFORE" -lt "$DATABASE_QUOTA_BYTES" || { echo 'Database is already at/over the configured quota; compaction aborted' | tee -a "$LOG"; exit 1; }
+            test "$HEADROOM_BEFORE" -gt "$ITEM_TRANSIENT_REQUIRED" || { echo "Insufficient headroom for first VACUUM FULL: headroom=$HEADROOM_BEFORE required=$ITEM_TRANSIENT_REQUIRED" | tee -a "$LOG"; exit 1; }
+          fi
+
+          {
+            echo "DB_BEFORE=$DB_BEFORE"
+            echo "ITEM_BYTES_BEFORE=$ITEM_BYTES_BEFORE"
+            echo "INVOICE_BYTES_BEFORE=$INVOICE_BYTES_BEFORE"
+            echo "ITEM_IDENTITY_BEFORE=$ITEM_IDENTITY_BEFORE"
+            echo "INVOICE_IDENTITY_BEFORE=$INVOICE_IDENTITY_BEFORE"
+            echo "ITEM_STRUCTURED_BEFORE=$ITEM_STRUCTURED_BEFORE"
+            echo "INVOICE_STRUCTURED_BEFORE=$INVOICE_STRUCTURED_BEFORE"
+            echo "FINANCIAL_BEFORE=$FINANCIAL_BEFORE"
+          } >> "$GITHUB_ENV"
+
+      - name: Reclaim line-item derived JSON first
+        if: inputs.mode == 'compact_derived_json'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/tmp/ordermentum-derived-json-maintenance.log
+          echo "Slimming om_order_items.raw_json before physical compaction" | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=10min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "update public.om_order_items set raw_json='{}'::jsonb where raw_json <> '{}'::jsonb;" 2>&1 | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=10min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "vacuum (analyze) public.om_order_items;" 2>&1 | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=20min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "vacuum (full, analyze, verbose) public.om_order_items;" 2>&1 | tee -a "$LOG"
+
+          ITEM_IDENTITY_MID="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_order_items")"
+          ITEM_STRUCTURED_MID="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(concat_ws('|', id::text, order_id::text, product_id::text, variant_id::text, sku, name, quantity::text, price::text, rate_price::text, subtotal::text, gst::text, tax::text, total::text, unit, uom, packing_unit::text, batch_code, description, image_url), E'\\n' order by id)), md5('')) from public.om_order_items")"
+          test "$ITEM_IDENTITY_MID" = "$ITEM_IDENTITY_BEFORE" || { echo 'om_order_items identity changed' | tee -a "$LOG"; exit 1; }
+          test "$ITEM_STRUCTURED_MID" = "$ITEM_STRUCTURED_BEFORE" || { echo 'om_order_items structured fields changed' | tee -a "$LOG"; exit 1; }
+
+          DB_MID="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_database_size(current_database())::bigint")"
+          INVOICE_HEAP_NOW="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_relation_size('public.om_invoices'::regclass)::bigint")"
+          INVOICE_INDEX_NOW="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_indexes_size('public.om_invoices'::regclass)::bigint")"
+          HEADROOM_MID=$((DATABASE_QUOTA_BYTES - DB_MID))
+          INVOICE_TRANSIENT_REQUIRED=$((2 * (INVOICE_HEAP_NOW + INVOICE_INDEX_NOW) + TRANSIENT_MARGIN_BYTES))
+          {
+            echo "database_bytes_after_line_items=$DB_MID"
+            echo "quota_headroom_after_line_items=$HEADROOM_MID"
+            echo "invoice_transient_required=$INVOICE_TRANSIENT_REQUIRED"
+            echo "om_order_items identity_and_structure_verified=true"
+          } | tee -a "$LOG"
+          test "$HEADROOM_MID" -gt "$INVOICE_TRANSIENT_REQUIRED" || { echo "Line-item reclaim succeeded but invoice compaction lacks safe headroom; stopping before invoices" | tee -a "$LOG"; exit 1; }
+
+      - name: Reclaim invoice derived JSON second
+        if: inputs.mode == 'compact_derived_json'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/tmp/ordermentum-derived-json-maintenance.log
+          echo "Slimming om_invoices.raw_json through installed compatibility trigger" | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=10min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "update public.om_invoices set raw_json=raw_json;" 2>&1 | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=10min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "vacuum (analyze) public.om_invoices;" 2>&1 | tee -a "$LOG"
+          PGOPTIONS='-c lock_timeout=30s -c statement_timeout=20min' \
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "vacuum (full, analyze, verbose) public.om_invoices;" 2>&1 | tee -a "$LOG"
+
+      - name: Verify final identity, read-model equivalence, and storage reclaim
+        if: inputs.mode == 'compact_derived_json'
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=/tmp/ordermentum-derived-json-maintenance.log
+          DB_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_database_size(current_database())::bigint")"
+          ITEM_BYTES_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_order_items'::regclass)::bigint")"
+          INVOICE_BYTES_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select pg_total_relation_size('public.om_invoices'::regclass)::bigint")"
+          ITEM_IDENTITY_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_order_items")"
+          INVOICE_IDENTITY_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select count(*)::text || '|' || coalesce(md5(string_agg(id::text, ',' order by id)), md5('')) from public.om_invoices")"
+          ITEM_STRUCTURED_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(concat_ws('|', id::text, order_id::text, product_id::text, variant_id::text, sku, name, quantity::text, price::text, rate_price::text, subtotal::text, gst::text, tax::text, total::text, unit, uom, packing_unit::text, batch_code, description, image_url), E'\\n' order by id)), md5('')) from public.om_order_items")"
+          INVOICE_STRUCTURED_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(concat_ws('|', id::text, supplier_id::text, purchaser_id::text, retailer_id::text, number, reference, status, payment_status, invoice_status, payment_method, payment_transaction_id, settlement_reference, paid_at::text, paid_supplier_at::text, due_at::text, charge_at::text, date::text, subtotal::text, total_gst::text, total_freight::text, surcharge::text, total_discount::text, total::text, total_due::text, total_charge::text, credit::text, is_outstanding::text), E'\\n' order by id)), md5('')) from public.om_invoices")"
+          FINANCIAL_AFTER="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(md5(string_agg(to_jsonb(v)::text, E'\\n' order by source_order_id)), md5('')) from public.v_ecoflow_order_financial_truth_v1 v")"
+          ITEM_RAW_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(sum(pg_column_size(raw_json)),0)::bigint from public.om_order_items")"
+          INVOICE_RAW_BYTES="$(psql "$SUPABASE_DB_URL" -Atqc "select coalesce(sum(pg_column_size(raw_json)),0)::bigint from public.om_invoices")"
+
+          test "$ITEM_IDENTITY_AFTER" = "$ITEM_IDENTITY_BEFORE" || { echo 'om_order_items identity changed' | tee -a "$LOG"; exit 1; }
+          test "$INVOICE_IDENTITY_AFTER" = "$INVOICE_IDENTITY_BEFORE" || { echo 'om_invoices identity changed' | tee -a "$LOG"; exit 1; }
+          test "$ITEM_STRUCTURED_AFTER" = "$ITEM_STRUCTURED_BEFORE" || { echo 'om_order_items structured fields changed' | tee -a "$LOG"; exit 1; }
+          test "$INVOICE_STRUCTURED_AFTER" = "$INVOICE_STRUCTURED_BEFORE" || { echo 'om_invoices structured fields changed' | tee -a "$LOG"; exit 1; }
+          test "$FINANCIAL_AFTER" = "$FINANCIAL_BEFORE" || { echo 'financial truth read model changed after invoice JSON slimming' | tee -a "$LOG"; exit 1; }
+          test "$DB_AFTER" -lt "$DB_BEFORE" || { echo 'derived JSON maintenance reclaimed no database space' | tee -a "$LOG"; exit 1; }
+          test "$DB_AFTER" -lt "$MAX_ACCEPTABLE_BYTES_AFTER" || { echo "database remains above 425 MiB after derived JSON reclaim: $DB_AFTER" | tee -a "$LOG"; exit 1; }
+
+          {
+            echo "database_bytes_after=$DB_AFTER"
+            echo "database_bytes_reclaimed=$((DB_BEFORE - DB_AFTER))"
+            echo "om_order_items_total_bytes_after=$ITEM_BYTES_AFTER"
+            echo "om_order_items_bytes_reclaimed=$((ITEM_BYTES_BEFORE - ITEM_BYTES_AFTER))"
+            echo "om_invoices_total_bytes_after=$INVOICE_BYTES_AFTER"
+            echo "om_invoices_bytes_reclaimed=$((INVOICE_BYTES_BEFORE - INVOICE_BYTES_AFTER))"
+            echo "om_order_items_live_raw_json_bytes=$ITEM_RAW_BYTES"
+            echo "om_invoices_live_raw_json_bytes=$INVOICE_RAW_BYTES"
+            echo "identity_and_structured_fingerprints_unchanged=true"
+            echo "financial_view_fingerprint_unchanged=true"
+          } | tee -a "$LOG"
+
+      - name: Upload one-day maintenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordermentum-derived-json-maintenance-${{ github.run_id }}
+          path: /tmp/ordermentum-derived-json-maintenance.log
+          if-no-files-found: warn
+          retention-days: 1

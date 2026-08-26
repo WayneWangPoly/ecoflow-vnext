@@ -1,0 +1,41 @@
+name: Ordermentum derived JSON retention contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ordermentum-derived-json-maintenance.yml'
+      - '.github/workflows/ordermentum-derived-json-retention-check.yml'
+      - 'scripts/audit-ordermentum-derived-json-retention.mjs'
+      - 'supabase/migrations/20260826100000_ordermentum_derived_json_retention.sql'
+      - 'docs/engineering/work-packages/ECOFLOW-SLIM-003-derived-json-retention.md'
+  push:
+    branches:
+      - 'agent/ordermentum/ECOFLOW-SLIM-003-derived-json-retention'
+    paths:
+      - '.github/workflows/ordermentum-derived-json-maintenance.yml'
+      - '.github/workflows/ordermentum-derived-json-retention-check.yml'
+      - 'scripts/audit-ordermentum-derived-json-retention.mjs'
+      - 'supabase/migrations/20260826100000_ordermentum_derived_json_retention.sql'
+      - 'docs/engineering/work-packages/ECOFLOW-SLIM-003-derived-json-retention.md'
+
+permissions:
+  contents: read
+
+jobs:
+  retention-contract:
+    name: Bounded derived JSON and guarded compaction
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check audit syntax
+        run: node --check scripts/audit-ordermentum-derived-json-retention.mjs
+      - name: Run retention contract audit
+        run: node scripts/audit-ordermentum-derived-json-retention.mjs
