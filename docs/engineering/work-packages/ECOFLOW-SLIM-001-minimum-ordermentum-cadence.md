@@ -18,7 +18,11 @@ Production evidence on 2026-08-26 showed the EcoFlow database at 505,293,971 byt
 
 - `.github/workflows/ordermentum-cloud-sync.yml`
 - `.github/workflows/ordermentum-complete-mirror.yml`
+- `.github/workflows/refresh-customer-stores-on-release.yml`
+- `.github/workflows/refresh-master-catalog-after-migrations.yml`
+- `.github/workflows/ordermentum-background-io-cadence-check.yml`
 - `.github/workflows/ordermentum-minimum-cadence-check.yml`
+- `scripts/audit-ordermentum-background-io-cadence.mjs`
 - `scripts/ordermentum-minimum-cadence-contract.test.mjs`
 - this work package
 
@@ -28,7 +32,9 @@ Allowed behaviour changes:
 - automatic release verification uses `verify_only`, not data reconciliation;
 - scheduled recent reconciliation runs weekly, not daily;
 - full-history reconciliation remains manual only;
-- Ordermentum workflow artifacts retain for 1 day, the minimum accepted evidence window;
+- full customer-store refresh remains available but becomes manual only;
+- full store/SKU master-catalog refresh remains available but becomes manual only;
+- Ordermentum workflow artifacts touched by this package retain for 1 day, the minimum accepted evidence window;
 - the obsolete push-triggered catchup path is removed; catchup remains available manually.
 
 ## Out of scope
@@ -55,9 +61,17 @@ The sync continues to use the stored `high_watermark_updated_at` with overlap, s
 - manual `recent`: allowed.
 - manual `full_history`: maps to resumable history mode and is never scheduled automatically.
 
+### Full master refreshes
+
+- customer store + price-tier full refresh: manual only;
+- store + price-group + product + variant master-catalog refresh: manual only;
+- a code release or Supabase migration must not implicitly trigger either full refresh.
+
+These manual full-refresh workflows remain available as recovery/admin tools until targeted purchaser/product sync is implemented in the next work package.
+
 ### Evidence retention
 
-GitHub sync/reconciliation artifacts retain for 1 day. Durable database operational state remains authoritative; artifacts are short-lived debugging evidence only.
+GitHub Ordermentum sync/reconciliation artifacts touched by this package retain for 1 day. Durable database operational state remains authoritative; artifacts are short-lived debugging evidence only.
 
 ## Acceptance criteria
 
@@ -70,15 +84,19 @@ GitHub sync/reconciliation artifacts retain for 1 day. Durable database operatio
 - [ ] Full history is reachable only through manual dispatch.
 - [ ] Complete Mirror artifact retention is exactly 1 day.
 - [ ] No automatic push-triggered catchup remains.
-- [ ] Static contract test passes.
+- [ ] Full customer-store refresh has only `workflow_dispatch` and retains artifacts for 1 day.
+- [ ] Full master-catalog refresh has only `workflow_dispatch` and retains artifacts for 1 day.
+- [ ] Existing background IO guard is updated to enforce the same minimum-cadence policy.
+- [ ] Static contract tests pass.
 
 ## Test plan
 
 | Layer | Command or scenario | Expected result |
 |---|---|---|
 | Static | `node --test scripts/ordermentum-minimum-cadence-contract.test.mjs` | workflow cadence and retention contract passes |
-| Workflow | PR CI | cadence contract job green |
-| Production after merge | inspect next scheduled runs | no more than four scheduled operational deltas/day; weekly recent only |
+| Static | `node scripts/audit-ordermentum-background-io-cadence.mjs` | legacy background-IO guard agrees with new minimum policy |
+| Workflow | PR CI | both cadence contract jobs green |
+| Production after merge | inspect next scheduled runs | no more than four scheduled operational deltas/day; weekly recent only; no release-triggered full master scans |
 | Release | successful Supabase deployment | Complete Mirror verification runs in `verify_only` mode |
 
 ## Required evidence
@@ -90,7 +108,7 @@ GitHub sync/reconciliation artifacts retain for 1 day. Durable database operatio
 
 ## Rollback
 
-Revert the workflow commit. No database compensation is required because this work package changes scheduling and artifact retention only.
+Revert the workflow commit. No database compensation is required because this work package changes scheduling, triggers, and artifact retention only.
 
 ## Decision log
 
@@ -98,12 +116,14 @@ Revert the workflow commit. No database compensation is required because this wo
 
 - Prefer minimum automatic work over freshness beyond operational need.
 - Preserve release verification but decouple it from data fetching.
+- Remove hidden release/migration-triggered full master scans from routine automation.
 - Use 1-day artifacts because longer GitHub artifact retention has no operational requirement here.
 
 ### Risks
 
 - Local Australian wall-clock times shift by one hour with DST because GitHub cron is UTC.
 - A failed scheduled delta may leave a longer freshness gap; the next successful run still resumes from high watermark with overlap.
+- Master data changed directly in Ordermentum will not be automatically discovered until the next weekly recent reconciliation or an explicit manual master refresh until targeted sync is implemented.
 
 ### Deferred
 
