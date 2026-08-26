@@ -18,12 +18,8 @@ on:
         description: "EcoFlow operational sync job ID"
         required: false
         type: string
-  push:
-    branches: [main]
-    paths:
-      - 'ops/order-feed-repair-20260713.md'
   schedule:
-    - cron: "7,37 * * * *"
+    - cron: "7 4,12,16,22 * * *"
 
 concurrency:
   group: ordermentum-cloud-sync
@@ -66,11 +62,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "SYNC_MODE=orders_invoices" >> "$GITHUB_ENV"
-            echo "SYNC_REASON=Scheduled twice-hourly order and invoice delta" >> "$GITHUB_ENV"
-            echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "SYNC_MODE=catchup" >> "$GITHUB_ENV"
-            echo "SYNC_REASON=Release recovery scan for the stale customer order feed" >> "$GITHUB_ENV"
+            echo "SYNC_REASON=Scheduled four-times-daily high-watermark order and invoice delta" >> "$GITHUB_ENV"
             echo "REQUESTED_JOB_ID=" >> "$GITHUB_ENV"
           else
             echo "SYNC_MODE=${{ inputs.mode }}" >> "$GITHUB_ENV"
@@ -123,10 +115,6 @@ jobs:
           fi
           node scripts/ordermentum-cloud-sync.mjs --mode "$SYNC_MODE" 2>&1 | tee /tmp/ordermentum-sync.log
           sync_exit=${PIPESTATUS[0]}
-          if [ "$sync_exit" -eq 0 ] && [ "${{ github.event_name }}" = "push" ]; then
-            node scripts/verify-ordermentum-order-feed.mjs 2>&1 | tee -a /tmp/ordermentum-sync.log
-            sync_exit=${PIPESTATUS[0]}
-          fi
           echo "SYNC_EXIT_CODE=$sync_exit" >> "$GITHUB_ENV"
           exit 0
 
@@ -165,4 +153,4 @@ jobs:
             /tmp/ordermentum-sync.log
             /tmp/operational-job-error.log
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 1
