@@ -7,6 +7,10 @@ on:
       - '.github/workflows/warehouse-survey-002-reconciliation-check.yml'
       - 'scripts/warehouse-survey-002-*'
       - 'src/data/repositories/barcodeSurveyReconciliation.ts'
+      - 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx'
+      - 'src/features/productIdentity/barcodeSurveyReconciliation.css'
+      - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
   workflow_dispatch:
 
