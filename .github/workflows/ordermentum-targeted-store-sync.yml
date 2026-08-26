@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ordermentum-targeted-${{ inputs.resource }}-${{ inputs.external_id }}
+  group: ordermentum-cloud-sync
   cancel-in-progress: false
 
 jobs:
