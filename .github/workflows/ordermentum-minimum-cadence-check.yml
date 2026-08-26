@@ -6,7 +6,11 @@ on:
     paths:
       - '.github/workflows/ordermentum-cloud-sync.yml'
       - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/refresh-customer-stores-on-release.yml'
+      - '.github/workflows/refresh-master-catalog-after-migrations.yml'
+      - '.github/workflows/ordermentum-background-io-cadence-check.yml'
       - '.github/workflows/ordermentum-minimum-cadence-check.yml'
+      - 'scripts/audit-ordermentum-background-io-cadence.mjs'
       - 'scripts/ordermentum-minimum-cadence-contract.test.mjs'
       - 'docs/engineering/work-packages/ECOFLOW-SLIM-001-minimum-ordermentum-cadence.md'
   workflow_dispatch:
@@ -28,3 +32,5 @@ jobs:
           node-version: 22
       - name: Verify cadence and retention contract
         run: node --test scripts/ordermentum-minimum-cadence-contract.test.mjs
+      - name: Verify legacy background-IO guard agrees
+        run: node scripts/audit-ordermentum-background-io-cadence.mjs
