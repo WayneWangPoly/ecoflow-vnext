@@ -189,22 +189,22 @@ set app.test_role = 'OWNER';
 do $$
 declare
   batch_id uuid;
-  revision bigint;
+  batch_revision bigint;
   submitted record;
   published record;
   resolved record;
   queued record;
   inventory_count bigint;
 begin
-  select id, revision into batch_id, revision
-  from public.ecoflow_product_identity_batches
-  where batch_status='DRAFT'
-  order by created_at desc limit 1;
+  select b.id, b.revision into batch_id, batch_revision
+  from public.ecoflow_product_identity_batches b
+  where b.batch_status='DRAFT'
+  order by b.created_at desc limit 1;
 
   select * into submitted
   from public.ecoflow_submit_product_identity_batch(
     batch_id,
-    revision,
+    batch_revision,
     '82666666-6666-4666-8666-666666666666'::uuid,
     'Survey evidence reviewed by Owner'
   );
@@ -212,13 +212,13 @@ begin
     raise exception 'Survey-backed Product Identity batch did not submit';
   end if;
 
-  select revision into revision
-  from public.ecoflow_product_identity_batches where id=batch_id;
+  select b.revision into batch_revision
+  from public.ecoflow_product_identity_batches b where b.id=batch_id;
 
   select * into published
   from public.ecoflow_publish_product_identity_batch(
     batch_id,
-    revision,
+    batch_revision,
     '82777777-7777-4777-8777-777777777777'::uuid,
     'Survey golden path publication'
   );
@@ -290,7 +290,7 @@ begin
   begin
     perform * from public.ecoflow_reconcile_barcode_survey_observation_v1(
       queued.survey_observation_id,
-      (select id from public.ecoflow_product_identity_batches where batch_status='DRAFT' limit 1),
+      '82f00000-0000-4000-8000-000000000001'::uuid,
       '82aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
       'PHY-CONFLICT','Conflict',null,null,'FAM-CONFLICT','Conflict','CARTON',1000,'ALLOWED',true,null
     );
