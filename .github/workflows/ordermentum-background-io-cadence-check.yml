@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - '.github/workflows/ordermentum-cloud-sync.yml'
       - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/refresh-customer-stores-on-release.yml'
+      - '.github/workflows/refresh-master-catalog-after-migrations.yml'
       - '.github/workflows/ordermentum-background-io-cadence-check.yml'
       - 'scripts/ordermentum-complete-mirror.mjs'
       - 'scripts/audit-ordermentum-background-io-cadence.mjs'
@@ -12,8 +15,12 @@ on:
     branches:
       - main
       - 'hotfix/disk-io-background-cadence'
+      - 'agent/ordermentum/**'
     paths:
+      - '.github/workflows/ordermentum-cloud-sync.yml'
       - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/refresh-customer-stores-on-release.yml'
+      - '.github/workflows/refresh-master-catalog-after-migrations.yml'
       - '.github/workflows/ordermentum-background-io-cadence-check.yml'
       - 'scripts/ordermentum-complete-mirror.mjs'
       - 'scripts/audit-ordermentum-background-io-cadence.mjs'
