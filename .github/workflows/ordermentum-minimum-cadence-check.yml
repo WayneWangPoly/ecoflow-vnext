@@ -1,0 +1,30 @@
+name: Ordermentum minimum cadence contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ordermentum-cloud-sync.yml'
+      - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/ordermentum-minimum-cadence-check.yml'
+      - 'scripts/ordermentum-minimum-cadence-contract.test.mjs'
+      - 'docs/engineering/work-packages/ECOFLOW-SLIM-001-minimum-ordermentum-cadence.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Minimum automatic Ordermentum workload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify cadence and retention contract
+        run: node --test scripts/ordermentum-minimum-cadence-contract.test.mjs
