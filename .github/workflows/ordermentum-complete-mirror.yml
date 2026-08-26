@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "Reconcile recent data or explicitly resume the durable full-history checkpoint"
+        description: "Run recent reconciliation or explicitly resume full history"
         required: true
         default: "recent"
         type: choice
@@ -14,13 +14,8 @@ on:
   workflow_run:
     workflows: ["Deploy Supabase migrations"]
     types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/ordermentum-complete-mirror.yml'
-      - 'ops/complete-mirror-status-trigger.md'
   schedule:
-    - cron: "30 17 * * *"
+    - cron: "30 17 * * 0"
 
 permissions:
   contents: read
@@ -70,24 +65,25 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Resolve mirror scope and status target
+      - name: Resolve mirror mode and status target
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Incremental verification after successful Supabase production deployment" >> "$GITHUB_ENV"
+            echo "MIRROR_MODE=verify_only" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Lightweight verification after successful Supabase production deployment" >> "$GITHUB_ENV"
             echo "MIRROR_STATUS_SHA=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Incremental release verification after complete-mirror workflow update" >> "$GITHUB_ENV"
-            echo "MIRROR_STATUS_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
           elif [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "MIRROR_SCOPE=recent" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Daily recent commercial reconciliation" >> "$GITHUB_ENV"
+            echo "MIRROR_MODE=recent" >> "$GITHUB_ENV"
+            echo "MIRROR_REASON=Weekly recent commercial reconciliation" >> "$GITHUB_ENV"
             echo "MIRROR_STATUS_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
           else
-            echo "MIRROR_SCOPE=${{ inputs.scope }}" >> "$GITHUB_ENV"
-            echo "MIRROR_REASON=Owner or Admin requested reconciliation" >> "$GITHUB_ENV"
+            if [ "${{ inputs.scope }}" = "full_history" ]; then
+              echo "MIRROR_MODE=resume_history" >> "$GITHUB_ENV"
+              echo "MIRROR_REASON=Owner or Admin explicitly requested resumable full-history reconciliation" >> "$GITHUB_ENV"
+            else
+              echo "MIRROR_MODE=recent" >> "$GITHUB_ENV"
+              echo "MIRROR_REASON=Owner or Admin requested recent reconciliation" >> "$GITHUB_ENV"
+            fi
             echo "MIRROR_STATUS_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
           fi
           echo "MIRROR_STATUS_URL=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_ENV"
@@ -98,7 +94,7 @@ jobs:
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$MIRROR_STATUS_SHA" \
             -f state='pending' \
             -f context='Ordermentum mirror verification' \
-            -f description='Complete-mirror verification is running' \
+            -f description='Ordermentum verification is running' \
             -f target_url="$MIRROR_STATUS_URL"
 
       - name: Validate required secrets
@@ -110,16 +106,16 @@ jobs:
           done
           if [ "$missing" -ne 0 ]; then exit 1; fi
 
-      - name: Run bounded Ordermentum reconciliation
+      - name: Run bounded Ordermentum verification or reconciliation
         id: mirror
         shell: bash
         run: |
           set -o pipefail
-          echo "Scope: $MIRROR_SCOPE"
+          echo "Mode: $MIRROR_MODE"
           echo "Reason: $MIRROR_REASON"
           echo "Degraded notification policy: fail only for a new or changed blocker set"
           node scripts/ordermentum-complete-mirror.mjs \
-            --scope="$MIRROR_SCOPE" \
+            --mode="$MIRROR_MODE" \
             --time-budget-minutes=45 \
             --max-pages-per-slice=80 \
             --max-details-per-slice=400 \
@@ -133,7 +129,7 @@ jobs:
           {
             echo "## Ordermentum bounded mirror"
             echo ""
-            echo "- Scope: $MIRROR_SCOPE"
+            echo "- Mode: $MIRROR_MODE"
             echo "- Reason: $MIRROR_REASON"
             echo "- Workflow run: $GITHUB_RUN_ID"
             echo "- DEGRADED alerts: only new or changed blocker sets fail the workflow"
@@ -152,7 +148,7 @@ jobs:
             /tmp/ordermentum-complete-mirror.log
             /tmp/ordermentum-history-pipeline-result.json
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 1
 
       - name: Publish final mirror status
         if: always()
