@@ -2,15 +2,6 @@ name: Refresh customer stores on release
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/ordermentum-master-data-sync.mjs'
-      - 'scripts/ordermentum-cloud-sync.mjs'
-      - 'src/data/repositories/priceMatrix.ts'
-      - 'src/data/repositories/customerStoreCenter.ts'
-      - 'supabase/migrations/*customer_store_center*.sql'
-      - '.github/workflows/refresh-customer-stores-on-release.yml'
 
 permissions:
   contents: read
@@ -78,7 +69,7 @@ jobs:
           name: customer-store-refresh-log
           path: /tmp/customer-store-refresh.log
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 1
       - name: Publish failed store refresh status
         if: failure()
         run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state='failure' -f context='Customer store refresh' -f description='Ordermentum customer store refresh failed' -f target_url="$STATUS_URL"

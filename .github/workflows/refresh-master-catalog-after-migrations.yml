@@ -2,9 +2,6 @@ name: Refresh Ordermentum master catalog
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ['Deploy Supabase migrations']
-    types: [completed]
 
 permissions:
   contents: read
@@ -16,13 +13,12 @@ concurrency:
 
 jobs:
   refresh:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     environment: production
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      TARGET_SHA: ${{ github.sha }}
       STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -40,8 +36,6 @@ jobs:
       - name: Publish pending master catalog status
         run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='pending' -f context='Ordermentum master catalog' -f description='Refreshing price groups, products and variants' -f target_url="$STATUS_URL"
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -95,7 +89,7 @@ jobs:
             /tmp/price-group-refresh.log
             /tmp/sku-master-refresh.log
             /tmp/projection-diagnostics.json
-          retention-days: 30
+          retention-days: 1
       - name: Publish failed master catalog status
         if: failure()
         run: gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f state='failure' -f context='Ordermentum master catalog' -f description='Price group or SKU master projection failed' -f target_url="$STATUS_URL"
