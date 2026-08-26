@@ -75,9 +75,8 @@ export function projectPurchaserToStoreRow(payload, fallbackExternalId) {
   const suburb = pick(address.suburb, payload?.suburb, payload?.city);
   const state = pick(address.state, payload?.state);
   const postcode = pick(address.postcode, payload?.postcode, payload?.postalCode);
-  const formattedAddress = pick(address.formatted, address.formattedAddress, payload?.formattedAddress)
-    ?? [street1, street2, suburb, state, postcode].filter(Boolean).join(', ')
-    || null;
+  const composedAddress = [street1, street2, suburb, state, postcode].filter(Boolean).join(', ') || null;
+  const formattedAddress = pick(address.formatted, address.formattedAddress, payload?.formattedAddress) ?? composedAddress;
 
   return {
     retailer_id: retailerId,
