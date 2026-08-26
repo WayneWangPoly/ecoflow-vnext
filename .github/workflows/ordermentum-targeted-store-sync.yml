@@ -1,0 +1,81 @@
+name: EcoFlow Ordermentum Targeted Store Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource:
+        description: "Target resource"
+        required: true
+        default: "purchaser"
+        type: choice
+        options:
+          - purchaser
+      external_id:
+        description: "Ordermentum purchaser UUID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+
+jobs:
+  targeted-store-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+      ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+      ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+      ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+      ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+      ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+      ORDERMENTUM_FETCH_TIMEOUT_MS: "60000"
+      ORDERMENTUM_FETCH_RETRIES: "2"
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate required credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY ORDERMENTUM_USERNAME ORDERMENTUM_PASSWORD ORDERMENTUM_SUPPLIER_ID ORDERMENTUM_BASE_URL ORDERMENTUM_API_BASE_URL; do
+            if [ -z "${!name}" ]; then echo "Missing required secret/env: $name"; missing=1; fi
+          done
+          test "$missing" -eq 0
+
+      - name: Sync exactly one purchaser
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/ordermentum-targeted-store-sync.mjs \
+            --resource="${{ inputs.resource }}" \
+            --external-id="${{ inputs.external_id }}" \
+            2>&1 | tee /tmp/ordermentum-targeted-store-sync.log
+
+      - name: Upload one-day targeted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordermentum-targeted-store-${{ inputs.external_id }}
+          path: /tmp/ordermentum-targeted-store-sync.log
+          if-no-files-found: warn
+          retention-days: 1

@@ -1,0 +1,48 @@
+name: Ordermentum targeted store sync contract
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'agent/ordermentum/ECOFLOW-SLIM-001-minimum-cadence'
+    paths:
+      - '.github/workflows/ordermentum-targeted-store-sync.yml'
+      - '.github/workflows/ordermentum-targeted-store-sync-check.yml'
+      - 'scripts/ordermentum-targeted-store-sync-core.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.test.mjs'
+      - 'supabase/functions/trigger-ordermentum-targeted-sync/index.ts'
+      - 'docs/engineering/work-packages/ECOFLOW-SLIM-002-targeted-store-sync.md'
+  push:
+    branches:
+      - 'agent/ordermentum/ECOFLOW-SLIM-002-targeted-master-sync'
+    paths:
+      - '.github/workflows/ordermentum-targeted-store-sync.yml'
+      - '.github/workflows/ordermentum-targeted-store-sync-check.yml'
+      - 'scripts/ordermentum-targeted-store-sync-core.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.test.mjs'
+      - 'supabase/functions/trigger-ordermentum-targeted-sync/index.ts'
+      - 'docs/engineering/work-packages/ECOFLOW-SLIM-002-targeted-store-sync.md'
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-contract:
+    name: One purchaser, zero full scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check targeted script syntax
+        run: |
+          node --check scripts/ordermentum-targeted-store-sync-core.mjs
+          node --check scripts/ordermentum-targeted-store-sync.mjs
+      - name: Run targeted store sync contract tests
+        run: node --test scripts/ordermentum-targeted-store-sync.test.mjs
