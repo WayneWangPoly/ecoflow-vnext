@@ -14,7 +14,7 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DeliveryOperationsWorkspace } from '@/features/delivery/DeliveryOperationsWorkspace';
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
-import { ProductIdentityCommissioningWorkspace } from '@/features/productIdentity/ProductIdentityCommissioningWorkspace';
+import { ProductIdentityCommissioningWithSurvey } from '@/features/productIdentity/ProductIdentityCommissioningWithSurvey';
 import { OperationalRecordsWorkspace } from '@/features/operationalRecords/OperationalRecordsWorkspace';
 import {
   OperationalPagedWorkspace,
@@ -231,7 +231,7 @@ function ProductIdentityStandalone({
       </header>
       <main>
         <WorkspaceRuntimeBoundary workspace="product-identity">
-          <ProductIdentityCommissioningWorkspace role={role} profile={profile} />
+          <ProductIdentityCommissioningWithSurvey role={role} profile={profile} />
         </WorkspaceRuntimeBoundary>
       </main>
     </div>
@@ -321,7 +321,7 @@ export default function UnifiedOperationalRoutes() {
     return (
       <OperationalAppShell role={role} profile={profile} onLogout={() => void logout()}>
         <WorkspaceRuntimeBoundary workspace="product-identity">
-          <ProductIdentityCommissioningWorkspace role={role} profile={profile} />
+          <ProductIdentityCommissioningWithSurvey role={role} profile={profile} />
         </WorkspaceRuntimeBoundary>
       </OperationalAppShell>
     );
