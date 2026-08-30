@@ -637,6 +637,7 @@ Deno.serve(async (req) => {
   let recordsChanged = 0;
   let recordsUnchanged = 0;
   let recordsFailed = 0;
+  const failedResources: ResourceName[] = [];
   let finalStatus: 'SUCCEEDED' | 'PARTIAL' | 'FAILED' = 'SUCCEEDED';
   let finalErrorCode: string | null = null;
   let finalErrorMessage: string | null = null;
@@ -869,8 +870,13 @@ Deno.serve(async (req) => {
       }, { onConflict: 'resource' });
     }
 
-    if (resourceFailed) break;
+    if (resourceFailed) {
+      failedResources.push(resource);
+      continue;
+    }
   }
+
+  finalStatus = recordsFailed === 0 ? 'SUCCEEDED' : pageResults.length ? 'PARTIAL' : 'FAILED';
 
   const { error: updateError } = await adminClient.from('unleashed_sync_runs').update({
     status: finalStatus,
@@ -889,6 +895,7 @@ Deno.serve(async (req) => {
       records_inserted: recordsInserted,
       records_changed: recordsChanged,
       records_unchanged: recordsUnchanged,
+      failed_resources: failedResources,
     },
   }).eq('id', run.id);
   if (updateError) return json(500, { error: 'UNLEASHED_SYNC_RUN_UPDATE_FAILED', runId: run.id, details: updateError.message });
@@ -915,6 +922,7 @@ Deno.serve(async (req) => {
       recordsChanged,
       recordsUnchanged,
       recordsFailed,
+      failedResources,
     },
     user_agent: req.headers.get('user-agent'),
   });
@@ -935,6 +943,7 @@ Deno.serve(async (req) => {
     recordsChanged,
     recordsUnchanged,
     recordsFailed,
+    failedResources,
     pages: pageResults.map((page) => ({
       resource: page.resource,
       endpointPath: page.endpointPath,

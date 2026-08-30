@@ -134,11 +134,17 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           {acceptanceError ? <div className="error-message" role="alert">{acceptanceError}</div> : null}
           {acceptanceResult ? (
             <div className="unleashed-acceptance-result" role="status">
+              {acceptanceResult.seedStatus === 'PARTIAL' ? (
+                <div className="unleashed-acceptance-warning">
+                  Source coverage is incomplete. {acceptanceResult.seedRecordsFailed} resource read failed and remains unverified.
+                  {acceptanceResult.seedErrorMessage ? ` ${acceptanceResult.seedErrorMessage}.` : ''}
+                </div>
+              ) : null}
               <div className="unleashed-acceptance-summary">
                 <span>Seed run <strong>{acceptanceResult.seedRunId.slice(0, 8)}</strong></span>
                 <span>Source records checked <strong>{acceptanceResult.seedRecordsSeen}</strong></span>
                 <span>Snapshots written <strong>{acceptanceResult.seedRecordsStaged}</strong></span>
-                <span>Already unchanged <strong>{acceptanceResult.seedRecordsUnchanged}</strong></span>
+                <span>Source read failures <strong>{acceptanceResult.seedRecordsFailed}</strong></span>
               </div>
               <div className="unleashed-acceptance-checks">
                 {acceptanceResult.checks.map((check) => (

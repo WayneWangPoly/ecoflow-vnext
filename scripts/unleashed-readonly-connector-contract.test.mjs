@@ -114,6 +114,15 @@ test('Upstream GET retries are bounded and limited to transient failures', () =>
   assert.match(edgeFunction, /fetch_attempts: fetchAttempts/);
 });
 
+test('A failed resource is recorded without hiding later resource evidence', () => {
+  assert.match(edgeFunction, /const failedResources: ResourceName\[\] = \[\]/);
+  assert.match(edgeFunction, /if \(resourceFailed\) \{\s*failedResources\.push\(resource\);\s*continue;\s*\}/);
+  assert.doesNotMatch(edgeFunction, /if \(resourceFailed\) break/);
+  assert.match(edgeFunction, /finalStatus = recordsFailed === 0 \? 'SUCCEEDED' : pageResults\.length \? 'PARTIAL' : 'FAILED'/);
+  assert.match(edgeFunction, /failed_resources: failedResources/);
+  assert.match(edgeFunction, /failedResources,/);
+});
+
 test('Snapshot replay writes only inserted or payload-changed records', () => {
   assert.match(edgeFunction, /select\('external_key,payload_sha256'\)/);
   assert.match(edgeFunction, /existingHash === row\.payload_sha256\) unchanged\.push\(row\)/);
@@ -199,6 +208,10 @@ test('Production acceptance requires a bounded four-resource write and proves un
   assert.match(acceptanceClient, /replay\.recordsStaged !== 0/);
   assert.match(acceptanceClient, /replay\.recordsChanged !== 0/);
   assert.match(acceptanceClient, /replay\.recordsUnchanged !== 1/);
+  assert.match(acceptanceClient, /allowPartial = false/);
+  assert.match(acceptanceClient, /UNLEASHED_ACCEPTANCE_RESOURCES\.length, true/);
+  assert.match(acceptanceClient, /seedStatus: seed\.status/);
+  assert.match(acceptanceClient, /seed\.failedResources\.includes\(resource\)/);
   assert.match(acceptanceClient, /select\('resource,external_guid,external_code,external_number,warehouse_code,last_seen_at'\)/);
   assert.match(acceptanceClient, /\{ productId: row\.external_guid, warehouseCode: row\.warehouse_code \}/);
   assert.doesNotMatch(acceptanceClient, /select\([^)]*payload(?!_sha256)/i);

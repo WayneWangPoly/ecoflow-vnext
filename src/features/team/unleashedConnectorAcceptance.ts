@@ -39,6 +39,7 @@ type ConnectorResult = {
   recordsChanged: number;
   recordsUnchanged: number;
   recordsFailed: number;
+  failedResources: string[];
   pages: Array<{
     resource: string;
     recordsSeen: number;
@@ -56,6 +57,8 @@ type ConnectorError = {
   details?: string;
 };
 
+type AcceptedConnectorResult = ConnectorResult & { status: 'SUCCEEDED' | 'PARTIAL' };
+
 export type UnleashedAcceptanceCheck = {
   resource: UnleashedAcceptanceResource;
   status: 'VERIFIED' | 'MISSING' | 'FAILED';
@@ -70,9 +73,12 @@ export type UnleashedAcceptanceCheck = {
 export type UnleashedAcceptanceResult = {
   completedAt: string;
   seedRunId: string;
+  seedStatus: 'SUCCEEDED' | 'PARTIAL';
   seedRecordsSeen: number;
   seedRecordsStaged: number;
   seedRecordsUnchanged: number;
+  seedRecordsFailed: number;
+  seedErrorMessage: string | null;
   verifiedCount: number;
   complete: boolean;
   checks: UnleashedAcceptanceCheck[];
@@ -99,6 +105,8 @@ function isConnectorResult(value: unknown): value is ConnectorResult {
     && isNonNegativeInteger(result.recordsChanged)
     && isNonNegativeInteger(result.recordsUnchanged)
     && isNonNegativeInteger(result.recordsFailed)
+    && Array.isArray(result.failedResources)
+    && result.failedResources.every((resource) => typeof resource === 'string')
     && Array.isArray(result.pages);
 }
 
@@ -110,23 +118,29 @@ function assertSuccessfulResult(
   value: unknown,
   expectedResources: readonly UnleashedAcceptanceResource[],
   maximumRecords: number,
-) {
+  allowPartial = false,
+): AcceptedConnectorResult {
   if (!isConnectorResult(value)) throw new Error('UNLEASHED_ACCEPTANCE_CONTRACT_VIOLATION');
+  const acceptedStatus = value.status === 'SUCCEEDED' || (allowPartial && value.status === 'PARTIAL');
+  const statusIsConsistent = value.status === 'SUCCEEDED'
+    ? value.recordsFailed === 0 && value.failedResources.length === 0
+    : value.recordsFailed > 0 && value.failedResources.length > 0;
   if (
     !value.ok
-    || value.status !== 'SUCCEEDED'
+    || !acceptedStatus
+    || !statusIsConsistent
     || value.dryRun
     || value.pageSize !== 1
     || value.maxPages !== 1
-    || value.recordsFailed !== 0
     || value.recordsSeen > maximumRecords
     || value.recordsStaged > maximumRecords
     || !sameResources(value.resources, expectedResources)
+    || value.failedResources.some((resource) => !expectedResources.includes(resource as UnleashedAcceptanceResource))
     || value.recordsStaged !== value.recordsInserted + value.recordsChanged
   ) {
     throw new Error('UNLEASHED_ACCEPTANCE_RESULT_REJECTED');
   }
-  return value;
+  return value as AcceptedConnectorResult;
 }
 
 async function invokeConnector(
@@ -134,6 +148,7 @@ async function invokeConnector(
   body: Record<string, unknown>,
   expectedResources: readonly UnleashedAcceptanceResource[],
   maximumRecords: number,
+  allowPartial = false,
 ) {
   const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', { body });
   if (error) throw error;
@@ -141,7 +156,7 @@ async function invokeConnector(
   if (connectorError?.error) {
     throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
   }
-  return assertSuccessfulResult(data, expectedResources, maximumRecords);
+  return assertSuccessfulResult(data, expectedResources, maximumRecords, allowPartial);
 }
 
 function buildTarget(resource: UnleashedAcceptanceResource, row: SnapshotCatalogRow): TargetSelector | null {
@@ -247,13 +262,14 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
     pageSize: 1,
     maxPages: 1,
     reason: `Admin-confirmed four-resource connector acceptance at ${new Date().toISOString()}`,
-  }, UNLEASHED_ACCEPTANCE_RESOURCES, UNLEASHED_ACCEPTANCE_RESOURCES.length);
+  }, UNLEASHED_ACCEPTANCE_RESOURCES, UNLEASHED_ACCEPTANCE_RESOURCES.length, true);
 
   const targets = await loadAcceptanceTargets(supabase);
   const checks: UnleashedAcceptanceCheck[] = [];
   for (const resource of UNLEASHED_ACCEPTANCE_RESOURCES) {
     const target = targets.get(resource);
     if (!target) {
+      const sourceReadFailed = seed.failedResources.includes(resource);
       checks.push({
         resource,
         status: 'MISSING',
@@ -262,7 +278,9 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
         firstRecordsStaged: 0,
         replayRecordsStaged: 0,
         replayRecordsUnchanged: 0,
-        error: 'No exact source identifier is available for this resource.',
+        error: sourceReadFailed
+          ? `Initial source read failed for ${resource}.`
+          : 'No exact source identifier is available for this resource.',
       });
       continue;
     }
@@ -273,9 +291,12 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
   return {
     completedAt: new Date().toISOString(),
     seedRunId: seed.runId,
+    seedStatus: seed.status,
     seedRecordsSeen: seed.recordsSeen,
     seedRecordsStaged: seed.recordsStaged,
     seedRecordsUnchanged: seed.recordsUnchanged,
+    seedRecordsFailed: seed.recordsFailed,
+    seedErrorMessage: seed.errorMessage,
     verifiedCount,
     complete: verifiedCount === UNLEASHED_ACCEPTANCE_RESOURCES.length,
     checks,
