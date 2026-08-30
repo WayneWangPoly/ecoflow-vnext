@@ -3,13 +3,15 @@ import fs from 'node:fs';
 
 const files = {
   migration: 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql',
-  edgeFunction: 'supabase/functions/trigger-unleashed-readonly-sync/index.ts',
+  edgeFunctionIndex: 'supabase/functions/trigger-unleashed-readonly-sync/index.ts',
+  edgeFunctionCore: 'supabase/functions/trigger-unleashed-readonly-sync/core.ts',
   workflow: '.github/workflows/unleashed-readonly-connector-check.yml',
   deploy: '.github/workflows/deploy-supabase-migrations.yml',
   workPackage: 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md',
 };
 
 const source = Object.fromEntries(Object.entries(files).map(([key, file]) => [key, fs.readFileSync(file, 'utf8')]));
+source.edgeFunction = `${source.edgeFunctionIndex}\n${source.edgeFunctionCore}`;
 const failures = [];
 const requireText = (area, needle, reason) => {
   if (!source[area].includes(needle)) failures.push(`${area}: ${reason} (${needle})`);
@@ -44,6 +46,14 @@ requireText('edgeFunction', "'api-auth-signature': signature", 'signature must b
 requireText('edgeFunction', "method: 'GET'", 'Unleashed API fetch must be GET-only');
 requireText('edgeFunction', "const dryRun = body.dryRun !== false", 'connector must default to dry-run');
 requireText('edgeFunction', 'const HARD_MAX_PAGES = 5', 'connector must enforce bounded pagination');
+requireText('edgeFunction', 'const MAX_FETCH_ATTEMPTS = 3', 'transient GET retries must remain bounded');
+requireText('edgeFunction', 'TARGET_REQUIRES_ONE_RESOURCE', 'targeted reads must be limited to one resource');
+requireText('edgeFunction', 'TARGET_NOT_SUPPORTED_FOR_RESOURCE', 'targeted reads must reject resources outside the exact allowlist');
+requireText('edgeFunction', 'UNLEASHED_TARGET_AMBIGUOUS', 'targeted reads must reject ambiguous results');
+requireText('edgeFunction', 'const semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed]', 'unchanged payloads must not be upserted');
+requireText('edgeFunction', 'records_unchanged: recordsUnchanged', 'unchanged replay evidence must be durable');
+requireText('edgeFunction', 'identityRowsNeedingWrite', 'identity linkage must be independently repairable after a partial staging failure');
+requireText('edgeFunction', 'sourceIdentityForItem', 'stock snapshots must include warehouse identity in their source key');
 requireText('edgeFunction', 'SALES_INTELLIGENCE_RESOURCES', 'paid Sales BI seed resources must be explicit');
 requireText('edgeFunction', ".from('app_user_profiles')", 'role check must be server-side');
 requireText('edgeFunction', ".from('app_security_audit_events')", 'connector runs must audit completion/failure');
@@ -57,7 +67,7 @@ forbid('edgeFunction', /\/(?:Complete|Obsolete|Delete)\b/, 'function must not ca
 forbid('edgeFunction', /Authorization:\s*`Bearer \$\{unleashedApiKey\}`/, 'Unleashed key must not be treated as a bearer token');
 forbid('edgeFunction', /error_message:\s*responseText\.slice/is, 'upstream Unleashed error bodies must not be stored in broadly readable batch metadata');
 
-requireText('workflow', 'node --test scripts/unleashed-readonly-connector-contract.test.mjs', 'CI must run connector contract tests');
+requireText('workflow', 'node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs', 'CI must run static and executable connector contract tests');
 requireText('workflow', 'node scripts/audit-unleashed-readonly-connector.mjs', 'CI must run connector static audit');
 requireText('workflow', 'psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql', 'CI must prepare the SQL DB contract fixture');
 requireText('workflow', 'psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-contract-test.sql', 'CI must run the SQL DB contract test');

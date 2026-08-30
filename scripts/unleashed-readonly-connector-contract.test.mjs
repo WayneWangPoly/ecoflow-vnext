@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const migrationPath = 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql';
 const functionPath = 'supabase/functions/trigger-unleashed-readonly-sync/index.ts';
+const corePath = 'supabase/functions/trigger-unleashed-readonly-sync/core.ts';
 const workPackagePath = 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md';
 const workflowPath = '.github/workflows/unleashed-readonly-connector-check.yml';
 const probeClientPath = 'src/features/team/unleashedReadonlyProbe.ts';
@@ -12,9 +13,10 @@ const probePanelPath = 'src/features/settings/UnleashedReadonlyProbePanel.tsx';
 const appPath = 'src/app/App.tsx';
 const operationalSettingsPath = 'src/features/operationalStability/OperationalStabilityWorkspaceV2.tsx';
 
-const [migration, edgeFunction, workPackage, workflow, probeClient, probePanel, app, operationalSettings] = await Promise.all([
+const [migration, edgeFunctionIndex, edgeFunctionCore, workPackage, workflow, probeClient, probePanel, app, operationalSettings] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(functionPath, 'utf8'),
+  readFile(corePath, 'utf8'),
   readFile(workPackagePath, 'utf8'),
   readFile(workflowPath, 'utf8'),
   readFile(probeClientPath, 'utf8'),
@@ -22,6 +24,7 @@ const [migration, edgeFunction, workPackage, workflow, probeClient, probePanel, 
   readFile(appPath, 'utf8'),
   readFile(operationalSettingsPath, 'utf8'),
 ]);
+const edgeFunction = `${edgeFunctionIndex}\n${edgeFunctionCore}`;
 
 test('Unleashed signature contract signs only the query string', () => {
   const query = 'customerCode=ACME&pageSize=1';
@@ -45,7 +48,7 @@ test('Edge Function keeps Unleashed credentials server-side and header-only', ()
   assert.doesNotMatch(edgeFunction, /console\.(?:log|warn|error|info)\([\s\S]*(?:unleashedApiId|unleashedApiKey|signature)/);
   assert.doesNotMatch(edgeFunction, /url\.searchParams\.append\(['"](?:api-auth-id|api-auth-signature|apiKey|token|secret)/i);
   assert.doesNotMatch(edgeFunction, /error_message:\s*responseText\.slice/is);
-  assert.match(edgeFunction, /metadata: \{ upstream_body_redacted: true \}/);
+  assert.match(edgeFunction, /upstream_body_redacted: true/);
 });
 
 test('Edge Function is GET-only against allowlisted migration resources', () => {
@@ -81,8 +84,44 @@ test('Connector execution is bounded and dry-run by default', () => {
   assert.match(edgeFunction, /const HARD_MAX_PAGE_SIZE = 200/);
   assert.match(edgeFunction, /const HARD_MAX_PAGES = 5/);
   assert.match(edgeFunction, /const dryRun = body\.dryRun !== false/);
-  assert.match(edgeFunction, /mode === 'probe' \? 1 : normalizeInteger\(body\.pageSize/);
-  assert.match(edgeFunction, /mode === 'probe' \? 1 : normalizeInteger\(body\.maxPages/);
+  assert.match(edgeFunction, /pageSize = mode === 'probe' \|\| target[\s\S]*normalizeInteger\(body\.pageSize/);
+  assert.match(edgeFunction, /maxPages = mode === 'probe' \|\| target[\s\S]*normalizeInteger\(body\.maxPages/);
+});
+
+test('Targeted reads accept only deterministic product, stock, sales-order, and purchase-order selectors', () => {
+  assert.match(edgeFunction, /type TargetField = 'guid' \| 'productCode' \| 'productId' \| 'warehouseCode' \| 'orderNumber'/);
+  assert.match(edgeFunction, /TARGET_REQUIRES_ONE_RESOURCE/);
+  assert.match(edgeFunction, /TARGET_NOT_SUPPORTED_FOR_RESOURCE/);
+  assert.match(edgeFunction, /resource === 'products'/);
+  assert.match(edgeFunction, /resource === 'stock_on_hand'/);
+  assert.match(edgeFunction, /resource === 'sales_orders_open' \|\| resource === 'purchase_orders_open'/);
+  assert.match(edgeFunction, /encodeURIComponent\(target\.pathIdentifier\)/);
+  assert.match(edgeFunction, /TARGET_WITH_MODIFIED_SINCE_UNSUPPORTED/);
+  assert.match(edgeFunction, /UNLEASHED_TARGET_NOT_FOUND/);
+  assert.match(edgeFunction, /UNLEASHED_TARGET_AMBIGUOUS/);
+});
+
+test('Upstream GET retries are bounded and limited to transient failures', () => {
+  assert.match(edgeFunction, /const MAX_FETCH_ATTEMPTS = 3/);
+  assert.match(edgeFunction, /status === 408 \|\| status === 429 \|\| \(status >= 500 && status <= 599\)/);
+  assert.match(edgeFunction, /attempt <= MAX_FETCH_ATTEMPTS/);
+  assert.match(edgeFunction, /method: 'GET'/);
+  assert.match(edgeFunction, /UNLEASHED_API_RETRY_EXHAUSTED/);
+  assert.match(edgeFunction, /fetch_attempts: fetchAttempts/);
+});
+
+test('Snapshot replay writes only inserted or payload-changed records', () => {
+  assert.match(edgeFunction, /select\('external_key,payload_sha256'\)/);
+  assert.match(edgeFunction, /existingHash === row\.payload_sha256\) unchanged\.push\(row\)/);
+  assert.match(edgeFunction, /const semanticRows = \[\.\.\.classifiedRows\.inserted, \.\.\.classifiedRows\.changed\]/);
+  assert.match(edgeFunction, /upsert\(semanticRows, \{ onConflict: 'resource,external_key' \}\)/);
+  assert.doesNotMatch(edgeFunction, /upsert\(snapshotRows, \{ onConflict: 'resource,external_key' \}\)/);
+  assert.match(edgeFunction, /stagedOnPage = insertedOnPage \+ changedOnPage/);
+  assert.match(edgeFunction, /records_unchanged: recordsUnchanged/);
+  assert.match(edgeFunction, /select\('external_key,latest_payload_sha256'\)/);
+  assert.match(edgeFunction, /upsert\(identitiesNeedingWrite, \{ onConflict: 'resource,external_key' \}\)/);
+  assert.match(edgeFunction, /identity_writes: identityWritesOnPage/);
+  assert.match(edgeFunction, /externalKey: `product:\$\{guid\.toLowerCase\(\)\}:warehouse:\$\{warehouseIdentity\.toLowerCase\(\)\}`/);
 });
 
 test('Migration creates source-owned staging tables with RLS and browser write denial', () => {

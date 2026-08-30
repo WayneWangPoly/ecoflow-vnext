@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import ts from 'typescript';
 
 const files = [
+  'supabase/functions/trigger-unleashed-readonly-sync/core.ts',
   'supabase/functions/trigger-unleashed-readonly-sync/index.ts',
 ];
 
