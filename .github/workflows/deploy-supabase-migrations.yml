@@ -385,6 +385,14 @@ jobs:
             --log supabase-migration-deploy.log \
             --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
             -- supabase functions deploy storage-retention --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy Unleashed read-only sync trigger with transient retry
+        shell: bash
+        run: |
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy trigger-unleashed-readonly-sync' \
+            --log supabase-migration-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy trigger-unleashed-readonly-sync --project-ref "$SUPABASE_PROJECT_REF"
       - name: Upload Supabase deployment log
         if: always()
         uses: actions/upload-artifact@v4
