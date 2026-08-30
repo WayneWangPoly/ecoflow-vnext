@@ -1,0 +1,152 @@
+# Work Package: `UNLEASHED-MIGRATION-002 Bounded read-only Unleashed connector`
+
+## Objective
+
+Install the server-side foundation for a bounded, read-only Unleashed snapshot
+connector that can safely stage small API windows for product, customer,
+supplier, warehouse, stock, purchasing, order, and sales-intelligence source
+data without exposing credentials or changing Unleashed records.
+
+## Owner and reviewers
+
+- Implementation role: Codex implementation agent
+- Verification role: Independent verification agent
+- Chief Engineer: WayneWangPoly
+- Dependencies: UNLEASHED-MIGRATION-001 archaeology, GitHub issues #336, #337,
+  and #345
+- Planned merge order: after archaeology comments are accepted, before bulk
+  migration, inventory authority, and ERP UI parity work
+
+## In scope
+
+- Allowed paths:
+  - `supabase/migrations/**`
+  - `supabase/functions/trigger-unleashed-readonly-sync/**`
+  - `scripts/*unleashed-readonly*`
+  - `.github/workflows/*unleashed-readonly*`
+  - `.github/workflows/deploy-supabase-migrations.yml`
+  - `docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md`
+- Allowed behaviour changes:
+  - Add source-owned staging tables and read models for Unleashed connector
+    runs, batches, identities, raw snapshots, and cursors.
+  - Add an Owner/Admin-only Edge Function that performs GET-only bounded
+    Unleashed API reads.
+  - Add static and SQL contract checks for credential handling, read-only
+    method boundaries, pagination limits, and browser write denial.
+
+## Out of scope
+
+- Forbidden paths:
+  - Existing Product Identity, inventory movement, release, picking, delivery,
+    POD, returns, statements, and intelligence UI files.
+- Behaviour that must remain unchanged:
+  - No Unleashed write, export, delete, complete, obsolete, transfer, stock
+    adjustment, purchase order update, or sales order update operation.
+  - No browser-side Unleashed credential handling.
+  - No production inventory authority change.
+  - No Sales BI KPI definition change; this connector only stages source facts
+    needed for later semantic-layer reconciliation.
+
+## Behaviour contract
+
+- Command/input: authenticated POST to `trigger-unleashed-readonly-sync` with
+  `mode`, `resources`, `modifiedSince`, `dryRun`, `pageSize`, `maxPages`, and
+  `reason`.
+- Accepted result: Owner/Admin users can run a bounded GET-only probe or
+  snapshot. The function returns counts, hashes, run status, and batch metadata,
+  never raw Unleashed records or secrets.
+- Conflict result: unsupported resources, page sizes, page counts, modes, or
+  malformed dates are rejected before Unleashed is contacted.
+- Rejected result: anonymous users, inactive team members, non-Owner/Admin roles,
+  missing Supabase secrets, missing Unleashed secrets, non-HTTPS API base URLs,
+  and query-bearing API base URLs fail closed.
+- Authoritative server checks: role lookup is performed server-side through
+  `app_user_profiles`; Unleashed credentials are read only from Edge Function
+  secrets.
+- Revision, idempotency, actor, and device requirements: this work package does
+  not mutate business records. Each run still records actor, requested email,
+  reason, status, resource set, limits, and audit events.
+- Offline policy: offline UI may not claim a connector run was queued or staged;
+  the server response is authoritative.
+- Audit and error behaviour: each run has durable rows, per-resource batches,
+  final status, error code/message, and an `app_security_audit_events` entry.
+
+## Acceptance criteria
+
+- [ ] Unleashed source tables have RLS enabled.
+- [ ] Browser roles cannot insert, update, delete, truncate, reference, trigger,
+  or maintain any `public.unleashed_*` base table.
+- [ ] Unleashed raw payloads are never returned from the Edge Function response.
+- [ ] The Edge Function constructs HMAC-SHA256 signatures from the query string
+  only and sends credentials only in Unleashed auth headers.
+- [ ] The Edge Function can only issue `GET` requests to allowlisted resources.
+- [ ] Default execution is dry-run; raw snapshot staging requires
+  `dryRun: false`.
+- [ ] Bounded pagination is enforced by server-side hard limits.
+- [ ] Sales analytics parity seed resources are explicit and can be selected for
+  later #345 reconciliation.
+
+## Test plan
+
+| Layer | Command or scenario | Expected result |
+|---|---|---|
+| Static | `node --test scripts/unleashed-readonly-connector-contract.test.mjs` | Connector source and migration contract passes. |
+| Static | `node scripts/audit-unleashed-readonly-connector.mjs` | No credential logging, URL secret placement, or Unleashed write method exists. |
+| Integration/RLS | GitHub workflow PostgreSQL 17 service applies `scripts/unleashed-readonly-connector-db-fixture.sql`, applies the migration twice, then runs `psql ... -f scripts/unleashed-readonly-connector-db-contract-test.sql` | RLS and PostgreSQL grants deny browser mutation and preserve service-role staging authority; migration replay remains idempotent. |
+| End-to-end/UI | Owner/Admin invokes Edge Function with a one-page dry-run | Run and batch rows are created; response contains counts and hashes only. |
+
+## Required evidence
+
+- Changed files: PR diff.
+- Build and test output: local Node static checks plus CI.
+- Migration/shadow result: CI PostgreSQL 17 DB contract plus local shadow
+  fallback when Supabase remote branching is unavailable.
+- Screenshots: not required; this is service/data infrastructure.
+- Risks: Unleashed API docs list some resources as editable even though GET is
+  supported. The function enforces GET-only access regardless of resource class.
+- Known limitations: bulk snapshot workers, image mirroring, canonical SKU
+  creation, and Sales BI KPI reconciliation are separate work packages.
+- Deferred findings: final production run must confirm the real account's API
+  base URL, allowed resources, and paid BI source coverage with a dry-run probe.
+
+## Rollback
+
+Disable or remove the `trigger-unleashed-readonly-sync` deployment. If the
+migration has already deployed, add a forward compensating migration that drops
+the `public.v_ecoflow_unleashed_*` views, policies, triggers, and
+`public.unleashed_*` tables after preserving any staged evidence required for
+audit.
+
+## Decision log
+
+### Decisions
+
+- Credentials are read only from Edge Function secrets.
+- The first connector surface is bounded and dry-run by default.
+- Raw source payload staging is service-role writable and Owner/Admin readable;
+  broader UI read models must be derived later.
+- Paid Sales/BI parity uses source facts from invoices, credit notes, sales
+  orders, sales shipments, customers, products, groups, warehouses, and
+  salespersons instead of scraping dashboard widgets.
+
+### Assumptions
+
+- The production Unleashed account has API access enabled for the selected
+  company.
+- `UNLEASHED_API_ID` and `UNLEASHED_API_KEY` exist as Supabase Edge Function
+  secrets outside source control; `UNLEASHED_CLIENT_TYPE` remains optional.
+
+### Risks
+
+- Unleashed endpoint pagination and modified-since support differs by resource.
+  The connector records per-resource metadata and can disable unsupported
+  filters through allowlist changes.
+- The API key has account-wide access, so function-level GET-only enforcement is
+  mandatory.
+
+### Deferred
+
+- Bulk worker and retry cadence.
+- Product image download and checksum-backed storage mirror.
+- Canonical Physical SKU and SKU Family publishing.
+- Sales Intelligence semantic-layer reconciliation against #345.

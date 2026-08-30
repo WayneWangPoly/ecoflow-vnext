@@ -1,0 +1,82 @@
+name: Unleashed read-only connector contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/unleashed-readonly-connector-check.yml'
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md'
+      - 'scripts/audit-unleashed-readonly-connector.mjs'
+      - 'scripts/unleashed-readonly-connector-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-db-fixture.sql'
+      - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/index.ts'
+      - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
+  push:
+    branches:
+      - 'agent/platform/unleashed-migration-002-readonly-connector'
+    paths:
+      - '.github/workflows/unleashed-readonly-connector-check.yml'
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md'
+      - 'scripts/audit-unleashed-readonly-connector.mjs'
+      - 'scripts/unleashed-readonly-connector-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-db-fixture.sql'
+      - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/index.ts'
+      - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  connector-contract:
+    name: GET-only bounded connector
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci
+      - name: Check audit script syntax
+        run: |
+          node --check scripts/audit-unleashed-readonly-connector.mjs
+          node --check scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Check Edge Function syntax
+        run: node scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Run connector contract tests
+        run: node --test scripts/unleashed-readonly-connector-contract.test.mjs
+      - name: Prepare Unleashed DB contract fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql
+      - name: Run Unleashed DB contract
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
+          psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-contract-test.sql
+      - name: Run connector static audit
+        run: node scripts/audit-unleashed-readonly-connector.mjs
