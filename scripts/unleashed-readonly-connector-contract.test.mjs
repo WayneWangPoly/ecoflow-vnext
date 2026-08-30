@@ -4,22 +4,26 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const migrationPath = 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql';
+const warehouseCatalogMigrationPath = 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql';
 const functionPath = 'supabase/functions/trigger-unleashed-readonly-sync/index.ts';
 const corePath = 'supabase/functions/trigger-unleashed-readonly-sync/core.ts';
 const workPackagePath = 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md';
 const workflowPath = '.github/workflows/unleashed-readonly-connector-check.yml';
 const probeClientPath = 'src/features/team/unleashedReadonlyProbe.ts';
+const acceptanceClientPath = 'src/features/team/unleashedConnectorAcceptance.ts';
 const probePanelPath = 'src/features/settings/UnleashedReadonlyProbePanel.tsx';
 const appPath = 'src/app/App.tsx';
 const operationalSettingsPath = 'src/features/operationalStability/OperationalStabilityWorkspaceV2.tsx';
 
-const [migration, edgeFunctionIndex, edgeFunctionCore, workPackage, workflow, probeClient, probePanel, app, operationalSettings] = await Promise.all([
+const [migration, warehouseCatalogMigration, edgeFunctionIndex, edgeFunctionCore, workPackage, workflow, probeClient, acceptanceClient, probePanel, app, operationalSettings] = await Promise.all([
   readFile(migrationPath, 'utf8'),
+  readFile(warehouseCatalogMigrationPath, 'utf8'),
   readFile(functionPath, 'utf8'),
   readFile(corePath, 'utf8'),
   readFile(workPackagePath, 'utf8'),
   readFile(workflowPath, 'utf8'),
   readFile(probeClientPath, 'utf8'),
+  readFile(acceptanceClientPath, 'utf8'),
   readFile(probePanelPath, 'utf8'),
   readFile(appPath, 'utf8'),
   readFile(operationalSettingsPath, 'utf8'),
@@ -154,10 +158,20 @@ test('Raw snapshots keep stable source identity and do not define business autho
   assert.match(workPackage, /Sales BI KPI definition change/);
 });
 
+test('Stock acceptance exposes only a derived warehouse selector through the protected catalog', () => {
+  assert.match(warehouseCatalogMigration, /with \(security_invoker = true\)/);
+  assert.match(warehouseCatalogMigration, /resource = 'stock_on_hand'/);
+  assert.match(warehouseCatalogMigration, /payload ->> 'WarehouseCode'/);
+  assert.match(warehouseCatalogMigration, /as warehouse_code/);
+  assert.match(warehouseCatalogMigration, /revoke all on table public\.v_ecoflow_unleashed_snapshot_catalog from anon/);
+  assert.doesNotMatch(warehouseCatalogMigration, /payload\s+as\s+/i);
+});
+
 test('CI runs the SQL DB contract for Unleashed staging privileges', () => {
   assert.match(workflow, /image: postgres:17/);
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f scripts\/unleashed-readonly-connector-db-fixture\.sql/);
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f supabase\/migrations\/20260830090000_unleashed_readonly_connector_foundation\.sql/);
+  assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f supabase\/migrations\/20260830123000_unleashed_snapshot_catalog_warehouse_code\.sql/);
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f scripts\/unleashed-readonly-connector-db-contract-test\.sql/);
 });
 
@@ -171,6 +185,30 @@ test('Admin probe UI can only request the one-page dry-run contract', () => {
   assert.match(probeClient, /result\.recordsStaged === 0/);
   assert.doesNotMatch(probeClient, /dryRun: false/);
   assert.doesNotMatch(probeClient, /bounded_snapshot/);
+});
+
+test('Production acceptance requires a bounded four-resource write and proves unchanged replay', () => {
+  for (const resource of ['products', 'stock_on_hand', 'sales_orders_open', 'purchase_orders_open']) {
+    assert.match(acceptanceClient, new RegExp(`'${resource}'`));
+  }
+  assert.match(acceptanceClient, /mode: 'bounded_snapshot'/);
+  assert.equal(acceptanceClient.match(/dryRun: false/g)?.length, 3);
+  assert.match(acceptanceClient, /pageSize: 1/);
+  assert.match(acceptanceClient, /maxPages: 1/);
+  assert.match(acceptanceClient, /UNLEASHED_ACCEPTANCE_RESOURCES\.length/);
+  assert.match(acceptanceClient, /replay\.recordsStaged !== 0/);
+  assert.match(acceptanceClient, /replay\.recordsChanged !== 0/);
+  assert.match(acceptanceClient, /replay\.recordsUnchanged !== 1/);
+  assert.match(acceptanceClient, /select\('resource,external_guid,external_code,external_number,warehouse_code,last_seen_at'\)/);
+  assert.match(acceptanceClient, /\{ productId: row\.external_guid, warehouseCode: row\.warehouse_code \}/);
+  assert.doesNotMatch(acceptanceClient, /select\([^)]*payload(?!_sha256)/i);
+  assert.doesNotMatch(acceptanceClient, /API_KEY|API_ID|token|secret/i);
+
+  assert.match(probePanel, /type="checkbox"/);
+  assert.match(probePanel, /I confirm this bounded source-snapshot write/);
+  assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running\}/);
+  assert.match(probePanel, /setAcceptanceAcknowledged\(false\)/);
+  assert.match(probePanel, /Store sample and verify replay/);
 });
 
 test('Unleashed probe is restricted to the existing Owner/Admin settings boundary', () => {

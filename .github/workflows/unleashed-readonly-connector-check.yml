@@ -13,11 +13,16 @@ on:
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'src/features/settings/teamAccessSettings.css'
+      - 'src/features/team/unleashedConnectorAcceptance.ts'
+      - 'src/features/team/unleashedReadonlyProbe.ts'
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
+      - 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql'
   push:
     branches:
-      - 'agent/platform/unleashed-migration-002-readonly-connector'
+      - 'agent/platform/unleashed-migration-002-*'
     paths:
       - '.github/workflows/unleashed-readonly-connector-check.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
@@ -27,8 +32,13 @@ on:
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'src/features/settings/teamAccessSettings.css'
+      - 'src/features/team/unleashedConnectorAcceptance.ts'
+      - 'src/features/team/unleashedReadonlyProbe.ts'
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
+      - 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql'
 
 permissions:
   contents: read
@@ -79,6 +89,8 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql
           psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-contract-test.sql
       - name: Run connector static audit
         run: node scripts/audit-unleashed-readonly-connector.mjs
