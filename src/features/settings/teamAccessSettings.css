@@ -17,7 +17,13 @@
   order: 2;
 }
 
-.system-direct-shell.system-show-integration > .ordermentum-system-panel {
+.system-direct-shell > .unleashed-probe-panel {
+  display: none !important;
+  order: 3;
+}
+
+.system-direct-shell.system-show-integration > .ordermentum-system-panel,
+.system-direct-shell.system-show-integration > .unleashed-probe-panel {
   display: block !important;
 }
 
@@ -287,14 +293,16 @@
   align-items: end;
 }
 
-.ordermentum-system-panel .system-sync-actions {
+.ordermentum-system-panel .system-sync-actions,
+.unleashed-probe-panel .system-sync-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 9px;
   margin-top: 14px;
 }
 
-.ordermentum-system-panel .system-sync-actions button {
+.ordermentum-system-panel .system-sync-actions button,
+.unleashed-probe-panel .system-sync-actions button {
   min-height: 46px;
   padding: 8px 10px;
   border: 1px solid #bfd1c8;
@@ -304,20 +312,23 @@
   font-weight: 850;
 }
 
-.ordermentum-system-panel .system-sync-actions button.primary {
+.ordermentum-system-panel .system-sync-actions button.primary,
+.unleashed-probe-panel .system-sync-actions button.primary {
   border-color: #0d714f;
   background: #0d714f;
   color: #fff;
 }
 
-.ordermentum-system-panel .system-status-grid {
+.ordermentum-system-panel .system-status-grid,
+.unleashed-probe-panel .system-status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 9px;
   margin-top: 14px;
 }
 
-.ordermentum-system-panel .system-status-grid > div {
+.ordermentum-system-panel .system-status-grid > div,
+.unleashed-probe-panel .system-status-grid > div {
   min-width: 0;
   display: grid;
   gap: 4px;
@@ -327,7 +338,8 @@
   background: #f7faf8;
 }
 
-.ordermentum-system-panel .system-status-grid span {
+.ordermentum-system-panel .system-status-grid span,
+.unleashed-probe-panel .system-status-grid span {
   color: #65776e;
   font-size: 11px;
   font-weight: 800;
@@ -344,6 +356,17 @@
   cursor: pointer;
   color: #355448;
   font-weight: 850;
+}
+
+.unleashed-probe-panel .unleashed-probe-actions {
+  grid-template-columns: minmax(220px, 320px);
+}
+
+.unleashed-probe-panel .unleashed-probe-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 @media (max-width: 1050px) {
@@ -365,7 +388,8 @@
   }
 
   .ordermentum-system-panel .system-sync-actions,
-  .ordermentum-system-panel .system-status-grid {
+  .ordermentum-system-panel .system-status-grid,
+  .unleashed-probe-panel .system-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -396,7 +420,9 @@
   .my-access-summary,
   .my-password-form,
   .ordermentum-system-panel .system-sync-actions,
-  .ordermentum-system-panel .system-status-grid {
+  .ordermentum-system-panel .system-status-grid,
+  .unleashed-probe-panel .system-status-grid,
+  .unleashed-probe-panel .unleashed-probe-actions {
     grid-template-columns: minmax(0, 1fr);
   }
 

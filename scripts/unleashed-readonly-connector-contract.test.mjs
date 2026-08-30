@@ -7,12 +7,20 @@ const migrationPath = 'supabase/migrations/20260830090000_unleashed_readonly_con
 const functionPath = 'supabase/functions/trigger-unleashed-readonly-sync/index.ts';
 const workPackagePath = 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md';
 const workflowPath = '.github/workflows/unleashed-readonly-connector-check.yml';
+const probeClientPath = 'src/features/team/unleashedReadonlyProbe.ts';
+const probePanelPath = 'src/features/settings/UnleashedReadonlyProbePanel.tsx';
+const appPath = 'src/app/App.tsx';
+const operationalSettingsPath = 'src/features/operationalStability/OperationalStabilityWorkspaceV2.tsx';
 
-const [migration, edgeFunction, workPackage, workflow] = await Promise.all([
+const [migration, edgeFunction, workPackage, workflow, probeClient, probePanel, app, operationalSettings] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(functionPath, 'utf8'),
   readFile(workPackagePath, 'utf8'),
   readFile(workflowPath, 'utf8'),
+  readFile(probeClientPath, 'utf8'),
+  readFile(probePanelPath, 'utf8'),
+  readFile(appPath, 'utf8'),
+  readFile(operationalSettingsPath, 'utf8'),
 ]);
 
 test('Unleashed signature contract signs only the query string', () => {
@@ -112,4 +120,25 @@ test('CI runs the SQL DB contract for Unleashed staging privileges', () => {
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f scripts\/unleashed-readonly-connector-db-fixture\.sql/);
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f supabase\/migrations\/20260830090000_unleashed_readonly_connector_foundation\.sql/);
   assert.match(workflow, /psql -v ON_ERROR_STOP=1 -f scripts\/unleashed-readonly-connector-db-contract-test\.sql/);
+});
+
+test('Admin probe UI can only request the one-page dry-run contract', () => {
+  assert.match(probeClient, /functions\.invoke\('trigger-unleashed-readonly-sync'/);
+  assert.match(probeClient, /mode: 'probe'/);
+  assert.match(probeClient, /resources: \['warehouses'\]/);
+  assert.match(probeClient, /dryRun: true/);
+  assert.match(probeClient, /pageSize: 1/);
+  assert.match(probeClient, /maxPages: 1/);
+  assert.match(probeClient, /result\.recordsStaged === 0/);
+  assert.doesNotMatch(probeClient, /dryRun: false/);
+  assert.doesNotMatch(probeClient, /bounded_snapshot/);
+});
+
+test('Unleashed probe is restricted to the existing Owner/Admin settings boundary', () => {
+  assert.match(app, /canManageTeam\(authProfile\) && supabase[\s\S]*<UnleashedReadonlyProbePanel supabase=\{supabase\}/);
+  assert.match(operationalSettings, /profile\.app_role === 'OWNER' \|\| profile\.app_role === 'ADMIN'/);
+  assert.match(operationalSettings, /canTestUnleashed && supabase \? <UnleashedReadonlyProbePanel supabase=\{supabase\}/);
+  assert.match(probePanel, /Run one-page test/);
+  assert.match(probePanel, /Records imported/);
+  assert.doesNotMatch(probePanel, /API_KEY|API_ID|token|secret/i);
 });
