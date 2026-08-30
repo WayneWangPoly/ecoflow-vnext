@@ -24,6 +24,7 @@ import { SetPasswordScreen } from '@/features/auth/SetPasswordScreen';
 import type { EcoFlowAppRole, EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { OrdermentumIntegrationSettingsPanel } from '@/features/settings/OrdermentumIntegrationSettingsPanel';
 import { TeamInviteSettingsPanel } from '@/features/settings/TeamInviteSettingsPanel';
+import { UnleashedReadonlyProbePanel } from '@/features/settings/UnleashedReadonlyProbePanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { OrdersControlPage } from '@/features/orders/OrdersControlPage';
 import { DeliveryDispatchCommandSurface } from '@/features/delivery/DeliveryDispatchCommandSurface';
@@ -1031,6 +1032,9 @@ function SettingsPanel({ summary, dataQuality, authProfile }: { summary: EcoFlow
           <div className="panel-head"><h2>Ordermentum integration</h2><Pill tone="neutral">Owner/Admin only</Pill></div>
           <p>Your account can use EcoFlow, but only OWNER or ADMIN can trigger Ordermentum cloud sync.</p>
         </section>
+      ) : null}
+      {authProfile && canManageTeam(authProfile) && supabase ? (
+        <UnleashedReadonlyProbePanel supabase={supabase} />
       ) : null}
       {authProfile && canManageTeam(authProfile) && supabase ? (
         <TeamInviteSettingsPanel supabase={supabase} />
