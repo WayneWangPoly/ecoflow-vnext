@@ -33,6 +33,11 @@ data without exposing credentials or changing Unleashed records.
     Unleashed API reads.
   - Add static and SQL contract checks for credential handling, read-only
     method boundaries, pagination limits, and browser write denial.
+  - Add exact, one-resource target selectors for product GUID/code, stock by
+    product GUID and optional warehouse code, and sales/purchase order GUID or
+    order number.
+  - Retry transient GET failures at most three times and skip semantic snapshot
+    writes when the source payload hash is unchanged.
 
 ## Out of scope
 
@@ -51,12 +56,14 @@ data without exposing credentials or changing Unleashed records.
 
 - Command/input: authenticated POST to `trigger-unleashed-readonly-sync` with
   `mode`, `resources`, `modifiedSince`, `dryRun`, `pageSize`, `maxPages`, and
-  `reason`.
+  `reason`, plus an optional allowlisted `target` for one resource.
 - Accepted result: Owner/Admin users can run a bounded GET-only probe or
   snapshot. The function returns counts, hashes, run status, and batch metadata,
   never raw Unleashed records or secrets.
 - Conflict result: unsupported resources, page sizes, page counts, modes, or
-  malformed dates are rejected before Unleashed is contacted.
+  malformed dates are rejected before Unleashed is contacted. Targeted reads
+  reject arbitrary fields, multiple resources, non-exact matches, and target
+  plus `modifiedSince` combinations.
 - Rejected result: anonymous users, inactive team members, non-Owner/Admin roles,
   missing Supabase secrets, missing Unleashed secrets, non-HTTPS API base URLs,
   and query-bearing API base URLs fail closed.
@@ -65,7 +72,9 @@ data without exposing credentials or changing Unleashed records.
   secrets.
 - Revision, idempotency, actor, and device requirements: this work package does
   not mutate business records. Each run still records actor, requested email,
-  reason, status, resource set, limits, and audit events.
+  reason, status, resource set, limits, and audit events. Snapshot replay
+  compares stable payload hashes and writes only inserted or changed source
+  records; unchanged observations remain visible in run/batch metadata.
 - Offline policy: offline UI may not claim a connector run was queued or staged;
   the server response is authoritative.
 - Audit and error behaviour: each run has durable rows, per-resource batches,
@@ -85,6 +94,11 @@ data without exposing credentials or changing Unleashed records.
 - [ ] Bounded pagination is enforced by server-side hard limits.
 - [ ] Sales analytics parity seed resources are explicit and can be selected for
   later #345 reconciliation.
+- [ ] Target selectors cannot escape the four approved product, stock,
+  sales-order, and purchase-order request shapes.
+- [ ] Transient upstream GET failures retry no more than three times.
+- [ ] Replaying an unchanged payload produces zero staged/changed semantic
+  writes and records the observation as unchanged.
 
 ## Test plan
 
@@ -94,6 +108,8 @@ data without exposing credentials or changing Unleashed records.
 | Static | `node scripts/audit-unleashed-readonly-connector.mjs` | No credential logging, URL secret placement, or Unleashed write method exists. |
 | Integration/RLS | GitHub workflow PostgreSQL 17 service applies `scripts/unleashed-readonly-connector-db-fixture.sql`, applies the migration twice, then runs `psql ... -f scripts/unleashed-readonly-connector-db-contract-test.sql` | RLS and PostgreSQL grants deny browser mutation and preserve service-role staging authority; migration replay remains idempotent. |
 | End-to-end/UI | Owner/Admin invokes Edge Function with a one-page dry-run | Run and batch rows are created; response contains counts and hashes only. |
+| End-to-end/API | Owner/Admin targets a known product, stock row, open sales order, and open purchase order | Each exact selector returns one matching record without an Unleashed write. |
+| Replay | Repeat the same bounded non-dry target request | Second run reports zero staged/changed rows and one unchanged observation. |
 
 ## Required evidence
 
