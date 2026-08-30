@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const files = {
   migration: 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql',
+  warehouseCatalogMigration: 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql',
   edgeFunctionIndex: 'supabase/functions/trigger-unleashed-readonly-sync/index.ts',
   edgeFunctionCore: 'supabase/functions/trigger-unleashed-readonly-sync/core.ts',
   workflow: '.github/workflows/unleashed-readonly-connector-check.yml',
@@ -38,6 +39,10 @@ requireText('migration', 'unleashed_raw_snapshots_owner_admin_read', 'raw payloa
 requireText('migration', 'payload_sha256', 'raw snapshots must carry content hashes');
 requireText('migration', 'unleashed_preserve_raw_snapshot_first_seen', 'snapshot upserts must preserve first-seen evidence');
 requireText('migration', 'with (security_invoker = true)', 'read-model views must retain invoker security');
+requireText('warehouseCatalogMigration', 'with (security_invoker = true)', 'warehouse selector view must retain invoker security');
+requireText('warehouseCatalogMigration', "payload ->> 'WarehouseCode'", 'stock target reads need an exact warehouse code selector');
+requireText('warehouseCatalogMigration', 'revoke all on table public.v_ecoflow_unleashed_snapshot_catalog from anon', 'derived warehouse selector must remain closed to anon');
+forbid('warehouseCatalogMigration', /payload\s+as\s+/i, 'warehouse selector view must not return the raw payload');
 
 requireText('edgeFunction', "Deno.env.get('UNLEASHED_API_ID')", 'API id must come from Edge Function secrets');
 requireText('edgeFunction', "Deno.env.get('UNLEASHED_API_KEY')", 'API key must come from Edge Function secrets');

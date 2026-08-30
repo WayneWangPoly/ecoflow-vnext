@@ -54,6 +54,21 @@ begin
      or not has_table_privilege('authenticated', 'public.unleashed_external_identities', 'SELECT') then
     raise exception 'authenticated office read access is missing';
   end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'v_ecoflow_unleashed_snapshot_catalog'
+      and column_name = 'warehouse_code'
+  ) then
+    raise exception 'derived stock warehouse selector is missing';
+  end if;
+
+  if has_table_privilege('anon', 'public.v_ecoflow_unleashed_snapshot_catalog', 'SELECT')
+     or not has_table_privilege('authenticated', 'public.v_ecoflow_unleashed_snapshot_catalog', 'SELECT') then
+    raise exception 'snapshot catalog view privileges are incorrect';
+  end if;
 end
 $$;
 

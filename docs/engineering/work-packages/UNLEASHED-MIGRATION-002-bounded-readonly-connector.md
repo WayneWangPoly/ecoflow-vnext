@@ -25,6 +25,10 @@ data without exposing credentials or changing Unleashed records.
   - `scripts/*unleashed-readonly*`
   - `.github/workflows/*unleashed-readonly*`
   - `.github/workflows/deploy-supabase-migrations.yml`
+  - `src/features/team/unleashedReadonlyProbe.ts`
+  - `src/features/team/unleashedConnectorAcceptance.ts`
+  - `src/features/settings/UnleashedReadonlyProbePanel.tsx`
+  - `src/features/settings/teamAccessSettings.css`
   - `docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md`
 - Allowed behaviour changes:
   - Add source-owned staging tables and read models for Unleashed connector
@@ -38,6 +42,12 @@ data without exposing credentials or changing Unleashed records.
     order number.
   - Retry transient GET failures at most three times and skip semantic snapshot
     writes when the source payload hash is unchanged.
+  - Add an Owner/Admin-only acceptance control that requires an explicit
+    checkbox acknowledgement before storing or refreshing at most one source
+    snapshot for each of the four targetable resources.
+  - Expose only a derived warehouse code through the protected snapshot catalog
+    so stock acceptance can target one product and one warehouse without
+    returning the raw source payload.
 
 ## Out of scope
 
@@ -77,6 +87,9 @@ data without exposing credentials or changing Unleashed records.
   records; unchanged observations remain visible in run/batch metadata.
 - Offline policy: offline UI may not claim a connector run was queued or staged;
   the server response is authoritative.
+- Production acceptance policy: page load and the existing connection probe
+  cannot stage snapshots. The separate acceptance action stays disabled until
+  an Owner/Admin acknowledges the four-resource write boundary.
 - Audit and error behaviour: each run has durable rows, per-resource batches,
   final status, error code/message, and an `app_security_audit_events` entry.
 
@@ -110,6 +123,7 @@ data without exposing credentials or changing Unleashed records.
 | End-to-end/UI | Owner/Admin invokes Edge Function with a one-page dry-run | Run and batch rows are created; response contains counts and hashes only. |
 | End-to-end/API | Owner/Admin targets a known product, stock row, open sales order, and open purchase order | Each exact selector returns one matching record without an Unleashed write. |
 | Replay | Repeat the same bounded non-dry target request | Second run reports zero staged/changed rows and one unchanged observation. |
+| End-to-end/UI | Owner/Admin opens production acceptance without acknowledging the write boundary | Staging action remains disabled; no connector request is sent. |
 
 ## Required evidence
 
@@ -117,13 +131,15 @@ data without exposing credentials or changing Unleashed records.
 - Build and test output: local Node static checks plus CI.
 - Migration/shadow result: CI PostgreSQL 17 DB contract plus local shadow
   fallback when Supabase remote branching is unavailable.
-- Screenshots: not required; this is service/data infrastructure.
+- Screenshots: production Settings acceptance state and final four-resource
+  result, without raw payloads or credentials.
 - Risks: Unleashed API docs list some resources as editable even though GET is
   supported. The function enforces GET-only access regardless of resource class.
 - Known limitations: bulk snapshot workers, image mirroring, canonical SKU
   creation, and Sales BI KPI reconciliation are separate work packages.
-- Deferred findings: final production run must confirm the real account's API
-  base URL, allowed resources, and paid BI source coverage with a dry-run probe.
+- Deferred findings: the user-confirmed production acceptance run must prove
+  exact target reads and unchanged replay for the real account. Paid BI source
+  coverage remains a separate #345 gate.
 
 ## Rollback
 
