@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import type { Role } from '@/domain/types';
+import { UnleashedReadonlyProbePanel } from '@/features/settings/UnleashedReadonlyProbePanel';
+import { supabase } from '@/lib/supabaseClient';
 import {
   NativeWorkspaceEmpty,
   NativeWorkspaceFrame,
@@ -810,6 +812,9 @@ export function OperationalSettingsWorkspace({ profile }: { profile: EcoFlowAuth
   }
 
   const name = String(profile.display_name || profile.email || 'EcoFlow user');
+  const canTestUnleashed = profile.is_active
+    && profile.team_status === 'ACTIVE'
+    && (profile.app_role === 'OWNER' || profile.app_role === 'ADMIN');
   return (
     <NativeWorkspaceFrame
       eyebrow="PERSONAL OPERATIONS"
@@ -829,6 +834,7 @@ export function OperationalSettingsWorkspace({ profile }: { profile: EcoFlowAuth
         <small>{effective ? `${effective.source.replace('_', ' ')} · revision ${effective.revision}` : 'Loading effective preferences…'}</small>
         {message ? <div className="native-workspace-notice">{message}</div> : null}
       </section>
+      {canTestUnleashed && supabase ? <UnleashedReadonlyProbePanel supabase={supabase} /> : null}
     </NativeWorkspaceFrame>
   );
 }
