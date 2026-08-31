@@ -51,6 +51,11 @@ data without exposing credentials or changing Unleashed records.
   - Bound raw snapshot JSON to a declared 14-day retention horizon from
     `last_seen_at`, with a service-role-only purge capped at 5,000 rows per
     invocation. Purge execution remains an explicit production operator action.
+  - Add a manual production retirement workflow for the three recorded inert
+    `unleashed-readonly-probe-001c*` functions. It may delete only the exact
+    recorded versions/content digests, requires an exact typed confirmation,
+    preserves before/after evidence, and must keep the replacement connector
+    active.
 
 ## Out of scope
 
@@ -65,6 +70,8 @@ data without exposing credentials or changing Unleashed records.
   - No Sales BI KPI definition change; this connector only stages source facts
     needed for later semantic-layer reconciliation.
   - No automatic production deletion of raw snapshots in this work package.
+  - No automatic legacy-function deletion and no secret mutation in the probe
+    retirement workflow.
 
 ## Behaviour contract
 
@@ -89,6 +96,16 @@ data without exposing credentials or changing Unleashed records.
   `UNLEASHED_API_KEY` is the connector kill switch. The missing-credential guard
   executes before any outbound Unleashed fetch and is isolated from the
   Ordermentum and warehouse connectors.
+- Kill-switch recovery boundary: Supabase exposes secret names/digests but not
+  the original credential value. A real removal drill must not start until the
+  operator has a fresh provider-sourced value ready for direct secure restore.
+  Credentials must never pass through chat, GitHub inputs, logs, artifacts, or
+  repository files.
+- Legacy-probe retirement boundary: only the three already evidenced inert
+  `001c*` deployments may be selected. Their deployed versions and SHA-256
+  digests must match the recorded inert baseline before deletion; drift fails
+  closed. The current `trigger-unleashed-readonly-sync` replacement must remain
+  ACTIVE with JWT verification before and after the operation.
 - Authoritative server checks: role lookup is performed server-side through
   `app_user_profiles`; Unleashed credentials are read only from Edge Function
   secrets.
@@ -142,6 +159,9 @@ data without exposing credentials or changing Unleashed records.
   writes and records the observation as unchanged.
 - [ ] One failed resource does not hide the result of later resources, and a
   partial run is never presented as complete acceptance.
+- [ ] Legacy probe retirement is `workflow_dispatch` only, runs from `main` in
+  the production environment, requires exact operator confirmation, rejects
+  digest/version drift, and proves the replacement remains active.
 
 ## Test plan
 
@@ -158,6 +178,47 @@ data without exposing credentials or changing Unleashed records.
 | Raw retention | Inspect purge-eligible rows, then explicitly invoke the bounded service-role purge | Only raw rows older than 14 days are removed; structured identity/hash and run evidence remain. |
 | End-to-end/UI | Owner/Admin opens production acceptance without acknowledging the write boundary | Staging action remains disabled; no connector request is sent. |
 | Partial source coverage | One allowlisted endpoint returns 4xx while a later resource is readable | Failed resource is recorded, later resources are attempted, and UI reports partial acceptance. |
+| Static | `node --test scripts/unleashed-readonly-killswitch-retention.test.mjs` | Retirement workflow has no automatic trigger or secret mutation, exact targets are digest-locked, and post-retirement state is idempotent. |
+| Production retirement preflight | Dispatch `unleashed-readonly-production-retirement.yml` with `preflight` from `main` | Replacement is ACTIVE; matched legacy versions/digests are recorded; nothing is deleted. |
+| Production retirement | After separate operator approval, dispatch with `retire_legacy_probes` and the exact confirmation phrase | Only matched `001c*` functions are deleted; before/after artifacts prove all three absent and replacement still ACTIVE. |
+
+## Production evidence checkpoint — 2026-08-31
+
+- Exact production baseline: `main` merge commit
+  `e6fca5f25f6779e006d9b88704d161c4553c592f`; replacement Edge Function
+  `trigger-unleashed-readonly-sync` is ACTIVE version 7 with JWT verification.
+- Final operator-confirmed acceptance seed:
+  `b3b975e7-64d7-4315-b277-7d2ab6999bcc`, `SUCCEEDED`, non-dry, page size 1,
+  maximum one page, four resources seen, one new semantic snapshot, zero failed.
+- The seed plus eight exact target/replay runs produced nine successful runs and
+  twelve successful HTTP 200 batches. Maximum fetch attempts for any batch was
+  one; no failed or non-200 batch exists in this acceptance window.
+- Product, stock on hand, open sales order, and open purchase order each passed
+  two deterministic exact reads. Every exact run saw one record and reported
+  zero staged/changed rows plus one unchanged observation.
+- Production raw staging now contains five rows across four resource types.
+  The additional sales-order row has a different protected external key; the
+  `(resource, external_key)` unique contract still reports no duplicate logical
+  row. Zero raw snapshots are older than the 14-day retention horizon, so no
+  production purge was needed or executed.
+- The UI and durable ledger therefore close the four-resource exact-read and
+  replay/idempotency gate. No customer, supplier, product, or order identifier
+  is included in this evidence.
+
+### Remaining confirmation-gated production closure
+
+1. Run the non-destructive legacy-probe retirement preflight after its workflow
+   is merged.
+2. Obtain a separate destructive-production confirmation, then retire the three
+   exact inert probe deployments and verify the post-retirement function list.
+3. Before a real kill-switch drill, have a fresh Unleashed credential available
+   through a secure provider/operator channel. Remove exactly one required
+   secret, prove the connector records `MISSING_UNLEASHED_API_SECRETS` before
+   any outbound batch while Ordermentum/warehouse remain healthy, restore the
+   secret directly in Supabase, and finish with the existing one-page dry-run
+   probe. Do not use the four-resource non-dry acceptance for restoration.
+
+`#338` remains blocked until items 2 and 3 have production evidence.
 
 ## Required evidence
 
@@ -171,10 +232,10 @@ data without exposing credentials or changing Unleashed records.
   supported. The function enforces GET-only access regardless of resource class.
 - Known limitations: bulk snapshot workers, image mirroring, canonical SKU
   creation, and Sales BI KPI reconciliation are separate work packages.
-- Deferred findings: the user-confirmed production acceptance run must prove
-  exact target reads and unchanged replay for the real account. Production
-  kill-switch and purge execution evidence are also confirmation-gated. Paid BI
-  source coverage remains a separate #345 gate.
+- Deferred findings: the real-account four-resource acceptance and replay gate
+  is complete. Production kill-switch removal/restoration and the exact legacy
+  probe deletion remain separately confirmation-gated. Paid BI source coverage
+  remains a separate #345 gate.
 
 ## Rollback
 
@@ -184,6 +245,10 @@ Unleashed traffic immediately, or disable/remove the
 Ordermentum or warehouse connector authority. If the migration has already
 deployed, use a forward compensating migration for schema rollback; do not run a
 production raw purge or destructive schema rollback without explicit approval.
+The retirement workflow itself is reversible by reverting its single PR. A
+completed legacy-probe retirement is intentionally not rolled back by reviving
+the obsolete functions; production recovery redeploys and verifies only the
+replacement connector from `main`.
 
 ## Decision log
 
@@ -200,6 +265,8 @@ production raw purge or destructive schema rollback without explicit approval.
 - Raw snapshot JSON retention is 14 days from `last_seen_at`; purge is manual,
   service-role-only, and bounded, while structured identity/hash and run history
   are retained.
+- Legacy probe retirement is a manual, digest-locked production operation. It
+  does not share authority with connector secret management.
 - Paid Sales/BI parity uses source facts from invoices, credit notes, sales
   orders, sales shipments, customers, products, groups, warehouses, and
   salespersons instead of scraping dashboard widgets.
@@ -221,6 +288,9 @@ production raw purge or destructive schema rollback without explicit approval.
 - Raw purge is intentionally not automatic in 002. Before bulk ingestion, an
   operator must produce purge evidence showing no raw JSON older than the
   declared horizon remains.
+- Removing a Supabase secret without a fresh provider-sourced restore value can
+  permanently disable the connector; runtime kill-switch evidence must therefore
+  remain blocked until secure restoration is ready.
 
 ### Deferred
 

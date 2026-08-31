@@ -1,0 +1,114 @@
+#!/usr/bin/env node
+import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+
+export const LEGACY_UNLEASHED_PROBES = Object.freeze([
+  Object.freeze({
+    slug: 'unleashed-readonly-probe-001c',
+    version: 2,
+    sha256: '226a3efe5569cf6f77c72971f08cee125cb35cf2e5822fd47af1f513d9e341d3',
+  }),
+  Object.freeze({
+    slug: 'unleashed-readonly-probe-001c2',
+    version: 3,
+    sha256: '0098d3a5fd979b57861fe2733a24fbf46a058911f27c5f7894f3c6d10891f9ef',
+  }),
+  Object.freeze({
+    slug: 'unleashed-readonly-probe-001c3',
+    version: 2,
+    sha256: 'cb42a8aee662d2e49f5c8367bda67e3397e7ab8cd6f1b66be2a5fb25663aa508',
+  }),
+]);
+
+const REPLACEMENT_SLUG = 'trigger-unleashed-readonly-sync';
+
+function parseRows(rawJson) {
+  const parsed = JSON.parse(rawJson);
+  const rows = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.functions)
+      ? parsed.functions
+      : null;
+  if (!rows) throw new Error('UNLEASHED_FUNCTION_LIST_SHAPE_INVALID');
+
+  return rows.map((row) => ({
+    slug: typeof row?.slug === 'string' ? row.slug : typeof row?.name === 'string' ? row.name : '',
+    status: typeof row?.status === 'string' ? row.status.toUpperCase() : '',
+    version: Number(row?.version),
+    verifyJwt: row?.verify_jwt,
+    sha256: typeof row?.ezbr_sha256 === 'string' ? row.ezbr_sha256.toLowerCase() : '',
+  }));
+}
+
+function requireActiveJwtFunction(row, errorCode) {
+  if (!row || row.status !== 'ACTIVE' || row.verifyJwt !== true) {
+    throw new Error(errorCode);
+  }
+}
+
+export function inspectUnleashedFunctionState(rawJson, phase) {
+  if (!['before', 'after'].includes(phase)) throw new Error('UNLEASHED_RETIREMENT_PHASE_INVALID');
+  const rows = parseRows(rawJson);
+  const replacement = rows.find((row) => row.slug === REPLACEMENT_SLUG);
+  requireActiveJwtFunction(replacement, 'UNLEASHED_REPLACEMENT_NOT_ACTIVE');
+  if (!Number.isInteger(replacement.version) || replacement.version < 7) {
+    throw new Error('UNLEASHED_REPLACEMENT_VERSION_TOO_OLD');
+  }
+
+  const targets = [];
+  const legacy = [];
+  for (const expected of LEGACY_UNLEASHED_PROBES) {
+    const deployed = rows.find((row) => row.slug === expected.slug);
+    if (!deployed) {
+      legacy.push({ slug: expected.slug, state: 'ABSENT' });
+      continue;
+    }
+    requireActiveJwtFunction(deployed, `LEGACY_UNLEASHED_PROBE_NOT_INERT_BASELINE:${expected.slug}`);
+    if (deployed.version !== expected.version || deployed.sha256 !== expected.sha256) {
+      throw new Error(`LEGACY_UNLEASHED_PROBE_DRIFT:${expected.slug}`);
+    }
+    targets.push(expected.slug);
+    legacy.push({
+      slug: expected.slug,
+      state: 'MATCHED_INERT_BASELINE',
+      version: deployed.version,
+      sha256: deployed.sha256,
+    });
+  }
+
+  if (phase === 'after' && targets.length) {
+    throw new Error(`LEGACY_UNLEASHED_PROBES_STILL_PRESENT:${targets.join(',')}`);
+  }
+
+  return {
+    phase,
+    replacement: {
+      slug: replacement.slug,
+      status: replacement.status,
+      version: replacement.version,
+      verifyJwt: replacement.verifyJwt,
+    },
+    legacy,
+    targets,
+  };
+}
+
+async function main() {
+  const [command, file] = process.argv.slice(2);
+  if (!['before', 'targets', 'after'].includes(command) || !file) {
+    throw new Error('Usage: unleashed-readonly-retirement-state.mjs <before|targets|after> <function-list.json>');
+  }
+  const state = inspectUnleashedFunctionState(await readFile(file, 'utf8'), command === 'after' ? 'after' : 'before');
+  if (command === 'targets') {
+    process.stdout.write(state.targets.length ? `${state.targets.join('\n')}\n` : '');
+    return;
+  }
+  process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
