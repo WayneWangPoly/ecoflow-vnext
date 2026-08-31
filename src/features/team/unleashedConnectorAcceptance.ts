@@ -171,8 +171,8 @@ function buildTarget(resource: UnleashedAcceptanceResource, row: SnapshotCatalog
       ? { productId: row.external_guid, warehouseCode: row.warehouse_code }
       : { productId: row.external_guid };
   }
-  if (row.external_guid) return { guid: row.external_guid };
   if (row.external_number) return { orderNumber: row.external_number };
+  if (row.external_guid) return { guid: row.external_guid };
   return null;
 }
 

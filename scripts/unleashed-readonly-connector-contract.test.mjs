@@ -233,8 +233,8 @@ test('A failed seed resource cannot be verified from an older catalog target', a
   const catalogRows = {
     products: { external_guid: 'product-guid', warehouse_code: null },
     stock_on_hand: { external_guid: 'stock-product-guid', warehouse_code: null },
-    sales_orders_open: { external_guid: 'sales-order-guid', warehouse_code: null },
-    purchase_orders_open: { external_guid: 'purchase-order-guid', warehouse_code: null },
+    sales_orders_open: { external_guid: 'sales-order-guid', external_number: 'SO-100', warehouse_code: null },
+    purchase_orders_open: { external_guid: 'purchase-order-guid', external_number: 'PO-100', warehouse_code: null },
   };
   const targetedRequests = [];
   const successfulResult = (resources) => ({
@@ -296,7 +296,7 @@ test('A failed seed resource cannot be verified from an older catalog target', a
             resource: selectedResource,
             external_guid: catalogRows[selectedResource].external_guid,
             external_code: null,
-            external_number: null,
+            external_number: catalogRows[selectedResource].external_number ?? null,
             warehouse_code: catalogRows[selectedResource].warehouse_code,
             last_seen_at: '2026-08-30T00:00:00.000Z',
           }],
@@ -316,6 +316,14 @@ test('A failed seed resource cannot be verified from an older catalog target', a
   assert.deepEqual(
     targetedRequests.find((request) => request.resource === 'stock_on_hand')?.target,
     { productId: 'stock-product-guid' },
+  );
+  assert.deepEqual(
+    targetedRequests.find((request) => request.resource === 'sales_orders_open')?.target,
+    { orderNumber: 'SO-100' },
+  );
+  assert.deepEqual(
+    targetedRequests.find((request) => request.resource === 'purchase_orders_open')?.target,
+    { orderNumber: 'PO-100' },
   );
 });
 
