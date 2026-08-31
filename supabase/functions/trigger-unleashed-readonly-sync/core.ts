@@ -119,8 +119,8 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
       const guid = normalizeTargetIdentifier('guid', value.guid);
       return {
         resource,
-        pathIdentifier: guid,
-        query: {},
+        pathIdentifier: null,
+        query: { productId: guid },
         exactMatches: [{ keys: ['Guid', 'guid', 'ProductGuid'], value: guid }],
         audit: { guid },
       };
@@ -180,6 +180,13 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
   }
 
   throw new Error(`TARGET_NOT_SUPPORTED_FOR_RESOURCE:${resource}`);
+}
+
+export function serializeUnleashedQuery(search: URLSearchParams) {
+  // Unleashed documents multi-value filters with literal commas and validates
+  // the HMAC against that query-string representation. URLSearchParams encodes
+  // commas as %2C, which produces a different signature for those requests.
+  return search.toString().replaceAll('%2C', ',');
 }
 
 function valuesMatch(left: string, right: string) {

@@ -9,6 +9,7 @@ import {
   isRecord,
   normalizeTarget,
   readString,
+  serializeUnleashedQuery,
   selectTargetItems,
   sourceIdentityForItem,
   type NormalizedTarget,
@@ -653,7 +654,7 @@ Deno.serve(async (req) => {
     while (pageNumber <= maxPages && pageNumber <= (knownNumberOfPages ?? maxPages)) {
       const query = buildQuery(definition, pageSize, modifiedSince, target);
       const queryParams = Object.fromEntries(query.entries());
-      const queryString = query.toString();
+      const queryString = serializeUnleashedQuery(query);
       const url = buildRequestUrl(apiBaseUrl, definition, pageNumber, queryString, target);
       const endpointPath = `/${definition.endpoint}${target?.pathIdentifier ? `/${target.pathIdentifier}` : paginatedRequest ? `/${pageNumber}` : ''}`;
       const signature = await hmacSha256Base64(queryString, unleashedApiKey);
