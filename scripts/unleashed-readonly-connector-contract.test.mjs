@@ -104,6 +104,9 @@ test('Targeted reads accept only deterministic product, stock, sales-order, and 
   assert.match(edgeFunction, /TARGET_WITH_MODIFIED_SINCE_UNSUPPORTED/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_NOT_FOUND/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_AMBIGUOUS/);
+  assert.match(edgeFunction, /query: \{ productId: guid \}/);
+  assert.match(edgeFunction, /serializeUnleashedQuery\(query\)/);
+  assert.match(edgeFunction, /replaceAll\('%2C', ','\)/);
 });
 
 test('Upstream GET retries are bounded and limited to transient failures', () => {
@@ -214,7 +217,8 @@ test('Production acceptance requires a bounded four-resource write and proves un
   assert.match(acceptanceClient, /seedStatus: seed\.status/);
   assert.match(acceptanceClient, /seed\.failedResources\.includes\(resource\)/);
   assert.match(acceptanceClient, /select\('resource,external_guid,external_code,external_number,warehouse_code,last_seen_at'\)/);
-  assert.match(acceptanceClient, /\{ productId: row\.external_guid, warehouseCode: row\.warehouse_code \}/);
+  assert.match(acceptanceClient, /\? \{ productId: row\.external_guid, warehouseCode: row\.warehouse_code \}/);
+  assert.match(acceptanceClient, /: \{ productId: row\.external_guid \}/);
   assert.doesNotMatch(acceptanceClient, /select\([^)]*payload(?!_sha256)/i);
   assert.doesNotMatch(acceptanceClient, /API_KEY|API_ID|token|secret/i);
 
@@ -228,11 +232,11 @@ test('Production acceptance requires a bounded four-resource write and proves un
 test('A failed seed resource cannot be verified from an older catalog target', async () => {
   const catalogRows = {
     products: { external_guid: 'product-guid', warehouse_code: null },
-    stock_on_hand: { external_guid: 'stock-product-guid', warehouse_code: 'MAIN' },
+    stock_on_hand: { external_guid: 'stock-product-guid', warehouse_code: null },
     sales_orders_open: { external_guid: 'sales-order-guid', warehouse_code: null },
     purchase_orders_open: { external_guid: 'purchase-order-guid', warehouse_code: null },
   };
-  const targetedResources = [];
+  const targetedRequests = [];
   const successfulResult = (resources) => ({
     ok: true,
     runId: `run-${resources[0]}`,
@@ -272,7 +276,7 @@ test('A failed seed resource cannot be verified from an older catalog target', a
             },
           };
         }
-        targetedResources.push(body.resources[0]);
+        targetedRequests.push({ resource: body.resources[0], target: body.target });
         return { error: null, data: successfulResult(body.resources) };
       },
     },
@@ -308,7 +312,11 @@ test('A failed seed resource cannot be verified from an older catalog target', a
   assert.equal(result.complete, false);
   assert.equal(result.verifiedCount, 3);
   assert.equal(result.checks.find((check) => check.resource === 'products')?.status, 'FAILED');
-  assert.equal(targetedResources.includes('products'), false);
+  assert.equal(targetedRequests.some((request) => request.resource === 'products'), false);
+  assert.deepEqual(
+    targetedRequests.find((request) => request.resource === 'stock_on_hand')?.target,
+    { productId: 'stock-product-guid' },
+  );
 });
 
 test('Unleashed probe is restricted to the existing Owner/Admin settings boundary', () => {

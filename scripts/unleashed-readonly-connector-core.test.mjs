@@ -5,6 +5,7 @@ import {
   classifyPayloadRows,
   fetchUnleashedWithRetry,
   normalizeTarget,
+  serializeUnleashedQuery,
   selectTargetItems,
   sourceIdentityForItem,
 } from '../supabase/functions/trigger-unleashed-readonly-sync/core.ts';
@@ -14,8 +15,8 @@ const productGuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 test('target normalization produces only approved exact request shapes', () => {
   assert.deepEqual(normalizeTarget(['products'], { guid: productGuid.toUpperCase() }), {
     resource: 'products',
-    pathIdentifier: productGuid,
-    query: {},
+    pathIdentifier: null,
+    query: { productId: productGuid },
     exactMatches: [{ keys: ['Guid', 'guid', 'ProductGuid'], value: productGuid }],
     audit: { guid: productGuid },
   });
@@ -29,6 +30,17 @@ test('target normalization produces only approved exact request shapes', () => {
   assert.throws(() => normalizeTarget(['products', 'stock_on_hand'], { guid: productGuid }), /TARGET_REQUIRES_ONE_RESOURCE/);
   assert.throws(() => normalizeTarget(['products'], { endpoint: 'Anything' }), /INVALID_TARGET_FIELDS/);
   assert.throws(() => normalizeTarget(['warehouses'], { guid: productGuid }), /TARGET_NOT_SUPPORTED_FOR_RESOURCE/);
+});
+
+test('Unleashed query serialization preserves documented comma-separated filters', () => {
+  const query = new URLSearchParams();
+  query.append('orderStatus', 'Parked,Placed,Backordered');
+  query.append('pageSize', '1');
+
+  assert.equal(
+    serializeUnleashedQuery(query),
+    'orderStatus=Parked,Placed,Backordered&pageSize=1',
+  );
 });
 
 test('target selection rejects missing and ambiguous API responses', () => {

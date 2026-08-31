@@ -21,7 +21,7 @@ type SnapshotCatalogRow = {
 type TargetSelector =
   | { guid: string }
   | { productCode: string }
-  | { productId: string; warehouseCode: string }
+  | { productId: string; warehouseCode?: string }
   | { orderNumber: string };
 
 type ConnectorResult = {
@@ -166,9 +166,10 @@ function buildTarget(resource: UnleashedAcceptanceResource, row: SnapshotCatalog
     return null;
   }
   if (resource === 'stock_on_hand') {
-    return row.external_guid && row.warehouse_code
+    if (!row.external_guid) return null;
+    return row.warehouse_code
       ? { productId: row.external_guid, warehouseCode: row.warehouse_code }
-      : null;
+      : { productId: row.external_guid };
   }
   if (row.external_guid) return { guid: row.external_guid };
   if (row.external_number) return { orderNumber: row.external_number };
