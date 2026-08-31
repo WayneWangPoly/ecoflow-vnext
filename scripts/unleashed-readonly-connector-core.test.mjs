@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assertUnleashedCredentialUrl,
   classifyPayloadRows,
   fetchUnleashedWithRetry,
   normalizeTarget,
@@ -11,6 +12,7 @@ import {
 } from '../supabase/functions/trigger-unleashed-readonly-sync/core.ts';
 
 const productGuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const unleashedPageUrl = 'https://api.unleashedsoftware.com/Products/1?pageSize=1';
 
 test('target normalization produces only approved exact request shapes', () => {
   assert.deepEqual(normalizeTarget(['products'], { guid: productGuid.toUpperCase() }), {
@@ -85,16 +87,46 @@ test('stock source identity includes warehouse identity', () => {
   assert.equal(main.guid, productGuid);
 });
 
+test('credential transport is pinned to the exact Unleashed API origin and approved API paths', () => {
+  assert.doesNotThrow(() => assertUnleashedCredentialUrl(new URL(unleashedPageUrl)));
+  assert.doesNotThrow(() => assertUnleashedCredentialUrl(
+    new URL(`https://api.unleashedsoftware.com/SalesOrders/${productGuid}`),
+  ));
+
+  assert.throws(
+    () => assertUnleashedCredentialUrl(new URL('http://api.unleashedsoftware.com/Products/1')),
+    /UNLEASHED_API_ORIGIN_NOT_ALLOWED/,
+  );
+  assert.throws(
+    () => assertUnleashedCredentialUrl(new URL('https://example.test/Products/1')),
+    /UNLEASHED_API_ORIGIN_NOT_ALLOWED/,
+  );
+  assert.throws(
+    () => assertUnleashedCredentialUrl(new URL('https://api.unleashedsoftware.com:8443/Products/1')),
+    /UNLEASHED_API_ORIGIN_NOT_ALLOWED/,
+  );
+  assert.throws(
+    () => assertUnleashedCredentialUrl(new URL('https://api.unleashedsoftware.com/v1/Products/1')),
+    /UNLEASHED_API_PATH_NOT_ALLOWED/,
+  );
+  assert.throws(
+    () => assertUnleashedCredentialUrl(new URL('https://api.unleashedsoftware.com/Products/not-a-page-or-guid')),
+    /UNLEASHED_API_PATH_NOT_ALLOWED/,
+  );
+});
+
 test('GET retry succeeds after transient statuses and honors the three-attempt bound', async () => {
   const statuses = [503, 429, 200];
   const methods = [];
+  const redirects = [];
   const delays = [];
   const result = await fetchUnleashedWithRetry(
-    new URL('https://api.example.test/Products/1?pageSize=1'),
+    new URL(unleashedPageUrl),
     { Accept: 'application/json' },
     {
       fetcher: async (_url, init) => {
         methods.push(init?.method);
+        redirects.push(init?.redirect);
         const status = statuses.shift();
         return new Response('{}', {
           status,
@@ -107,13 +139,39 @@ test('GET retry succeeds after transient statuses and honors the three-attempt b
   assert.equal(result.response.status, 200);
   assert.equal(result.attempts, 3);
   assert.deepEqual(methods, ['GET', 'GET', 'GET']);
+  assert.deepEqual(redirects, ['manual', 'manual', 'manual']);
   assert.deepEqual(delays, [250, 2_000]);
+});
+
+test('GET retry blocks redirects without retrying or following them', async () => {
+  let calls = 0;
+  await assert.rejects(
+    fetchUnleashedWithRetry(
+      new URL(unleashedPageUrl),
+      { Accept: 'application/json' },
+      {
+        fetcher: async (_url, init) => {
+          calls += 1;
+          assert.equal(init?.redirect, 'manual');
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://example.test/steal' },
+          });
+        },
+        sleep: async () => {
+          assert.fail('redirect failures must not be retried');
+        },
+      },
+    ),
+    /UNLEASHED_API_REDIRECT_BLOCKED/,
+  );
+  assert.equal(calls, 1);
 });
 
 test('GET retry does not retry non-transient responses and exhausts network failures', async () => {
   let nonTransientCalls = 0;
   const nonTransient = await fetchUnleashedWithRetry(
-    new URL('https://api.example.test/Products/1?pageSize=1'),
+    new URL(unleashedPageUrl),
     {},
     {
       fetcher: async () => {
@@ -130,7 +188,7 @@ test('GET retry does not retry non-transient responses and exhausts network fail
   const delays = [];
   await assert.rejects(
     fetchUnleashedWithRetry(
-      new URL('https://api.example.test/Products/1?pageSize=1'),
+      new URL(unleashedPageUrl),
       {},
       {
         fetcher: async () => {
