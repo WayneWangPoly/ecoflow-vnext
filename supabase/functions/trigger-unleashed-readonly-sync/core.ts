@@ -1,9 +1,34 @@
 const MAX_FETCH_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 250;
 const MAX_RETRY_DELAY_MS = 2_000;
+const UNLEASHED_API_ORIGIN = 'https://api.unleashedsoftware.com';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9 ._\-/#]{0,99}$/;
+const pageNumberPattern = /^[1-9]\d*$/;
+
+const UNLEASHED_ENDPOINTS = new Set([
+  'Products',
+  'Customers',
+  'CustomerDeliveryAddresses',
+  'Suppliers',
+  'Warehouses',
+  'StockOnHand',
+  'SalesOrders',
+  'PurchaseOrders',
+  'Invoices',
+  'CreditNotes',
+  'SalesShipments',
+  'SupplierReturns',
+  'StockAdjustments',
+  'WarehouseStockTransfers',
+  'StockCounts',
+  'SalesQuotes',
+  'Salespersons',
+  'ProductGroups',
+  'ProductBrands',
+  'SellPriceTiers',
+]);
 
 type TargetField = 'guid' | 'productCode' | 'productId' | 'warehouseCode' | 'orderNumber';
 
@@ -230,24 +255,53 @@ export function isRetryableStatus(status: number) {
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
+function isRedirectStatus(status: number) {
+  return status >= 300 && status <= 399;
+}
+
+export function assertUnleashedCredentialUrl(url: URL) {
+  if (url.origin !== UNLEASHED_API_ORIGIN || url.username || url.password) {
+    throw new Error('UNLEASHED_API_ORIGIN_NOT_ALLOWED');
+  }
+  if (url.hash) throw new Error('UNLEASHED_API_FRAGMENT_NOT_ALLOWED');
+
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  if (!pathSegments.length || pathSegments.length > 2 || !UNLEASHED_ENDPOINTS.has(pathSegments[0])) {
+    throw new Error('UNLEASHED_API_PATH_NOT_ALLOWED');
+  }
+  if (
+    pathSegments.length === 2
+    && !pageNumberPattern.test(pathSegments[1])
+    && !uuidPattern.test(pathSegments[1])
+  ) {
+    throw new Error('UNLEASHED_API_PATH_NOT_ALLOWED');
+  }
+}
+
 type RetryDependencies = {
   fetcher?: typeof fetch;
   sleep?: (delayMs: number) => Promise<void>;
 };
 
 export async function fetchUnleashedWithRetry(url: URL, headers: HeadersInit, dependencies: RetryDependencies = {}) {
+  assertUnleashedCredentialUrl(url);
   const fetcher = dependencies.fetcher ?? fetch;
   const sleep = dependencies.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetcher(url.toString(), { method: 'GET', headers });
+      const response = await fetcher(url.toString(), { method: 'GET', headers, redirect: 'manual' });
+      if (isRedirectStatus(response.status)) {
+        await response.body?.cancel();
+        throw new Error('UNLEASHED_API_REDIRECT_BLOCKED');
+      }
       if (!isRetryableStatus(response.status) || attempt === MAX_FETCH_ATTEMPTS) {
         return { response, attempts: attempt };
       }
       await response.body?.cancel();
       await sleep(retryDelayMs(response, attempt));
     } catch (error) {
+      if (error instanceof Error && error.message === 'UNLEASHED_API_REDIRECT_BLOCKED') throw error;
       lastError = error;
       if (attempt === MAX_FETCH_ATTEMPTS) break;
       await sleep(retryDelayMs(null, attempt));
