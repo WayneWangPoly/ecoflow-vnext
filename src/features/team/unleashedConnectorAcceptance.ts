@@ -267,9 +267,21 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
   const targets = await loadAcceptanceTargets(supabase);
   const checks: UnleashedAcceptanceCheck[] = [];
   for (const resource of UNLEASHED_ACCEPTANCE_RESOURCES) {
+    if (seed.failedResources.includes(resource)) {
+      checks.push({
+        resource,
+        status: 'FAILED',
+        firstRunId: null,
+        replayRunId: null,
+        firstRecordsStaged: 0,
+        replayRecordsStaged: 0,
+        replayRecordsUnchanged: 0,
+        error: `Initial source read failed for ${resource}.`,
+      });
+      continue;
+    }
     const target = targets.get(resource);
     if (!target) {
-      const sourceReadFailed = seed.failedResources.includes(resource);
       checks.push({
         resource,
         status: 'MISSING',
@@ -278,9 +290,7 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
         firstRecordsStaged: 0,
         replayRecordsStaged: 0,
         replayRecordsUnchanged: 0,
-        error: sourceReadFailed
-          ? `Initial source read failed for ${resource}.`
-          : 'No exact source identifier is available for this resource.',
+        error: 'No exact source identifier is available for this resource.',
       });
       continue;
     }
@@ -298,7 +308,9 @@ export async function runUnleashedConnectorAcceptance(supabase: SupabaseClient):
     seedRecordsFailed: seed.recordsFailed,
     seedErrorMessage: seed.errorMessage,
     verifiedCount,
-    complete: verifiedCount === UNLEASHED_ACCEPTANCE_RESOURCES.length,
+    complete: seed.status === 'SUCCEEDED'
+      && seed.failedResources.length === 0
+      && verifiedCount === UNLEASHED_ACCEPTANCE_RESOURCES.length,
     checks,
   };
 }
