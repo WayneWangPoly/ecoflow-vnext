@@ -11,8 +11,10 @@ on:
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'scripts/unleashed-readonly-connector-contract.test.mjs'
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
+      - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'scripts/unleashed-readonly-retention-db-contract-test.sql'
       - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
       - 'src/features/settings/teamAccessSettings.css'
       - 'src/features/team/unleashedConnectorAcceptance.ts'
@@ -20,6 +22,7 @@ on:
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
       - 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql'
+      - 'supabase/migrations/20260831160000_unleashed_raw_snapshot_retention.sql'
   push:
     branches:
       - 'agent/platform/unleashed-migration-002-*'
@@ -30,8 +33,10 @@ on:
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'scripts/unleashed-readonly-connector-contract.test.mjs'
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
+      - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
+      - 'scripts/unleashed-readonly-retention-db-contract-test.sql'
       - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
       - 'src/features/settings/teamAccessSettings.css'
       - 'src/features/team/unleashedConnectorAcceptance.ts'
@@ -39,6 +44,7 @@ on:
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
       - 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql'
+      - 'supabase/migrations/20260831160000_unleashed_raw_snapshot_retention.sql'
 
 permissions:
   contents: read
@@ -82,7 +88,7 @@ jobs:
       - name: Check Edge Function syntax
         run: node scripts/check-unleashed-edge-function-syntax.mjs
       - name: Run connector contract tests
-        run: node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs
+        run: node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs scripts/unleashed-readonly-killswitch-retention.test.mjs
       - name: Prepare Unleashed DB contract fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql
       - name: Run Unleashed DB contract
@@ -91,6 +97,9 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260831160000_unleashed_raw_snapshot_retention.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260831160000_unleashed_raw_snapshot_retention.sql
           psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-contract-test.sql
+          psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-retention-db-contract-test.sql
       - name: Run connector static audit
         run: node scripts/audit-unleashed-readonly-connector.mjs
