@@ -15,6 +15,11 @@ on:
         description: Type RETIRE INERT UNLEASHED PROBES for the retirement action
         required: false
         type: string
+      deployment_freeze:
+        description: Confirm all Supabase Edge Function deployments are frozen for the retirement window
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,28 +40,17 @@ jobs:
     environment: production
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      RETIREMENT_OPERATION: ${{ inputs.operation }}
       RETIREMENT_CONFIRMATION: ${{ inputs.confirmation }}
+      RETIREMENT_DEPLOYMENT_FREEZE: ${{ inputs.deployment_freeze }}
     steps:
       - name: Checkout exact workflow revision
         uses: actions/checkout@v4
 
-      - name: Require production main and deployment credentials
+      - name: Require tracked production execution context
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/main' || {
-            echo 'Retirement workflow may run only from main.'
-            exit 1
-          }
-          test -n "$SUPABASE_ACCESS_TOKEN" || {
-            echo 'Missing SUPABASE_ACCESS_TOKEN.'
-            exit 1
-          }
-          test "$(tr -d '[:space:]' < supabase/.temp/project-ref)" = "$SUPABASE_PROJECT_REF" || {
-            echo 'Supabase project reference mismatch.'
-            exit 1
-          }
+          node scripts/unleashed-readonly-retirement-state.mjs guard | tee unleashed-retirement-context.txt
 
       - name: Install pinned Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
@@ -68,7 +62,7 @@ jobs:
           supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > unleashed-functions-before.json
           node scripts/unleashed-readonly-retirement-state.mjs before unleashed-functions-before.json | tee unleashed-retirement-preflight.txt
 
-      - name: Require exact destructive confirmation
+      - name: Require exact destructive confirmation and deployment freeze
         id: confirmation
         if: ${{ inputs.operation == 'retire_legacy_probes' }}
         shell: bash
@@ -76,6 +70,10 @@ jobs:
           set -euo pipefail
           test "$RETIREMENT_CONFIRMATION" = 'RETIRE INERT UNLEASHED PROBES' || {
             echo 'Exact retirement confirmation was not supplied.'
+            exit 1
+          }
+          test "$RETIREMENT_DEPLOYMENT_FREEZE" = 'true' || {
+            echo 'Supabase Edge Function deployments must be frozen for retirement.'
             exit 1
           }
 
@@ -92,6 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           : > unleashed-retirement-delete.log
+          : > unleashed-retirement-live-validation.log
           while IFS= read -r function_name; do
             test -n "$function_name" || continue
             case "$function_name" in
@@ -102,8 +101,14 @@ jobs:
                 exit 1
                 ;;
             esac
+            predelete_file="unleashed-functions-predelete-${function_name}.json"
+            postdelete_file="unleashed-functions-postdelete-${function_name}.json"
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > "$predelete_file"
+            node scripts/unleashed-readonly-retirement-state.mjs target "$predelete_file" "$function_name" | tee -a unleashed-retirement-live-validation.log
             echo "Retiring governed inert function: $function_name" | tee -a unleashed-retirement-delete.log
             supabase functions delete "$function_name" --project-ref "$SUPABASE_PROJECT_REF" --yes 2>&1 | tee -a unleashed-retirement-delete.log
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > "$postdelete_file"
+            node scripts/unleashed-readonly-retirement-state.mjs absent "$postdelete_file" "$function_name" | tee -a unleashed-retirement-live-validation.log
           done < unleashed-retirement-targets.txt
 
       - name: Capture and validate post-retirement state
@@ -120,11 +125,15 @@ jobs:
         with:
           name: unleashed-legacy-probe-retirement-${{ github.run_id }}
           path: |
+            unleashed-retirement-context.txt
             unleashed-functions-before.json
             unleashed-functions-after.json
+            unleashed-functions-predelete-*.json
+            unleashed-functions-postdelete-*.json
             unleashed-retirement-preflight.txt
             unleashed-retirement-targets.txt
             unleashed-retirement-delete.log
+            unleashed-retirement-live-validation.log
             unleashed-retirement-result.txt
           if-no-files-found: warn
           retention-days: 90

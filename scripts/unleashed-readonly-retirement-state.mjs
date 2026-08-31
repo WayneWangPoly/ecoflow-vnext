@@ -2,6 +2,8 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+export const EXPECTED_SUPABASE_PROJECT_REF = 'kauqwlzuyxcudoyognwf';
+
 export const LEGACY_UNLEASHED_PROBES = Object.freeze([
   Object.freeze({
     slug: 'unleashed-readonly-probe-001c',
@@ -21,6 +23,28 @@ export const LEGACY_UNLEASHED_PROBES = Object.freeze([
 ]);
 
 const REPLACEMENT_SLUG = 'trigger-unleashed-readonly-sync';
+
+export function validateRetirementExecutionContext({
+  githubRef,
+  projectRef,
+  accessTokenPresent,
+}) {
+  if (githubRef !== 'refs/heads/main') {
+    throw new Error('UNLEASHED_RETIREMENT_REF_NOT_MAIN');
+  }
+  if (projectRef !== EXPECTED_SUPABASE_PROJECT_REF) {
+    throw new Error('UNLEASHED_RETIREMENT_PROJECT_REF_MISMATCH');
+  }
+  if (accessTokenPresent !== true) {
+    throw new Error('MISSING_SUPABASE_ACCESS_TOKEN');
+  }
+
+  return {
+    githubRef,
+    projectRef,
+    accessTokenPresent: true,
+  };
+}
 
 function parseRows(rawJson) {
   const parsed = JSON.parse(rawJson);
@@ -93,12 +117,62 @@ export function inspectUnleashedFunctionState(rawJson, phase) {
   };
 }
 
-async function main() {
-  const [command, file] = process.argv.slice(2);
-  if (!['before', 'targets', 'after'].includes(command) || !file) {
-    throw new Error('Usage: unleashed-readonly-retirement-state.mjs <before|targets|after> <function-list.json>');
+export function inspectUnleashedLegacyTarget(rawJson, targetSlug, expectation) {
+  if (!['present', 'absent'].includes(expectation)) {
+    throw new Error('LEGACY_UNLEASHED_PROBE_EXPECTATION_INVALID');
   }
-  const state = inspectUnleashedFunctionState(await readFile(file, 'utf8'), command === 'after' ? 'after' : 'before');
+  if (!LEGACY_UNLEASHED_PROBES.some((probe) => probe.slug === targetSlug)) {
+    throw new Error(`LEGACY_UNLEASHED_PROBE_TARGET_NOT_ALLOWLISTED:${targetSlug}`);
+  }
+
+  const state = inspectUnleashedFunctionState(rawJson, 'before');
+  const target = state.legacy.find((probe) => probe.slug === targetSlug);
+  if (!target) {
+    throw new Error(`LEGACY_UNLEASHED_PROBE_TARGET_NOT_FOUND:${targetSlug}`);
+  }
+  if (expectation === 'present' && target.state !== 'MATCHED_INERT_BASELINE') {
+    throw new Error(`LEGACY_UNLEASHED_PROBE_ABSENT_BEFORE_DELETE:${targetSlug}`);
+  }
+  if (expectation === 'absent' && target.state !== 'ABSENT') {
+    throw new Error(`LEGACY_UNLEASHED_PROBE_STILL_PRESENT_AFTER_DELETE:${targetSlug}`);
+  }
+
+  return {
+    slug: target.slug,
+    state: target.state,
+    ...(target.version === undefined ? {} : { version: target.version }),
+    ...(target.sha256 === undefined ? {} : { sha256: target.sha256 }),
+    replacement: state.replacement,
+  };
+}
+
+async function main() {
+  const [command, file, targetSlug] = process.argv.slice(2);
+  if (command === 'guard') {
+    const context = validateRetirementExecutionContext({
+      githubRef: process.env.GITHUB_REF,
+      projectRef: process.env.SUPABASE_PROJECT_REF,
+      accessTokenPresent: Boolean(process.env.SUPABASE_ACCESS_TOKEN),
+    });
+    process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
+    return;
+  }
+  if (!['before', 'targets', 'target', 'absent', 'after'].includes(command) || !file) {
+    throw new Error('Usage: unleashed-readonly-retirement-state.mjs <guard|before|targets|target|absent|after> [function-list.json] [target-slug]');
+  }
+  const rawJson = await readFile(file, 'utf8');
+  if (['target', 'absent'].includes(command)) {
+    if (!targetSlug) throw new Error('LEGACY_UNLEASHED_PROBE_TARGET_REQUIRED');
+    const target = inspectUnleashedLegacyTarget(
+      rawJson,
+      targetSlug,
+      command === 'target' ? 'present' : 'absent',
+    );
+    process.stdout.write(`${JSON.stringify(target, null, 2)}\n`);
+    return;
+  }
+
+  const state = inspectUnleashedFunctionState(rawJson, command === 'after' ? 'after' : 'before');
   if (command === 'targets') {
     process.stdout.write(state.targets.length ? `${state.targets.join('\n')}\n` : '');
     return;

@@ -53,8 +53,9 @@ data without exposing credentials or changing Unleashed records.
     invocation. Purge execution remains an explicit production operator action.
   - Add a manual production retirement workflow for the three recorded inert
     `unleashed-readonly-probe-001c*` functions. It may delete only the exact
-    recorded versions/content digests, requires an exact typed confirmation,
-    preserves before/after evidence, and must keep the replacement connector
+    recorded versions/content digests, requires an exact typed confirmation
+    plus an exclusive Supabase function-deployment window, preserves initial,
+    per-target and final evidence, and must keep the replacement connector
     active.
 
 ## Out of scope
@@ -103,9 +104,20 @@ data without exposing credentials or changing Unleashed records.
   repository files.
 - Legacy-probe retirement boundary: only the three already evidenced inert
   `001c*` deployments may be selected. Their deployed versions and SHA-256
-  digests must match the recorded inert baseline before deletion; drift fails
-  closed. The current `trigger-unleashed-readonly-sync` replacement must remain
-  ACTIVE with JWT verification before and after the operation.
+  digests must match the recorded inert baseline in the initial snapshot and a
+  fresh list immediately before each deletion; observable drift fails closed.
+  The [Supabase delete API](https://supabase.com/docs/reference/api/v1-delete-a-function)
+  accepts a function slug but has no atomic version/digest precondition, so
+  destructive execution also requires an explicit exclusive Edge Function
+  deployment window. If that freeze cannot be
+  guaranteed, only preflight may run. Each deletion is followed immediately by
+  another list/absence check. The current `trigger-unleashed-readonly-sync`
+  replacement must remain ACTIVE with JWT verification throughout and after the
+  operation.
+- Retirement execution context boundary: a tracked helper pins `main`, the
+  exact production project ref and access-token presence. The workflow must not
+  depend on ignored `supabase/.temp` link state that is absent after a fresh
+  checkout.
 - Authoritative server checks: role lookup is performed server-side through
   `app_user_profiles`; Unleashed credentials are read only from Edge Function
   secrets.
@@ -160,8 +172,9 @@ data without exposing credentials or changing Unleashed records.
 - [ ] One failed resource does not hide the result of later resources, and a
   partial run is never presented as complete acceptance.
 - [ ] Legacy probe retirement is `workflow_dispatch` only, runs from `main` in
-  the production environment, requires exact operator confirmation, rejects
-  digest/version drift, and proves the replacement remains active.
+  the production environment, requires exact operator and deployment-freeze
+  confirmation, rejects digest/version drift at initial and live pre-delete
+  checks, and proves the replacement remains active.
 
 ## Test plan
 
@@ -178,9 +191,9 @@ data without exposing credentials or changing Unleashed records.
 | Raw retention | Inspect purge-eligible rows, then explicitly invoke the bounded service-role purge | Only raw rows older than 14 days are removed; structured identity/hash and run evidence remain. |
 | End-to-end/UI | Owner/Admin opens production acceptance without acknowledging the write boundary | Staging action remains disabled; no connector request is sent. |
 | Partial source coverage | One allowlisted endpoint returns 4xx while a later resource is readable | Failed resource is recorded, later resources are attempted, and UI reports partial acceptance. |
-| Static | `node --test scripts/unleashed-readonly-killswitch-retention.test.mjs` | Retirement workflow has no automatic trigger or secret mutation, exact targets are digest-locked, and post-retirement state is idempotent. |
+| Static | `node --test scripts/unleashed-readonly-killswitch-retention.test.mjs` | Retirement workflow has no automatic trigger, ignored-link-state dependency or secret mutation; exact targets are revalidated before/after each deletion and post-retirement state is idempotent. |
 | Production retirement preflight | Dispatch `unleashed-readonly-production-retirement.yml` with `preflight` from `main` | Replacement is ACTIVE; matched legacy versions/digests are recorded; nothing is deleted. |
-| Production retirement | After separate operator approval, dispatch with `retire_legacy_probes` and the exact confirmation phrase | Only matched `001c*` functions are deleted; before/after artifacts prove all three absent and replacement still ACTIVE. |
+| Production retirement | After separate operator approval and a declared Supabase Edge Function deployment freeze, dispatch with `retire_legacy_probes`, the exact confirmation phrase and freeze acknowledgement | Each matched `001c*` function is freshly revalidated, deleted and checked absent in sequence; initial/live/final artifacts prove all three absent and replacement still ACTIVE. |
 
 ## Production evidence checkpoint — 2026-08-31
 
@@ -209,8 +222,9 @@ data without exposing credentials or changing Unleashed records.
 
 1. Run the non-destructive legacy-probe retirement preflight after its workflow
    is merged.
-2. Obtain a separate destructive-production confirmation, then retire the three
-   exact inert probe deployments and verify the post-retirement function list.
+2. Obtain a separate destructive-production confirmation and exclusive
+   Supabase Edge Function deployment window, then retire the three exact inert
+   probe deployments and verify every live pre/post list plus the final state.
 3. Before a real kill-switch drill, have a fresh Unleashed credential available
    through a secure provider/operator channel. Remove exactly one required
    secret, prove the connector records `MISSING_UNLEASHED_API_SECRETS` before
@@ -266,7 +280,10 @@ replacement connector from `main`.
   service-role-only, and bounded, while structured identity/hash and run history
   are retained.
 - Legacy probe retirement is a manual, digest-locked production operation. It
-  does not share authority with connector secret management.
+  uses a tracked execution guard and requires a declared exclusive function
+  deployment window because the provider delete endpoint has no conditional
+  digest precondition. It does not share authority with connector secret
+  management.
 - Paid Sales/BI parity uses source facts from invoices, credit notes, sales
   orders, sales shipments, customers, products, groups, warehouses, and
   salespersons instead of scraping dashboard widgets.
@@ -291,6 +308,12 @@ replacement connector from `main`.
 - Removing a Supabase secret without a fresh provider-sourced restore value can
   permanently disable the connector; runtime kill-switch evidence must therefore
   remain blocked until secure restoration is ready.
+- Supabase function deletion is slug-addressed rather than atomic
+  compare-and-delete. Initial and immediate per-target revalidation narrows the
+  race, while the required exclusive deployment window is the operational
+  control for concurrent Dashboard/API redeployment. The workflow cannot lock
+  external actors itself; if the Chief Engineer cannot hold that window,
+  destructive retirement is blocked.
 
 ### Deferred
 

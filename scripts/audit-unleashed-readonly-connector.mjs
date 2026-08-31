@@ -8,6 +8,7 @@ const files = {
   edgeFunctionCore: 'supabase/functions/trigger-unleashed-readonly-sync/core.ts',
   workflow: '.github/workflows/unleashed-readonly-connector-check.yml',
   retirementWorkflow: '.github/workflows/unleashed-readonly-production-retirement.yml',
+  retirementState: 'scripts/unleashed-readonly-retirement-state.mjs',
   deploy: '.github/workflows/deploy-supabase-migrations.yml',
   workPackage: 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md',
 };
@@ -81,13 +82,20 @@ requireText('workflow', 'node scripts/audit-unleashed-readonly-connector.mjs', '
 requireText('workflow', 'psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql', 'CI must prepare the SQL DB contract fixture');
 requireText('workflow', 'psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-contract-test.sql', 'CI must run the SQL DB contract test');
 requireText('retirementWorkflow', 'workflow_dispatch:', 'legacy probe retirement must be manual only');
-requireText('retirementWorkflow', "test \"$GITHUB_REF\" = 'refs/heads/main'", 'legacy probe retirement must be pinned to main');
+requireText('retirementWorkflow', 'unleashed-readonly-retirement-state.mjs guard', 'legacy probe retirement must use the tracked execution-context guard');
 requireText('retirementWorkflow', 'RETIRE INERT UNLEASHED PROBES', 'legacy probe retirement must require exact operator confirmation');
+requireText('retirementWorkflow', 'RETIREMENT_DEPLOYMENT_FREEZE', 'legacy probe retirement must require an exclusive function-deployment window');
 requireText('retirementWorkflow', 'node scripts/unleashed-readonly-retirement-state.mjs', 'legacy probe retirement must validate deployed identity and drift');
+requireText('retirementWorkflow', 'unleashed-readonly-retirement-state.mjs target "$predelete_file" "$function_name"', 'each legacy deletion must revalidate exact live state immediately before deletion');
+requireText('retirementWorkflow', 'unleashed-readonly-retirement-state.mjs absent "$postdelete_file" "$function_name"', 'each legacy deletion must verify absence immediately after deletion');
 requireText('retirementWorkflow', 'supabase functions delete "$function_name"', 'legacy probe retirement must delete only validated exact targets');
 requireText('retirementWorkflow', 'supabase functions list', 'legacy probe retirement must capture before and after function state');
 forbid('retirementWorkflow', /^\s{2}(?:push|pull_request|schedule):/m, 'legacy probe retirement must not have an automatic trigger');
 forbid('retirementWorkflow', /supabase secrets (?:set|unset)/, 'legacy probe retirement must not mutate connector credentials');
+forbid('retirementWorkflow', /supabase\/\.temp\/project-ref/, 'legacy probe retirement must not depend on ignored local link state');
+requireText('retirementState', "EXPECTED_SUPABASE_PROJECT_REF = 'kauqwlzuyxcudoyognwf'", 'tracked guard must pin the exact production project');
+requireText('retirementState', 'validateRetirementExecutionContext', 'tracked guard must validate ref, project and token presence');
+requireText('retirementState', 'inspectUnleashedLegacyTarget', 'live target validation must be executable and shared with tests');
 requireText('deploy', 'supabase functions deploy trigger-unleashed-readonly-sync', 'production Supabase deploy must include the new function');
 requireText('workPackage', 'No Unleashed write', 'work package must keep Unleashed write operations out of scope');
 requireText('workPackage', 'UNLEASHED_API_ID', 'work package must document secret provisioning');
