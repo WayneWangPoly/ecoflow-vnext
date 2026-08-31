@@ -444,6 +444,15 @@
   border-bottom: 1px solid #d8e1dc;
 }
 
+.unleashed-acceptance-warning {
+  padding: 9px 0;
+  border-bottom: 1px solid #ead8a5;
+  color: #72530d;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
 .unleashed-acceptance-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

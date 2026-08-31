@@ -57,6 +57,9 @@ requireText('edgeFunction', 'TARGET_NOT_SUPPORTED_FOR_RESOURCE', 'targeted reads
 requireText('edgeFunction', 'UNLEASHED_TARGET_AMBIGUOUS', 'targeted reads must reject ambiguous results');
 requireText('edgeFunction', 'const semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed]', 'unchanged payloads must not be upserted');
 requireText('edgeFunction', 'records_unchanged: recordsUnchanged', 'unchanged replay evidence must be durable');
+requireText('edgeFunction', 'failedResources.push(resource)', 'failed resources must remain explicit in the run result');
+requireText('edgeFunction', "finalStatus = recordsFailed === 0 ? 'SUCCEEDED' : pageResults.length ? 'PARTIAL' : 'FAILED'", 'final status must reflect all attempted resources');
+forbid('edgeFunction', /if \(resourceFailed\) break/, 'one failed resource must not hide later resource evidence');
 requireText('edgeFunction', 'identityRowsNeedingWrite', 'identity linkage must be independently repairable after a partial staging failure');
 requireText('edgeFunction', 'sourceIdentityForItem', 'stock snapshots must include warehouse identity in their source key');
 requireText('edgeFunction', 'SALES_INTELLIGENCE_RESOURCES', 'paid Sales BI seed resources must be explicit');

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runUnleashedConnectorAcceptance } from '../src/features/team/unleashedConnectorAcceptance.ts';
 
 const migrationPath = 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql';
 const warehouseCatalogMigrationPath = 'supabase/migrations/20260830123000_unleashed_snapshot_catalog_warehouse_code.sql';
@@ -114,6 +115,15 @@ test('Upstream GET retries are bounded and limited to transient failures', () =>
   assert.match(edgeFunction, /fetch_attempts: fetchAttempts/);
 });
 
+test('A failed resource is recorded without hiding later resource evidence', () => {
+  assert.match(edgeFunction, /const failedResources: ResourceName\[\] = \[\]/);
+  assert.match(edgeFunction, /if \(resourceFailed\) \{\s*failedResources\.push\(resource\);\s*continue;\s*\}/);
+  assert.doesNotMatch(edgeFunction, /if \(resourceFailed\) break/);
+  assert.match(edgeFunction, /finalStatus = recordsFailed === 0 \? 'SUCCEEDED' : pageResults\.length \? 'PARTIAL' : 'FAILED'/);
+  assert.match(edgeFunction, /failed_resources: failedResources/);
+  assert.match(edgeFunction, /failedResources,/);
+});
+
 test('Snapshot replay writes only inserted or payload-changed records', () => {
   assert.match(edgeFunction, /select\('external_key,payload_sha256'\)/);
   assert.match(edgeFunction, /existingHash === row\.payload_sha256\) unchanged\.push\(row\)/);
@@ -199,6 +209,10 @@ test('Production acceptance requires a bounded four-resource write and proves un
   assert.match(acceptanceClient, /replay\.recordsStaged !== 0/);
   assert.match(acceptanceClient, /replay\.recordsChanged !== 0/);
   assert.match(acceptanceClient, /replay\.recordsUnchanged !== 1/);
+  assert.match(acceptanceClient, /allowPartial = false/);
+  assert.match(acceptanceClient, /UNLEASHED_ACCEPTANCE_RESOURCES\.length, true/);
+  assert.match(acceptanceClient, /seedStatus: seed\.status/);
+  assert.match(acceptanceClient, /seed\.failedResources\.includes\(resource\)/);
   assert.match(acceptanceClient, /select\('resource,external_guid,external_code,external_number,warehouse_code,last_seen_at'\)/);
   assert.match(acceptanceClient, /\{ productId: row\.external_guid, warehouseCode: row\.warehouse_code \}/);
   assert.doesNotMatch(acceptanceClient, /select\([^)]*payload(?!_sha256)/i);
@@ -209,6 +223,92 @@ test('Production acceptance requires a bounded four-resource write and proves un
   assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running\}/);
   assert.match(probePanel, /setAcceptanceAcknowledged\(false\)/);
   assert.match(probePanel, /Store sample and verify replay/);
+});
+
+test('A failed seed resource cannot be verified from an older catalog target', async () => {
+  const catalogRows = {
+    products: { external_guid: 'product-guid', warehouse_code: null },
+    stock_on_hand: { external_guid: 'stock-product-guid', warehouse_code: 'MAIN' },
+    sales_orders_open: { external_guid: 'sales-order-guid', warehouse_code: null },
+    purchase_orders_open: { external_guid: 'purchase-order-guid', warehouse_code: null },
+  };
+  const targetedResources = [];
+  const successfulResult = (resources) => ({
+    ok: true,
+    runId: `run-${resources[0]}`,
+    requestedAt: '2026-08-31T00:00:00.000Z',
+    status: 'SUCCEEDED',
+    dryRun: false,
+    resources,
+    pageSize: 1,
+    maxPages: 1,
+    recordsSeen: 1,
+    recordsStaged: 0,
+    recordsInserted: 0,
+    recordsChanged: 0,
+    recordsUnchanged: 1,
+    recordsFailed: 0,
+    failedResources: [],
+    pages: [],
+    errorCode: null,
+    errorMessage: null,
+  });
+  const fakeSupabase = {
+    functions: {
+      invoke: async (_name, { body }) => {
+        if (body.resources.length === 4) {
+          return {
+            error: null,
+            data: {
+              ...successfulResult(body.resources),
+              runId: 'seed-run',
+              status: 'PARTIAL',
+              recordsSeen: 3,
+              recordsUnchanged: 3,
+              recordsFailed: 1,
+              failedResources: ['products'],
+              errorCode: 'UNLEASHED_API_REQUEST_FAILED',
+              errorMessage: 'products page 1 returned HTTP 403',
+            },
+          };
+        }
+        targetedResources.push(body.resources[0]);
+        return { error: null, data: successfulResult(body.resources) };
+      },
+    },
+    from: (table) => {
+      assert.equal(table, 'v_ecoflow_unleashed_snapshot_catalog');
+      let selectedResource = null;
+      const query = {
+        select: () => query,
+        eq: (_column, value) => {
+          selectedResource = value;
+          return query;
+        },
+        order: () => query,
+        limit: async () => ({
+          error: null,
+          data: [{
+            resource: selectedResource,
+            external_guid: catalogRows[selectedResource].external_guid,
+            external_code: null,
+            external_number: null,
+            warehouse_code: catalogRows[selectedResource].warehouse_code,
+            last_seen_at: '2026-08-30T00:00:00.000Z',
+          }],
+        }),
+      };
+      return query;
+    },
+  };
+
+  const result = await runUnleashedConnectorAcceptance(fakeSupabase);
+
+  assert.equal(result.seedStatus, 'PARTIAL');
+  assert.equal(result.complete, false);
+  assert.equal(result.verifiedCount, 3);
+  assert.equal(result.checks.find((check) => check.resource === 'products')?.status, 'FAILED');
+  assert.equal(targetedResources.includes('products'), false);
 });
 
 test('Unleashed probe is restricted to the existing Owner/Admin settings boundary', () => {

@@ -92,6 +92,9 @@ data without exposing credentials or changing Unleashed records.
   an Owner/Admin acknowledges the four-resource write boundary.
 - Audit and error behaviour: each run has durable rows, per-resource batches,
   final status, error code/message, and an `app_security_audit_events` entry.
+  A denied or failed resource is recorded and does not prevent later
+  allowlisted resources from producing evidence; the overall run remains
+  `PARTIAL` and the failed resource cannot be marked verified.
 
 ## Acceptance criteria
 
@@ -112,6 +115,8 @@ data without exposing credentials or changing Unleashed records.
 - [ ] Transient upstream GET failures retry no more than three times.
 - [ ] Replaying an unchanged payload produces zero staged/changed semantic
   writes and records the observation as unchanged.
+- [ ] One failed resource does not hide the result of later resources, and a
+  partial run is never presented as complete acceptance.
 
 ## Test plan
 
@@ -124,6 +129,7 @@ data without exposing credentials or changing Unleashed records.
 | End-to-end/API | Owner/Admin targets a known product, stock row, open sales order, and open purchase order | Each exact selector returns one matching record without an Unleashed write. |
 | Replay | Repeat the same bounded non-dry target request | Second run reports zero staged/changed rows and one unchanged observation. |
 | End-to-end/UI | Owner/Admin opens production acceptance without acknowledging the write boundary | Staging action remains disabled; no connector request is sent. |
+| Partial source coverage | One allowlisted endpoint returns 4xx while a later resource is readable | Failed resource is recorded, later resources are attempted, and UI reports partial acceptance. |
 
 ## Required evidence
 
