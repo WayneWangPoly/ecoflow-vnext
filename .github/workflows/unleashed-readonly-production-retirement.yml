@@ -1,0 +1,139 @@
+name: Governed Unleashed legacy probe retirement
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Production action
+        required: true
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - retire_legacy_probes
+      confirmation:
+        description: Type RETIRE INERT UNLEASHED PROBES for the retirement action
+        required: false
+        type: string
+      deployment_freeze:
+        description: Confirm all Supabase Edge Function deployments are frozen for the retirement window
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecoflow-unleashed-legacy-probe-retirement-production
+  cancel-in-progress: false
+
+env:
+  SUPABASE_CLI_VERSION: 2.107.0
+  SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+  UNLEASHED_REPLACEMENT_FUNCTION: trigger-unleashed-readonly-sync
+
+jobs:
+  governed-retirement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      RETIREMENT_CONFIRMATION: ${{ inputs.confirmation }}
+      RETIREMENT_DEPLOYMENT_FREEZE: ${{ inputs.deployment_freeze }}
+    steps:
+      - name: Checkout exact workflow revision
+        uses: actions/checkout@v4
+
+      - name: Require tracked production execution context
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/unleashed-readonly-retirement-state.mjs guard | tee unleashed-retirement-context.txt
+
+      - name: Install pinned Supabase CLI
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+
+      - name: Capture and validate pre-retirement state
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > unleashed-functions-before.json
+          node scripts/unleashed-readonly-retirement-state.mjs before unleashed-functions-before.json | tee unleashed-retirement-preflight.txt
+
+      - name: Require exact destructive confirmation and deployment freeze
+        id: confirmation
+        if: ${{ inputs.operation == 'retire_legacy_probes' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RETIREMENT_CONFIRMATION" = 'RETIRE INERT UNLEASHED PROBES' || {
+            echo 'Exact retirement confirmation was not supplied.'
+            exit 1
+          }
+          test "$RETIREMENT_DEPLOYMENT_FREEZE" = 'true' || {
+            echo 'Supabase Edge Function deployments must be frozen for retirement.'
+            exit 1
+          }
+
+      - name: Select exact inert functions
+        if: ${{ inputs.operation == 'retire_legacy_probes' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/unleashed-readonly-retirement-state.mjs targets unleashed-functions-before.json > unleashed-retirement-targets.txt
+
+      - name: Retire matched legacy probes
+        if: ${{ inputs.operation == 'retire_legacy_probes' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > unleashed-retirement-delete.log
+          : > unleashed-retirement-live-validation.log
+          while IFS= read -r function_name; do
+            test -n "$function_name" || continue
+            case "$function_name" in
+              unleashed-readonly-probe-001c|unleashed-readonly-probe-001c2|unleashed-readonly-probe-001c3)
+                ;;
+              *)
+                echo "Refusing unexpected retirement target: $function_name" | tee -a unleashed-retirement-delete.log
+                exit 1
+                ;;
+            esac
+            predelete_file="unleashed-functions-predelete-${function_name}.json"
+            postdelete_file="unleashed-functions-postdelete-${function_name}.json"
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > "$predelete_file"
+            node scripts/unleashed-readonly-retirement-state.mjs target "$predelete_file" "$function_name" | tee -a unleashed-retirement-live-validation.log
+            echo "Retiring governed inert function: $function_name" | tee -a unleashed-retirement-delete.log
+            supabase functions delete "$function_name" --project-ref "$SUPABASE_PROJECT_REF" --yes 2>&1 | tee -a unleashed-retirement-delete.log
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > "$postdelete_file"
+            node scripts/unleashed-readonly-retirement-state.mjs absent "$postdelete_file" "$function_name" | tee -a unleashed-retirement-live-validation.log
+          done < unleashed-retirement-targets.txt
+
+      - name: Capture and validate post-retirement state
+        if: ${{ always() && inputs.operation == 'retire_legacy_probes' && steps.confirmation.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$SUPABASE_PROJECT_REF" --output json > unleashed-functions-after.json
+          node scripts/unleashed-readonly-retirement-state.mjs after unleashed-functions-after.json | tee unleashed-retirement-result.txt
+
+      - name: Upload governed retirement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unleashed-legacy-probe-retirement-${{ github.run_id }}
+          path: |
+            unleashed-retirement-context.txt
+            unleashed-functions-before.json
+            unleashed-functions-after.json
+            unleashed-functions-predelete-*.json
+            unleashed-functions-postdelete-*.json
+            unleashed-retirement-preflight.txt
+            unleashed-retirement-targets.txt
+            unleashed-retirement-delete.log
+            unleashed-retirement-live-validation.log
+            unleashed-retirement-result.txt
+          if-no-files-found: warn
+          retention-days: 90

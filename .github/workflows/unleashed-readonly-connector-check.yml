@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - '.github/workflows/unleashed-readonly-connector-check.yml'
+      - '.github/workflows/unleashed-readonly-production-retirement.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
       - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md'
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'scripts/unleashed-readonly-connector-contract.test.mjs'
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
       - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
+      - 'scripts/unleashed-readonly-retirement-state.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
       - 'scripts/unleashed-readonly-retention-db-contract-test.sql'
@@ -28,12 +30,14 @@ on:
       - 'agent/platform/unleashed-migration-002-*'
     paths:
       - '.github/workflows/unleashed-readonly-connector-check.yml'
+      - '.github/workflows/unleashed-readonly-production-retirement.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
       - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-002-bounded-readonly-connector.md'
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'scripts/unleashed-readonly-connector-contract.test.mjs'
       - 'scripts/unleashed-readonly-connector-core.test.mjs'
       - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
+      - 'scripts/unleashed-readonly-retirement-state.mjs'
       - 'scripts/unleashed-readonly-connector-db-fixture.sql'
       - 'scripts/unleashed-readonly-connector-db-contract-test.sql'
       - 'scripts/unleashed-readonly-retention-db-contract-test.sql'
@@ -85,6 +89,7 @@ jobs:
         run: |
           node --check scripts/audit-unleashed-readonly-connector.mjs
           node --check scripts/check-unleashed-edge-function-syntax.mjs
+          node --check scripts/unleashed-readonly-retirement-state.mjs
       - name: Check Edge Function syntax
         run: node scripts/check-unleashed-edge-function-syntax.mjs
       - name: Run connector contract tests
