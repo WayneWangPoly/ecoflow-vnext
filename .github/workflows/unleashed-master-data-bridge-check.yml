@@ -9,9 +9,11 @@ on:
       - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md'
       - 'scripts/unleashed-master-data-bridge-contract.test.mjs'
       - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
+      - 'scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql'
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
+      - 'supabase/migrations/20260901153000_unleashed_master_data_bridge_review_fixes.sql'
       - 'package.json'
   push:
     branches:
@@ -22,9 +24,11 @@ on:
       - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md'
       - 'scripts/unleashed-master-data-bridge-contract.test.mjs'
       - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
+      - 'scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql'
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
+      - 'supabase/migrations/20260901153000_unleashed_master_data_bridge_review_fixes.sql'
       - 'package.json'
 
 permissions:
@@ -63,5 +67,7 @@ jobs:
         run: node --experimental-strip-types --test scripts/unleashed-master-data-bridge-contract.test.mjs
       - name: Run migration, RLS and idempotency contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-master-data-bridge-db-contract-test.sql
+      - name: Run independent-review regression contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql
       - name: Run bounded authority audit
         run: node scripts/audit-unleashed-master-data-bridge.mjs
