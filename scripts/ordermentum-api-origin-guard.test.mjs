@@ -60,7 +60,7 @@ test('exact Ordermentum API origin accepts only the approved bare HTTPS origin',
   assert.throws(() => assertOrdermentumApiRequestUrl('https://api.ordermentum.com/v2/orders#fragment'), expectCode('ORDERMENTUM_API_URL_FRAGMENT_BLOCKED'));
 });
 
-test('API key transport rejects raw and percent-encoded URL/body leakage plus caller credential overrides', () => {
+test('API key transport enforces one credential channel and rejects raw or encoded leakage', () => {
   assert.doesNotThrow(() => assertOrdermentumApiKeyRequestShape({
     apiKey: FAKE_KEY,
     requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders?pageNo=1`,
@@ -90,6 +90,12 @@ test('API key transport rejects raw and percent-encoded URL/body leakage plus ca
   }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
 
   assert.throws(() => assertOrdermentumApiKeyRequestShape({
+    apiKey: SPECIAL_FAKE_KEY,
+    requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders`,
+    body: JSON.stringify({ token: encodeURIComponent(SPECIAL_FAKE_KEY) }),
+  }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
+
+  assert.throws(() => assertOrdermentumApiKeyRequestShape({
     apiKey: FAKE_KEY,
     requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders`,
     callerHeaders: { authorization: `Bearer ${FAKE_KEY}` },
@@ -99,6 +105,19 @@ test('API key transport rejects raw and percent-encoded URL/body leakage plus ca
     apiKey: FAKE_KEY,
     requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders`,
     callerHeaders: { 'x-api-key': FAKE_KEY },
+  }), expectCode('ORDERMENTUM_CREDENTIAL_HEADER_OVERRIDE_BLOCKED'));
+
+  assert.throws(() => assertOrdermentumApiKeyRequestShape({
+    apiKey: SPECIAL_FAKE_KEY,
+    requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders`,
+    callerHeaders: { 'x-debug-value': encodeURIComponent(SPECIAL_FAKE_KEY) },
+  }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
+
+  const headerObject = new Headers({ authorization: `Bearer ${FAKE_KEY}` });
+  assert.throws(() => assertOrdermentumApiKeyRequestShape({
+    apiKey: FAKE_KEY,
+    requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders`,
+    callerHeaders: headerObject,
   }), expectCode('ORDERMENTUM_CREDENTIAL_HEADER_OVERRIDE_BLOCKED'));
 });
 
