@@ -40,8 +40,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Prepare exact DB contract patch marker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/unleashed-master-data-bridge-db-contract-test.sql')
+          text = p.read_text()
+          sentinel = "\nselect 'UNLEASHED_MASTER_DATA_BRIDGE_DB_CONTRACT_PASS' as result;"
+          if text.count(sentinel) != 1:
+              raise SystemExit(f'expected one DB PASS sentinel, found {text.count(sentinel)}')
+          p.write_text(text.replace(sentinel, "\nrollback;\n", 1))
+          PY
       - name: Apply bounded lease serialization patch
         run: python3 scripts/chat-lease-serialization-fix.py
+      - name: Restore DB contract PASS sentinel
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/unleashed-master-data-bridge-db-contract-test.sql')
+          text = p.read_text()
+          marker = "\nrollback;\n"
+          if text.count(marker) != 1:
+              raise SystemExit(f'expected one temporary rollback marker, found {text.count(marker)}')
+          p.write_text(text.replace(marker, "\nselect 'UNLEASHED_MASTER_DATA_BRIDGE_DB_CONTRACT_PASS' as result;\n", 1))
+          PY
       - name: Remove one-shot Chat tooling before verification
         run: |
           rm scripts/chat-lease-serialization-fix.py
