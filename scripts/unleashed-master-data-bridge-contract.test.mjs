@@ -1,0 +1,166 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import {
+  contentAddressedObjectPath,
+  extractProductImageUrls,
+  normalizeUnleashedImageUrl,
+  readImageBytesBounded,
+  sha256Hex,
+} from '../supabase/functions/trigger-unleashed-master-migration/core.ts';
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+const workPackage = read('docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md');
+const migration = read('supabase/migrations/20260831235500_unleashed_master_data_bridge.sql');
+const edgeFunction = read('supabase/functions/trigger-unleashed-master-migration/index.ts');
+const edgeCore = read('supabase/functions/trigger-unleashed-master-migration/core.ts');
+const checkWorkflow = read('.github/workflows/unleashed-master-data-bridge-check.yml');
+const deployWorkflow = read('.github/workflows/deploy-supabase-migrations.yml');
+const packageJson = JSON.parse(read('package.json'));
+
+test('work package fixes the authority and cost boundaries before implementation', () => {
+  for (const required of [
+    'No automatic creation of `ecoflow_physical_skus`',
+    'No inventory quantities, opening balances',
+    'rights evidence is pending',
+    'private `unleashed-product-images` bucket',
+    'local disposable PostgreSQL',
+  ]) assert.match(workPackage, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('migration establishes a four-state, provenance-backed master mapping bridge', () => {
+  for (const relation of [
+    'ecoflow_unleashed_master_mappings',
+    'ecoflow_unleashed_master_candidates',
+    'ecoflow_unleashed_mapping_commands',
+    'ecoflow_unleashed_asset_authorizations',
+    'ecoflow_unleashed_product_assets',
+    'v_ecoflow_unleashed_master_review_queue',
+  ]) assert.match(migration, new RegExp(relation));
+
+  assert.match(migration, /mapping_status in \('MATCHED','AMBIGUOUS','UNMATCHED','RETIRED'\)/);
+  assert.match(migration, /source_payload_sha256/);
+  assert.match(migration, /source_external_guid/);
+  assert.match(migration, /source_external_code/);
+  assert.match(migration, /expected_revision/);
+  assert.match(migration, /command_id uuid not null unique/);
+  assert.match(migration, /COMMAND_REPLAY_PAYLOAD_MISMATCH/);
+  assert.match(migration, /MAPPING_REVISION_CONFLICT/);
+  assert.match(migration, /MATCHED_REQUIRES_CANONICAL_TARGET/);
+});
+
+test('deterministic planner fails closed and never creates Physical SKU authority', () => {
+  assert.match(migration, /ORDERMENTUM_PRODUCT_CODE_EXACT/);
+  assert.match(migration, /ECOFLOW_WAREHOUSE_CODE_EXACT/);
+  assert.match(migration, /EXPLICIT_EXTERNAL_OBJECT_MAPPING/);
+  assert.match(migration, /case[\s\S]*when v_candidate_count = 1 then 'MATCHED'/);
+  assert.match(migration, /when v_candidate_count > 1 then 'AMBIGUOUS'/);
+  assert.match(migration, /else 'UNMATCHED'/s);
+  assert.doesNotMatch(migration, /insert\s+into\s+public\.ecoflow_physical_skus/i);
+  assert.doesNotMatch(migration, /insert\s+into\s+public\.inventory_/i);
+  assert.doesNotMatch(migration, /update\s+public\.inventory_/i);
+});
+
+test('browser access is read-only and review is a server-authoritative command', () => {
+  assert.match(migration, /enable row level security/);
+  assert.match(migration, /revoke all on table public\.ecoflow_unleashed_master_mappings from public, anon, authenticated/);
+  assert.match(migration, /grant select on table public\.v_ecoflow_unleashed_master_review_queue to authenticated/);
+  assert.match(migration, /ecoflow_review_unleashed_master_mapping/);
+  assert.match(migration, /v_role not in \('OWNER','ADMIN'\)/);
+  assert.match(migration, /security definer/);
+  assert.match(migration, /set search_path = pg_catalog, public/);
+});
+
+test('product image storage is private, bounded and service-written', () => {
+  assert.match(migration, /'unleashed-product-images','unleashed-product-images',false/);
+  assert.match(migration, /array\['image\/jpeg','image\/png','image\/webp'\]/);
+  assert.match(migration, /unleashed_product_images_read/);
+  assert.doesNotMatch(migration, /for insert to authenticated[\s\S]{0,240}unleashed-product-images/i);
+  assert.doesNotMatch(migration, /for delete to authenticated[\s\S]{0,240}unleashed-product-images/i);
+  assert.match(migration, /grant select, insert, update, delete on table public\.ecoflow_unleashed_product_assets to service_role/);
+});
+
+test('Edge Function rejects unsafe assets before any Storage mutation', () => {
+  assert.match(edgeCore, /unlappcdn\.unleashedsoftware\.com/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_HTTPS_REQUIRED/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_HOST_NOT_ALLOWED/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_REDIRECT_REJECTED/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_MIME_NOT_ALLOWED/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_OBJECT_TOO_LARGE/);
+  assert.match(edgeCore, /UNLEASHED_IMAGE_BUDGET_EXCEEDED/);
+  assert.match(edgeCore, /content-addressed/);
+  assert.match(edgeFunction, /redirect: 'manual'/);
+  assert.match(edgeFunction, /mode === 'COPY_IMAGES'/);
+  assert.match(edgeFunction, /ASSET_RIGHTS_NOT_APPROVED/);
+  assert.match(edgeFunction, /SOURCE_SNAPSHOT_CHANGED/);
+  assert.match(edgeFunction, /from\('unleashed-product-images'\)\.upload/);
+});
+
+test('migration trigger remains JWT protected and Unleashed read-only', () => {
+  assert.match(checkWorkflow, /unleashed-master-data-bridge-contract\.test\.mjs/);
+  assert.match(checkWorkflow, /unleashed-master-data-bridge-db-contract-test\.sql/);
+  assert.match(deployWorkflow, /supabase functions deploy trigger-unleashed-master-migration/);
+  assert.doesNotMatch(deployWorkflow, /functions deploy trigger-unleashed-master-migration[^\n]*--no-verify-jwt/);
+  assert.doesNotMatch(edgeFunction, /api-auth-id/);
+  assert.doesNotMatch(edgeFunction, /api-auth-signature/);
+  assert.doesNotMatch(edgeFunction, /api\.unleashedsoftware\.com/);
+  assert.doesNotMatch(edgeFunction, /UNLEASHED_API_(?:ID|KEY).*JSON\.stringify/);
+});
+
+test('repository exposes a reproducible #338 audit command', () => {
+  assert.equal(
+    packageJson.scripts['audit:unleashed-master-data'],
+    'node --experimental-strip-types --test scripts/unleashed-master-data-bridge-contract.test.mjs && node scripts/audit-unleashed-master-data-bridge.mjs',
+  );
+});
+
+test('image helpers accept the allowlisted CDN and deduplicate product images', async () => {
+  const urls = extractProductImageUrls({
+    ImageUrl: 'https://unlappcdn.unleashedsoftware.com/a.jpg',
+    Images: [
+      { ImageUrl: 'https://unlappcdn.unleashedsoftware.com/a.jpg' },
+      { Url: 'https://unlappcdn.unleashedsoftware.com/b.webp' },
+    ],
+  });
+  assert.deepEqual(urls, [
+    'https://unlappcdn.unleashedsoftware.com/a.jpg',
+    'https://unlappcdn.unleashedsoftware.com/b.webp',
+  ]);
+  assert.equal(normalizeUnleashedImageUrl(urls[0]).hostname, 'unlappcdn.unleashedsoftware.com');
+  assert.throws(() => normalizeUnleashedImageUrl('http://unlappcdn.unleashedsoftware.com/a.jpg'), /HTTPS_REQUIRED/);
+  assert.throws(() => normalizeUnleashedImageUrl('https://example.com/a.jpg'), /HOST_NOT_ALLOWED/);
+
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const result = await readImageBytesBounded(new Response(bytes, {
+    status: 200,
+    headers: { 'content-type': 'image/png', 'content-length': String(bytes.byteLength) },
+  }), { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 5 });
+  assert.equal(result.contentLength, 4);
+  const hash = await sha256Hex(bytes);
+  assert.equal(contentAddressedObjectPath('10000000-0000-4000-8000-000000000001', hash, 'image/png'),
+    `products/10000000-0000-4000-8000-000000000001/${hash}.png`);
+});
+
+test('image helpers reject redirects, MIME drift, object overflow and budget overflow', async () => {
+  await assert.rejects(
+    readImageBytesBounded(new Response(null, { status: 302, headers: { location: 'https://example.com' } }),
+      { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 0 }),
+    /REDIRECT_REJECTED/,
+  );
+  await assert.rejects(
+    readImageBytesBounded(new Response(new Uint8Array([1]), { headers: { 'content-type': 'text/html' } }),
+      { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 0 }),
+    /MIME_NOT_ALLOWED/,
+  );
+  await assert.rejects(
+    readImageBytesBounded(new Response(new Uint8Array(11), { headers: { 'content-type': 'image/jpeg' } }),
+      { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 0 }),
+    /OBJECT_TOO_LARGE/,
+  );
+  await assert.rejects(
+    readImageBytesBounded(new Response(new Uint8Array(6), { headers: { 'content-type': 'image/webp' } }),
+      { maxObjectBytes: 10, storageBudgetBytes: 10, copiedBytes: 5 }),
+    /BUDGET_EXCEEDED/,
+  );
+});

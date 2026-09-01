@@ -1,0 +1,67 @@
+name: Unleashed master-data bridge contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/unleashed-master-data-bridge-check.yml'
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md'
+      - 'scripts/unleashed-master-data-bridge-contract.test.mjs'
+      - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
+      - 'scripts/audit-unleashed-master-data-bridge.mjs'
+      - 'supabase/functions/trigger-unleashed-master-migration/**'
+      - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
+      - 'package.json'
+  push:
+    branches:
+      - 'agent/platform/unleashed-migration-003-*'
+    paths:
+      - '.github/workflows/unleashed-master-data-bridge-check.yml'
+      - '.github/workflows/deploy-supabase-migrations.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md'
+      - 'scripts/unleashed-master-data-bridge-contract.test.mjs'
+      - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
+      - 'scripts/audit-unleashed-master-data-bridge.mjs'
+      - 'supabase/functions/trigger-unleashed-master-migration/**'
+      - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Governed identity and asset bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Run static and helper contracts
+        run: node --experimental-strip-types --test scripts/unleashed-master-data-bridge-contract.test.mjs
+      - name: Run migration, RLS and idempotency contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-master-data-bridge-db-contract-test.sql
+      - name: Run bounded authority audit
+        run: node scripts/audit-unleashed-master-data-bridge.mjs
