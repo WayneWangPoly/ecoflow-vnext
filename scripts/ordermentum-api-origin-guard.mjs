@@ -27,6 +27,34 @@ function parseAbsoluteUrl(value, label) {
   return url;
 }
 
+function safeDecodeURIComponent(value) {
+  try { return decodeURIComponent(String(value || '')); }
+  catch { return String(value || ''); }
+}
+
+function urlContainsSecret(value, secret) {
+  const text = String(value || '');
+  if (text.includes(secret)) return true;
+
+  let url;
+  try { url = new URL(text); }
+  catch { return false; }
+
+  const decodedParts = [
+    safeDecodeURIComponent(url.pathname),
+    ...[...url.searchParams.keys()].map(safeDecodeURIComponent),
+    ...[...url.searchParams.values()].map(safeDecodeURIComponent),
+  ];
+  return decodedParts.some((part) => part.includes(secret));
+}
+
+function secretRepresentations(secret) {
+  const values = new Set([secret]);
+  try { values.add(encodeURIComponent(secret)); } catch {}
+  try { values.add(encodeURI(secret)); } catch {}
+  return [...values].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
 export function assertOrdermentumApiBaseUrl(value) {
   const url = parseAbsoluteUrl(value, 'Ordermentum API base URL');
   if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
@@ -52,8 +80,7 @@ export function assertOrdermentumApiKeyRequestShape({ apiKey, requestUrl, body, 
     throw guardError('ORDERMENTUM_API_KEY_MISSING', 'Ordermentum API-key mode requires a non-empty server-side token.');
   }
 
-  const urlText = String(requestUrl || '');
-  if (urlText.includes(secret)) {
+  if (urlContainsSecret(requestUrl, secret)) {
     throw guardError('ORDERMENTUM_API_KEY_EXPOSED', 'Ordermentum API token must not appear in the request URL or query string.');
   }
   if (body !== undefined && body !== null && String(body).includes(secret)) {
@@ -72,9 +99,13 @@ export function assertOrdermentumApiKeyRequestShape({ apiKey, requestUrl, body, 
 }
 
 export function redactOrdermentumSecret(value, apiKey) {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
   const secret = String(apiKey || '').trim();
-  return secret ? text.split(secret).join('[REDACTED]') : text;
+  if (!secret) return text;
+  for (const representation of secretRepresentations(secret)) {
+    text = text.split(representation).join('[REDACTED]');
+  }
+  return text;
 }
 
 export function isRedirectStatus(status) {
