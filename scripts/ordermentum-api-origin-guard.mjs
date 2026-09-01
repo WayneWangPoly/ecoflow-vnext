@@ -67,6 +67,16 @@ function headerEntries(headers) {
   return Object.entries(headers);
 }
 
+function inspectableBodyText(body) {
+  if (body === undefined || body === null) return null;
+  if (typeof body === 'string') return body;
+  if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) return body.toString();
+  throw guardError(
+    'ORDERMENTUM_API_BODY_UNINSPECTABLE',
+    'Ordermentum API-key mode accepts only inspectable string or URLSearchParams request bodies.',
+  );
+}
+
 export function assertOrdermentumApiBaseUrl(value) {
   const url = parseAbsoluteUrl(value, 'Ordermentum API base URL');
   if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
@@ -95,12 +105,14 @@ export function assertOrdermentumApiKeyRequestShape({ apiKey, requestUrl, body, 
   if (urlContainsSecret(requestUrl, secret)) {
     throw guardError('ORDERMENTUM_API_KEY_EXPOSED', 'Ordermentum API token must not appear in the request URL or query string.');
   }
-  if (body !== undefined && body !== null && textContainsSecretRepresentation(body, secret)) {
+
+  const bodyText = inspectableBodyText(body);
+  if (bodyText !== null && textContainsSecretRepresentation(bodyText, secret)) {
     throw guardError('ORDERMENTUM_API_KEY_EXPOSED', 'Ordermentum API token must not appear in the request body.');
   }
 
   for (const [rawName, rawValue] of headerEntries(callerHeaders)) {
-    const name = String(rawName).toLowerCase();
+    const name = String(rawName).trim().toLowerCase();
     if (name === 'authorization' || name === 'x-api-key') {
       throw guardError(
         'ORDERMENTUM_CREDENTIAL_HEADER_OVERRIDE_BLOCKED',
