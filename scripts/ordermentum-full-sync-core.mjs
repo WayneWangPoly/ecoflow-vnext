@@ -1,3 +1,11 @@
+import {
+  assertNoCredentialedOrdermentumRedirect,
+  assertOrdermentumApiBaseUrl,
+  assertOrdermentumApiKeyRequestShape,
+  assertOrdermentumApiRequestUrl,
+  redactOrdermentumSecret,
+} from './ordermentum-api-origin-guard.mjs';
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function env(name, required = false, fallback = undefined) {
@@ -28,8 +36,9 @@ function config() {
   const skipSupabase = env('ORDERMENTUM_SKIP_SUPABASE', false, 'false') === 'true';
   const supabaseUrl = env('SUPABASE_URL', !skipSupabase, '').replace(/\/$/, '');
   const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY', !skipSupabase, '');
-  const baseUrl = env('ORDERMENTUM_BASE_URL', false, 'https://api.ordermentum.com').replace(/\/$/, '');
+  const configuredBaseUrl = env('ORDERMENTUM_BASE_URL', false, 'https://api.ordermentum.com').replace(/\/$/, '');
   const authMode = env('ORDERMENTUM_AUTH_MODE', false, 'api-key');
+  const baseUrl = authMode === 'api-key' ? assertOrdermentumApiBaseUrl(configuredBaseUrl) : configuredBaseUrl;
 
   return {
     supabaseUrl,
@@ -246,22 +255,43 @@ function hasNextPage(payload, items, page, limit) {
 }
 
 async function ordermentumFetchJson(cfg, url, options = {}, attempt = 1) {
+  const apiKeyMode = cfg.authMode === 'api-key';
+  const requestUrl = apiKeyMode ? assertOrdermentumApiRequestUrl(url) : url;
+  if (apiKeyMode) {
+    assertOrdermentumApiKeyRequestShape({
+      apiKey: cfg.apiKey,
+      requestUrl,
+      body: options.body,
+      callerHeaders: options.headers || {},
+    });
+  }
+
   const headers = {...(await ordermentumHeaders(cfg)), ...(options.headers || {})};
   if (options.body && !headers['content-type']) headers['content-type'] = 'application/json';
-  const response = await withNetworkRetry(`Ordermentum fetch ${url}`, () => fetchWithTimeout(url, {...options, headers}, cfg.ordermentumTimeoutMs), cfg.fetchRetries);
+  const requestOptions = apiKeyMode
+    ? {...options, headers, redirect: 'manual'}
+    : {...options, headers};
+  const response = await withNetworkRetry(
+    `Ordermentum fetch ${requestUrl}`,
+    () => fetchWithTimeout(requestUrl, requestOptions, cfg.ordermentumTimeoutMs),
+    cfg.fetchRetries,
+  );
+
+  if (apiKeyMode) assertNoCredentialedOrdermentumRedirect(response, requestUrl);
   const text = await response.text();
 
   if (response.status === 429 && attempt <= 4) {
     const retryAfter = Number(response.headers.get('retry-after') || '0');
     const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(60000, 5000 * attempt);
     await sleep(waitMs);
-    return ordermentumFetchJson(cfg, url, options, attempt + 1);
+    return ordermentumFetchJson(cfg, requestUrl, options, attempt + 1);
   }
 
   if (!response.ok) {
-    const err = new Error(`Ordermentum ${response.status}: ${text}`);
+    const safeText = apiKeyMode ? redactOrdermentumSecret(text, cfg.apiKey) : text;
+    const err = new Error(`Ordermentum ${response.status}: ${safeText}`);
     err.status = response.status;
-    err.payload = safeJson(text) ?? {raw: text};
+    err.payload = safeJson(safeText) ?? {raw: safeText};
     throw err;
   }
 
