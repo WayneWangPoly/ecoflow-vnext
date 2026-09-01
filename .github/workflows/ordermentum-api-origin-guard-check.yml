@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/ordermentum-api-origin-guard-check.yml'
       - 'scripts/ordermentum-api-origin-guard.mjs'
-      - 'scripts/ordermentum-api-origin-guard.test.mjs'
+      - 'scripts/ordermentum-api-origin-guard*.test.mjs'
       - 'scripts/ordermentum-full-sync-core.mjs'
       - 'scripts/ordermentum-master-data-common.mjs'
   push:
@@ -15,7 +15,7 @@ on:
     paths:
       - '.github/workflows/ordermentum-api-origin-guard-check.yml'
       - 'scripts/ordermentum-api-origin-guard.mjs'
-      - 'scripts/ordermentum-api-origin-guard.test.mjs'
+      - 'scripts/ordermentum-api-origin-guard*.test.mjs'
       - 'scripts/ordermentum-full-sync-core.mjs'
       - 'scripts/ordermentum-master-data-common.mjs'
 
@@ -41,5 +41,6 @@ jobs:
           node --check scripts/ordermentum-full-sync-core.mjs
           node --check scripts/ordermentum-master-data-common.mjs
           node --check scripts/ordermentum-api-origin-guard.test.mjs
+          node --check scripts/ordermentum-api-origin-guard-edge.test.mjs
       - name: Run credential-free transport regression
-        run: node --test scripts/ordermentum-api-origin-guard.test.mjs
+        run: node --test scripts/ordermentum-api-origin-guard*.test.mjs
