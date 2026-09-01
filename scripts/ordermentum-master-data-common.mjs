@@ -1,5 +1,12 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import {
+  assertNoCredentialedOrdermentumRedirect,
+  assertOrdermentumApiBaseUrl,
+  assertOrdermentumApiKeyRequestShape,
+  assertOrdermentumApiRequestUrl,
+  redactOrdermentumSecret,
+} from './ordermentum-api-origin-guard.mjs';
 
 export const DEFAULT_AUTH_BASE_URL = process.env.ORDERMENTUM_BASE_URL || process.env.ORDERMENTUM_AUTH_BASE_URL || 'https://app.ordermentum.com';
 export const DEFAULT_API_BASE_URL = process.env.ORDERMENTUM_API_BASE_URL || 'https://api.ordermentum.com';
@@ -100,15 +107,35 @@ export function extractTimestamp(item, names) {
 }
 
 export function buildUrl(path, params = {}) {
-  const url = new URL(path, DEFAULT_API_BASE_URL.replace(/\/$/, '') + '/');
+  const apiKeyMode = Boolean(process.env.ORDERMENTUM_API_KEY?.trim());
+  const baseUrl = apiKeyMode ? assertOrdermentumApiBaseUrl(DEFAULT_API_BASE_URL) : DEFAULT_API_BASE_URL.replace(/\/$/, '');
+  const url = new URL(path, baseUrl + '/');
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
-  return url.toString();
+  return apiKeyMode ? assertOrdermentumApiRequestUrl(url.toString()) : url.toString();
+}
+
+function redactFailedPayload(payload, apiKey) {
+  if (!apiKey) return payload;
+  const serialized = JSON.stringify(payload ?? null);
+  const redacted = redactOrdermentumSecret(serialized, apiKey);
+  try { return JSON.parse(redacted); } catch { return { rawText: redacted }; }
 }
 
 export async function fetchOrdermentumJson(token, path, params = {}, options = {}) {
+  const apiKey = process.env.ORDERMENTUM_API_KEY?.trim() || '';
+  const apiKeyMode = Boolean(apiKey);
   const url = buildUrl(path.replace(/^\//, ''), params);
+  if (apiKeyMode) {
+    assertOrdermentumApiKeyRequestShape({
+      apiKey,
+      requestUrl: url,
+      body: options.body,
+      callerHeaders: options.headers || {},
+    });
+  }
+
   const timeoutMs = Number(process.env.ORDERMENTUM_FETCH_TIMEOUT_MS || 60000);
   const retries = Number(process.env.ORDERMENTUM_FETCH_RETRIES || 2);
   let lastError;
@@ -119,19 +146,27 @@ export async function fetchOrdermentumJson(token, path, params = {}, options = {
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers: {
-          ...(process.env.ORDERMENTUM_API_KEY?.trim()
-            ? { 'x-api-key': process.env.ORDERMENTUM_API_KEY.trim() }
+          ...(apiKeyMode
+            ? { 'x-api-key': apiKey }
             : { authorization: `Bearer ${token}` }),
           accept: 'application/json',
           ...(options.headers || {}),
         },
+        ...(apiKeyMode ? { redirect: 'manual' } : {}),
         signal: controller.signal,
       });
+      if (apiKeyMode) assertNoCredentialedOrdermentumRedirect(response, url);
       const data = await safeJson(response);
       clearTimeout(timer);
-      return { ok: response.ok, status: response.status, data, url };
+      return {
+        ok: response.ok,
+        status: response.status,
+        data: apiKeyMode && !response.ok ? redactFailedPayload(data, apiKey) : data,
+        url,
+      };
     } catch (error) {
       clearTimeout(timer);
+      if (error?.code?.startsWith?.('ORDERMENTUM_')) throw error;
       lastError = error;
       if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
     }
