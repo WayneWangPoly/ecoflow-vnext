@@ -89,7 +89,8 @@ jobs:
           marker = "\nrollback;\n"
           if text.count(marker) != 1:
               raise SystemExit(f'expected one temporary rollback marker, found {text.count(marker)}')
-          p.write_text(text.replace(marker, "\nselect 'UNLEASHED_MASTER_DATA_BRIDGE_DB_CONTRACT_PASS' as result;\n", 1))
+          text = text.replace(marker, "\nselect 'UNLEASHED_MASTER_DATA_BRIDGE_DB_CONTRACT_PASS' as result;", 1)
+          p.write_text(text.rstrip() + "\n")
           PY
       - name: Remove all Chat staging and restore governed workflow before tests
         run: |
