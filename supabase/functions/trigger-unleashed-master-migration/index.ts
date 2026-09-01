@@ -504,6 +504,7 @@ Deno.serve(async (req) => {
       let runBytes = 0;
       for (const asset of planned as PlannedAsset[] | null ?? []) {
         let claimedByRun = false;
+        let logicalCopyOutcome: 'COPIED' | 'REUSED' | null = null;
         try {
           const { data: currentSnapshot, error: currentSnapshotError } = await adminClient
             .from('unleashed_raw_snapshots').select('payload_sha256').eq('id', asset.source_snapshot_id).single();
@@ -561,7 +562,7 @@ Deno.serve(async (req) => {
               copiedBytes += image.contentLength;
               runBytes += image.contentLength;
               physicalObjects.set(objectPath, image.contentLength);
-              copied += 1;
+              logicalCopyOutcome = 'COPIED';
             } else {
               // A duplicate can be an orphan left by a worker that uploaded
               // successfully and died before recording provenance. Reconcile
@@ -569,10 +570,10 @@ Deno.serve(async (req) => {
               // processing another asset.
               copiedBytes += image.contentLength;
               physicalObjects.set(objectPath, image.contentLength);
-              reused += 1;
+              logicalCopyOutcome = 'REUSED';
             }
           } else {
-            reused += 1;
+            logicalCopyOutcome = 'REUSED';
           }
 
           const { data: copiedAsset, error: assetUpdateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
@@ -594,6 +595,8 @@ Deno.serve(async (req) => {
             .select('id').maybeSingle();
           if (assetUpdateError) throw new Error(`ASSET_PROVENANCE_UPDATE_FAILED:${assetUpdateError.message}`);
           if (!copiedAsset) throw new Error('ASSET_COPY_CLAIM_LOST');
+          if (logicalCopyOutcome === 'COPIED') copied += 1;
+          else if (logicalCopyOutcome === 'REUSED') reused += 1;
           claimedByRun = false;
         } catch (error) {
           failed += 1;
@@ -602,8 +605,9 @@ Deno.serve(async (req) => {
             || code === 'UNLEASHED_IMAGE_HTTPS_REQUIRED'
             || code === 'SOURCE_SNAPSHOT_CHANGED';
           let failureStateError: { message: string } | null = null;
+          let failureStateLostLease = false;
           if (claimedByRun) {
-            const { error: updateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
+            const { data: releasedAsset, error: updateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
               asset_status: blocked ? 'BLOCKED' : 'FAILED',
               claimed_in_run_id: null,
               last_error_code: code,
@@ -611,8 +615,10 @@ Deno.serve(async (req) => {
               updated_at: new Date().toISOString(),
             }).eq('id', asset.id)
               .eq('asset_status', 'COPYING')
-              .eq('claimed_in_run_id', run.id);
+              .eq('claimed_in_run_id', run.id)
+              .select('id').maybeSingle();
             failureStateError = updateError;
+            failureStateLostLease = !updateError && !releasedAsset;
           } else {
             const { error: updateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
               asset_status: blocked ? 'BLOCKED' : 'FAILED',
@@ -630,6 +636,7 @@ Deno.serve(async (req) => {
           if (failureStateError) {
             throw new Error(`ASSET_COPY_FAILURE_STATE_WRITE_FAILED:${failureStateError.message}`);
           }
+          if (failureStateLostLease) throw new Error('COPY_RUN_LEASE_LOST');
           if (code === 'ASSET_COPY_CLAIM_LOST') throw error;
         }
       }
