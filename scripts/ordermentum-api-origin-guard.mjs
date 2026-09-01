@@ -46,6 +46,37 @@ export function assertOrdermentumApiRequestUrl(value) {
   return url.toString();
 }
 
+export function assertOrdermentumApiKeyRequestShape({ apiKey, requestUrl, body, callerHeaders = {} }) {
+  const secret = String(apiKey || '').trim();
+  if (!secret) {
+    throw guardError('ORDERMENTUM_API_KEY_MISSING', 'Ordermentum API-key mode requires a non-empty server-side token.');
+  }
+
+  const urlText = String(requestUrl || '');
+  if (urlText.includes(secret)) {
+    throw guardError('ORDERMENTUM_API_KEY_EXPOSED', 'Ordermentum API token must not appear in the request URL or query string.');
+  }
+  if (body !== undefined && body !== null && String(body).includes(secret)) {
+    throw guardError('ORDERMENTUM_API_KEY_EXPOSED', 'Ordermentum API token must not appear in the request body.');
+  }
+
+  for (const [rawName] of Object.entries(callerHeaders || {})) {
+    const name = String(rawName).toLowerCase();
+    if (name === 'authorization' || name === 'x-api-key') {
+      throw guardError(
+        'ORDERMENTUM_CREDENTIAL_HEADER_OVERRIDE_BLOCKED',
+        'Ordermentum credentials may only be attached by the shared authenticated request boundary.',
+      );
+    }
+  }
+}
+
+export function redactOrdermentumSecret(value, apiKey) {
+  const text = String(value ?? '');
+  const secret = String(apiKey || '').trim();
+  return secret ? text.split(secret).join('[REDACTED]') : text;
+}
+
 export function isRedirectStatus(status) {
   return Number(status) >= 300 && Number(status) <= 399;
 }
