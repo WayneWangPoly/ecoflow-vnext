@@ -32,16 +32,42 @@ function safeDecodeURIComponent(value) {
   catch { return String(value || ''); }
 }
 
-function secretRepresentations(secret) {
-  const values = new Set([secret]);
+function encodedSecretRepresentations(secret) {
+  const values = new Set();
   try { values.add(encodeURIComponent(secret)); } catch {}
   try { values.add(encodeURI(secret)); } catch {}
+  values.delete(secret);
   return [...values].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+function escapeRegexCharacter(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function percentEscapeInsensitiveRegex(value) {
+  const text = String(value || '');
+  let source = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const current = text[index];
+    const first = text[index + 1];
+    const second = text[index + 2];
+    if (current === '%' && /^[0-9a-f]$/i.test(first || '') && /^[0-9a-f]$/i.test(second || '')) {
+      const nibble = (character) => /[a-f]/i.test(character)
+        ? `[${character.toLowerCase()}${character.toUpperCase()}]`
+        : character;
+      source += `%${nibble(first)}${nibble(second)}`;
+      index += 2;
+      continue;
+    }
+    source += escapeRegexCharacter(current);
+  }
+  return new RegExp(source, 'g');
 }
 
 function textContainsSecretRepresentation(value, secret) {
   const text = String(value ?? '');
-  return secretRepresentations(secret).some((representation) => text.includes(representation));
+  if (text.includes(secret)) return true;
+  return encodedSecretRepresentations(secret).some((representation) => percentEscapeInsensitiveRegex(representation).test(text));
 }
 
 function urlContainsSecret(value, secret) {
@@ -132,8 +158,9 @@ export function redactOrdermentumSecret(value, apiKey) {
   let text = String(value ?? '');
   const secret = String(apiKey || '').trim();
   if (!secret) return text;
-  for (const representation of secretRepresentations(secret)) {
-    text = text.split(representation).join('[REDACTED]');
+  text = text.split(secret).join('[REDACTED]');
+  for (const representation of encodedSecretRepresentations(secret)) {
+    text = text.replace(percentEscapeInsensitiveRegex(representation), '[REDACTED]');
   }
   return text;
 }
