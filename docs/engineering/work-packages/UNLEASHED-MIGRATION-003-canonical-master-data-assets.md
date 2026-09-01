@@ -84,12 +84,18 @@ content hash, rights approval, and storage-budget evidence.
   snapshots created by the #337 service-side connector.
 - `PLAN` creates or refreshes one decision row per supported Unleashed master
   identity and deterministic candidate rows. Replaying the same payload hash
-  creates no duplicate logical row and no duplicate candidate.
+  and candidate-set hash creates no duplicate logical row or candidate and
+  preserves an accepted review. Source-payload or canonical candidate-set
+  drift increments the mapping revision, returns authority to `AUTO`, marks
+  prior candidates non-current, and retains the review command plus selected
+  candidate snapshot as historical evidence.
 - `AUTHORIZE_ASSETS` records explicit Owner/Admin image-use approval, evidence
   reference, scope, byte budget, and optional expiry. It does not copy data.
-- `COPY_IMAGES` processes a bounded number of planned assets. It is rejected
+- `COPY_IMAGES` processes at most ten planned assets per command. It is rejected
   unless approval, host allowlist, HTTPS, MIME, per-object size, aggregate byte
-  budget, and snapshot-hash checks pass.
+  budget, and snapshot-hash checks pass. A singleton run lease serializes
+  aggregate-budget spending; an expired worker is failed and its claimed asset
+  is released for an explicit retry.
 - `REVIEW_MAPPING` accepts a mapping status and optional selected candidate
   through a revisioned and idempotent RPC. Direct table mutation remains
   unavailable to browsers.
@@ -115,6 +121,14 @@ content hash, rights approval, and storage-budget evidence.
 
 - Image source URLs must use HTTPS and the exact allowlisted Unleashed CDN host;
   redirects are rejected rather than followed to an unvalidated host.
+- A missing locator or unsafe URL becomes a queryable `BLOCKED` exception.
+  Unsafe locators are represented only by a one-way hash and
+  `blocked://redacted`, never by the rejected raw URL. An uncopied locator no
+  longer present in the current snapshot becomes `RETIRED`, so historical
+  exceptions are not misreported as current.
+- The response MIME header must agree with JPEG, PNG, or WebP magic bytes.
+  Downloads have a fixed timeout and remain bounded even without a declared
+  content length.
 - The bucket is private. Authenticated active EcoFlow roles may read; only the
   service role may insert, update, or delete migration assets.
 - Object paths are derived from stable source GUID plus content SHA-256, never
@@ -122,6 +136,13 @@ content hash, rights approval, and storage-budget evidence.
 - Source URL, source payload hash, observed time, content type, content length,
   content SHA-256, Storage bucket/path, copy run, and lifecycle status remain
   queryable as provenance.
+- A copy worker conditionally claims the exact planned snapshot. Concurrent
+  planning cannot refresh a claimed asset. If a prior worker uploaded an
+  object but died before recording provenance, a duplicate upload response
+  reconciles the existing physical bytes into the aggregate budget before the
+  next asset is processed. Later PLAN runs never rewrite the source snapshot of
+  an already copied immutable object; a previously failed or blocked current
+  locator is reactivated only from current safe snapshot evidence.
 - The default migration storage budget is conservative and must be explicitly
   confirmed with rights approval. Database and Storage quotas remain separate;
   the planner reports both rather than treating database headroom as image
@@ -135,7 +156,8 @@ content hash, rights approval, and storage-budget evidence.
   GUID/code evidence is quarantined and remains visible in the review queue.
 - Rejected: malformed identity, stale revision, reused command with different
   payload, unapproved/expired rights, unsafe URL, unsupported MIME, byte-budget
-  breach, changed snapshot hash, or direct browser table mutation.
+  breach, changed snapshot hash, concurrent copy lease, or direct browser table
+  mutation.
 - `UNMATCHED` is an explicit exception outcome, not a failed or hidden import.
 
 ### Authority, idempotency, and audit
@@ -144,8 +166,8 @@ content hash, rights approval, and storage-budget evidence.
   Function using the service role; caller role and active user are rechecked on
   the server.
 - Commands carry command UUID, actor, expected revision, reason, and payload
-  hash. Same command/same payload replays the original result; same
-  command/different payload is rejected.
+  hash. The actor is part of the fingerprint: same actor/command/payload
+  replays the original result; a changed actor or payload is rejected.
 - Every plan, review, rights decision, copy attempt, rejection, and retirement
   writes durable audit evidence without recording credentials or image bytes in
   PostgreSQL logs.
@@ -165,7 +187,11 @@ content hash, rights approval, and storage-budget evidence.
 - [ ] Owner/Admin can read the review queue and use the command RPC; other roles
   cannot review, and no authenticated role can directly mutate bridge tables.
 - [ ] Reusing a command UUID with a different payload is rejected; stale
-  revision is rejected; identical replay returns the original result.
+  revision is rejected; a different actor cannot replay it; identical replay
+  returns the original result.
+- [ ] Identical PLAN replay preserves a reviewed decision. Source or canonical
+  candidate drift resets the decision to `AUTO` while historical candidates
+  and the selected-candidate command snapshot remain intact.
 - [ ] Duplicate GUID/code candidates remain quarantined as `AMBIGUOUS` with all
   candidates visible.
 - [ ] The product-image bucket is private, bounded to JPEG/PNG/WebP, and has no
@@ -173,6 +199,9 @@ content hash, rights approval, and storage-budget evidence.
 - [ ] Image copy is impossible until rights evidence and a byte budget are
   approved; unsafe hosts, redirects, MIME, oversize objects, and budget breaches
   fail closed.
+- [ ] Only one copy run can hold the aggregate-budget lease. A stale run releases
+  its claim, and an uploaded-but-unrecorded object is reconciled into the budget
+  on retry rather than counted as free capacity.
 - [ ] A copied image is addressed by content hash, is served from EcoFlow
   Storage, preserves source provenance, and replays without duplicate objects.
 - [ ] Static audit proves the Edge Function has no Unleashed POST/PUT/PATCH/
@@ -187,7 +216,7 @@ content hash, rights approval, and storage-budget evidence.
 | Static | `node --experimental-strip-types --test scripts/unleashed-master-data-bridge-contract.test.mjs` | Scope, authority, four-state mapping, asset and no-physical-SKU contracts pass. |
 | Audit | `node scripts/audit-unleashed-master-data-bridge.mjs` | Migration/function/workflow findings are all `PASS`. |
 | Unit | Edge Function URL, redirect, MIME, size, budget, hash, and idempotency helpers | Unsafe or stale input fails closed. |
-| Integration/RLS | `scripts/unleashed-master-data-bridge-db-contract-test.sql` against disposable PostgreSQL/Supabase | Deterministic candidate, quarantine, command replay/revision, direct-write denial, and role checks pass. |
+| Integration/RLS | `scripts/unleashed-master-data-bridge-db-contract-test.sql` against disposable PostgreSQL/Supabase | Deterministic candidate, source/canonical drift, durable review evidence, singleton copy lease, command replay/revision, hardened function privileges, direct-write denial, and role checks pass. |
 | Regression | `npm run audit:unleashed && npm run typecheck && npm run build` | Existing connector and application remain usable. |
 | Production preflight | Bounded `PLAN`, no copy | Counts/estimated bytes reported; zero operational or Storage mutation. |
 | Production acceptance | Approved bounded copy followed by replay | EcoFlow asset served; hashes match; second run creates zero duplicate logical/object rows. |
@@ -204,7 +233,8 @@ content hash, rights approval, and storage-budget evidence.
   Ordermentum/warehouse/inventory baselines, audit event IDs, and Edge logs.
 - Screenshots: review queue and one EcoFlow-served image only after rights allow.
 - Risks: legacy case-sensitive duplicate codes, stale upstream URLs, CDN MIME
-  drift, image rights uncertainty, and quota/egress growth.
+  drift, interrupted uploads requiring lease recovery, image rights uncertainty,
+  and quota/egress growth.
 - Known limitations: supplier and customer mappings remain explicit exceptions
   when no shared stable identifier exists.
 - Deferred findings: inventory/opening balance is #339; UI parity is #340;
@@ -233,6 +263,8 @@ content hash, rights approval, and storage-budget evidence.
 - Bridge Unleashed products to existing Commercial SKUs; never infer Physical
   SKUs.
 - Treat zero and multiple candidates as first-class governed exceptions.
+- Preserve accepted candidate snapshots, but invalidate reviewed authority when
+  either the source payload or canonical candidate set changes.
 - Use a private, service-written Storage bucket and content-addressed paths.
 - Keep rights approval and byte-budget approval separate from technical copy.
 - Use local disposable PostgreSQL for migration testing to avoid preview-branch

@@ -65,7 +65,11 @@ type PlannedAsset = {
   source_host: string;
   asset_status: string;
   attempt_count: number;
+  claimed_in_run_id: string | null;
 };
+
+const COPY_RUN_LEASE_MS = 15 * 60 * 1000;
+const IMAGE_FETCH_TIMEOUT_MS = 20 * 1000;
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -122,11 +126,29 @@ async function planAssets(
 
   const identityByKey = new Map((identities as ProductIdentity[] | null ?? []).map((row) => [row.external_key, row.id]));
   const assets: Record<string, unknown>[] = [];
-  let unsafeSkipped = 0;
+  let blocked = 0;
+  let missing = 0;
   for (const snapshot of snapshots as ProductSnapshot[] | null ?? []) {
     const identityId = identityByKey.get(snapshot.external_key);
     if (!identityId) continue;
-    for (const sourceUrl of extractProductImageUrls(snapshot.payload)) {
+    const sourceUrls = extractProductImageUrls(snapshot.payload);
+    if (!sourceUrls.length) {
+      missing += 1;
+      blocked += 1;
+      assets.push({
+        identity_id: identityId,
+        source_snapshot_id: snapshot.id,
+        source_payload_sha256: snapshot.payload_sha256,
+        source_image_url: 'blocked://redacted',
+        source_locator_sha256: await sha256Hex(`missing:${identityId}`),
+        source_host: 'BLOCKED',
+        source_observed_at: snapshot.last_seen_at,
+        asset_status: 'BLOCKED',
+        last_error_code: 'UNLEASHED_IMAGE_NOT_PRESENT',
+        last_error_message: 'The current product snapshot does not contain an image locator',
+      });
+    }
+    for (const sourceUrl of sourceUrls) {
       try {
         const url = normalizeUnleashedImageUrl(sourceUrl);
         assets.push({
@@ -137,9 +159,23 @@ async function planAssets(
           source_locator_sha256: await sha256Hex(url.toString()),
           source_host: url.hostname.toLowerCase(),
           source_observed_at: snapshot.last_seen_at,
+          asset_status: 'PLANNED',
         });
-      } catch {
-        unsafeSkipped += 1;
+      } catch (error) {
+        blocked += 1;
+        const code = errorCode(error);
+        assets.push({
+          identity_id: identityId,
+          source_snapshot_id: snapshot.id,
+          source_payload_sha256: snapshot.payload_sha256,
+          source_image_url: 'blocked://redacted',
+          source_locator_sha256: await sha256Hex(`blocked:${sourceUrl}`),
+          source_host: 'BLOCKED',
+          source_observed_at: snapshot.last_seen_at,
+          asset_status: 'BLOCKED',
+          last_error_code: code,
+          last_error_message: `Unsafe source image locator was redacted (${code})`,
+        });
       }
     }
   }
@@ -148,16 +184,30 @@ async function planAssets(
     const identityIds = [...new Set(assets.map((asset) => String(asset.identity_id)))];
     const { data: existing, error: existingError } = await adminClient
       .from('ecoflow_unleashed_product_assets')
-      .select('id,identity_id,source_locator_sha256')
+      .select('id,identity_id,source_locator_sha256,asset_status')
       .in('identity_id', identityIds);
     if (existingError) throw new Error(`PRODUCT_ASSET_PLAN_READ_FAILED:${existingError.message}`);
     const existingByKey = new Map((existing ?? []).map((row) => [
       `${row.identity_id}:${row.source_locator_sha256}`,
-      row.id,
+      row,
     ]));
+    const currentKeys = new Set(assets.map((asset) => `${asset.identity_id}:${asset.source_locator_sha256}`));
+    const retiredIds = (existing ?? [])
+      .filter((row) => !currentKeys.has(`${row.identity_id}:${row.source_locator_sha256}`)
+        && !['COPIED', 'COPYING'].includes(row.asset_status))
+      .map((row) => row.id);
+    if (retiredIds.length) {
+      const { error: retireError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
+        asset_status: 'RETIRED',
+        last_error_code: 'UNLEASHED_IMAGE_SOURCE_SUPERSEDED',
+        last_error_message: 'The locator is no longer present in the current product snapshot',
+        updated_at: new Date().toISOString(),
+      }).in('id', retiredIds).is('claimed_in_run_id', null);
+      if (retireError) throw new Error(`PRODUCT_ASSET_RETIRE_FAILED:${retireError.message}`);
+    }
     const newAssets = assets
       .filter((asset) => !existingByKey.has(`${asset.identity_id}:${asset.source_locator_sha256}`))
-      .map((asset) => ({ ...asset, asset_status: 'PLANNED' }));
+      .map((asset) => ({ ...asset }));
     if (newAssets.length) {
       const { error } = await adminClient.from('ecoflow_unleashed_product_assets')
         .upsert(newAssets, {
@@ -168,16 +218,30 @@ async function planAssets(
       if (error) throw new Error(`PRODUCT_ASSET_PLAN_WRITE_FAILED:${error.message}`);
     }
     for (const asset of assets) {
-      const existingId = existingByKey.get(`${asset.identity_id}:${asset.source_locator_sha256}`);
-      if (!existingId) continue;
-      const { error } = await adminClient.from('ecoflow_unleashed_product_assets').update({
+      const existingAsset = existingByKey.get(`${asset.identity_id}:${asset.source_locator_sha256}`);
+      if (!existingAsset) continue;
+      // COPIED provenance describes the exact source snapshot used for the
+      // immutable object and must never be rewritten by a later PLAN.
+      if (existingAsset.asset_status === 'COPIED') continue;
+      const refresh: Record<string, unknown> = {
         source_snapshot_id: asset.source_snapshot_id,
         source_payload_sha256: asset.source_payload_sha256,
         source_image_url: asset.source_image_url,
         source_host: asset.source_host,
         source_observed_at: asset.source_observed_at,
         updated_at: new Date().toISOString(),
-      }).eq('id', existingId);
+      };
+      refresh.asset_status = asset.asset_status;
+      if (asset.asset_status === 'BLOCKED') {
+        refresh.last_error_code = asset.last_error_code;
+        refresh.last_error_message = asset.last_error_message;
+      } else {
+        refresh.last_error_code = null;
+        refresh.last_error_message = null;
+      }
+      const { error } = await adminClient.from('ecoflow_unleashed_product_assets').update(refresh)
+        .eq('id', existingAsset.id)
+        .is('claimed_in_run_id', null);
       if (error) throw new Error(`PRODUCT_ASSET_PLAN_REFRESH_FAILED:${error.message}`);
     }
   }
@@ -188,9 +252,9 @@ async function planAssets(
     action: 'UNLEASHED_PRODUCT_ASSETS_PLANNED',
     target_type: 'ecoflow_unleashed_product_assets',
     target_id: actor.id,
-    after_data: { reason: planReason, discovered: assets.length, unsafe_skipped: unsafeSkipped },
+    after_data: { reason: planReason, discovered: assets.length, blocked, missing },
   });
-  return { discovered: assets.length, unsafeSkipped };
+  return { discovered: assets.length, blocked, missing };
 }
 
 function copyRunResponse(row: Record<string, unknown>, replayed: boolean) {
@@ -205,6 +269,35 @@ function copyRunResponse(row: Record<string, unknown>, replayed: boolean) {
     errorCode: row.error_code,
     replayed,
   };
+}
+
+function copyRunLeaseExpired(row: Record<string, unknown>) {
+  const startedAt = typeof row.started_at === 'string' ? Date.parse(row.started_at) : Number.NaN;
+  return !Number.isFinite(startedAt) || startedAt + COPY_RUN_LEASE_MS <= Date.now();
+}
+
+async function expireStaleCopyRun(
+  adminClient: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+) {
+  const runId = String(row.id ?? '');
+  if (!runId) throw new Error('COPY_RUN_LEASE_INVALID');
+  const completedAt = new Date().toISOString();
+  const { error: resetError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
+    asset_status: 'FAILED',
+    claimed_in_run_id: null,
+    last_error_code: 'COPY_RUN_LEASE_EXPIRED',
+    last_error_message: 'The prior image-copy worker did not complete within its bounded lease',
+    updated_at: completedAt,
+  }).eq('claimed_in_run_id', runId).eq('asset_status', 'COPYING');
+  if (resetError) throw new Error(`COPY_RUN_LEASE_ASSET_RESET_FAILED:${resetError.message}`);
+  const { error: runUpdateError } = await adminClient.from('ecoflow_unleashed_asset_copy_runs').update({
+    status: 'FAILED',
+    completed_at: completedAt,
+    error_code: 'COPY_RUN_LEASE_EXPIRED',
+    error_message: 'Image-copy worker lease expired before completion',
+  }).eq('id', runId).eq('status', 'RUNNING');
+  if (runUpdateError) throw new Error(`COPY_RUN_LEASE_RELEASE_FAILED:${runUpdateError.message}`);
 }
 
 Deno.serve(async (req) => {
@@ -262,16 +355,23 @@ Deno.serve(async (req) => {
       if (!authorizationStatus || !['APPROVED', 'REJECTED', 'REVOKED'].includes(authorizationStatus)) {
         throw new Error('INVALID_ASSET_AUTHORIZATION_STATUS');
       }
+      const approved = authorizationStatus === 'APPROVED';
+      const storageBudgetBytes = approved
+        ? positiveSafeInteger(body.storageBudgetBytes, 'INVALID_STORAGE_BUDGET', Number.MAX_SAFE_INTEGER)
+        : null;
+      const maxObjectBytes = approved
+        ? positiveSafeInteger(body.maxObjectBytes, 'INVALID_MAX_OBJECT_BYTES', 10 * 1024 * 1024)
+        : null;
       const { data, error } = await adminClient.rpc('ecoflow_set_unleashed_asset_authorization', {
         p_command_id: commandId,
         p_requested_by: userData.user.id,
         p_expected_revision: expectedRevision,
         p_authorization_status: authorizationStatus,
-        p_evidence_reference: body.evidenceReference ?? null,
-        p_rights_scope: body.rightsScope ?? null,
-        p_storage_budget_bytes: body.storageBudgetBytes ?? null,
-        p_max_object_bytes: body.maxObjectBytes ?? null,
-        p_expires_at: optionalIsoDate(body.expiresAt),
+        p_evidence_reference: approved ? body.evidenceReference ?? null : null,
+        p_rights_scope: approved ? body.rightsScope ?? null : null,
+        p_storage_budget_bytes: storageBudgetBytes,
+        p_max_object_bytes: maxObjectBytes,
+        p_expires_at: approved ? optionalIsoDate(body.expiresAt) : null,
         p_reason: reason(body.reason),
       });
       if (error) throw new Error(`ASSET_AUTHORIZATION_FAILED:${error.message}`);
@@ -280,14 +380,27 @@ Deno.serve(async (req) => {
 
     if (body.mode === 'COPY_IMAGES') {
       const commandId = uuid(body.commandId, 'INVALID_COMMAND_ID');
-      const limit = positiveSafeInteger(body.limit ?? 10, 'INVALID_COPY_LIMIT', 50);
+      const limit = positiveSafeInteger(body.limit ?? 10, 'INVALID_COPY_LIMIT', 10);
       const copyReason = reason(body.reason);
-      const commandPayloadSha256 = await sha256Hex(JSON.stringify({ mode: 'COPY_IMAGES', limit, reason: copyReason }));
+      const commandPayloadSha256 = await sha256Hex(JSON.stringify({
+        actorUserId: userData.user.id,
+        mode: 'COPY_IMAGES',
+        limit,
+        reason: copyReason,
+      }));
       const { data: existingRun, error: existingRunError } = await adminClient
         .from('ecoflow_unleashed_asset_copy_runs').select('*').eq('command_id', commandId).maybeSingle();
       if (existingRunError) throw new Error(`COPY_RUN_REPLAY_READ_FAILED:${existingRunError.message}`);
       if (existingRun) {
         if (existingRun.command_payload_sha256 !== commandPayloadSha256) throw new Error('COMMAND_REPLAY_PAYLOAD_MISMATCH');
+        if (existingRun.status === 'RUNNING' && copyRunLeaseExpired(existingRun)) {
+          await expireStaleCopyRun(adminClient, existingRun);
+          return json(200, copyRunResponse({
+            ...existingRun,
+            status: 'FAILED',
+            error_code: 'COPY_RUN_LEASE_EXPIRED',
+          }, true));
+        }
         return json(200, copyRunResponse(existingRun, true));
       }
 
@@ -297,6 +410,14 @@ Deno.serve(async (req) => {
       if (!rights || rights.authorization_status !== 'APPROVED'
           || (rights.expires_at && Date.parse(rights.expires_at) <= Date.now())) {
         throw new Error('ASSET_RIGHTS_NOT_APPROVED');
+      }
+
+      const { data: activeRun, error: activeRunError } = await adminClient
+        .from('ecoflow_unleashed_asset_copy_runs').select('*').eq('status', 'RUNNING').maybeSingle();
+      if (activeRunError) throw new Error(`COPY_RUN_LEASE_READ_FAILED:${activeRunError.message}`);
+      if (activeRun) {
+        if (!copyRunLeaseExpired(activeRun)) throw new Error('COPY_RUN_ALREADY_RUNNING');
+        await expireStaleCopyRun(adminClient, activeRun);
       }
 
       const { data: copiedRows, error: copiedReadError } = await adminClient
@@ -316,7 +437,10 @@ Deno.serve(async (req) => {
         authorization_id: rights.id,
         metadata: { reason: copyReason },
       }).select('*').single();
-      if (runError || !run) throw new Error(`COPY_RUN_CREATE_FAILED:${runError?.message}`);
+      if (runError || !run) {
+        if (runError?.code === '23505') throw new Error('COPY_RUN_ALREADY_RUNNING');
+        throw new Error(`COPY_RUN_CREATE_FAILED:${runError?.message}`);
+      }
 
       const { data: planned, error: plannedError } = await adminClient
         .from('ecoflow_unleashed_product_assets').select('*')
@@ -334,20 +458,40 @@ Deno.serve(async (req) => {
           if (currentSnapshotError || !currentSnapshot) throw new Error('SOURCE_SNAPSHOT_NOT_FOUND');
           if (currentSnapshot.payload_sha256 !== asset.source_payload_sha256) throw new Error('SOURCE_SNAPSHOT_CHANGED');
           const sourceUrl = normalizeUnleashedImageUrl(asset.source_image_url);
-          await adminClient.from('ecoflow_unleashed_product_assets').update({
+          const { data: claimedAsset, error: claimError } = await adminClient
+            .from('ecoflow_unleashed_product_assets').update({
             asset_status: 'COPYING',
+            claimed_in_run_id: run.id,
             attempt_count: asset.attempt_count + 1,
             last_error_code: null,
             last_error_message: null,
             updated_at: new Date().toISOString(),
-          }).eq('id', asset.id);
+          }).eq('id', asset.id).in('asset_status', ['PLANNED', 'FAILED'])
+            .eq('source_snapshot_id', asset.source_snapshot_id)
+            .eq('source_payload_sha256', asset.source_payload_sha256)
+            .is('claimed_in_run_id', null).select('id').maybeSingle();
+          if (claimError) throw new Error(`ASSET_COPY_CLAIM_FAILED:${claimError.message}`);
+          if (!claimedAsset) throw new Error('ASSET_COPY_CLAIM_CONFLICT');
 
-          const response = await fetch(sourceUrl, { method: 'GET', redirect: 'manual' });
+          const response = await fetch(sourceUrl, {
+            method: 'GET',
+            redirect: 'manual',
+            signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+          });
           const image = await readImageBytesBounded(response, {
             maxObjectBytes: rights.max_object_bytes,
             storageBudgetBytes: rights.storage_budget_bytes,
             copiedBytes,
           });
+          const { data: currentRights, error: currentRightsError } = await adminClient
+            .from('ecoflow_unleashed_asset_authorizations')
+            .select('id,authorization_status,is_current,expires_at')
+            .eq('id', rights.id).eq('is_current', true).eq('authorization_status', 'APPROVED')
+            .maybeSingle();
+          if (currentRightsError) throw new Error(`ASSET_RIGHTS_RECHECK_FAILED:${currentRightsError.message}`);
+          if (!currentRights || (currentRights.expires_at && Date.parse(currentRights.expires_at) <= Date.now())) {
+            throw new Error('ASSET_RIGHTS_NOT_APPROVED');
+          }
           const contentSha256 = await sha256Hex(image.bytes);
           const objectPath = contentAddressedObjectPath(asset.identity_id, contentSha256, image.contentType);
           const alreadyRegistered = physicalObjects.has(objectPath);
@@ -366,6 +510,12 @@ Deno.serve(async (req) => {
               physicalObjects.set(objectPath, image.contentLength);
               copied += 1;
             } else {
+              // A duplicate can be an orphan left by a worker that uploaded
+              // successfully and died before recording provenance. Reconcile
+              // that physical object into this run's aggregate budget before
+              // processing another asset.
+              copiedBytes += image.contentLength;
+              physicalObjects.set(objectPath, image.contentLength);
               reused += 1;
             }
           } else {
@@ -379,6 +529,7 @@ Deno.serve(async (req) => {
             content_sha256: contentSha256,
             bucket_id: 'unleashed-product-images',
             object_path: objectPath,
+            claimed_in_run_id: null,
             copied_in_run_id: run.id,
             copied_at: new Date().toISOString(),
             last_error_code: null,
@@ -394,6 +545,7 @@ Deno.serve(async (req) => {
             || code === 'SOURCE_SNAPSHOT_CHANGED';
           await adminClient.from('ecoflow_unleashed_product_assets').update({
             asset_status: blocked ? 'BLOCKED' : 'FAILED',
+            claimed_in_run_id: null,
             last_error_code: code,
             last_error_message: error instanceof Error ? error.message.slice(0, 500) : code,
             updated_at: new Date().toISOString(),
@@ -447,6 +599,11 @@ Deno.serve(async (req) => {
       target_id: body.commandId ?? userData.user.id,
       after_data: { mode: body.mode ?? null, error_code: code },
     }).catch(() => undefined);
-    return json(code.endsWith('FORBIDDEN') || code === 'ASSET_RIGHTS_NOT_APPROVED' ? 403 : 400, { error: code });
+    const status = code.endsWith('FORBIDDEN') || code === 'ASSET_RIGHTS_NOT_APPROVED'
+      ? 403
+      : code === 'COPY_RUN_ALREADY_RUNNING' || code.endsWith('_CONFLICT')
+      ? 409
+      : 400;
+    return json(status, { error: code });
   }
 });

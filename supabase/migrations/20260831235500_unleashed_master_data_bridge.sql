@@ -68,6 +68,7 @@ create table if not exists public.ecoflow_unleashed_master_mappings (
   match_method text,
   candidate_count integer not null default 0 check (candidate_count >= 0),
   source_duplicate_count integer not null default 1 check (source_duplicate_count >= 1),
+  candidate_set_sha256 text not null check (candidate_set_sha256 ~ '^[0-9a-f]{64}$'),
   decision_source text not null default 'AUTO'
     check (decision_source in ('AUTO','REVIEW')),
   revision bigint not null default 0 check (revision >= 0),
@@ -117,11 +118,16 @@ create table if not exists public.ecoflow_unleashed_master_candidates (
   canonical_code text not null,
   ordermentum_external_id text,
   match_method text not null,
+  is_current boolean not null default true,
   evidence jsonb not null default '{}'::jsonb check (jsonb_typeof(evidence)='object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(mapping_id,canonical_object_type,canonical_object_id,match_method)
 );
+
+create index if not exists ecoflow_unleashed_master_candidates_current_idx
+  on public.ecoflow_unleashed_master_candidates(mapping_id,candidate_rank)
+  where is_current;
 
 create table if not exists public.ecoflow_unleashed_mapping_commands (
   id uuid primary key default extensions.gen_random_uuid(),
@@ -134,6 +140,8 @@ create table if not exists public.ecoflow_unleashed_mapping_commands (
   requested_status text not null
     check (requested_status in ('MATCHED','AMBIGUOUS','UNMATCHED','RETIRED')),
   requested_candidate_id uuid references public.ecoflow_unleashed_master_candidates(id) on delete restrict,
+  selected_candidate_snapshot jsonb
+    check (selected_candidate_snapshot is null or jsonb_typeof(selected_candidate_snapshot)='object'),
   reason text not null,
   result jsonb not null check (jsonb_typeof(result)='object'),
   created_at timestamptz not null default now()
@@ -188,7 +196,7 @@ create table if not exists public.ecoflow_unleashed_asset_copy_runs (
   requested_by uuid not null references auth.users(id) on delete restrict,
   status text not null default 'RUNNING'
     check (status in ('RUNNING','SUCCEEDED','PARTIAL','FAILED','CANCELLED')),
-  requested_limit integer not null check (requested_limit between 1 and 50),
+  requested_limit integer not null check (requested_limit between 1 and 10),
   authorization_id uuid not null
     references public.ecoflow_unleashed_asset_authorizations(id) on delete restrict,
   assets_planned integer not null default 0,
@@ -202,6 +210,9 @@ create table if not exists public.ecoflow_unleashed_asset_copy_runs (
   error_message text,
   metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata)='object')
 );
+
+create unique index if not exists ecoflow_unleashed_asset_copy_running_uidx
+  on public.ecoflow_unleashed_asset_copy_runs((true)) where status='RUNNING';
 
 create table if not exists public.ecoflow_unleashed_product_assets (
   id uuid primary key default extensions.gen_random_uuid(),
@@ -220,6 +231,7 @@ create table if not exists public.ecoflow_unleashed_product_assets (
   content_sha256 text check (content_sha256 is null or content_sha256 ~ '^[0-9a-f]{64}$'),
   bucket_id text not null default 'unleashed-product-images',
   object_path text,
+  claimed_in_run_id uuid references public.ecoflow_unleashed_asset_copy_runs(id) on delete set null,
   copied_in_run_id uuid references public.ecoflow_unleashed_asset_copy_runs(id) on delete set null,
   copied_at timestamptz,
   attempt_count integer not null default 0 check (attempt_count >= 0),
@@ -268,7 +280,7 @@ create or replace function public.ecoflow_plan_unleashed_master_mappings(
 returns jsonb
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = ''
 as $$
 declare
   v_source record;
@@ -282,6 +294,8 @@ declare
   v_canonical_code text;
   v_ordermentum_id text;
   v_match_method text;
+  v_candidate_set jsonb;
+  v_candidate_set_sha256 text;
   v_preserve_review boolean;
   v_planned integer := 0;
   v_matched integer := 0;
@@ -326,6 +340,7 @@ begin
     v_canonical_code := null;
     v_ordermentum_id := null;
     v_match_method := null;
+    v_candidate_set := '[]'::jsonb;
 
     select count(*)::integer into v_duplicate_count
     from public.unleashed_external_identities d
@@ -397,6 +412,70 @@ begin
       else 'UNMATCHED'
     end;
 
+    if v_source.resource='products' then
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'canonicalObjectType','COMMERCIAL_SKU',
+        'canonicalObjectId',candidate.id,
+        'canonicalCode',candidate.sku_code,
+        'ordermentumExternalId',candidate.ordermentum_external_id,
+        'matchMethod','ORDERMENTUM_PRODUCT_CODE_EXACT'
+      ) order by candidate.id), '[]'::jsonb)
+      into v_candidate_set
+      from (
+        select s.id,s.sku_code,min(m.external_product_code) as ordermentum_external_id
+        from public.external_product_mappings m
+        join public.skus s on s.id=m.internal_sku_id
+        where m.provider='ORDERMENTUM' and m.is_active
+          and v_source.external_code is not null
+          and upper(btrim(m.external_product_code))=upper(btrim(v_source.external_code))
+        group by s.id,s.sku_code
+      ) candidate;
+    elsif v_source.resource='warehouses' then
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'canonicalObjectType','WAREHOUSE',
+        'canonicalObjectId',candidate.id,
+        'canonicalCode',candidate.warehouse_code,
+        'matchMethod','ECOFLOW_WAREHOUSE_CODE_EXACT'
+      ) order by candidate.id), '[]'::jsonb)
+      into v_candidate_set
+      from (
+        select distinct w.id,w.warehouse_code
+        from public.warehouses w
+        where v_source.external_code is not null
+          and upper(btrim(w.warehouse_code))=upper(btrim(v_source.external_code))
+      ) candidate;
+    else
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'canonicalObjectType',candidate.internal_object_type,
+        'canonicalObjectId',candidate.internal_object_id,
+        'canonicalCode',candidate.internal_code,
+        'matchMethod','EXPLICIT_EXTERNAL_OBJECT_MAPPING'
+      ) order by candidate.internal_object_type,candidate.internal_object_id), '[]'::jsonb)
+      into v_candidate_set
+      from (
+        select
+          m.internal_object_type,m.internal_object_id,
+          min(coalesce(m.internal_code,m.internal_object_id::text)) as internal_code
+        from public.ecoflow_external_object_mappings m
+        where m.external_system='UNLEASHED'
+          and m.mapping_status='ACTIVE'
+          and m.internal_object_id is not null
+          and m.external_resource_type=v_source.resource
+          and m.external_id in (
+            v_source.external_key,
+            coalesce(v_source.external_guid,''),
+            coalesce(v_source.external_code,'')
+          )
+        group by m.internal_object_type,m.internal_object_id
+      ) candidate;
+    end if;
+
+    v_candidate_set_sha256 := encode(extensions.digest(jsonb_build_object(
+      'autoStatus',v_status,
+      'sourceDuplicateCount',v_duplicate_count,
+      'candidates',v_candidate_set
+    )::text,'sha256'),'hex');
+
     if v_status <> 'MATCHED' then
       v_object_type := null;
       v_object_id := null;
@@ -410,6 +489,7 @@ begin
       where current_mapping.identity_id=v_source.identity_id
         and current_mapping.decision_source='REVIEW'
         and current_mapping.source_payload_sha256=v_source.payload_sha256
+        and current_mapping.candidate_set_sha256=v_candidate_set_sha256
     ) into v_preserve_review;
 
     insert into public.ecoflow_unleashed_master_mappings as existing (
@@ -417,7 +497,7 @@ begin
       source_external_guid,source_external_code,source_external_key,
       source_payload_sha256,source_observed_at,
       canonical_object_type,canonical_object_id,canonical_code,ordermentum_external_id,
-      match_method,candidate_count,source_duplicate_count,decision_source,
+      match_method,candidate_count,source_duplicate_count,candidate_set_sha256,decision_source,
       last_planned_run_id,last_planned_at
     ) values (
       v_source.identity_id,
@@ -432,7 +512,7 @@ begin
       v_source.external_guid,v_source.external_code,v_source.external_key,
       v_source.payload_sha256,v_source.last_seen_at,
       v_object_type,v_object_id,v_canonical_code,v_ordermentum_id,
-      v_match_method,coalesce(v_candidate_count,0),v_duplicate_count,'AUTO',
+      v_match_method,coalesce(v_candidate_count,0),v_duplicate_count,v_candidate_set_sha256,'AUTO',
       v_source.last_seen_run_id,now()
     )
     on conflict(identity_id) do update set
@@ -450,12 +530,14 @@ begin
       match_method=case when v_preserve_review then existing.match_method else excluded.match_method end,
       candidate_count=excluded.candidate_count,
       source_duplicate_count=excluded.source_duplicate_count,
+      candidate_set_sha256=excluded.candidate_set_sha256,
       decision_source=case when v_preserve_review then existing.decision_source else 'AUTO' end,
       reviewed_by=case when v_preserve_review then existing.reviewed_by else null end,
       reviewed_at=case when v_preserve_review then existing.reviewed_at else null end,
       review_reason=case when v_preserve_review then existing.review_reason else null end,
       revision=existing.revision + case
         when existing.source_payload_sha256 is distinct from excluded.source_payload_sha256 then 1
+        when existing.candidate_set_sha256 is distinct from excluded.candidate_set_sha256 then 1
         when not v_preserve_review and (
           existing.mapping_status is distinct from excluded.mapping_status
           or existing.canonical_object_id is distinct from excluded.canonical_object_id
@@ -469,44 +551,64 @@ begin
       updated_at=now()
     returning id,mapping_status into v_mapping_id,v_final_status;
 
-    delete from public.ecoflow_unleashed_master_candidates c where c.mapping_id=v_mapping_id;
+    -- Candidate rows are durable review evidence. Mark the previous plan stale
+    -- and reactivate/upsert the current deterministic candidates instead of
+    -- deleting rows that may be referenced by an accepted review command.
+    update public.ecoflow_unleashed_master_candidates c
+    set is_current=false,updated_at=now()
+    where c.mapping_id=v_mapping_id and c.is_current;
 
     if v_source.resource='products' then
       insert into public.ecoflow_unleashed_master_candidates(
         mapping_id,candidate_rank,canonical_object_type,canonical_object_id,
-        canonical_code,ordermentum_external_id,match_method,evidence
+        canonical_code,ordermentum_external_id,match_method,is_current,evidence
       )
       select
         v_mapping_id,1,'COMMERCIAL_SKU',s.id,s.sku_code,min(m.external_product_code),
-        'ORDERMENTUM_PRODUCT_CODE_EXACT',
+        'ORDERMENTUM_PRODUCT_CODE_EXACT',true,
         jsonb_build_object('normalisedCode',upper(btrim(v_source.external_code)))
       from public.external_product_mappings m
       join public.skus s on s.id=m.internal_sku_id
       where m.provider='ORDERMENTUM' and m.is_active
         and v_source.external_code is not null
         and upper(btrim(m.external_product_code))=upper(btrim(v_source.external_code))
-      group by s.id,s.sku_code;
+      group by s.id,s.sku_code
+      on conflict(mapping_id,canonical_object_type,canonical_object_id,match_method)
+      do update set
+        candidate_rank=excluded.candidate_rank,
+        canonical_code=excluded.canonical_code,
+        ordermentum_external_id=excluded.ordermentum_external_id,
+        is_current=true,
+        evidence=excluded.evidence,
+        updated_at=now();
     elsif v_source.resource='warehouses' then
       insert into public.ecoflow_unleashed_master_candidates(
         mapping_id,candidate_rank,canonical_object_type,canonical_object_id,
-        canonical_code,match_method,evidence
+        canonical_code,match_method,is_current,evidence
       )
       select distinct
         v_mapping_id,1,'WAREHOUSE',w.id,w.warehouse_code,
-        'ECOFLOW_WAREHOUSE_CODE_EXACT',
+        'ECOFLOW_WAREHOUSE_CODE_EXACT',true,
         jsonb_build_object('normalisedCode',upper(btrim(v_source.external_code)))
       from public.warehouses w
       where v_source.external_code is not null
-        and upper(btrim(w.warehouse_code))=upper(btrim(v_source.external_code));
+        and upper(btrim(w.warehouse_code))=upper(btrim(v_source.external_code))
+      on conflict(mapping_id,canonical_object_type,canonical_object_id,match_method)
+      do update set
+        candidate_rank=excluded.candidate_rank,
+        canonical_code=excluded.canonical_code,
+        is_current=true,
+        evidence=excluded.evidence,
+        updated_at=now();
     else
       insert into public.ecoflow_unleashed_master_candidates(
         mapping_id,candidate_rank,canonical_object_type,canonical_object_id,
-        canonical_code,match_method,evidence
+        canonical_code,match_method,is_current,evidence
       )
       select
         v_mapping_id,1,m.internal_object_type,m.internal_object_id,
         min(coalesce(m.internal_code,m.internal_object_id::text)),
-        'EXPLICIT_EXTERNAL_OBJECT_MAPPING',
+        'EXPLICIT_EXTERNAL_OBJECT_MAPPING',true,
         jsonb_build_object('externalObjectMappingIds',jsonb_agg(m.id order by m.id))
       from public.ecoflow_external_object_mappings m
       where m.external_system='UNLEASHED'
@@ -518,7 +620,14 @@ begin
           coalesce(v_source.external_guid,''),
           coalesce(v_source.external_code,'')
         )
-      group by m.internal_object_type,m.internal_object_id;
+      group by m.internal_object_type,m.internal_object_id
+      on conflict(mapping_id,canonical_object_type,canonical_object_id,match_method)
+      do update set
+        candidate_rank=excluded.candidate_rank,
+        canonical_code=excluded.canonical_code,
+        is_current=true,
+        evidence=excluded.evidence,
+        updated_at=now();
     end if;
 
     v_planned := v_planned + 1;
@@ -560,7 +669,7 @@ create or replace function public.ecoflow_review_unleashed_master_mapping(
 returns jsonb
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = ''
 as $$
 declare
   v_actor uuid := auth.uid();
@@ -569,6 +678,7 @@ declare
   v_candidate public.ecoflow_unleashed_master_candidates%rowtype;
   v_payload_hash text;
   v_existing public.ecoflow_unleashed_mapping_commands%rowtype;
+  v_candidate_snapshot jsonb;
   v_result jsonb;
 begin
   v_role := public.ecoflow_active_app_role();
@@ -581,9 +691,13 @@ begin
     raise exception 'UNLEASHED_MAPPING_REVIEW_INVALID';
   end if;
 
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('ecoflow_unleashed_mapping_command:'||p_command_id::text,0)
+  );
+
   v_payload_hash := encode(extensions.digest(
     jsonb_build_object(
-      'mappingId',p_mapping_id,'expectedRevision',p_expected_revision,
+      'actorUserId',v_actor,'mappingId',p_mapping_id,'expectedRevision',p_expected_revision,
       'mappingStatus',p_mapping_status,'candidateId',p_candidate_id,'reason',btrim(p_reason)
     )::text,'sha256'
   ),'hex');
@@ -611,8 +725,17 @@ begin
     if p_candidate_id is null then raise exception 'MATCHED_REQUIRES_CANONICAL_TARGET'; end if;
     select * into v_candidate
     from public.ecoflow_unleashed_master_candidates c
-    where c.id=p_candidate_id and c.mapping_id=p_mapping_id;
+    where c.id=p_candidate_id and c.mapping_id=p_mapping_id and c.is_current;
     if not found then raise exception 'MATCHED_REQUIRES_CANONICAL_TARGET'; end if;
+    v_candidate_snapshot := jsonb_build_object(
+      'candidateId',v_candidate.id,
+      'canonicalObjectType',v_candidate.canonical_object_type,
+      'canonicalObjectId',v_candidate.canonical_object_id,
+      'canonicalCode',v_candidate.canonical_code,
+      'ordermentumExternalId',v_candidate.ordermentum_external_id,
+      'matchMethod',v_candidate.match_method,
+      'evidence',v_candidate.evidence
+    );
   elsif p_candidate_id is not null then
     raise exception 'NONMATCHED_FORBIDS_CANONICAL_TARGET';
   end if;
@@ -634,20 +757,26 @@ begin
 
   v_result := jsonb_build_object(
     'mappingId',p_mapping_id,'mappingStatus',p_mapping_status,
-    'revision',p_expected_revision+1,'replayed',false
+    'revision',p_expected_revision+1,'replayed',false,
+    'selectedCandidate',v_candidate_snapshot
   );
   insert into public.ecoflow_unleashed_mapping_commands(
     command_id,mapping_id,actor_user_id,expected_revision,command_payload_sha256,
-    requested_status,requested_candidate_id,reason,result
+    requested_status,requested_candidate_id,selected_candidate_snapshot,reason,result
   ) values (
     p_command_id,p_mapping_id,v_actor,p_expected_revision,v_payload_hash,
-    p_mapping_status,p_candidate_id,btrim(p_reason),v_result
+    p_mapping_status,p_candidate_id,v_candidate_snapshot,btrim(p_reason),v_result
   );
   insert into public.app_security_audit_events(
     actor_user_id,actor_role,action,target_type,target_id,before_data,after_data
   ) values (
     v_actor,v_role,'UNLEASHED_MASTER_MAPPING_REVIEWED','ecoflow_unleashed_master_mappings',p_mapping_id::text,
-    jsonb_build_object('mappingStatus',v_mapping.mapping_status,'revision',v_mapping.revision),v_result
+    jsonb_build_object(
+      'mappingStatus',v_mapping.mapping_status,'revision',v_mapping.revision,
+      'canonicalObjectType',v_mapping.canonical_object_type,
+      'canonicalObjectId',v_mapping.canonical_object_id,
+      'canonicalCode',v_mapping.canonical_code
+    ),v_result
   );
   return v_result;
 end;
@@ -668,7 +797,7 @@ create or replace function public.ecoflow_set_unleashed_asset_authorization(
 returns jsonb
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = ''
 as $$
 declare
   v_role text;
@@ -696,8 +825,15 @@ begin
     or (p_expires_at is not null and p_expires_at<=now())
   ) then raise exception 'ASSET_AUTHORIZATION_APPROVAL_EVIDENCE_REQUIRED'; end if;
 
+  -- Asset rights are one global aggregate. Serialize revision and idempotency
+  -- checks so two Owner/Admin requests cannot both replace the current grant.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('ecoflow_unleashed_asset_authorization',0)
+  );
+
   v_hash := encode(extensions.digest(jsonb_build_object(
-    'expectedRevision',p_expected_revision,'status',p_authorization_status,
+    'requestedBy',p_requested_by,'expectedRevision',p_expected_revision,
+    'status',p_authorization_status,
     'evidenceReference',p_evidence_reference,'rightsScope',p_rights_scope,
     'storageBudgetBytes',p_storage_budget_bytes,'maxObjectBytes',p_max_object_bytes,
     'expiresAt',p_expires_at,'reason',btrim(p_reason)
@@ -822,7 +958,7 @@ select
   m.source_payload_sha256,m.source_observed_at,
   m.canonical_object_type,m.canonical_object_id,m.canonical_code,
   m.ordermentum_external_id,m.match_method,m.candidate_count,
-  m.source_duplicate_count,m.decision_source,m.revision,
+  m.source_duplicate_count,m.candidate_set_sha256,m.decision_source,m.revision,
   m.last_planned_run_id,m.last_planned_at,m.reviewed_by,m.reviewed_at,
   m.review_reason,m.updated_at
 from public.ecoflow_unleashed_master_mappings m

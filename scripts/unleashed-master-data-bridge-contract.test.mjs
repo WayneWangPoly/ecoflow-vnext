@@ -48,6 +48,12 @@ test('migration establishes a four-state, provenance-backed master mapping bridg
   assert.match(migration, /COMMAND_REPLAY_PAYLOAD_MISMATCH/);
   assert.match(migration, /MAPPING_REVISION_CONFLICT/);
   assert.match(migration, /MATCHED_REQUIRES_CANONICAL_TARGET/);
+  assert.match(migration, /is_current boolean not null default true/);
+  assert.match(migration, /candidate_set_sha256 text not null/);
+  assert.match(migration, /current_mapping\.candidate_set_sha256=v_candidate_set_sha256/);
+  assert.match(migration, /selected_candidate_snapshot jsonb/);
+  assert.match(migration, /and c\.is_current/);
+  assert.doesNotMatch(migration, /delete from public\.ecoflow_unleashed_master_candidates/);
 });
 
 test('deterministic planner fails closed and never creates Physical SKU authority', () => {
@@ -69,7 +75,8 @@ test('browser access is read-only and review is a server-authoritative command',
   assert.match(migration, /ecoflow_review_unleashed_master_mapping/);
   assert.match(migration, /v_role not in \('OWNER','ADMIN'\)/);
   assert.match(migration, /security definer/);
-  assert.match(migration, /set search_path = pg_catalog, public/);
+  assert.match(migration, /set search_path = ''/);
+  assert.match(migration, /pg_advisory_xact_lock/);
 });
 
 test('product image storage is private, bounded and service-written', () => {
@@ -95,6 +102,23 @@ test('Edge Function rejects unsafe assets before any Storage mutation', () => {
   assert.match(edgeFunction, /ASSET_RIGHTS_NOT_APPROVED/);
   assert.match(edgeFunction, /SOURCE_SNAPSHOT_CHANGED/);
   assert.match(edgeFunction, /from\('unleashed-product-images'\)\.upload/);
+  assert.match(edgeFunction, /COPY_RUN_ALREADY_RUNNING/);
+  assert.match(edgeFunction, /COPY_RUN_LEASE_EXPIRED/);
+  assert.match(edgeFunction, /positiveSafeInteger\(body\.limit \?\? 10, 'INVALID_COPY_LIMIT', 10\)/);
+  assert.match(migration, /requested_limit between 1 and 10/);
+  assert.match(edgeFunction, /claimed_in_run_id/);
+  assert.match(edgeFunction, /AbortSignal\.timeout/);
+  assert.match(edgeFunction, /actorUserId: userData\.user\.id/);
+  assert.match(edgeFunction, /duplicate[\s\S]{0,500}copiedBytes \+= image\.contentLength/);
+  assert.match(edgeFunction, /update\(refresh\)[\s\S]{0,180}\.is\('claimed_in_run_id', null\)/);
+  assert.match(edgeFunction, /\.eq\('source_payload_sha256', asset\.source_payload_sha256\)/);
+  assert.match(edgeFunction, /if \(existingAsset\.asset_status === 'COPIED'\) continue/);
+  assert.match(edgeFunction, /refresh\.asset_status = asset\.asset_status/);
+  assert.match(edgeFunction, /UNLEASHED_IMAGE_SOURCE_SUPERSEDED/);
+  assert.match(edgeFunction, /asset_status: 'RETIRED'/);
+  assert.match(edgeFunction, /UNLEASHED_IMAGE_NOT_PRESENT/);
+  assert.match(edgeFunction, /blocked:\/\/redacted/);
+  assert.match(migration, /where status='RUNNING'/);
 });
 
 test('migration trigger remains JWT protected and Unleashed read-only', () => {
@@ -115,7 +139,7 @@ test('repository exposes a reproducible #338 audit command', () => {
   );
 });
 
-test('image helpers accept the allowlisted CDN and deduplicate product images', async () => {
+test('image helpers accept the allowlisted CDN, verify bytes and deduplicate product images', async () => {
   const urls = extractProductImageUrls({
     ImageUrl: 'https://unlappcdn.unleashedsoftware.com/a.jpg',
     Images: [
@@ -131,12 +155,12 @@ test('image helpers accept the allowlisted CDN and deduplicate product images', 
   assert.throws(() => normalizeUnleashedImageUrl('http://unlappcdn.unleashedsoftware.com/a.jpg'), /HTTPS_REQUIRED/);
   assert.throws(() => normalizeUnleashedImageUrl('https://example.com/a.jpg'), /HOST_NOT_ALLOWED/);
 
-  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
   const result = await readImageBytesBounded(new Response(bytes, {
     status: 200,
     headers: { 'content-type': 'image/png', 'content-length': String(bytes.byteLength) },
-  }), { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 5 });
-  assert.equal(result.contentLength, 4);
+  }), { maxObjectBytes: 20, storageBudgetBytes: 30, copiedBytes: 5 });
+  assert.equal(result.contentLength, 12);
   const hash = await sha256Hex(bytes);
   assert.equal(contentAddressedObjectPath('10000000-0000-4000-8000-000000000001', hash, 'image/png'),
     `products/10000000-0000-4000-8000-000000000001/${hash}.png`);
@@ -152,6 +176,12 @@ test('image helpers reject redirects, MIME drift, object overflow and budget ove
     readImageBytesBounded(new Response(new Uint8Array([1]), { headers: { 'content-type': 'text/html' } }),
       { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 0 }),
     /MIME_NOT_ALLOWED/,
+  );
+  await assert.rejects(
+    readImageBytesBounded(new Response(new Uint8Array([1, 2, 3, 4]), {
+      headers: { 'content-type': 'image/png' },
+    }), { maxObjectBytes: 10, storageBudgetBytes: 20, copiedBytes: 0 }),
+    /MIME_CONTENT_MISMATCH/,
   );
   await assert.rejects(
     readImageBytesBounded(new Response(new Uint8Array(11), { headers: { 'content-type': 'image/jpeg' } }),

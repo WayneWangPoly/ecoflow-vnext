@@ -69,6 +69,54 @@ check(
   'mapping, authorization and copy commands are payload-bound',
 );
 check(
+  'commands are actor-bound',
+  /'actorUserId',v_actor/.test(migration)
+    && /'requestedBy',p_requested_by/.test(migration)
+    && /actorUserId: userData\.user\.id/.test(edge),
+  'a different Owner/Admin cannot replay another actor command',
+);
+check(
+  'review evidence survives replanning',
+  /candidate_set_sha256/.test(migration)
+    && /selected_candidate_snapshot/.test(migration)
+    && /and c\.is_current/.test(migration)
+    && !/delete from public\.ecoflow_unleashed_master_candidates/.test(migration),
+  'source/canonical drift invalidates authority without deleting accepted evidence',
+);
+check(
+  'image bytes match declared MIME',
+  /detectImageContentType/.test(core)
+    && /UNLEASHED_IMAGE_MIME_CONTENT_MISMATCH/.test(core),
+  'JPEG/PNG/WebP signatures are checked after the bounded read',
+);
+check(
+  'asset exceptions are explicit and redacted',
+  /UNLEASHED_IMAGE_NOT_PRESENT/.test(edge)
+    && /blocked:\/\/redacted/.test(edge)
+    && /UNLEASHED_IMAGE_SOURCE_SUPERSEDED/.test(edge),
+  'missing or unsafe current locators are BLOCKED and superseded exceptions retire without persisting unsafe URLs',
+);
+check(
+  'copy budget has a recoverable singleton lease',
+  /where status='RUNNING'/.test(migration)
+    && /claimed_in_run_id/.test(migration + edge)
+    && /COPY_RUN_LEASE_EXPIRED/.test(edge)
+    && /COPY_RUN_ALREADY_RUNNING/.test(edge),
+  'only one run can spend the aggregate budget; expired claims fail closed',
+);
+check(
+  'copy crash reconciliation preserves budget',
+  /duplicate[\s\S]{0,500}copiedBytes \+= image\.contentLength/.test(edge)
+    && /\.eq\('source_payload_sha256', asset\.source_payload_sha256\)/.test(edge)
+    && /if \(existingAsset\.asset_status === 'COPIED'\) continue/.test(edge),
+  'orphaned duplicate objects and concurrent PLAN drift remain budget/source bound without rewriting copied provenance',
+);
+check(
+  'security definers use an empty search path',
+  (migration.match(/security definer\nset search_path = ''/g) ?? []).length >= 3,
+  'privileged functions schema-qualify objects and do not trust public search_path',
+);
+check(
   'content-addressed assets',
   /contentAddressedObjectPath/.test(edge + core)
     && /content_sha256/.test(migration),

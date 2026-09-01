@@ -244,6 +244,119 @@ begin
   if not v_failed then raise exception 'stale mapping revision did not fail'; end if;
 end $$;
 
+-- A reviewed MATCHED decision must survive an identical PLAN replay, and its
+-- historical command/candidate evidence must remain intact after source drift.
+do $$
+declare
+  v_mapping uuid;
+  v_candidate uuid;
+  v_command_candidate uuid;
+  v_revision bigint;
+  v_decision_source text;
+  v_status text;
+  v_current_candidates bigint;
+  v_snapshot jsonb;
+begin
+  select m.id into v_mapping
+  from public.ecoflow_unleashed_master_mappings m
+  where m.source_external_code='MATCH';
+  select c.id into v_candidate
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping and c.is_current;
+
+  perform public.ecoflow_review_unleashed_master_mapping(
+    v_mapping,'80000000-0000-4000-8000-000000000003',0,'MATCHED',v_candidate,
+    'Owner confirmed deterministic commercial identity'
+  );
+  perform public.ecoflow_plan_unleashed_master_mappings(
+    '10000000-0000-4000-8000-000000000001','DB contract reviewed replay plan'
+  );
+
+  select m.revision,m.decision_source,m.mapping_status
+  into v_revision,v_decision_source,v_status
+  from public.ecoflow_unleashed_master_mappings m where m.id=v_mapping;
+  if v_revision<>1 or v_decision_source<>'REVIEW' or v_status<>'MATCHED' then
+    raise exception 'reviewed mapping was not preserved by identical PLAN: %/%/%',
+      v_revision,v_decision_source,v_status;
+  end if;
+
+  update public.unleashed_raw_snapshots s set
+    payload=s.payload||'{"Description":"source changed"}'::jsonb,
+    payload_sha256=encode(extensions.digest(
+      (s.payload||'{"Description":"source changed"}'::jsonb)::text,'sha256'
+    ),'hex'),
+    last_seen_at=now()
+  where s.resource='products'
+    and s.external_key='guid:50000000-0000-4000-8000-000000000001';
+  perform public.ecoflow_plan_unleashed_master_mappings(
+    '10000000-0000-4000-8000-000000000001','DB contract source-change plan'
+  );
+
+  select m.revision,m.decision_source,m.mapping_status
+  into v_revision,v_decision_source,v_status
+  from public.ecoflow_unleashed_master_mappings m where m.id=v_mapping;
+  select count(*) into v_current_candidates
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping and c.is_current;
+  select c.requested_candidate_id,c.selected_candidate_snapshot
+  into v_command_candidate,v_snapshot
+  from public.ecoflow_unleashed_mapping_commands c
+  where c.command_id='80000000-0000-4000-8000-000000000003';
+  if v_revision<>2 or v_decision_source<>'AUTO' or v_status<>'MATCHED'
+     or v_current_candidates<>1 or v_command_candidate<>v_candidate
+     or v_snapshot->>'canonicalObjectId' is distinct from v_candidate::text then
+    raise exception 'source-change candidate history contract failed: %/%/%/%/%/%',
+      v_revision,v_decision_source,v_status,v_current_candidates,v_command_candidate,v_snapshot;
+  end if;
+end $$;
+
+-- Canonical-side drift must invalidate a review even when the Unleashed
+-- payload is unchanged; the accepted candidate remains durable evidence.
+do $$
+declare
+  v_mapping uuid;
+  v_candidate uuid;
+  v_revision bigint;
+  v_decision_source text;
+  v_status text;
+  v_current_candidates bigint;
+  v_snapshot jsonb;
+begin
+  select m.id into v_mapping
+  from public.ecoflow_unleashed_master_mappings m
+  where m.source_external_code='MAIN';
+  select c.id into v_candidate
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping and c.is_current;
+
+  perform public.ecoflow_review_unleashed_master_mapping(
+    v_mapping,'80000000-0000-4000-8000-000000000004',0,'MATCHED',v_candidate,
+    'Owner confirmed deterministic warehouse identity'
+  );
+  update public.warehouses set warehouse_code='MAIN-RENAMED'
+  where id='40000000-0000-4000-8000-000000000001';
+  perform public.ecoflow_plan_unleashed_master_mappings(
+    '10000000-0000-4000-8000-000000000001','DB contract canonical-change plan'
+  );
+
+  select m.revision,m.decision_source,m.mapping_status
+  into v_revision,v_decision_source,v_status
+  from public.ecoflow_unleashed_master_mappings m where m.id=v_mapping;
+  select count(*) into v_current_candidates
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping and c.is_current;
+  select c.selected_candidate_snapshot into v_snapshot
+  from public.ecoflow_unleashed_mapping_commands c
+  where c.command_id='80000000-0000-4000-8000-000000000004';
+  if v_revision<>2 or v_decision_source<>'AUTO' or v_status<>'UNMATCHED'
+     or v_current_candidates<>0
+     or v_snapshot->>'canonicalObjectId' is distinct from
+       '40000000-0000-4000-8000-000000000001' then
+    raise exception 'canonical-change review invalidation failed: %/%/%/%/%',
+      v_revision,v_decision_source,v_status,v_current_candidates,v_snapshot;
+  end if;
+end $$;
+
 do $$
 declare v_result jsonb; v_replay jsonb; v_failed boolean := false;
 begin
@@ -270,6 +383,83 @@ begin
     if position('ASSET_AUTHORIZATION_REVISION_CONFLICT' in sqlerrm)>0 then v_failed:=true; else raise; end if;
   end;
   if not v_failed then raise exception 'stale authorization revision did not fail'; end if;
+end $$;
+
+-- Only one image copy run may hold the storage-budget lease at a time.
+do $$
+declare
+  v_authorization uuid;
+  v_failed boolean := false;
+begin
+  select id into v_authorization
+  from public.ecoflow_unleashed_asset_authorizations where is_current;
+  insert into public.ecoflow_unleashed_asset_copy_runs(
+    command_id,command_payload_sha256,requested_by,requested_limit,authorization_id
+  ) values(
+    '91000000-0000-4000-8000-000000000001',repeat('a',64),
+    '10000000-0000-4000-8000-000000000001',1,v_authorization
+  );
+  begin
+    insert into public.ecoflow_unleashed_asset_copy_runs(
+      command_id,command_payload_sha256,requested_by,requested_limit,authorization_id
+    ) values(
+      '91000000-0000-4000-8000-000000000002',repeat('b',64),
+      '10000000-0000-4000-8000-000000000001',1,v_authorization
+    );
+  exception when unique_violation then
+    v_failed:=true;
+  end;
+  if not v_failed then raise exception 'parallel copy-run budget lease was not blocked'; end if;
+  update public.ecoflow_unleashed_asset_copy_runs
+  set status='FAILED',completed_at=now(),error_code='DB_CONTRACT_RELEASE'
+  where command_id='91000000-0000-4000-8000-000000000001';
+end $$;
+
+do $$
+declare
+  v_function_count bigint;
+begin
+  select count(*) into v_function_count
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname in (
+    'ecoflow_plan_unleashed_master_mappings',
+    'ecoflow_review_unleashed_master_mapping',
+    'ecoflow_set_unleashed_asset_authorization'
+  );
+  if v_function_count<>3 then
+    raise exception 'expected three privileged bridge functions, found %',v_function_count;
+  end if;
+  if exists(
+    select 1
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname in (
+      'ecoflow_plan_unleashed_master_mappings',
+      'ecoflow_review_unleashed_master_mapping',
+      'ecoflow_set_unleashed_asset_authorization'
+    ) and (
+      p.proconfig is null
+      or position('search_path=' in array_to_string(p.proconfig,','))=0
+      or position('public' in array_to_string(p.proconfig,','))>0
+    )
+  ) then
+    raise exception 'privileged bridge function search_path is not empty';
+  end if;
+  if exists(
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+    where n.nspname='public'
+      and p.proname in (
+        'ecoflow_plan_unleashed_master_mappings',
+        'ecoflow_review_unleashed_master_mapping',
+        'ecoflow_set_unleashed_asset_authorization'
+      )
+      and acl.grantee=0
+      and acl.privilege_type='EXECUTE'
+  ) then
+    raise exception 'PUBLIC can execute a privileged bridge function';
+  end if;
 end $$;
 
 do $$
