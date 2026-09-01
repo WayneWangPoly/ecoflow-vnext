@@ -58,8 +58,9 @@ content hash, rights approval, and storage-budget evidence.
   - Materialise deterministic candidates from server-side snapshot data.
   - Permit Owner/Admin review only through a revisioned, idempotent,
     server-authoritative command.
-  - Create one private `unleashed-product-images` bucket with bounded MIME and
-    object-size rules.
+  - Create or reconcile one private `unleashed-product-images` bucket through
+    the service-role Edge path with bounded MIME and object-size rules; the SQL
+    migration does not mutate Supabase-managed Storage relations.
   - Plan and copy only allowlisted Unleashed CDN image assets after explicit
     rights and capacity gates pass.
 
@@ -132,8 +133,11 @@ content hash, rights approval, and storage-budget evidence.
 - The response MIME header must agree with JPEG, PNG, or WebP magic bytes.
   Downloads have a fixed timeout and remain bounded even without a declared
   content length.
-- The bucket is private. Authenticated active EcoFlow roles may read; only the
-  service role may insert, update, or delete migration assets.
+- The bucket is private. Authenticated active EcoFlow roles may request a
+  short-lived signed read URL through the JWT-protected Edge Function; only the
+  service role may create/reconfigure the bucket or insert, update, and delete
+  migration assets. Schema deployment never writes `storage.buckets` or changes
+  policies owned by the managed Storage service.
 - Object paths are derived from stable source GUID plus content SHA-256, never
   from an untrusted filename. A repeated content hash reuses the logical asset.
 - Source URL, source payload hash, observed time, content type, content length,

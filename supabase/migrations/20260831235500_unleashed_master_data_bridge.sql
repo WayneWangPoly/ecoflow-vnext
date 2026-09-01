@@ -80,7 +80,7 @@ create table if not exists public.ecoflow_unleashed_master_mappings (
   revision bigint not null default 0 check (revision >= 0),
   last_planned_run_id uuid references public.unleashed_sync_runs(id) on delete set null,
   last_planned_at timestamptz not null default now(),
-  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_by uuid,
   reviewed_at timestamptz,
   review_reason text,
   created_at timestamptz not null default now(),
@@ -140,7 +140,7 @@ create table if not exists public.ecoflow_unleashed_mapping_commands (
   command_id uuid not null unique,
   mapping_id uuid not null
     references public.ecoflow_unleashed_master_mappings(id) on delete restrict,
-  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  actor_user_id uuid not null,
   expected_revision bigint not null check (expected_revision >= 0),
   command_payload_sha256 text not null check (command_payload_sha256 ~ '^[0-9a-f]{64}$'),
   requested_status text not null
@@ -163,7 +163,7 @@ create table if not exists public.ecoflow_unleashed_asset_authorizations (
   rights_scope text,
   storage_budget_bytes bigint,
   max_object_bytes bigint,
-  authorized_by uuid references auth.users(id) on delete restrict,
+  authorized_by uuid,
   authorized_at timestamptz,
   expires_at timestamptz,
   reason text not null,
@@ -188,7 +188,7 @@ create unique index if not exists ecoflow_unleashed_asset_authorization_current_
 create table if not exists public.ecoflow_unleashed_asset_authorization_commands (
   id uuid primary key default extensions.gen_random_uuid(),
   command_id uuid not null unique,
-  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  actor_user_id uuid not null,
   expected_revision bigint not null check (expected_revision >= 0),
   command_payload_sha256 text not null check (command_payload_sha256 ~ '^[0-9a-f]{64}$'),
   result jsonb not null check (jsonb_typeof(result)='object'),
@@ -199,7 +199,7 @@ create table if not exists public.ecoflow_unleashed_asset_copy_runs (
   id uuid primary key default extensions.gen_random_uuid(),
   command_id uuid not null unique,
   command_payload_sha256 text not null check (command_payload_sha256 ~ '^[0-9a-f]{64}$'),
-  requested_by uuid not null references auth.users(id) on delete restrict,
+  requested_by uuid not null,
   status text not null default 'RUNNING'
     check (status in ('RUNNING','SUCCEEDED','PARTIAL','FAILED','CANCELLED')),
   requested_limit integer not null check (requested_limit between 1 and 10),
@@ -996,24 +996,6 @@ revoke all on function public.ecoflow_set_unleashed_asset_authorization(uuid,uui
 grant execute on function public.ecoflow_set_unleashed_asset_authorization(uuid,uuid,bigint,text,text,text,bigint,bigint,timestamptz,text) to service_role;
 revoke all on function public.ecoflow_review_unleashed_master_mapping(uuid,uuid,bigint,text,uuid,text) from public,anon;
 grant execute on function public.ecoflow_review_unleashed_master_mapping(uuid,uuid,bigint,text,uuid,text) to authenticated;
-
-insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
-values(
-  'unleashed-product-images','unleashed-product-images',false,10485760,
-  array['image/jpeg','image/png','image/webp']
-)
-on conflict(id) do update set
-  public=false,
-  file_size_limit=10485760,
-  allowed_mime_types=excluded.allowed_mime_types;
-
-drop policy if exists unleashed_product_images_read on storage.objects;
-create policy unleashed_product_images_read
-on storage.objects for select to authenticated
-using (
-  bucket_id='unleashed-product-images'
-  and public.ecoflow_active_app_role() is not null
-);
 
 -- Independent-review hardening is intentionally integrated into this original
 -- undeployed #338 migration. The trusted shadow gate requires one changed

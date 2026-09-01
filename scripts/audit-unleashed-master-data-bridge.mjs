@@ -37,6 +37,16 @@ check(
 );
 
 check(
+  'actor provenance avoids cross-schema auth DDL authority',
+  !/references auth\.users/i.test(migration)
+    && /reviewed_by uuid/.test(migration)
+    && /actor_user_id uuid not null/.test(migration)
+    && /authorized_by uuid/.test(migration)
+    && /requested_by uuid not null/.test(migration),
+  'server-validated actor UUIDs remain durable evidence without requiring REFERENCES on auth.users',
+);
+
+check(
   'four governed mapping states',
   /mapping_status in \('MATCHED','AMBIGUOUS','UNMATCHED','RETIRED'\)/.test(migration),
   'MATCHED / AMBIGUOUS / UNMATCHED / RETIRED constraint',
@@ -77,10 +87,13 @@ check(
 );
 check(
   'private service-written image bucket',
-  /'unleashed-product-images','unleashed-product-images',false/.test(migration)
-    && !/for insert to authenticated[\s\S]{0,240}unleashed-product-images/i.test(migration)
-    && !/for delete to authenticated[\s\S]{0,240}unleashed-product-images/i.test(migration),
-  'private bucket, no browser mutation policy',
+  !/storage\.(?:buckets|objects)/.test(migration)
+    && /storage\.createBucket\(ASSET_BUCKET/.test(edge)
+    && /storage\.updateBucket\(ASSET_BUCKET/.test(edge)
+    && /public: false/.test(edge)
+    && /allowedMimeTypes: \['image\/jpeg', 'image\/png', 'image\/webp'\]/.test(edge)
+    && /createSignedUrl\(asset\.object_path, ASSET_SIGNED_URL_TTL_SECONDS\)/.test(edge),
+  'service-role API provisions a private bounded bucket and active users receive only short-lived signed reads',
 );
 check(
   'browser mapping mutation blocked',

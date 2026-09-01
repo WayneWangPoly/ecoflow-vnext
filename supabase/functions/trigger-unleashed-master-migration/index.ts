@@ -19,7 +19,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES';
+type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES' | 'GET_ASSET_URL';
 
 type RequestBody = {
   mode?: Mode;
@@ -33,6 +33,7 @@ type RequestBody = {
   maxObjectBytes?: number | null;
   expiresAt?: string | null;
   limit?: number;
+  assetId?: string;
 };
 
 type Profile = {
@@ -70,6 +71,13 @@ type PlannedAsset = {
 
 const COPY_RUN_LEASE_MS = 15 * 60 * 1000;
 const IMAGE_FETCH_TIMEOUT_MS = 20 * 1000;
+const ASSET_BUCKET = 'unleashed-product-images';
+const ASSET_BUCKET_OPTIONS = {
+  public: false,
+  allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  fileSizeLimit: 10 * 1024 * 1024,
+};
+const ASSET_SIGNED_URL_TTL_SECONDS = 60;
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -106,6 +114,16 @@ function optionalIsoDate(value: unknown) {
 async function recordAudit(adminClient: ReturnType<typeof createClient>, values: Record<string, unknown>) {
   const { error } = await adminClient.from('app_security_audit_events').insert(values);
   if (error) throw new Error(`MIGRATION_AUDIT_WRITE_FAILED:${error.message}`);
+}
+
+async function ensureAssetBucket(adminClient: ReturnType<typeof createClient>) {
+  const { error: createError } = await adminClient.storage.createBucket(ASSET_BUCKET, ASSET_BUCKET_OPTIONS);
+  if (!createError) return;
+  if (!/already exists|duplicate|resource exists/i.test(createError.message)) {
+    throw new Error(`ASSET_BUCKET_CREATE_FAILED:${createError.message}`);
+  }
+  const { error: updateError } = await adminClient.storage.updateBucket(ASSET_BUCKET, ASSET_BUCKET_OPTIONS);
+  if (updateError) throw new Error(`ASSET_BUCKET_UPDATE_FAILED:${updateError.message}`);
 }
 
 async function planAssets(
@@ -322,17 +340,49 @@ Deno.serve(async (req) => {
     .single();
   if (profileError || !profile) return json(403, { error: 'ACTIVE_PROFILE_REQUIRED' });
   const actor = profile as Profile;
-  if (!actor.is_active || actor.team_status !== 'ACTIVE' || !['OWNER', 'ADMIN'].includes(actor.app_role)) {
-    return json(403, { error: 'OWNER_ADMIN_REQUIRED' });
-  }
+  if (!actor.is_active || actor.team_status !== 'ACTIVE') return json(403, { error: 'ACTIVE_PROFILE_REQUIRED' });
 
   let body: RequestBody;
   try { body = await req.json(); }
   catch { return json(400, { error: 'INVALID_JSON_BODY' }); }
 
   try {
+    if (body.mode === 'GET_ASSET_URL') {
+      const assetId = uuid(body.assetId, 'INVALID_ASSET_ID');
+      const { data: asset, error: assetError } = await adminClient
+        .from('ecoflow_unleashed_product_assets')
+        .select('id,bucket_id,object_path,asset_status')
+        .eq('id', assetId)
+        .eq('asset_status', 'COPIED')
+        .maybeSingle();
+      if (assetError) throw new Error(`ASSET_READ_FAILED:${assetError.message}`);
+      if (!asset || asset.bucket_id !== ASSET_BUCKET || !asset.object_path) throw new Error('ASSET_NOT_AVAILABLE');
+      const { data: signed, error: signedError } = await adminClient.storage
+        .from(ASSET_BUCKET)
+        .createSignedUrl(asset.object_path, ASSET_SIGNED_URL_TTL_SECONDS);
+      if (signedError || !signed?.signedUrl) throw new Error(`ASSET_SIGNED_URL_FAILED:${signedError?.message ?? 'missing signed URL'}`);
+      await recordAudit(adminClient, {
+        actor_user_id: userData.user.id,
+        actor_email: actor.email,
+        actor_role: actor.app_role,
+        action: 'UNLEASHED_PRODUCT_ASSET_READ_URL_ISSUED',
+        target_type: 'ecoflow_unleashed_product_assets',
+        target_id: assetId,
+        after_data: { expires_in_seconds: ASSET_SIGNED_URL_TTL_SECONDS },
+      });
+      return json(200, {
+        mode: 'GET_ASSET_URL',
+        assetId,
+        signedUrl: signed.signedUrl,
+        expiresInSeconds: ASSET_SIGNED_URL_TTL_SECONDS,
+      });
+    }
+
+    if (!['OWNER', 'ADMIN'].includes(actor.app_role)) return json(403, { error: 'OWNER_ADMIN_REQUIRED' });
+
     if (body.mode === 'PLAN') {
       const planReason = reason(body.reason);
+      await ensureAssetBucket(adminClient);
       const { data: mappings, error: mappingError } = await adminClient.rpc('ecoflow_plan_unleashed_master_mappings', {
         p_requested_by: userData.user.id,
         p_reason: planReason,
@@ -411,6 +461,7 @@ Deno.serve(async (req) => {
           || (rights.expires_at && Date.parse(rights.expires_at) <= Date.now())) {
         throw new Error('ASSET_RIGHTS_NOT_APPROVED');
       }
+      await ensureAssetBucket(adminClient);
 
       const { data: activeRun, error: activeRunError } = await adminClient
         .from('ecoflow_unleashed_asset_copy_runs').select('*').eq('status', 'RUNNING').maybeSingle();
@@ -496,7 +547,7 @@ Deno.serve(async (req) => {
           const objectPath = contentAddressedObjectPath(asset.identity_id, contentSha256, image.contentType);
           const alreadyRegistered = physicalObjects.has(objectPath);
           if (!alreadyRegistered) {
-            const { error: uploadError } = await adminClient.storage.from('unleashed-product-images').upload(
+            const { error: uploadError } = await adminClient.storage.from(ASSET_BUCKET).upload(
               objectPath,
               image.bytes,
               { contentType: image.contentType, upsert: false, cacheControl: '31536000' },
@@ -527,7 +578,7 @@ Deno.serve(async (req) => {
             content_type: image.contentType,
             content_length: image.contentLength,
             content_sha256: contentSha256,
-            bucket_id: 'unleashed-product-images',
+            bucket_id: ASSET_BUCKET,
             object_path: objectPath,
             claimed_in_run_id: null,
             copied_in_run_id: run.id,
@@ -601,6 +652,8 @@ Deno.serve(async (req) => {
     }).catch(() => undefined);
     const status = code.endsWith('FORBIDDEN') || code === 'ASSET_RIGHTS_NOT_APPROVED'
       ? 403
+      : code === 'ASSET_NOT_AVAILABLE'
+      ? 404
       : code === 'COPY_RUN_ALREADY_RUNNING' || code.endsWith('_CONFLICT')
       ? 409
       : 400;

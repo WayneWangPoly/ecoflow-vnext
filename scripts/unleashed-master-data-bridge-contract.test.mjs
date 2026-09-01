@@ -61,6 +61,16 @@ test('migration uses pre-existing Supabase extensions without database CREATE au
   assert.doesNotMatch(migration, /create extension if not exists pgcrypto/i);
 });
 
+test('durable actor evidence does not require cross-schema auth DDL privileges', () => {
+  assert.doesNotMatch(migration, /references auth\.users/i);
+  for (const actorColumn of [
+    'reviewed_by uuid',
+    'actor_user_id uuid not null',
+    'authorized_by uuid',
+    'requested_by uuid not null',
+  ]) assert.match(migration, new RegExp(actorColumn));
+});
+
 test('migration establishes a four-state, provenance-backed master mapping bridge', () => {
   for (const relation of [
     'ecoflow_unleashed_master_mappings',
@@ -112,11 +122,14 @@ test('browser access is read-only and review is a server-authoritative command',
 });
 
 test('product image storage is private, bounded and service-written', () => {
-  assert.match(migration, /'unleashed-product-images','unleashed-product-images',false/);
-  assert.match(migration, /array\['image\/jpeg','image\/png','image\/webp'\]/);
-  assert.match(migration, /unleashed_product_images_read/);
-  assert.doesNotMatch(migration, /for insert to authenticated[\s\S]{0,240}unleashed-product-images/i);
-  assert.doesNotMatch(migration, /for delete to authenticated[\s\S]{0,240}unleashed-product-images/i);
+  assert.doesNotMatch(migration, /storage\.(?:buckets|objects)/);
+  assert.match(edgeFunction, /storage\.createBucket\(ASSET_BUCKET/);
+  assert.match(edgeFunction, /storage\.updateBucket\(ASSET_BUCKET/);
+  assert.match(edgeFunction, /public: false/);
+  assert.match(edgeFunction, /allowedMimeTypes: \['image\/jpeg', 'image\/png', 'image\/webp'\]/);
+  assert.match(edgeFunction, /fileSizeLimit: 10 \* 1024 \* 1024/);
+  assert.match(edgeFunction, /body\.mode === 'GET_ASSET_URL'/);
+  assert.match(edgeFunction, /createSignedUrl\(asset\.object_path, ASSET_SIGNED_URL_TTL_SECONDS\)/);
   assert.match(migration, /grant select, insert, update, delete on table public\.ecoflow_unleashed_product_assets to service_role/);
 });
 
@@ -133,7 +146,7 @@ test('Edge Function rejects unsafe assets before any Storage mutation', () => {
   assert.match(edgeFunction, /mode === 'COPY_IMAGES'/);
   assert.match(edgeFunction, /ASSET_RIGHTS_NOT_APPROVED/);
   assert.match(edgeFunction, /SOURCE_SNAPSHOT_CHANGED/);
-  assert.match(edgeFunction, /from\('unleashed-product-images'\)\.upload/);
+  assert.match(edgeFunction, /from\(ASSET_BUCKET\)\.upload/);
   assert.match(edgeFunction, /COPY_RUN_ALREADY_RUNNING/);
   assert.match(edgeFunction, /COPY_RUN_LEASE_EXPIRED/);
   assert.match(edgeFunction, /positiveSafeInteger\(body\.limit \?\? 10, 'INVALID_COPY_LIMIT', 10\)/);

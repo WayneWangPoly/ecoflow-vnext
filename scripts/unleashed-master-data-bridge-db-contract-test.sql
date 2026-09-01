@@ -463,12 +463,10 @@ begin
 end $$;
 
 do $$
-declare v_public boolean; v_limit bigint; v_mimes text[]; v_write_policies bigint;
+declare v_write_policies bigint;
 begin
-  select public,file_size_limit,allowed_mime_types into v_public,v_limit,v_mimes
-  from storage.buckets where id='unleashed-product-images';
-  if v_public or v_limit<>10485760 or v_mimes<>array['image/jpeg','image/png','image/webp'] then
-    raise exception 'product image bucket contract mismatch';
+  if exists(select 1 from storage.buckets where id='unleashed-product-images') then
+    raise exception 'schema deployment mutated the managed Storage bucket catalogue';
   end if;
   select count(*) into v_write_policies from pg_policies
   where schemaname='storage' and tablename='objects'
