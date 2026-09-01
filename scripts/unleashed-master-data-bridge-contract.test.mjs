@@ -164,8 +164,12 @@ test('Edge Function rejects unsafe assets before any Storage mutation', () => {
   assert.match(edgeFunction, /UNLEASHED_IMAGE_NOT_PRESENT/);
   assert.match(edgeFunction, /blocked:\/\/redacted/);
   assert.match(edgeFunction, /let claimedByRun = false/);
+  assert.match(edgeFunction, /let logicalCopyOutcome: 'COPIED' \| 'REUSED' \| null = null/);
+  assert.match(edgeFunction, /if \(!copiedAsset\) throw new Error\('ASSET_COPY_CLAIM_LOST'\);[\s\S]{0,180}if \(logicalCopyOutcome === 'COPIED'\) copied \+= 1/);
+  assert.match(edgeFunction, /else if \(logicalCopyOutcome === 'REUSED'\) reused \+= 1/);
   assert.match(edgeFunction, /ASSET_COPY_CLAIM_LOST/);
   assert.match(edgeFunction, /ASSET_COPY_FAILURE_STATE_WRITE_FAILED/);
+  assert.match(edgeFunction, /failureStateLostLease = !updateError && !releasedAsset/);
   assert.match(edgeFunction, /\.eq\('asset_status', 'COPYING'\)[\s\S]{0,120}\.eq\('claimed_in_run_id', run\.id\)/);
   assert.match(edgeFunction, /\.eq\('id', run\.id\)\.eq\('status', 'RUNNING'\)\.select\('\*'\)\.maybeSingle\(\)/);
   assert.match(edgeFunction, /COPY_RUN_LEASE_LOST/);
