@@ -1,11 +1,11 @@
 \set ON_ERROR_STOP on
 
 -- This contract runs after scripts/unleashed-master-data-bridge-db-contract-test.sql
--- in the same PostgreSQL 17 service. It proves the independent-review fixes
+-- in the same PostgreSQL 17 service. The independent-review fixes are integrated
+-- into the original, still-undeployed #338 migration; this file proves them
 -- against the actual #354 retention mechanism and the established #338 fixture.
 
 \ir ../supabase/migrations/20260831160000_unleashed_raw_snapshot_retention.sql
-\ir ../supabase/migrations/20260901153000_unleashed_master_data_bridge_review_fixes.sql
 
 -- 1. Durable product-asset provenance must not retain raw JSON forever.
 do $$

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const migration = read('supabase/migrations/20260831235500_unleashed_master_data_bridge.sql');
@@ -6,9 +6,25 @@ const edge = read('supabase/functions/trigger-unleashed-master-migration/index.t
 const core = read('supabase/functions/trigger-unleashed-master-migration/core.ts');
 const deploy = read('.github/workflows/deploy-supabase-migrations.yml');
 const workPackage = read('docs/engineering/work-packages/UNLEASHED-MIGRATION-003-canonical-master-data-assets.md');
+const bridgePackageMigrations = readdirSync(new URL('../supabase/migrations', import.meta.url))
+  .filter((name) => [
+    '20260831235500_unleashed_master_data_bridge.sql',
+    '20260901153000_unleashed_master_data_bridge_review_fixes.sql',
+  ].includes(name));
 
 const checks = [];
 const check = (name, pass, evidence) => checks.push({ name, pass: Boolean(pass), evidence });
+
+check(
+  'single trusted-shadow migration package',
+  bridgePackageMigrations.length === 1
+    && bridgePackageMigrations[0] === '20260831235500_unleashed_master_data_bridge.sql'
+    && /ecoflow_guard_unleashed_review_preservation/.test(migration)
+    && /ecoflow_guard_unleashed_retired_review_match/.test(migration)
+    && /ecoflow_guard_unleashed_raw_snapshot_delete/.test(migration)
+    && /ecoflow_guard_unleashed_asset_copied_provenance/.test(migration),
+  'all undeployed #338 review guards are integrated in the one migration accepted by the trusted shadow gate',
+);
 
 check(
   'four governed mapping states',

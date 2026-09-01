@@ -47,7 +47,10 @@ content hash, rights approval, and storage-budget evidence.
     deployment step only)
   - `scripts/unleashed-master-data-bridge-contract.test.mjs`
   - `scripts/unleashed-master-data-bridge-db-contract-test.sql`
+  - `scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql`
   - `scripts/audit-unleashed-master-data-bridge.mjs`
+  - `scripts/audit-production-activation-readiness.mjs` (exact deployed-function
+    count only)
   - `package.json`
 - Allowed behaviour changes:
   - Create an EcoFlow-owned mapping decision, candidate, review-command, asset

@@ -13,7 +13,6 @@ on:
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
-      - 'supabase/migrations/20260901153000_unleashed_master_data_bridge_review_fixes.sql'
       - 'package.json'
   push:
     branches:
@@ -28,7 +27,6 @@ on:
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
-      - 'supabase/migrations/20260901153000_unleashed_master_data_bridge_review_fixes.sql'
       - 'package.json'
 
 permissions:

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   contentAddressedObjectPath,
@@ -17,6 +17,7 @@ const edgeFunction = read('supabase/functions/trigger-unleashed-master-migration
 const edgeCore = read('supabase/functions/trigger-unleashed-master-migration/core.ts');
 const checkWorkflow = read('.github/workflows/unleashed-master-data-bridge-check.yml');
 const deployWorkflow = read('.github/workflows/deploy-supabase-migrations.yml');
+const reviewFixesDbContract = read('scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql');
 const packageJson = JSON.parse(read('package.json'));
 
 test('work package fixes the authority and cost boundaries before implementation', () => {
@@ -27,6 +28,29 @@ test('work package fixes the authority and cost boundaries before implementation
     'private `unleashed-product-images` bucket',
     'local disposable PostgreSQL',
   ]) assert.match(workPackage, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  for (const scopedPath of [
+    'scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql',
+    'scripts/audit-production-activation-readiness.mjs',
+  ]) assert.match(workPackage, new RegExp(scopedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('trusted shadow packaging keeps all #338 SQL in one undeployed migration', () => {
+  const bridgePackageMigrations = readdirSync(new URL('../supabase/migrations', import.meta.url))
+    .filter((name) => [
+      '20260831235500_unleashed_master_data_bridge.sql',
+      '20260901153000_unleashed_master_data_bridge_review_fixes.sql',
+    ].includes(name));
+  assert.deepEqual(bridgePackageMigrations, ['20260831235500_unleashed_master_data_bridge.sql']);
+  assert.doesNotMatch(checkWorkflow, /20260901153000_unleashed_master_data_bridge_review_fixes\.sql/);
+  assert.doesNotMatch(reviewFixesDbContract, /\\ir .*unleashed_master_data_bridge_review_fixes\.sql/);
+  for (const integratedGuard of [
+    'ecoflow_guard_unleashed_review_preservation',
+    'ecoflow_guard_unleashed_retired_review_match',
+    'ecoflow_guard_unleashed_raw_snapshot_delete',
+    'ecoflow_guard_unleashed_asset_copied_provenance',
+    'ecoflow_external_object_mappings_external_id_nonblank',
+  ]) assert.match(migration, new RegExp(integratedGuard));
 });
 
 test('migration establishes a four-state, provenance-backed master mapping bridge', () => {
