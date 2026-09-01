@@ -304,7 +304,7 @@ begin
   where c.command_id='80000000-0000-4000-8000-000000000003';
   if v_revision<>2 or v_decision_source<>'AUTO' or v_status<>'MATCHED'
      or v_current_candidates<>1 or v_command_candidate<>v_candidate
-     or v_snapshot->>'canonicalObjectId' is distinct from v_candidate::text then
+     or v_snapshot->>'candidateId' is distinct from v_candidate::text then
     raise exception 'source-change candidate history contract failed: %/%/%/%/%/%',
       v_revision,v_decision_source,v_status,v_current_candidates,v_command_candidate,v_snapshot;
   end if;
