@@ -12,6 +12,7 @@ import {
 } from './ordermentum-full-sync-core.mjs';
 
 const FAKE_KEY = 'test-ordermentum-key-not-a-real-secret';
+const SPECIAL_FAKE_KEY = 'test+/=key?not-real';
 
 async function withEnv(overrides, work) {
   const previous = new Map();
@@ -59,7 +60,7 @@ test('exact Ordermentum API origin accepts only the approved bare HTTPS origin',
   assert.throws(() => assertOrdermentumApiRequestUrl('https://api.ordermentum.com/v2/orders#fragment'), expectCode('ORDERMENTUM_API_URL_FRAGMENT_BLOCKED'));
 });
 
-test('API key transport rejects URL/body leakage and caller credential overrides', () => {
+test('API key transport rejects raw and percent-encoded URL/body leakage plus caller credential overrides', () => {
   assert.doesNotThrow(() => assertOrdermentumApiKeyRequestShape({
     apiKey: FAKE_KEY,
     requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders?pageNo=1`,
@@ -70,6 +71,16 @@ test('API key transport rejects URL/body leakage and caller credential overrides
   assert.throws(() => assertOrdermentumApiKeyRequestShape({
     apiKey: FAKE_KEY,
     requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders?token=${encodeURIComponent(FAKE_KEY)}`,
+  }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
+
+  assert.throws(() => assertOrdermentumApiKeyRequestShape({
+    apiKey: SPECIAL_FAKE_KEY,
+    requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/orders?token=${encodeURIComponent(SPECIAL_FAKE_KEY)}`,
+  }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
+
+  assert.throws(() => assertOrdermentumApiKeyRequestShape({
+    apiKey: SPECIAL_FAKE_KEY,
+    requestUrl: `${ORDERMENTUM_API_ORIGIN}/v2/${encodeURIComponent(SPECIAL_FAKE_KEY)}/orders`,
   }), expectCode('ORDERMENTUM_API_KEY_EXPOSED'));
 
   assert.throws(() => assertOrdermentumApiKeyRequestShape({
@@ -174,6 +185,34 @@ test('full-sync API-key errors redact a provider response that echoes the token'
         (error) => {
           assert.equal(String(error.message).includes(FAKE_KEY), false);
           assert.equal(JSON.stringify(error.payload).includes(FAKE_KEY), false);
+          assert.equal(String(error.message).includes('[REDACTED]'), true);
+          return true;
+        },
+      );
+    });
+  });
+});
+
+test('full-sync API-key errors also redact a percent-encoded token echo', async () => {
+  await withEnv({
+    ORDERMENTUM_AUTH_MODE: 'api-key',
+    ORDERMENTUM_API_KEY: SPECIAL_FAKE_KEY,
+    ORDERMENTUM_BASE_URL: ORDERMENTUM_API_ORIGIN,
+    ORDERMENTUM_SKIP_SUPABASE: 'true',
+    ORDERMENTUM_FETCH_RETRIES: '0',
+  }, async () => {
+    const cfg = config();
+    const encoded = encodeURIComponent(SPECIAL_FAKE_KEY);
+    await withMockFetch(async () => new Response(JSON.stringify({ message: `bad credential ${encoded}` }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }), async () => {
+      await assert.rejects(
+        () => fullSyncFetch(cfg, `${ORDERMENTUM_API_ORIGIN}/v2/orders`),
+        (error) => {
+          assert.equal(String(error.message).includes(SPECIAL_FAKE_KEY), false);
+          assert.equal(String(error.message).includes(encoded), false);
+          assert.equal(JSON.stringify(error.payload).includes(encoded), false);
           assert.equal(String(error.message).includes('[REDACTED]'), true);
           return true;
         },
