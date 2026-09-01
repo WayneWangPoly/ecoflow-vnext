@@ -27,6 +27,16 @@ check(
 );
 
 check(
+  'trusted migrator needs no database CREATE authority',
+  /to_regnamespace\('extensions'\)/.test(migration)
+    && /to_regprocedure\('extensions\.gen_random_uuid\(\)'\)/.test(migration)
+    && /to_regprocedure\('extensions\.digest\(text,text\)'\)/.test(migration)
+    && !/create schema if not exists extensions/i.test(migration)
+    && !/create extension if not exists pgcrypto/i.test(migration),
+  'the migration validates existing Supabase pgcrypto dependencies instead of creating a schema/extension',
+);
+
+check(
   'four governed mapping states',
   /mapping_status in \('MATCHED','AMBIGUOUS','UNMATCHED','RETIRED'\)/.test(migration),
   'MATCHED / AMBIGUOUS / UNMATCHED / RETIRED constraint',

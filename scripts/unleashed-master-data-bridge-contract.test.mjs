@@ -53,6 +53,14 @@ test('trusted shadow packaging keeps all #338 SQL in one undeployed migration', 
   ]) assert.match(migration, new RegExp(integratedGuard));
 });
 
+test('migration uses pre-existing Supabase extensions without database CREATE authority', () => {
+  assert.match(migration, /to_regnamespace\('extensions'\)/);
+  assert.match(migration, /to_regprocedure\('extensions\.gen_random_uuid\(\)'\)/);
+  assert.match(migration, /to_regprocedure\('extensions\.digest\(text,text\)'\)/);
+  assert.doesNotMatch(migration, /create schema if not exists extensions/i);
+  assert.doesNotMatch(migration, /create extension if not exists pgcrypto/i);
+});
+
 test('migration establishes a four-state, provenance-backed master mapping bridge', () => {
   for (const relation of [
     'ecoflow_unleashed_master_mappings',

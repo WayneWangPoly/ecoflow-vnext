@@ -39,14 +39,20 @@ begin
   if to_regprocedure('public.ecoflow_active_app_role()') is null then
     v_missing := array_append(v_missing,'public.ecoflow_active_app_role()');
   end if;
+  if to_regnamespace('extensions') is null then
+    v_missing := array_append(v_missing,'extensions schema');
+  end if;
+  if to_regprocedure('extensions.gen_random_uuid()') is null then
+    v_missing := array_append(v_missing,'extensions.gen_random_uuid()');
+  end if;
+  if to_regprocedure('extensions.digest(text,text)') is null then
+    v_missing := array_append(v_missing,'extensions.digest(text,text)');
+  end if;
   if array_length(v_missing,1) is not null then
     raise exception 'UNLEASHED_MASTER_DATA_DEPENDENCIES_MISSING:%',array_to_string(v_missing,',');
   end if;
 end;
 $deps$;
-
-create schema if not exists extensions;
-create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists public.ecoflow_unleashed_master_mappings (
   id uuid primary key default extensions.gen_random_uuid(),
