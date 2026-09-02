@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { getOrdermentumAuthMode, isOrdermentumApiKeyMode } from './ordermentum-auth.mjs';
 import {
   assertNoCredentialedOrdermentumRedirect,
   assertOrdermentumApiBaseUrl,
@@ -27,9 +28,8 @@ export function optionalSupabase() {
 }
 
 export async function getLegacyBearerToken() {
-  // Backwards-compatible name: returns a bearer token for legacy mode.
-  // If ORDERMENTUM_API_KEY is present, callers still receive null and fetchOrdermentumJson will use x-api-key.
-  if (process.env.ORDERMENTUM_API_KEY?.trim()) return null;
+  // API-key activation is explicit. Merely installing the future secret must not cut over incumbent callers.
+  if (isOrdermentumApiKeyMode(getOrdermentumAuthMode())) return null;
   const existing = process.env.ORDERMENTUM_BEARER_TOKEN;
   if (existing && existing.trim()) return existing.trim();
   const username = requireEnv('ORDERMENTUM_USERNAME');
@@ -107,7 +107,7 @@ export function extractTimestamp(item, names) {
 }
 
 export function buildUrl(path, params = {}) {
-  const apiKeyMode = Boolean(process.env.ORDERMENTUM_API_KEY?.trim());
+  const apiKeyMode = isOrdermentumApiKeyMode(getOrdermentumAuthMode());
   const baseUrl = apiKeyMode ? assertOrdermentumApiBaseUrl(DEFAULT_API_BASE_URL) : DEFAULT_API_BASE_URL.replace(/\/$/, '');
   const url = new URL(path, baseUrl + '/');
   for (const [key, value] of Object.entries(params)) {
@@ -124,8 +124,8 @@ function redactFailedPayload(payload, apiKey) {
 }
 
 export async function fetchOrdermentumJson(token, path, params = {}, options = {}) {
-  const apiKey = process.env.ORDERMENTUM_API_KEY?.trim() || '';
-  const apiKeyMode = Boolean(apiKey);
+  const apiKeyMode = isOrdermentumApiKeyMode(getOrdermentumAuthMode());
+  const apiKey = apiKeyMode ? requireEnv('ORDERMENTUM_API_KEY').trim() : '';
   const url = buildUrl(path.replace(/^\//, ''), params);
   if (apiKeyMode) {
     assertOrdermentumApiKeyRequestShape({

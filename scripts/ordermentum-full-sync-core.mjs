@@ -5,6 +5,11 @@ import {
   assertOrdermentumApiRequestUrl,
   redactOrdermentumSecret,
 } from './ordermentum-api-origin-guard.mjs';
+import {
+  getOrdermentumAuthMode,
+  getOrdermentumBaseUrl,
+  isOrdermentumApiKeyMode,
+} from './ordermentum-auth.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,9 +41,9 @@ function config() {
   const skipSupabase = env('ORDERMENTUM_SKIP_SUPABASE', false, 'false') === 'true';
   const supabaseUrl = env('SUPABASE_URL', !skipSupabase, '').replace(/\/$/, '');
   const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY', !skipSupabase, '');
-  const configuredBaseUrl = env('ORDERMENTUM_BASE_URL', false, 'https://api.ordermentum.com').replace(/\/$/, '');
-  const authMode = env('ORDERMENTUM_AUTH_MODE', false, 'api-key');
-  const baseUrl = authMode === 'api-key' ? assertOrdermentumApiBaseUrl(configuredBaseUrl) : configuredBaseUrl;
+  const authMode = getOrdermentumAuthMode();
+  const configuredBaseUrl = env('ORDERMENTUM_BASE_URL', false, getOrdermentumBaseUrl()).replace(/\/$/, '');
+  const baseUrl = isOrdermentumApiKeyMode(authMode) ? assertOrdermentumApiBaseUrl(configuredBaseUrl) : configuredBaseUrl;
 
   return {
     supabaseUrl,
@@ -164,7 +169,7 @@ async function getLegacyBearer(cfg) {
 
 async function ordermentumHeaders(cfg) {
   const headers = {'accept': 'application/json'};
-  if (cfg.authMode === 'api-key') {
+  if (isOrdermentumApiKeyMode(cfg.authMode)) {
     if (!cfg.apiKey) throw new Error('ORDERMENTUM_AUTH_MODE=api-key requires ORDERMENTUM_API_KEY');
     headers['x-api-key'] = cfg.apiKey;
     return headers;
@@ -255,7 +260,7 @@ function hasNextPage(payload, items, page, limit) {
 }
 
 async function ordermentumFetchJson(cfg, url, options = {}, attempt = 1) {
-  const apiKeyMode = cfg.authMode === 'api-key';
+  const apiKeyMode = isOrdermentumApiKeyMode(cfg.authMode);
   const requestUrl = apiKeyMode ? assertOrdermentumApiRequestUrl(url) : url;
   if (apiKeyMode) {
     assertOrdermentumApiKeyRequestShape({
