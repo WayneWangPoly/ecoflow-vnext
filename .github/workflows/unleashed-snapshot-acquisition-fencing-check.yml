@@ -1,12 +1,15 @@
 name: Unleashed snapshot acquisition fencing
 
-# Credential-free PostgreSQL 17 contract for #337 acquisition fencing; rerun after targeted/failure hardening.
+# Credential-free PostgreSQL 17 + Edge/regression contract for #337 acquisition fencing.
 on:
   pull_request:
     paths:
       - '.github/workflows/unleashed-snapshot-acquisition-fencing-check.yml'
       - 'scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql'
       - 'scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-core.test.mjs'
+      - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
@@ -18,6 +21,9 @@ on:
       - '.github/workflows/unleashed-snapshot-acquisition-fencing-check.yml'
       - 'scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql'
       - 'scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-contract.test.mjs'
+      - 'scripts/unleashed-readonly-connector-core.test.mjs'
+      - 'scripts/unleashed-readonly-killswitch-retention.test.mjs'
       - 'scripts/audit-unleashed-readonly-connector.mjs'
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql'
@@ -59,11 +65,12 @@ jobs:
         run: npm ci
       - name: Check Edge Function syntax
         run: node scripts/check-unleashed-edge-function-syntax.mjs
-      - name: Run fencing static contract if present
-        run: |
-          if test -f scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs; then
-            node --experimental-strip-types --test scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs
-          fi
+      - name: Run acquisition fencing static contract
+        run: node --experimental-strip-types --test scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs
+      - name: Run credential-free connector regressions
+        run: node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs scripts/unleashed-readonly-killswitch-retention.test.mjs
+      - name: Run connector static audit
+        run: node scripts/audit-unleashed-readonly-connector.mjs
       - name: Prepare Unleashed DB fixture
         run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql
       - name: Apply connector foundation and fencing migration
