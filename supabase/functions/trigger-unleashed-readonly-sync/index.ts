@@ -615,7 +615,8 @@ Deno.serve(async (req) => {
     const previousWindows = Array.isArray(previousMetadata.pagination_windows)
       ? previousMetadata.pagination_windows.filter(isRecord)
       : [];
-    const previousWindow = previousWindows.find((entry) => entry.resource === resources[0]);
+    const matchingPreviousWindows = previousWindows.filter((entry) => entry.resource === resources[0]);
+    const previousWindow = matchingPreviousWindows.length === 1 ? matchingPreviousWindows[0] : null;
     const previousNextPage = previousWindow && typeof previousWindow.next_page === 'number' ? previousWindow.next_page : null;
     const previousNumberOfPages = previousWindow && typeof previousWindow.number_of_pages === 'number'
       ? previousWindow.number_of_pages
@@ -623,14 +624,14 @@ Deno.serve(async (req) => {
     const previousHighWatermark = previousWindow && typeof previousWindow.high_watermark === 'string'
       ? previousWindow.high_watermark
       : null;
-    const sameResource = Array.isArray(previousRun.resource_set)
-      && previousRun.resource_set.length === 1
-      && previousRun.resource_set[0] === resources[0];
+    const previousRunContainsResource = Array.isArray(previousRun.resource_set)
+      && previousRun.resource_set.includes(resources[0]);
     if (
       previousRun.status !== 'SUCCEEDED'
       || previousRun.requested_by !== userData.user.id
       || previousRun.dry_run !== dryRun
-      || !sameResource
+      || !previousRunContainsResource
+      || matchingPreviousWindows.length !== 1
       || previousRun.requested_modified_since !== null
       || previousRun.page_size !== pageSize
       || previousWindow?.window_complete !== false

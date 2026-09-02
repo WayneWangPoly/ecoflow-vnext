@@ -345,6 +345,9 @@ test('windowed continuation is chained and cannot promote an incomplete cursor',
   assert.match(edgeFunction, /CONTINUATION_WITH_MODIFIED_SINCE_UNSUPPORTED/);
   assert.match(edgeFunction, /CONTINUATION_PREVIOUS_RUN_REQUIRED/);
   assert.match(edgeFunction, /CONTINUATION_PREVIOUS_RUN_MISMATCH/);
+  assert.match(edgeFunction, /const matchingPreviousWindows = previousWindows\.filter/);
+  assert.match(edgeFunction, /previousRun\.resource_set\.includes\(resources\[0\]\)/);
+  assert.match(edgeFunction, /matchingPreviousWindows\.length !== 1/);
   assert.match(edgeFunction, /previousNextPage !== startPage/);
   assert.match(edgeFunction, /UNLEASHED_PAGINATION_TOTAL_DRIFT/);
   assert.match(edgeFunction, /const windowEndPage = resourceStartPage \+ maxPages - 1/);
