@@ -11,6 +11,7 @@ import {
 
 const purchaserId = '123e4567-e89b-42d3-a456-426614174000';
 const otherPurchaserId = '123e4567-e89b-42d3-a456-426614174001';
+const uuidV7 = '01890f47-1234-7abc-8def-1234567890ab';
 const apiKey = 'om_api_test_secret_%2F?x';
 const originalFetch = globalThis.fetch;
 const originalEnv = {
@@ -43,9 +44,10 @@ test('canonical payload hash is stable across object key order', () => {
   assert.equal(hashCanonicalPayload(left), hashCanonicalPayload(right));
 });
 
-test('probe accepts only an exact purchaser UUID and official purchaser read URL', () => {
+test('probe accepts UUID-shaped purchaser identities and official purchaser read URL', () => {
   useApiKeyMode();
   assert.equal(validateProbePurchaserId(purchaserId), purchaserId);
+  assert.equal(validateProbePurchaserId(uuidV7), uuidV7);
   assert.equal(buildPurchaserProbeUrl(purchaserId), `https://api.ordermentum.com/v1/purchasers/${purchaserId}`);
   assert.throws(() => validateProbePurchaserId('../orders'), /must be a UUID/);
 });
@@ -129,26 +131,30 @@ test('provider identity mismatch cannot be reported as an accepted probe', async
   );
 });
 
-test('credentialed redirects fail closed without disclosing key or redirect target', async () => {
+test('credentialed redirects fail closed with metadata-only probe error', async () => {
   useApiKeyMode();
+  const redirectTarget = `https://evil.example/steal?key=${encodeURIComponent(apiKey)}`;
   globalThis.fetch = async () => new Response('', {
     status: 302,
-    headers: { location: `https://evil.example/steal?key=${encodeURIComponent(apiKey)}` },
+    headers: { location: redirectTarget },
   });
   await assert.rejects(
     () => runProbe({ purchaserId }),
     (error) => {
       const message = String(error?.message || error);
+      assert.equal(message, 'Ordermentum purchaser probe provider request failed');
       assert.equal(message.includes(apiKey), false);
       assert.equal(message.includes('evil.example'), false);
+      assert.equal(message.includes(redirectTarget), false);
       return true;
     },
   );
 });
 
-test('provider error echoes are redacted before they escape the probe', async () => {
+test('provider error payload and key echo never escape the probe boundary', async () => {
   useApiKeyMode();
-  globalThis.fetch = async () => new Response(JSON.stringify({ message: `invalid token ${apiKey}` }), {
+  const privateProviderMessage = `invalid token ${apiKey} for Private Venue Name`;
+  globalThis.fetch = async () => new Response(JSON.stringify({ message: privateProviderMessage }), {
     status: 401,
     headers: { 'content-type': 'application/json' },
   });
@@ -156,8 +162,11 @@ test('provider error echoes are redacted before they escape the probe', async ()
     () => runProbe({ purchaserId }),
     (error) => {
       const message = String(error?.message || error);
+      assert.equal(message, 'Ordermentum purchaser probe provider request failed status 401');
+      assert.equal(error.status, 401);
       assert.equal(message.includes(apiKey), false);
-      assert.match(message, /REDACTED/);
+      assert.equal(message.includes('Private Venue Name'), false);
+      assert.equal(message.includes('invalid token'), false);
       return true;
     },
   );
