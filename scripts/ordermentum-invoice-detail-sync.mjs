@@ -12,6 +12,7 @@ import {
   buildArchivedVersion,
   shouldArchivePreviousVersion,
 } from './ordermentum-master-version-policy.mjs';
+import { getOrdermentumAuthMode } from './ordermentum-auth.mjs';
 
 const args = parseArgs(process.argv);
 const supabase = optionalSupabase();
@@ -64,7 +65,7 @@ const { data: runRow, error: runError } = await supabase
     supplier_id: supplierId,
     resources_requested: ['invoice_detail'],
     dry_run: false,
-    auth_mode: process.env.ORDERMENTUM_API_KEY ? 'api-key' : 'legacy-username-password',
+    auth_mode: getOrdermentumAuthMode(),
   })
   .select('id')
   .single();
