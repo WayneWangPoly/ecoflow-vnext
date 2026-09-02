@@ -85,7 +85,8 @@ begin
   from public.unleashed_sync_runs r
   where r.id=p_run_id
   for update;
-  if not found or v_run.status<>'RUNNING' or v_run.dry_run then
+  if not found or v_run.status<>'RUNNING' or v_run.dry_run
+     or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.max_pages not between 1 and 5 then
     raise exception 'UNLEASHED_ACQUISITION_RUN_NOT_WRITABLE';
   end if;
   if not (p_resource = any(v_run.resource_set)) then
@@ -161,6 +162,33 @@ begin
     expires_at=excluded.expires_at,
     updated_at=excluded.updated_at;
 
+  -- Root acquisition invalidates any older consumable READY checkpoint at
+  -- claim time, not after the first network window has already completed.
+  if p_start_page=1 then
+    insert into public.unleashed_resource_cursors(
+      resource,cursor_status,last_successful_run_id,last_successful_at,last_successful_modified_since,
+      high_watermark_at,next_modified_since,last_error_code,last_error_message,metadata
+    ) values (
+      p_resource,'RUNNING',null,null,null,null,null,null,null,
+      jsonb_build_object(
+        'dry_run',false,
+        'pagination_window',jsonb_build_object(
+          'run_id',p_run_id,'start_page',1,'previous_run_id',null,'acquisition_in_progress',true
+        )
+      )
+    )
+    on conflict (resource) do update set
+      cursor_status='RUNNING',
+      last_successful_run_id=null,
+      last_successful_at=null,
+      last_successful_modified_since=null,
+      high_watermark_at=null,
+      next_modified_since=null,
+      last_error_code=null,
+      last_error_message=null,
+      metadata=excluded.metadata;
+  end if;
+
   return jsonb_build_object(
     'resource',p_resource,
     'runId',p_run_id,
@@ -217,7 +245,10 @@ begin
   if not found or v_run.status<>'RUNNING' or v_run.dry_run or not (p_resource=any(v_run.resource_set)) then
     raise exception 'UNLEASHED_ACQUISITION_RUN_LOST';
   end if;
-  if coalesce(p_page_number,0)<1 or coalesce(p_page_size,0) not between 1 and 200
+  if coalesce(p_page_number,0)<v_lease.start_page
+     or p_page_number>v_lease.start_page+v_run.max_pages-1
+     or coalesce(p_page_size,0) not between 1 and 200
+     or p_page_size<>v_run.page_size
      or coalesce(p_http_status,0) not between 200 and 299
      or p_response_sha256 !~ '^[0-9a-f]{64}$'
      or jsonb_typeof(coalesce(p_query_params,'{}'::jsonb))<>'object'
@@ -381,9 +412,19 @@ set search_path = ''
 as $$
 declare
   v_lease public.unleashed_snapshot_acquisition_leases%rowtype;
+  v_run public.unleashed_sync_runs%rowtype;
   v_complete boolean;
   v_next_page integer;
+  v_start_page integer;
+  v_last_page integer;
+  v_number_of_pages integer;
+  v_previous_run_id uuid;
   v_metadata jsonb;
+  v_page_count integer;
+  v_distinct_pages integer;
+  v_min_page integer;
+  v_max_page integer;
+  v_bad_batches integer;
 begin
   select * into v_lease
   from public.unleashed_snapshot_acquisition_leases l
@@ -393,17 +434,63 @@ begin
      or v_lease.expires_at<=clock_timestamp() then
     raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST';
   end if;
+
+  select * into v_run
+  from public.unleashed_sync_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING' or v_run.dry_run
+     or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.max_pages not between 1 and 5
+     or not (p_resource=any(v_run.resource_set)) then
+    raise exception 'UNLEASHED_ACQUISITION_RUN_LOST';
+  end if;
   if p_cursor_status not in ('RUNNING','READY','FAILED') or jsonb_typeof(coalesce(p_window,'{}'::jsonb))<>'object' then
     raise exception 'UNLEASHED_ACQUISITION_FINALIZE_INVALID';
   end if;
 
-  v_complete := coalesce((p_window->>'window_complete')::boolean,false);
-  v_next_page := nullif(p_window->>'next_page','')::integer;
+  begin
+    v_complete := coalesce((p_window->>'window_complete')::boolean,false);
+    v_next_page := nullif(p_window->>'next_page','')::integer;
+    v_start_page := nullif(p_window->>'start_page','')::integer;
+    v_last_page := nullif(p_window->>'last_page','')::integer;
+    v_number_of_pages := nullif(p_window->>'number_of_pages','')::integer;
+    v_previous_run_id := nullif(p_window->>'previous_run_id','')::uuid;
+  exception when others then
+    raise exception 'UNLEASHED_ACQUISITION_WINDOW_INVALID';
+  end;
+
+  if v_start_page is distinct from v_lease.start_page
+     or v_previous_run_id is distinct from v_lease.previous_run_id
+     or v_last_page is null or v_last_page<v_start_page then
+    raise exception 'UNLEASHED_ACQUISITION_WINDOW_LEASE_MISMATCH';
+  end if;
   if p_cursor_status='READY' and (not v_complete or v_next_page is not null) then
     raise exception 'UNLEASHED_ACQUISITION_READY_REQUIRES_COMPLETE_WINDOW';
   end if;
-  if p_cursor_status='RUNNING' and (v_complete or v_next_page is null) then
+  if p_cursor_status='RUNNING' and (v_complete or v_next_page is null or v_next_page<>v_last_page+1) then
     raise exception 'UNLEASHED_ACQUISITION_RUNNING_REQUIRES_CONTINUATION';
+  end if;
+
+  if p_cursor_status<>'FAILED' then
+    select
+      count(*),count(distinct b.page_number),min(b.page_number),max(b.page_number),
+      count(*) filter (
+        where b.status<>'SUCCEEDED' or b.response_sha256 is null or b.page_size<>v_run.page_size
+      )
+    into v_page_count,v_distinct_pages,v_min_page,v_max_page,v_bad_batches
+    from public.unleashed_sync_batches b
+    where b.run_id=p_run_id and b.resource=p_resource;
+
+    if v_page_count=0 or v_bad_batches<>0 or v_distinct_pages<>v_page_count
+       or v_min_page<>v_start_page or v_max_page<>v_last_page
+       or v_page_count<>v_last_page-v_start_page+1 or v_page_count>v_run.max_pages then
+      raise exception 'UNLEASHED_ACQUISITION_WINDOW_BATCH_MISMATCH';
+    end if;
+    if v_number_of_pages is not null and (
+      v_number_of_pages<v_last_page or (p_cursor_status='READY' and v_last_page<>v_number_of_pages)
+    ) then
+      raise exception 'UNLEASHED_ACQUISITION_NUMBER_OF_PAGES_MISMATCH';
+    end if;
   end if;
 
   v_metadata := jsonb_build_object(
@@ -445,7 +532,8 @@ begin
     'runId',p_run_id,
     'cursorStatus',p_cursor_status,
     'windowComplete',v_complete,
-    'nextPage',v_next_page
+    'nextPage',v_next_page,
+    'validatedPages',case when p_cursor_status='FAILED' then 0 else v_page_count end
   );
 end;
 $$;
@@ -470,8 +558,12 @@ declare
   v_window_count integer;
   v_prev_next_page integer;
   v_start_page integer;
+  v_last_page integer;
+  v_next_page integer;
   v_previous_run_id uuid;
   v_complete boolean;
+  v_number_of_pages integer;
+  v_chain_number_of_pages integer;
   v_page_size integer;
   v_manifest jsonb;
   v_acquisition_manifest jsonb;
@@ -481,6 +573,10 @@ declare
   v_page_count integer;
   v_acquisition_page_count integer;
   v_recheck_page_count integer;
+  v_acquisition_page_size integer;
+  v_recheck_page_size integer;
+  v_acquisition_number_of_pages integer;
+  v_recheck_number_of_pages integer;
   v_distinct_pages integer;
   v_min_page integer;
   v_max_page integer;
@@ -502,10 +598,12 @@ begin
   loop
     v_prev_next_page := null;
     v_page_size := null;
+    v_chain_number_of_pages := null;
 
     for v_i in 1..cardinality(v_ids) loop
       select * into v_run from public.unleashed_sync_runs r where r.id=v_ids[v_i];
       if not found or v_run.status<>'SUCCEEDED' or v_run.dry_run<>v_expected_dry
+         or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.max_pages not between 1 and 5
          or not (p_resource=any(v_run.resource_set)) then
         raise exception 'UNLEASHED_RECONCILIATION_RUN_INVALID:%:%',v_kind,v_i;
       end if;
@@ -514,16 +612,40 @@ begin
         raise exception 'UNLEASHED_RECONCILIATION_PAGE_SIZE_DRIFT:%',v_kind;
       end if;
 
-      select count(*),min(w.elem) into v_window_count,v_window
+      select count(*) into v_window_count
       from jsonb_array_elements(coalesce(v_run.metadata->'pagination_windows','[]'::jsonb)) w(elem)
       where w.elem->>'resource'=p_resource;
-      if v_window_count<>1 or v_window is null then
+      if v_window_count<>1 then
         raise exception 'UNLEASHED_RECONCILIATION_WINDOW_INVALID:%:%',v_kind,v_i;
       end if;
+      select w.elem into v_window
+      from jsonb_array_elements(coalesce(v_run.metadata->'pagination_windows','[]'::jsonb)) w(elem)
+      where w.elem->>'resource'=p_resource
+      limit 1;
 
-      v_start_page := nullif(v_window->>'start_page','')::integer;
-      v_previous_run_id := nullif(v_window->>'previous_run_id','')::uuid;
-      v_complete := coalesce((v_window->>'window_complete')::boolean,false);
+      begin
+        v_start_page := nullif(v_window->>'start_page','')::integer;
+        v_last_page := nullif(v_window->>'last_page','')::integer;
+        v_next_page := nullif(v_window->>'next_page','')::integer;
+        v_previous_run_id := nullif(v_window->>'previous_run_id','')::uuid;
+        v_complete := coalesce((v_window->>'window_complete')::boolean,false);
+        v_number_of_pages := nullif(v_window->>'number_of_pages','')::integer;
+      exception when others then
+        raise exception 'UNLEASHED_RECONCILIATION_WINDOW_INVALID:%:%',v_kind,v_i;
+      end;
+      if v_start_page is null or v_last_page is null or v_last_page<v_start_page then
+        raise exception 'UNLEASHED_RECONCILIATION_WINDOW_INVALID:%:%',v_kind,v_i;
+      end if;
+      if v_number_of_pages is not null then
+        if v_number_of_pages<v_last_page then
+          raise exception 'UNLEASHED_RECONCILIATION_DECLARED_PAGE_COUNT_INVALID:%:%',v_kind,v_i;
+        end if;
+        if v_chain_number_of_pages is null then v_chain_number_of_pages:=v_number_of_pages;
+        elsif v_chain_number_of_pages<>v_number_of_pages then
+          raise exception 'UNLEASHED_RECONCILIATION_DECLARED_PAGE_COUNT_DRIFT:%',v_kind;
+        end if;
+      end if;
+
       if v_i=1 then
         if v_start_page<>1 or v_previous_run_id is not null then
           raise exception 'UNLEASHED_RECONCILIATION_ROOT_INVALID:%',v_kind;
@@ -533,18 +655,18 @@ begin
           raise exception 'UNLEASHED_RECONCILIATION_CHAIN_GAP:%:%',v_kind,v_i;
         end if;
       end if;
-      if v_i<cardinality(v_ids) and v_complete then
+      if v_i<cardinality(v_ids) and (v_complete or v_next_page is null or v_next_page<>v_last_page+1) then
         raise exception 'UNLEASHED_RECONCILIATION_EARLY_COMPLETE:%:%',v_kind,v_i;
       end if;
-      if v_i=cardinality(v_ids) and (not v_complete or nullif(v_window->>'next_page','') is not null) then
+      if v_i=cardinality(v_ids) and (not v_complete or v_next_page is not null) then
         raise exception 'UNLEASHED_RECONCILIATION_TERMINAL_INCOMPLETE:%',v_kind;
       end if;
-      v_prev_next_page := nullif(v_window->>'next_page','')::integer;
+      v_prev_next_page := v_next_page;
     end loop;
 
     select
       count(*),count(distinct b.page_number),min(b.page_number),max(b.page_number),
-      count(*) filter (where b.status<>'SUCCEEDED' or b.response_sha256 is null),
+      count(*) filter (where b.status<>'SUCCEEDED' or b.response_sha256 is null or b.page_size<>v_page_size),
       jsonb_agg(jsonb_build_object('page',b.page_number,'sha256',b.response_sha256) order by b.page_number)
     into v_page_count,v_distinct_pages,v_min_page,v_max_page,v_bad_batches,v_manifest
     from public.unleashed_sync_batches b
@@ -554,18 +676,31 @@ begin
        or v_min_page<>1 or v_max_page<>v_page_count then
       raise exception 'UNLEASHED_RECONCILIATION_PAGE_MANIFEST_INVALID:%',v_kind;
     end if;
+    if v_chain_number_of_pages is not null and v_chain_number_of_pages<>v_page_count then
+      raise exception 'UNLEASHED_RECONCILIATION_DECLARED_PAGE_COUNT_MISMATCH:%',v_kind;
+    end if;
 
     if v_kind='acquisition' then
       v_acquisition_manifest:=v_manifest;
       v_acquisition_page_count:=v_page_count;
+      v_acquisition_page_size:=v_page_size;
+      v_acquisition_number_of_pages:=v_chain_number_of_pages;
       v_acquisition_hash:=encode(extensions.digest(v_manifest::text,'sha256'),'hex');
     else
       v_recheck_manifest:=v_manifest;
       v_recheck_page_count:=v_page_count;
+      v_recheck_page_size:=v_page_size;
+      v_recheck_number_of_pages:=v_chain_number_of_pages;
       v_recheck_hash:=encode(extensions.digest(v_manifest::text,'sha256'),'hex');
     end if;
   end loop;
 
+  if v_acquisition_page_size is distinct from v_recheck_page_size then
+    raise exception 'UNLEASHED_RECONCILIATION_PAGE_SIZE_MISMATCH';
+  end if;
+  if v_acquisition_number_of_pages is distinct from v_recheck_number_of_pages then
+    raise exception 'UNLEASHED_RECONCILIATION_DECLARED_PAGE_COUNT_MISMATCH';
+  end if;
   if v_acquisition_page_count<>v_recheck_page_count or v_acquisition_manifest is distinct from v_recheck_manifest then
     raise exception 'UNLEASHED_RECONCILIATION_MISMATCH';
   end if;
@@ -573,6 +708,8 @@ begin
   return jsonb_build_object(
     'resource',p_resource,
     'pageCount',v_acquisition_page_count,
+    'pageSize',v_acquisition_page_size,
+    'declaredNumberOfPages',v_acquisition_number_of_pages,
     'acquisitionManifestSha256',v_acquisition_hash,
     'recheckManifestSha256',v_recheck_hash,
     'equivalent',true

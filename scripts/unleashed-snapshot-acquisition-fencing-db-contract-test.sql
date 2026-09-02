@@ -32,10 +32,26 @@ begin
     (v_run1,'BOUNDED_SNAPSHOT','RUNNING',v_actor,false,array['products'],100,5,now(),jsonb_build_object('pagination_window',jsonb_build_object('start_page',1,'previous_run_id',null))),
     (v_run2,'BOUNDED_SNAPSHOT','RUNNING',v_actor,false,array['products'],100,5,now(),jsonb_build_object('pagination_window',jsonb_build_object('start_page',1,'previous_run_id',null)));
 
+  insert into public.unleashed_resource_cursors(
+    resource,cursor_status,high_watermark_at,next_modified_since,metadata
+  ) values (
+    'products','READY','2026-09-01T00:00:00Z','2026-09-01T00:00:00Z',
+    jsonb_build_object('legacy_ready_checkpoint',true)
+  );
+
   v_result := public.ecoflow_claim_unleashed_snapshot_acquisition(v_run1,'products',1,null);
   v_token := (v_result->>'leaseToken')::uuid;
   if v_token is null or (v_result->>'replayed')::boolean then
     raise exception 'UNLEASHED_ACQUISITION_ROOT_CLAIM_INVALID';
+  end if;
+  if not exists (
+    select 1 from public.unleashed_resource_cursors c
+    where c.resource='products' and c.cursor_status='RUNNING'
+      and c.last_successful_run_id is null and c.high_watermark_at is null
+      and c.next_modified_since is null
+      and c.metadata->'pagination_window'->>'run_id'=v_run1::text
+  ) then
+    raise exception 'UNLEASHED_ACQUISITION_ROOT_CLAIM_DID_NOT_INVALIDATE_READY_CURSOR';
   end if;
 
   begin
@@ -79,6 +95,19 @@ begin
       'latest_source_last_modified_at','2026-09-02T00:00:00Z','metadata',jsonb_build_object('source','unleashed_api')
     ))
   );
+
+  begin
+    perform public.ecoflow_finalize_unleashed_snapshot_resource(
+      v_token,v_run1,'products','RUNNING',
+      jsonb_build_object(
+        'start_page',1,'last_page',2,'number_of_pages',2,'window_complete',false,
+        'next_page',3,'previous_run_id',null,'high_watermark','2026-09-02T00:00:00Z'
+      ),null,'2026-09-02T00:00:00Z',null,null
+    );
+    raise exception 'EXPECTED_WINDOW_BATCH_MISMATCH_NOT_RAISED';
+  exception when others then
+    if sqlerrm not like '%UNLEASHED_ACQUISITION_WINDOW_BATCH_MISMATCH%' then raise; end if;
+  end;
 
   perform public.ecoflow_finalize_unleashed_snapshot_resource(
     v_token,v_run1,'products','RUNNING',
@@ -217,6 +246,17 @@ begin
      or v_result->>'acquisitionManifestSha256'<>v_result->>'recheckManifestSha256' then
     raise exception 'UNLEASHED_RECONCILIATION_PASS_RESULT_INVALID';
   end if;
+
+  update public.unleashed_sync_runs set page_size=50 where id in (v_chk1,v_chk2);
+  update public.unleashed_sync_batches set page_size=50 where run_id in (v_chk1,v_chk2);
+  begin
+    perform public.ecoflow_verify_unleashed_snapshot_reconciliation('suppliers',array[v_acq1,v_acq2],array[v_chk1,v_chk2]);
+    raise exception 'EXPECTED_RECONCILIATION_PAGE_SIZE_MISMATCH_NOT_RAISED';
+  exception when others then
+    if sqlerrm not like '%UNLEASHED_RECONCILIATION_PAGE_SIZE_MISMATCH%' then raise; end if;
+  end;
+  update public.unleashed_sync_runs set page_size=100 where id in (v_chk1,v_chk2);
+  update public.unleashed_sync_batches set page_size=100 where run_id in (v_chk1,v_chk2);
 
   update public.unleashed_sync_batches set response_sha256=repeat('3',64) where run_id=v_chk2 and page_number=2;
   begin
