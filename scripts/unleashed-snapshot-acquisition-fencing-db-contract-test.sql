@@ -268,6 +268,80 @@ begin
 end;
 $$;
 
+-- Targeted non-dry acceptance writes are fenced but must never publish or invalidate a resource cursor.
+do $$
+declare
+  v_actor uuid := '11111111-1111-4111-8111-111111111111';
+  v_run uuid := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+  v_token uuid;
+begin
+  insert into public.unleashed_resource_cursors(resource,cursor_status,last_successful_at,high_watermark_at,next_modified_since,metadata)
+  values ('sales_orders_open','READY','2026-09-01T00:00:00Z','2026-09-01T00:00:00Z','2026-09-01T00:00:00Z',jsonb_build_object('stable_full_cursor',true));
+  insert into public.unleashed_sync_runs(id,run_type,status,requested_by,dry_run,resource_set,page_size,max_pages,started_at,metadata)
+  values (v_run,'BOUNDED_SNAPSHOT','RUNNING',v_actor,false,array['sales_orders_open'],1,1,now(),jsonb_build_object(
+    'target',jsonb_build_object('orderNumber','SO-1'),
+    'pagination_window',jsonb_build_object('start_page',1,'previous_run_id',null)
+  ));
+
+  v_token := (public.ecoflow_claim_unleashed_snapshot_acquisition(v_run,'sales_orders_open',1,null)->>'leaseToken')::uuid;
+  if not exists (
+    select 1 from public.unleashed_resource_cursors c
+    where c.resource='sales_orders_open' and c.cursor_status='READY'
+      and c.high_watermark_at='2026-09-01T00:00:00Z' and c.metadata->>'stable_full_cursor'='true'
+  ) then raise exception 'UNLEASHED_TARGET_ACQUISITION_MUTATED_CURSOR_ON_CLAIM'; end if;
+
+  perform public.ecoflow_commit_unleashed_snapshot_page(
+    v_token,v_run,'sales_orders_open','/SalesOrders/1',1,1,200,1,0,repeat('4',64),
+    jsonb_build_object('orderNumber','SO-1'),'{}'::jsonb,
+    jsonb_build_object('targeted',true),'[]'::jsonb,'[]'::jsonb
+  );
+  perform public.ecoflow_release_unleashed_targeted_snapshot_acquisition(v_token,v_run,'sales_orders_open');
+
+  if exists (select 1 from public.unleashed_snapshot_acquisition_leases where resource='sales_orders_open') then
+    raise exception 'UNLEASHED_TARGET_ACQUISITION_LEASE_NOT_RELEASED';
+  end if;
+  if not exists (
+    select 1 from public.unleashed_resource_cursors c
+    where c.resource='sales_orders_open' and c.cursor_status='READY'
+      and c.high_watermark_at='2026-09-01T00:00:00Z' and c.metadata->>'stable_full_cursor'='true'
+  ) then raise exception 'UNLEASHED_TARGET_ACQUISITION_MUTATED_CURSOR_ON_RELEASE'; end if;
+end;
+$$;
+
+-- A full acquisition may fail before any successful page; failure evidence still releases the lease and publishes FAILED.
+do $$
+declare
+  v_actor uuid := '11111111-1111-4111-8111-111111111111';
+  v_run uuid := 'ffffffff-ffff-4fff-8fff-fffffffffff1';
+  v_token uuid;
+begin
+  insert into public.unleashed_sync_runs(id,run_type,status,requested_by,dry_run,resource_set,page_size,max_pages,started_at,metadata)
+  values (v_run,'BOUNDED_SNAPSHOT','RUNNING',v_actor,false,array['warehouses'],100,5,now(),jsonb_build_object(
+    'target',null,
+    'pagination_window',jsonb_build_object('start_page',1,'previous_run_id',null)
+  ));
+  v_token := (public.ecoflow_claim_unleashed_snapshot_acquisition(v_run,'warehouses',1,null)->>'leaseToken')::uuid;
+  perform public.ecoflow_record_unleashed_snapshot_page_failure(
+    v_token,v_run,'warehouses','/Warehouses/1',1,100,503,repeat('5',64),'{}'::jsonb,
+    'UNLEASHED_API_REQUEST_FAILED','upstream unavailable',jsonb_build_object('upstream_body_redacted',true)
+  );
+  perform public.ecoflow_finalize_unleashed_snapshot_resource(
+    v_token,v_run,'warehouses','FAILED',
+    jsonb_build_object('start_page',1,'last_page',null,'number_of_pages',null,'window_complete',false,'next_page',null,'previous_run_id',null),
+    null,null,'UNLEASHED_API_REQUEST_FAILED','upstream unavailable'
+  );
+  if exists (select 1 from public.unleashed_snapshot_acquisition_leases where resource='warehouses') then
+    raise exception 'UNLEASHED_FAILED_ACQUISITION_LEASE_NOT_RELEASED';
+  end if;
+  if not exists (
+    select 1 from public.unleashed_resource_cursors c
+    where c.resource='warehouses' and c.cursor_status='FAILED'
+      and c.last_successful_run_id is null and c.next_modified_since is null
+      and c.last_error_code='UNLEASHED_API_REQUEST_FAILED'
+  ) then raise exception 'UNLEASHED_FAILED_ACQUISITION_CURSOR_NOT_FAILED'; end if;
+end;
+$$;
+
 rollback;
 
 select 'UNLEASHED-MIGRATION-002D acquisition fencing DB contract: PASS' as result;

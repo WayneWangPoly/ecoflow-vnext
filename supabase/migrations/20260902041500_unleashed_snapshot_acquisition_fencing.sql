@@ -71,6 +71,7 @@ declare
   v_generation bigint;
   v_cursor_run_id uuid;
   v_cursor_next_page integer;
+  v_targeted boolean := false;
 begin
   if p_run_id is null or length(btrim(coalesce(p_resource,'')))=0 or coalesce(p_start_page,0)<1 then
     raise exception 'UNLEASHED_ACQUISITION_LEASE_INVALID';
@@ -92,6 +93,10 @@ begin
   if not (p_resource = any(v_run.resource_set)) then
     raise exception 'UNLEASHED_ACQUISITION_RESOURCE_NOT_IN_RUN';
   end if;
+  v_targeted := v_run.metadata->'target' is not null and v_run.metadata->'target' <> 'null'::jsonb;
+  if v_targeted and (p_start_page<>1 or p_previous_run_id is not null or v_run.page_size<>1 or v_run.max_pages<>1 or cardinality(v_run.resource_set)<>1) then
+    raise exception 'UNLEASHED_ACQUISITION_TARGET_WINDOW_INVALID';
+  end if;
   if coalesce((v_run.metadata->'pagination_window'->>'start_page')::integer, 1) <> p_start_page
      or nullif(v_run.metadata->'pagination_window'->>'previous_run_id','')::uuid is distinct from p_previous_run_id then
     raise exception 'UNLEASHED_ACQUISITION_RUN_WINDOW_MISMATCH';
@@ -105,7 +110,7 @@ begin
     raise exception 'UNLEASHED_ACQUISITION_RESOURCE_DISABLED';
   end if;
 
-  if p_start_page>1 then
+  if not v_targeted and p_start_page>1 then
     if not found or v_cursor.cursor_status<>'RUNNING' then
       raise exception 'UNLEASHED_ACQUISITION_CONTINUATION_CURSOR_MISSING';
     end if;
@@ -164,7 +169,7 @@ begin
 
   -- Root acquisition invalidates any older consumable READY checkpoint at
   -- claim time, not after the first network window has already completed.
-  if p_start_page=1 then
+  if not v_targeted and p_start_page=1 then
     insert into public.unleashed_resource_cursors(
       resource,cursor_status,last_successful_run_id,last_successful_at,last_successful_modified_since,
       high_watermark_at,next_modified_since,last_error_code,last_error_message,metadata
@@ -195,6 +200,7 @@ begin
     'leaseToken',v_token,
     'generation',v_generation,
     'expiresAt',clock_timestamp()+interval '15 minutes',
+    'targeted',v_targeted,
     'replayed',false
   );
 end;
@@ -242,7 +248,9 @@ begin
   from public.unleashed_sync_runs r
   where r.id=p_run_id
   for update;
-  if not found or v_run.status<>'RUNNING' or v_run.dry_run or not (p_resource=any(v_run.resource_set)) then
+  if not found or v_run.status<>'RUNNING' or v_run.dry_run
+     or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.max_pages not between 1 and 5
+     or not (p_resource=any(v_run.resource_set)) then
     raise exception 'UNLEASHED_ACQUISITION_RUN_LOST';
   end if;
   if coalesce(p_page_number,0)<v_lease.start_page
@@ -369,6 +377,7 @@ set search_path = ''
 as $$
 declare
   v_lease public.unleashed_snapshot_acquisition_leases%rowtype;
+  v_run public.unleashed_sync_runs%rowtype;
   v_batch_id uuid;
 begin
   select * into v_lease
@@ -378,6 +387,25 @@ begin
   if not found or v_lease.run_id<>p_run_id or v_lease.lease_token<>p_lease_token
      or v_lease.expires_at<=clock_timestamp() then
     raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST';
+  end if;
+
+  select * into v_run
+  from public.unleashed_sync_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING' or v_run.dry_run
+     or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.max_pages not between 1 and 5
+     or not (p_resource=any(v_run.resource_set)) then
+    raise exception 'UNLEASHED_ACQUISITION_RUN_LOST';
+  end if;
+  if coalesce(p_page_number,0)<v_lease.start_page
+     or p_page_number>v_lease.start_page+v_run.max_pages-1
+     or coalesce(p_page_size,0)<>v_run.page_size
+     or (p_http_status is not null and p_http_status not between 100 and 599)
+     or (p_response_sha256 is not null and p_response_sha256 !~ '^[0-9a-f]{64}$')
+     or jsonb_typeof(coalesce(p_query_params,'{}'::jsonb))<>'object'
+     or jsonb_typeof(coalesce(p_batch_metadata,'{}'::jsonb))<>'object' then
+    raise exception 'UNLEASHED_ACQUISITION_FAILURE_PAGE_INVALID';
   end if;
 
   insert into public.unleashed_sync_batches(
@@ -425,6 +453,8 @@ declare
   v_min_page integer;
   v_max_page integer;
   v_bad_batches integer;
+  v_failed_batches integer;
+  v_targeted boolean := false;
 begin
   select * into v_lease
   from public.unleashed_snapshot_acquisition_leases l
@@ -444,6 +474,8 @@ begin
      or not (p_resource=any(v_run.resource_set)) then
     raise exception 'UNLEASHED_ACQUISITION_RUN_LOST';
   end if;
+  v_targeted := v_run.metadata->'target' is not null and v_run.metadata->'target' <> 'null'::jsonb;
+  if v_targeted then raise exception 'UNLEASHED_TARGET_ACQUISITION_REQUIRES_RELEASE'; end if;
   if p_cursor_status not in ('RUNNING','READY','FAILED') or jsonb_typeof(coalesce(p_window,'{}'::jsonb))<>'object' then
     raise exception 'UNLEASHED_ACQUISITION_FINALIZE_INVALID';
   end if;
@@ -461,7 +493,8 @@ begin
 
   if v_start_page is distinct from v_lease.start_page
      or v_previous_run_id is distinct from v_lease.previous_run_id
-     or v_last_page is null or v_last_page<v_start_page then
+     or (v_last_page is not null and v_last_page<v_start_page)
+     or (p_cursor_status<>'FAILED' and v_last_page is null) then
     raise exception 'UNLEASHED_ACQUISITION_WINDOW_LEASE_MISMATCH';
   end if;
   if p_cursor_status='READY' and (not v_complete or v_next_page is not null) then
@@ -471,7 +504,17 @@ begin
     raise exception 'UNLEASHED_ACQUISITION_RUNNING_REQUIRES_CONTINUATION';
   end if;
 
-  if p_cursor_status<>'FAILED' then
+  if p_cursor_status='FAILED' then
+    select count(*) into v_failed_batches
+    from public.unleashed_sync_batches b
+    where b.run_id=p_run_id and b.resource=p_resource and b.status='FAILED'
+      and b.page_size=v_run.page_size
+      and b.page_number between v_lease.start_page and v_lease.start_page+v_run.max_pages-1
+      and b.page_number=coalesce(v_last_page+1,v_start_page);
+    if v_failed_batches<>1 then
+      raise exception 'UNLEASHED_ACQUISITION_FAILED_BATCH_MISMATCH';
+    end if;
+  else
     select
       count(*),count(distinct b.page_number),min(b.page_number),max(b.page_number),
       count(*) filter (
@@ -534,6 +577,64 @@ begin
     'windowComplete',v_complete,
     'nextPage',v_next_page,
     'validatedPages',case when p_cursor_status='FAILED' then 0 else v_page_count end
+  );
+end;
+$$;
+
+create or replace function public.ecoflow_release_unleashed_targeted_snapshot_acquisition(
+  p_lease_token uuid,
+  p_run_id uuid,
+  p_resource text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_lease public.unleashed_snapshot_acquisition_leases%rowtype;
+  v_run public.unleashed_sync_runs%rowtype;
+  v_targeted boolean;
+  v_batch_count integer;
+  v_bad_batches integer;
+  v_batch_status text;
+begin
+  select * into v_lease
+  from public.unleashed_snapshot_acquisition_leases l
+  where l.resource=p_resource
+  for update;
+  if not found or v_lease.run_id<>p_run_id or v_lease.lease_token<>p_lease_token
+     or v_lease.expires_at<=clock_timestamp() then
+    raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST';
+  end if;
+
+  select * into v_run
+  from public.unleashed_sync_runs r
+  where r.id=p_run_id
+  for update;
+  v_targeted := found and v_run.metadata->'target' is not null and v_run.metadata->'target' <> 'null'::jsonb;
+  if not found or v_run.status<>'RUNNING' or v_run.dry_run or not v_targeted
+     or v_run.run_type<>'BOUNDED_SNAPSHOT' or v_run.page_size<>1 or v_run.max_pages<>1
+     or cardinality(v_run.resource_set)<>1 or not (p_resource=any(v_run.resource_set)) then
+    raise exception 'UNLEASHED_TARGET_ACQUISITION_RUN_INVALID';
+  end if;
+
+  select count(*),count(*) filter (
+    where b.status not in ('SUCCEEDED','FAILED') or b.page_number<>1 or b.page_size<>1
+  ),min(b.status)
+  into v_batch_count,v_bad_batches,v_batch_status
+  from public.unleashed_sync_batches b
+  where b.run_id=p_run_id and b.resource=p_resource;
+  if v_batch_count<>1 or v_bad_batches<>0 then
+    raise exception 'UNLEASHED_TARGET_ACQUISITION_BATCH_MISMATCH';
+  end if;
+
+  delete from public.unleashed_snapshot_acquisition_leases
+  where resource=p_resource and run_id=p_run_id and lease_token=p_lease_token;
+  if not found then raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST'; end if;
+
+  return jsonb_build_object(
+    'resource',p_resource,'runId',p_run_id,'targeted',true,'batchStatus',v_batch_status,'released',true
   );
 end;
 $$;
@@ -721,12 +822,14 @@ revoke all on function public.ecoflow_claim_unleashed_snapshot_acquisition(uuid,
 revoke all on function public.ecoflow_commit_unleashed_snapshot_page(uuid,uuid,text,text,integer,integer,integer,integer,integer,text,jsonb,jsonb,jsonb,jsonb,jsonb) from public, anon, authenticated;
 revoke all on function public.ecoflow_record_unleashed_snapshot_page_failure(uuid,uuid,text,text,integer,integer,integer,text,jsonb,text,text,jsonb) from public, anon, authenticated;
 revoke all on function public.ecoflow_finalize_unleashed_snapshot_resource(uuid,uuid,text,text,jsonb,text,timestamptz,text,text) from public, anon, authenticated;
+revoke all on function public.ecoflow_release_unleashed_targeted_snapshot_acquisition(uuid,uuid,text) from public, anon, authenticated;
 revoke all on function public.ecoflow_verify_unleashed_snapshot_reconciliation(text,uuid[],uuid[]) from public, anon, authenticated;
 
 grant execute on function public.ecoflow_claim_unleashed_snapshot_acquisition(uuid,text,integer,uuid) to service_role;
 grant execute on function public.ecoflow_commit_unleashed_snapshot_page(uuid,uuid,text,text,integer,integer,integer,integer,integer,text,jsonb,jsonb,jsonb,jsonb,jsonb) to service_role;
 grant execute on function public.ecoflow_record_unleashed_snapshot_page_failure(uuid,uuid,text,text,integer,integer,integer,text,jsonb,text,text,jsonb) to service_role;
 grant execute on function public.ecoflow_finalize_unleashed_snapshot_resource(uuid,uuid,text,text,jsonb,text,timestamptz,text,text) to service_role;
+grant execute on function public.ecoflow_release_unleashed_targeted_snapshot_acquisition(uuid,uuid,text) to service_role;
 grant execute on function public.ecoflow_verify_unleashed_snapshot_reconciliation(text,uuid[],uuid[]) to service_role;
 
 comment on table public.unleashed_snapshot_acquisition_leases is
