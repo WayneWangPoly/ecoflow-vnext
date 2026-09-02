@@ -526,6 +526,21 @@ function summarizeHighWatermark(items: Record<string, unknown>[]) {
   return highWatermark;
 }
 
+// Dry-run/recheck evidence is deliberately the only direct batch write left in
+// the Edge Function. Every non-dry snapshot write is fenced by DB-owned RPCs.
+async function insertDryRunBatch(
+  adminClient: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+) {
+  const { data, error } = await adminClient
+    .from('unleashed_sync_batches')
+    .insert(row)
+    .select('id')
+    .single();
+  if (error || !data) throw new Error('UNLEASHED_DRY_RUN_BATCH_CREATE_FAILED:' + (error?.message ?? 'UNKNOWN'));
+  return data;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
@@ -733,27 +748,107 @@ Deno.serve(async (req) => {
     let knownNumberOfPages: number | null = paginatedRequest ? continuationExpectedNumberOfPages : 1;
     let resourceHighWatermark: string | null = paginatedRequest ? continuationHighWatermark : null;
     let resourceFailed = false;
+    let resourceFailureEvidenceReady = false;
     let lastPageRead: number | null = null;
     let terminalShortPage = false;
+    let acquisitionLeaseToken: string | null = null;
 
-    while (pageNumber <= windowEndPage && pageNumber <= (knownNumberOfPages ?? windowEndPage)) {
-      const query = buildQuery(definition, pageSize, modifiedSince, target);
-      const queryParams = Object.fromEntries(query.entries());
-      const queryString = serializeUnleashedQuery(query);
-      const url = buildRequestUrl(apiBaseUrl, definition, pageNumber, queryString, target);
+    if (!dryRun) {
+      const { data: claimData, error: claimError } = await adminClient.rpc(
+        'ecoflow_claim_unleashed_snapshot_acquisition',
+        {
+          p_run_id: run.id,
+          p_resource: resource,
+          p_start_page: resourceStartPage,
+          p_previous_run_id: previousRunId,
+        },
+      );
+      const claim = isRecord(claimData) ? claimData : null;
+      const leaseToken = claim && typeof claim.leaseToken === 'string' ? claim.leaseToken : null;
+      if (claimError || !leaseToken) {
+        recordsFailed += 1;
+        resourceFailed = true;
+        finalStatus = pageResults.length ? 'PARTIAL' : 'FAILED';
+        finalErrorCode = 'UNLEASHED_ACQUISITION_CLAIM_FAILED';
+        finalErrorMessage = claimError?.message?.slice(0, 1000) ?? 'DB-owned Unleashed acquisition lease was not granted';
+      } else {
+        acquisitionLeaseToken = leaseToken;
+      }
+    }
+
+    const recordPageFailure = async (input: {
+      endpointPath: string;
+      pageNumber: number;
+      queryParams: Record<string, string>;
+      httpStatus: number | null;
+      responseSha256: string | null;
+      errorCode: string;
+      errorMessage: string;
+      metadata: Record<string, unknown>;
+    }) => {
+      if (!dryRun) {
+        if (!acquisitionLeaseToken) throw new Error('UNLEASHED_ACQUISITION_LEASE_MISSING');
+        const { error } = await adminClient.rpc('ecoflow_record_unleashed_snapshot_page_failure', {
+          p_lease_token: acquisitionLeaseToken,
+          p_run_id: run.id,
+          p_resource: resource,
+          p_endpoint_path: input.endpointPath,
+          p_page_number: input.pageNumber,
+          p_page_size: pageSize,
+          p_http_status: input.httpStatus,
+          p_response_sha256: input.responseSha256,
+          p_query_params: input.queryParams,
+          p_error_code: input.errorCode,
+          p_error_message: input.errorMessage,
+          p_batch_metadata: input.metadata,
+        });
+        if (error) throw new Error(`UNLEASHED_FENCED_FAILURE_RECORD_FAILED:${error.message}`);
+        resourceFailureEvidenceReady = true;
+        return;
+      }
+      await insertDryRunBatch(adminClient, {
+        run_id: run.id,
+        resource,
+        endpoint_path: input.endpointPath,
+        page_number: input.pageNumber,
+        page_size: pageSize,
+        status: 'FAILED',
+        responded_at: new Date().toISOString(),
+        http_status: input.httpStatus,
+        response_sha256: input.responseSha256,
+        query_params: input.queryParams,
+        error_code: input.errorCode,
+        error_message: input.errorMessage,
+        metadata: input.metadata,
+      });
+    };
+
+    while (!resourceFailed && pageNumber <= windowEndPage && pageNumber <= (knownNumberOfPages ?? windowEndPage)) {
       const endpointPath = `/${definition.endpoint}${target?.pathIdentifier ? `/${target.pathIdentifier}` : paginatedRequest ? `/${pageNumber}` : ''}`;
-      const signature = await hmacSha256Base64(queryString, unleashedApiKey);
+      let queryParams: Record<string, string> = {};
+      let httpStatus: number | null = null;
+      let responseSha256: string | null = null;
+      let fetchAttempts = 0;
+      let pageEvidenceCommitted = false;
 
       try {
-        const { response, attempts: fetchAttempts } = await fetchUnleashedWithRetry(url, {
+        const query = buildQuery(definition, pageSize, modifiedSince, target);
+        queryParams = Object.fromEntries(query.entries());
+        const queryString = serializeUnleashedQuery(query);
+        const url = buildRequestUrl(apiBaseUrl, definition, pageNumber, queryString, target);
+        const signature = await hmacSha256Base64(queryString, unleashedApiKey);
+        const fetched = await fetchUnleashedWithRetry(url, {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'api-auth-id': unleashedApiId,
           'api-auth-signature': signature,
           'client-type': clientType,
         });
+        fetchAttempts = fetched.attempts;
+        const response = fetched.response;
+        httpStatus = response.status;
         const responseText = await response.text();
-        const responseSha256 = await sha256Hex(responseText);
+        responseSha256 = await sha256Hex(responseText);
 
         if (!response.ok) {
           recordsFailed += 1;
@@ -761,54 +856,50 @@ Deno.serve(async (req) => {
           finalStatus = pageResults.length ? 'PARTIAL' : 'FAILED';
           finalErrorCode = 'UNLEASHED_API_REQUEST_FAILED';
           finalErrorMessage = `${resource} page ${pageNumber} returned HTTP ${response.status}`;
-          await adminClient.from('unleashed_sync_batches').insert({
-            run_id: run.id,
-            resource,
-            endpoint_path: endpointPath,
-            page_number: pageNumber,
-            page_size: pageSize,
-            status: 'FAILED',
-            responded_at: new Date().toISOString(),
-            http_status: response.status,
-            response_sha256: responseSha256,
-            query_params: queryParams,
-            error_code: finalErrorCode,
-            error_message: finalErrorMessage,
-            metadata: {
-              upstream_body_redacted: true,
-              target: target?.audit ?? null,
-              fetch_attempts: fetchAttempts,
-            },
-          });
+          try {
+            await recordPageFailure({
+              endpointPath,
+              pageNumber,
+              queryParams,
+              httpStatus,
+              responseSha256,
+              errorCode: finalErrorCode,
+              errorMessage: finalErrorMessage,
+              metadata: {
+                upstream_body_redacted: true,
+                target: target?.audit ?? null,
+                fetch_attempts: fetchAttempts,
+              },
+            });
+          } catch (failureError) {
+            finalErrorMessage = `${finalErrorMessage}; ${failureError instanceof Error ? failureError.message : 'failure evidence unavailable'}`.slice(0, 1000);
+          }
           break;
         }
 
         let payload: unknown;
-        try { payload = JSON.parse(responseText); }
-        catch {
+        try {
+          payload = JSON.parse(responseText);
+        } catch {
           recordsFailed += 1;
           resourceFailed = true;
           finalStatus = pageResults.length ? 'PARTIAL' : 'FAILED';
           finalErrorCode = 'UNLEASHED_API_NON_JSON_RESPONSE';
           finalErrorMessage = `${resource} page ${pageNumber} returned a non-JSON response`;
-          await adminClient.from('unleashed_sync_batches').insert({
-            run_id: run.id,
-            resource,
-            endpoint_path: endpointPath,
-            page_number: pageNumber,
-            page_size: pageSize,
-            status: 'FAILED',
-            responded_at: new Date().toISOString(),
-            http_status: response.status,
-            response_sha256: responseSha256,
-            query_params: queryParams,
-            error_code: finalErrorCode,
-            error_message: finalErrorMessage,
-            metadata: {
-              target: target?.audit ?? null,
-              fetch_attempts: fetchAttempts,
-            },
-          });
+          try {
+            await recordPageFailure({
+              endpointPath,
+              pageNumber,
+              queryParams,
+              httpStatus,
+              responseSha256,
+              errorCode: finalErrorCode,
+              errorMessage: finalErrorMessage,
+              metadata: { target: target?.audit ?? null, fetch_attempts: fetchAttempts },
+            });
+          } catch (failureError) {
+            finalErrorMessage = `${finalErrorMessage}; ${failureError instanceof Error ? failureError.message : 'failure evidence unavailable'}`.slice(0, 1000);
+          }
           break;
         }
 
@@ -835,10 +926,12 @@ Deno.serve(async (req) => {
         let changedOnPage = 0;
         let unchangedOnPage = 0;
         let identityWritesOnPage = 0;
+        let semanticRows: SnapshotRow[] = [];
+        let identitiesNeedingWrite: IdentityRow[] = [];
         if (!dryRun && items.length) {
           const snapshotRows = await buildSnapshotRows(resource, run.id, items);
           const classifiedRows = await classifySnapshotRows(adminClient, resource, snapshotRows);
-          const semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed];
+          semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed];
           const identityRows: IdentityRow[] = snapshotRows.map((row) => ({
             resource: row.resource,
             external_key: row.external_key,
@@ -852,59 +945,70 @@ Deno.serve(async (req) => {
             last_seen_run_id: run.id,
             metadata: { source: 'unleashed_api' },
           }));
-          const identitiesNeedingWrite = await identityRowsNeedingWrite(adminClient, resource, identityRows);
-
-          if (semanticRows.length) {
-            const { error: snapshotError } = await adminClient
-              .from('unleashed_raw_snapshots')
-              .upsert(semanticRows, { onConflict: 'resource,external_key' });
-            if (snapshotError) throw new Error(`UNLEASHED_RAW_SNAPSHOT_UPSERT_FAILED:${snapshotError.message}`);
-          }
-
-          if (identitiesNeedingWrite.length) {
-            const { error: identityError } = await adminClient
-              .from('unleashed_external_identities')
-              .upsert(identitiesNeedingWrite, { onConflict: 'resource,external_key' });
-            if (identityError) throw new Error(`UNLEASHED_EXTERNAL_IDENTITY_UPSERT_FAILED:${identityError.message}`);
-          }
-
+          identitiesNeedingWrite = await identityRowsNeedingWrite(adminClient, resource, identityRows);
           insertedOnPage = classifiedRows.inserted.length;
           changedOnPage = classifiedRows.changed.length;
           unchangedOnPage = classifiedRows.unchanged.length;
           identityWritesOnPage = identitiesNeedingWrite.length;
           stagedOnPage = insertedOnPage + changedOnPage;
-          recordsStaged += stagedOnPage;
-          recordsInserted += insertedOnPage;
-          recordsChanged += changedOnPage;
-          recordsUnchanged += unchangedOnPage;
         }
 
-        const { data: batch, error: batchError } = await adminClient.from('unleashed_sync_batches').insert({
-          run_id: run.id,
-          resource,
-          endpoint_path: endpointPath,
-          page_number: pageNumber,
-          page_size: pageSize,
-          status: 'SUCCEEDED',
-          responded_at: new Date().toISOString(),
-          http_status: response.status,
-          records_seen: items.length,
-          records_staged: stagedOnPage,
-          response_sha256: responseSha256,
-          query_params: queryParams,
-          pagination,
-          metadata: {
-            dry_run: dryRun,
-            target: target?.audit ?? null,
-            upstream_records_seen: upstreamItems.length,
-            records_inserted: insertedOnPage,
-            records_changed: changedOnPage,
-            records_unchanged: unchangedOnPage,
-            identity_writes: identityWritesOnPage,
-            fetch_attempts: fetchAttempts,
-          },
-        }).select('id').single();
-        if (batchError || !batch) throw new Error(`UNLEASHED_SYNC_BATCH_CREATE_FAILED:${batchError?.message}`);
+        const batchMetadata = {
+          dry_run: dryRun,
+          target: target?.audit ?? null,
+          upstream_records_seen: upstreamItems.length,
+          records_inserted: insertedOnPage,
+          records_changed: changedOnPage,
+          records_unchanged: unchangedOnPage,
+          identity_writes: identityWritesOnPage,
+          fetch_attempts: fetchAttempts,
+        };
+
+        if (!dryRun) {
+          if (!acquisitionLeaseToken) throw new Error('UNLEASHED_ACQUISITION_LEASE_MISSING');
+          const { error: commitError } = await adminClient.rpc('ecoflow_commit_unleashed_snapshot_page', {
+            p_lease_token: acquisitionLeaseToken,
+            p_run_id: run.id,
+            p_resource: resource,
+            p_endpoint_path: endpointPath,
+            p_page_number: pageNumber,
+            p_page_size: pageSize,
+            p_http_status: response.status,
+            p_records_seen: items.length,
+            p_records_staged: stagedOnPage,
+            p_response_sha256: responseSha256,
+            p_query_params: queryParams,
+            p_pagination: pagination,
+            p_batch_metadata: batchMetadata,
+            p_snapshot_rows: semanticRows,
+            p_identity_rows: identitiesNeedingWrite,
+          });
+          if (commitError) throw new Error(`UNLEASHED_FENCED_PAGE_COMMIT_FAILED:${commitError.message}`);
+        } else {
+          await insertDryRunBatch(adminClient, {
+            run_id: run.id,
+            resource,
+            endpoint_path: endpointPath,
+            page_number: pageNumber,
+            page_size: pageSize,
+            status: 'SUCCEEDED',
+            responded_at: new Date().toISOString(),
+            http_status: response.status,
+            records_seen: items.length,
+            records_staged: 0,
+            response_sha256: responseSha256,
+            query_params: queryParams,
+            pagination,
+            metadata: batchMetadata,
+          });
+        }
+        pageEvidenceCommitted = true;
+
+        recordsStaged += stagedOnPage;
+        recordsInserted += insertedOnPage;
+        recordsChanged += changedOnPage;
+        recordsUnchanged += unchangedOnPage;
+        lastPageRead = pageNumber;
 
         pageResults.push({
           resource,
@@ -923,7 +1027,6 @@ Deno.serve(async (req) => {
           highWatermark: pageHighWatermark,
         });
 
-        lastPageRead = pageNumber;
         if (apiNumberOfPages !== null) knownNumberOfPages = Math.max(1, apiNumberOfPages);
         terminalShortPage = upstreamItems.length < pageSize;
         if (!paginatedRequest || terminalShortPage) break;
@@ -934,19 +1037,22 @@ Deno.serve(async (req) => {
         finalStatus = pageResults.length ? 'PARTIAL' : 'FAILED';
         finalErrorCode = 'UNLEASHED_CONNECTOR_PAGE_FAILED';
         finalErrorMessage = error instanceof Error ? error.message.slice(0, 1000) : 'Unknown Unleashed connector failure';
-        await adminClient.from('unleashed_sync_batches').insert({
-          run_id: run.id,
-          resource,
-          endpoint_path: endpointPath,
-          page_number: pageNumber,
-          page_size: pageSize,
-          status: 'FAILED',
-          responded_at: new Date().toISOString(),
-          query_params: queryParams,
-          error_code: finalErrorCode,
-          error_message: finalErrorMessage,
-          metadata: { target: target?.audit ?? null },
-        });
+        if (!pageEvidenceCommitted) {
+          try {
+            await recordPageFailure({
+              endpointPath,
+              pageNumber,
+              queryParams,
+              httpStatus,
+              responseSha256,
+              errorCode: finalErrorCode,
+              errorMessage: finalErrorMessage,
+              metadata: { target: target?.audit ?? null, fetch_attempts: fetchAttempts },
+            });
+          } catch (failureError) {
+            finalErrorMessage = `${finalErrorMessage}; ${failureError instanceof Error ? failureError.message : 'failure evidence unavailable'}`.slice(0, 1000);
+          }
+        }
         break;
       }
     }
@@ -963,59 +1069,47 @@ Deno.serve(async (req) => {
     const windowEvidence: ResourceWindowResult = { resource, ...summarizedWindow };
     resourceWindows.push(windowEvidence);
 
-    if (!dryRun) {
-      const cursorMetadata = {
-        dry_run: dryRun,
-        target: target?.audit ?? null,
-        pagination_window: {
-          start_page: windowEvidence.startPage,
-          last_page: windowEvidence.lastPage,
-          number_of_pages: windowEvidence.numberOfPages,
-          window_complete: windowEvidence.windowComplete,
-          next_page: windowEvidence.nextPage,
-          previous_run_id: previousRunId,
-          high_watermark: windowEvidence.highWatermark,
-        },
-      };
-      if (resourceFailed) {
-        await adminClient.from('unleashed_resource_cursors').upsert({
-          resource,
-          cursor_status: 'FAILED',
-          last_successful_run_id: null,
-          last_successful_at: null,
-          last_successful_modified_since: null,
-          high_watermark_at: null,
-          next_modified_since: null,
-          last_error_code: finalErrorCode,
-          last_error_message: finalErrorMessage,
-          metadata: cursorMetadata,
-        }, { onConflict: 'resource' });
-      } else if (windowEvidence.windowComplete) {
-        await adminClient.from('unleashed_resource_cursors').upsert({
-          resource,
-          cursor_status: 'READY',
-          last_successful_run_id: run.id,
-          last_successful_at: new Date().toISOString(),
-          last_successful_modified_since: modifiedSince,
-          high_watermark_at: resourceHighWatermark,
-          next_modified_since: resourceHighWatermark,
-          last_error_code: null,
-          last_error_message: null,
-          metadata: cursorMetadata,
-        }, { onConflict: 'resource' });
-      } else {
-        await adminClient.from('unleashed_resource_cursors').upsert({
-          resource,
-          cursor_status: 'RUNNING',
-          last_successful_run_id: null,
-          last_successful_at: null,
-          last_successful_modified_since: null,
-          high_watermark_at: null,
-          next_modified_since: null,
-          last_error_code: null,
-          last_error_message: null,
-          metadata: cursorMetadata,
-        }, { onConflict: 'resource' });
+    if (!dryRun && acquisitionLeaseToken) {
+      if (target) {
+        if (!resourceFailed || resourceFailureEvidenceReady) {
+          const { error: releaseError } = await adminClient.rpc(
+            'ecoflow_release_unleashed_targeted_snapshot_acquisition',
+            { p_lease_token: acquisitionLeaseToken, p_run_id: run.id, p_resource: resource },
+          );
+          if (releaseError) {
+            recordsFailed += resourceFailed ? 0 : 1;
+            resourceFailed = true;
+            finalErrorCode = 'UNLEASHED_TARGET_ACQUISITION_RELEASE_FAILED';
+            finalErrorMessage = releaseError.message.slice(0, 1000);
+          }
+        }
+      } else if (!resourceFailed || resourceFailureEvidenceReady) {
+        const cursorStatus = resourceFailed ? 'FAILED' : windowEvidence.windowComplete ? 'READY' : 'RUNNING';
+        const { error: finalizeError } = await adminClient.rpc('ecoflow_finalize_unleashed_snapshot_resource', {
+          p_lease_token: acquisitionLeaseToken,
+          p_run_id: run.id,
+          p_resource: resource,
+          p_cursor_status: cursorStatus,
+          p_window: {
+            start_page: windowEvidence.startPage,
+            last_page: windowEvidence.lastPage,
+            number_of_pages: windowEvidence.numberOfPages,
+            window_complete: windowEvidence.windowComplete,
+            next_page: windowEvidence.nextPage,
+            previous_run_id: previousRunId,
+            high_watermark: windowEvidence.highWatermark,
+          },
+          p_requested_modified_since: modifiedSince,
+          p_high_watermark: resourceHighWatermark,
+          p_error_code: resourceFailed ? finalErrorCode : null,
+          p_error_message: resourceFailed ? finalErrorMessage : null,
+        });
+        if (finalizeError) {
+          recordsFailed += resourceFailed ? 0 : 1;
+          resourceFailed = true;
+          finalErrorCode = 'UNLEASHED_ACQUISITION_FINALIZE_FAILED';
+          finalErrorMessage = finalizeError.message.slice(0, 1000);
+        }
       }
     }
 
