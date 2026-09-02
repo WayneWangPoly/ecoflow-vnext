@@ -29,27 +29,39 @@ function workflowStepRun(job) {
 const resolver = workflowStepRun('resolve');
 const finalizer = workflowStepRun('finalize');
 const headA = 'a'.repeat(40);
+const baseA = 'b'.repeat(40);
 const mergeA = 'c'.repeat(40);
+const mergeB = 'd'.repeat(40);
 const blobA = 'e'.repeat(40);
 const targetPath = 'supabase/migrations/20260812010000_transform_007b_account_hold_command.sql';
 const warehouseTargetPath = 'supabase/migrations/20260816061000_warehouse_survey_001_sku_context.sql';
 
-function pullRequest({ changedFiles = 1 } = {}) {
+function pullRequest({
+  changedFiles = 1,
+  headSha = headA,
+  baseSha = baseA,
+  mergeSha = mergeA,
+  mergeable = true,
+  headRepo = 'WayneWangPoly/ecoflow-vnext',
+  baseRef = 'main',
+  state = 'open',
+} = {}) {
   return {
-    head: { sha: headA, repo: { full_name: 'WayneWangPoly/ecoflow-vnext' } },
-    merge_commit_sha: mergeA,
-    mergeable: true,
+    head: { sha: headSha, repo: { full_name: headRepo } },
+    merge_commit_sha: mergeSha,
+    mergeable,
     changed_files: changedFiles,
-    base: { ref: 'main' },
-    state: 'open',
+    base: { ref: baseRef, sha: baseSha },
+    state,
   };
 }
 
-function runResolver(files, { changedFiles = files.length } = {}) {
+function runResolver(files, { changedFiles = files.length, rereadPr = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'transform-007-resolver-'));
   const bin = join(root, 'bin');
   mkdirSync(bin);
   writeFileSync(join(root, 'pr.json'), JSON.stringify(pullRequest({ changedFiles })));
+  if (rereadPr) writeFileSync(join(root, 'pr-reread.json'), JSON.stringify(rereadPr));
   writeFileSync(join(root, 'files.json'), JSON.stringify(files));
   writeFileSync(join(root, 'event.json'), JSON.stringify({ workflow_run: { pull_requests: [{ number: 42 }] } }));
   const gh = join(bin, 'gh');
@@ -57,7 +69,15 @@ function runResolver(files, { changedFiles = files.length } = {}) {
     '#!/usr/bin/env bash',
     'set -euo pipefail',
     'if [[ " $* " == *" --paginate "* ]]; then cat "$FAKE_ROOT/files.json"; exit 0; fi',
-    'if [[ "$*" == *"/pulls/42"* ]]; then cat "$FAKE_ROOT/pr.json"; exit 0; fi',
+    'if [[ "$*" == *"/pulls/42"* ]]; then',
+    '  count_file="$FAKE_ROOT/pr-call-count"',
+    '  count=0',
+    '  [[ -f "$count_file" ]] && count="$(cat "$count_file")"',
+    '  count=$((count + 1))',
+    '  printf "%s" "$count" > "$count_file"',
+    '  if (( count >= 2 )) && [[ -f "$FAKE_ROOT/pr-reread.json" ]]; then cat "$FAKE_ROOT/pr-reread.json"; else cat "$FAKE_ROOT/pr.json"; fi',
+    '  exit 0',
+    'fi',
     'exit 2',
     '',
   ].join('\n'));
@@ -82,6 +102,46 @@ function runResolver(files, { changedFiles = files.length } = {}) {
   rmSync(root, { recursive: true, force: true });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   return output;
+}
+
+function runFinalizer(currentPr, envOverrides = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'transform-007-finalizer-'));
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(root, 'pr.json'), JSON.stringify(currentPr));
+  const gh = join(bin, 'gh');
+  writeFileSync(gh, [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'if [[ "$*" == *"/pulls/42"* ]] && [[ " $* " != *" --method POST "* ]]; then cat "$FAKE_ROOT/pr.json"; exit 0; fi',
+    'if [[ " $* " == *" --method POST "* ]] && [[ "$*" == *"/statuses/"* ]]; then printf "%s\\n" "$*" >> "$FAKE_ROOT/statuses.log"; exit 0; fi',
+    'exit 2',
+    '',
+  ].join('\n'));
+  chmodSync(gh, 0o755);
+  const result = spawnSync('bash', ['-c', finalizer], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      FAKE_ROOT: root,
+      GITHUB_REPOSITORY: 'WayneWangPoly/ecoflow-vnext',
+      PR_NUMBER: '42',
+      HEAD_SHA: headA,
+      BASE_SHA: baseA,
+      MERGE_SHA: mergeA,
+      VERDICT: 'not_applicable',
+      REASON: 'SUPABASE_MIGRATION_NOT_CHANGED',
+      PREPARE_RESULT: 'skipped',
+      SHADOW_RESULT: 'skipped',
+      STATUS_CONTEXT: 'Supabase shadow gate (required)',
+      STATUS_URL: 'https://example.invalid/run/1',
+      ...envOverrides,
+    },
+  });
+  const statuses = existsSync(join(root, 'statuses.log')) ? readFileSync(join(root, 'statuses.log'), 'utf8') : '';
+  rmSync(root, { recursive: true, force: true });
+  return { result, statuses };
 }
 
 function migration(path = targetPath, status = 'added', sha = blobA) {
@@ -117,6 +177,7 @@ test('resolver accepts one newly added sequenced migration', () => {
   assert.equal(output.target_path, targetPath);
   assert.equal(output.target_version, '20260812010000');
   assert.equal(output.candidate_blob_sha, blobA);
+  assert.equal(output.base_sha, baseA);
 });
 
 test('resolver accepts WAREHOUSE-SURVEY-001 migration instead of reporting false not-applicable', () => {
@@ -126,6 +187,25 @@ test('resolver accepts WAREHOUSE-SURVEY-001 migration instead of reporting false
   assert.equal(output.target_path, warehouseTargetPath);
   assert.equal(output.target_version, '20260816061000');
   assert.equal(output.candidate_blob_sha, blobA);
+});
+
+test('resolver tolerates synthetic merge SHA churn when stable authority inputs are unchanged', () => {
+  const output = runResolver([migration()], {
+    rereadPr: pullRequest({ changedFiles: 1, mergeSha: mergeB }),
+  });
+  assert.equal(output.verdict, 'run');
+  assert.equal(output.reason, 'TARGET_MIGRATION_REQUIRES_SHADOW');
+  assert.equal(output.head_sha, headA);
+  assert.equal(output.base_sha, baseA);
+  assert.equal(output.merge_sha, mergeB);
+});
+
+test('resolver still fails closed when stable base identity changes during file enumeration', () => {
+  const output = runResolver([migration()], {
+    rereadPr: pullRequest({ changedFiles: 1, mergeSha: mergeB, baseSha: 'f'.repeat(40) }),
+  });
+  assert.equal(output.verdict, 'blocked');
+  assert.equal(output.reason, 'REQUEST_PR_CHANGED');
 });
 
 test('resolver makes migration-free PRs not applicable', () => {
@@ -175,6 +255,7 @@ test('trusted resolver binds same-repository current PR and exact candidate blob
   assert.match(trusted, /TARGET_MIGRATION_FILENAME_INVALID/);
   assert.match(trusted, /DEPLOYED_MIGRATION_EDIT_FORBIDDEN/);
   assert.match(trusted, /candidate_blob_sha/);
+  assert.match(trusted, /base_sha/);
   assert.match(trusted, /git hash-object .*candidate\.sql/);
   assert.match(trusted, /EXPECTED_TARGET_PATH/);
   assert.match(trusted, /EXPECTED_TARGET_VERSION/);
@@ -230,12 +311,29 @@ test('shadow ownership handoff excludes table-owned serial and identity sequence
   assert.doesNotMatch(runner, /case r\.relkind when 'S' then 'SEQUENCE'/);
 });
 
-test('finalizer publishes fail-closed status to exact head and test-merge', () => {
+test('finalizer publishes fail-closed status to exact head and freshly revalidated test-merge', () => {
   assert.match(finalizer, /final_state=failure/);
+  assert.match(finalizer, /\.base\.sha == \$base_sha/);
+  assert.match(finalizer, /current_merge_sha/);
+  assert.match(finalizer, /MERGE_SHA=\"\$current_merge_sha\"/);
   assert.match(finalizer, /publish_status \"\$MERGE_SHA\" pending/);
   assert.match(finalizer, /publish_status \"\$HEAD_SHA\" pending/);
   assert.match(finalizer, /for target_sha in \"\$HEAD_SHA\" \"\$MERGE_SHA\"/);
   assert.match(finalizer, /test \"\$final_state\" = success/);
   assert.match(trusted, /STATUS_CONTEXT: Supabase shadow gate \(required\)/);
   assert.match(trusted, /Supabase migration shadow is not applicable to this PR/);
+});
+
+test('finalizer accepts synthetic merge SHA churn and publishes to current merge SHA', () => {
+  const { result, statuses } = runFinalizer(pullRequest({ mergeSha: mergeB }));
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(statuses, new RegExp(`/statuses/${headA}`));
+  assert.match(statuses, new RegExp(`/statuses/${mergeB}`));
+  assert.doesNotMatch(statuses, new RegExp(`/statuses/${mergeA}`));
+});
+
+test('finalizer fails closed if stable base identity changed', () => {
+  const { result, statuses } = runFinalizer(pullRequest({ mergeSha: mergeB, baseSha: 'f'.repeat(40) }));
+  assert.notEqual(result.status, 0);
+  assert.equal(statuses, '');
 });
