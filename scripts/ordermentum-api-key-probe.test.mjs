@@ -142,7 +142,8 @@ test('credentialed redirects fail closed with metadata-only probe error', async 
     () => runProbe({ purchaserId }),
     (error) => {
       const message = String(error?.message || error);
-      assert.equal(message, 'Ordermentum purchaser probe provider request failed');
+      assert.equal(message, 'Ordermentum purchaser probe provider request failed status 302');
+      assert.equal(error.status, 302);
       assert.equal(message.includes(apiKey), false);
       assert.equal(message.includes('evil.example'), false);
       assert.equal(message.includes(redirectTarget), false);
