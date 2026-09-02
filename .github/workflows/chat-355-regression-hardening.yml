@@ -1,0 +1,39 @@
+name: Chat 355 regression hardening
+
+on:
+  push:
+    branches:
+      - agent/platform/shadow-merge-sha-churn-355
+    paths:
+      - 'scripts/chat-355-regression-hardening.mjs'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/platform/shadow-merge-sha-churn-355
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply bounded regression patch
+        run: node scripts/chat-355-regression-hardening.mjs
+      - name: Run bootstrap contract
+        run: node --test scripts/transform-007-shadow-bootstrap.test.mjs
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Commit verified test hardening only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/transform-007-shadow-bootstrap.test.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m 'test: harden stable authority negative cases'
+          git push origin HEAD:agent/platform/shadow-merge-sha-churn-355
