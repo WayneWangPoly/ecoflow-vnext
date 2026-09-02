@@ -335,3 +335,22 @@ test('Unleashed probe is restricted to the existing Owner/Admin settings boundar
   assert.match(probePanel, /Records imported/);
   assert.doesNotMatch(probePanel, /API_KEY|API_ID|token|secret/i);
 });
+
+
+test('windowed continuation is chained and cannot promote an incomplete cursor', () => {
+  assert.match(edgeFunction, /const HARD_MAX_PAGES = 5/);
+  assert.match(edgeFunction, /startPage\?: number/);
+  assert.match(edgeFunction, /previousRunId\?: string \| null/);
+  assert.match(edgeFunction, /CONTINUATION_REQUIRES_ONE_RESOURCE/);
+  assert.match(edgeFunction, /CONTINUATION_WITH_MODIFIED_SINCE_UNSUPPORTED/);
+  assert.match(edgeFunction, /CONTINUATION_PREVIOUS_RUN_REQUIRED/);
+  assert.match(edgeFunction, /CONTINUATION_PREVIOUS_RUN_MISMATCH/);
+  assert.match(edgeFunction, /previousNextPage !== startPage/);
+  assert.match(edgeFunction, /UNLEASHED_PAGINATION_TOTAL_DRIFT/);
+  assert.match(edgeFunction, /const windowEndPage = resourceStartPage \+ maxPages - 1/);
+  assert.match(edgeFunction, /cursor_status: 'RUNNING'/);
+  assert.match(edgeFunction, /else if \(windowEvidence\.windowComplete\)[\s\S]*cursor_status: 'READY'/);
+  assert.match(edgeFunction, /all_resources_complete: allResourcesComplete/);
+  assert.match(edgeFunction, /pagination_windows: resourceWindows\.map/);
+  assert.match(edgeFunction, /next_modified_since: resourceHighWatermark/);
+});

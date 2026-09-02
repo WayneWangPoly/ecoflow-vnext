@@ -12,6 +12,7 @@ import {
   serializeUnleashedQuery,
   selectTargetItems,
   sourceIdentityForItem,
+  summarizePaginationWindow,
   type NormalizedTarget,
 } from './core.ts';
 
@@ -29,6 +30,7 @@ const HARD_MAX_PAGE_SIZE = 200;
 const HARD_MAX_PAGES = 5;
 
 const modifiedSincePattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z?)?$/;
+const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type SyncMode = 'probe' | 'bounded_snapshot';
 
@@ -206,6 +208,8 @@ type RequestBody = {
   modifiedSince?: string | null;
   pageSize?: number;
   maxPages?: number;
+  startPage?: number;
+  previousRunId?: string | null;
   target?: unknown;
 };
 
@@ -230,6 +234,16 @@ type PageResult = {
   recordsChanged: number;
   recordsUnchanged: number;
   fetchAttempts: number;
+  highWatermark: string | null;
+};
+
+type ResourceWindowResult = {
+  resource: ResourceName;
+  startPage: number;
+  lastPage: number | null;
+  numberOfPages: number | null;
+  windowComplete: boolean;
+  nextPage: number | null;
   highWatermark: string | null;
 };
 
@@ -296,6 +310,12 @@ function normalizeModifiedSince(value: unknown) {
   const trimmed = value.trim();
   if (!modifiedSincePattern.test(trimmed)) throw new Error('INVALID_MODIFIED_SINCE');
   return trimmed;
+}
+
+function normalizePreviousRunId(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !runIdPattern.test(value.trim())) throw new Error('INVALID_PREVIOUS_RUN_ID');
+  return value.trim().toLowerCase();
 }
 
 function normalizeBaseUrl(raw: string) {
@@ -546,7 +566,10 @@ Deno.serve(async (req) => {
   let modifiedSince: string | null;
   let pageSize: number;
   let maxPages: number;
+  let startPage: number;
+  let previousRunId: string | null;
   let target: NormalizedTarget | null;
+  const dryRun = body.dryRun !== false;
   try {
     if (body.target !== undefined && Array.isArray(body.resources) && body.resources.length !== 1) {
       throw new Error('TARGET_REQUIRES_ONE_RESOURCE');
@@ -561,11 +584,64 @@ Deno.serve(async (req) => {
     maxPages = mode === 'probe' || target
       ? 1
       : normalizeInteger(body.maxPages, DEFAULT_MAX_PAGES, 1, HARD_MAX_PAGES, 'INVALID_MAX_PAGES');
+    startPage = mode === 'probe' || target
+      ? 1
+      : normalizeInteger(body.startPage, 1, 1, 1_000_000, 'INVALID_START_PAGE');
+    previousRunId = normalizePreviousRunId(body.previousRunId);
+    if ((mode === 'probe' || target) && body.startPage !== undefined && body.startPage !== 1) {
+      throw new Error('START_PAGE_NOT_ALLOWED_FOR_PROBE_OR_TARGET');
+    }
+    if (startPage === 1 && previousRunId) throw new Error('PREVIOUS_RUN_REQUIRES_CONTINUATION');
+    if (startPage > 1) {
+      if (resources.length !== 1) throw new Error('CONTINUATION_REQUIRES_ONE_RESOURCE');
+      if (!RESOURCE_DEFINITIONS[resources[0]].paginated) throw new Error('CONTINUATION_REQUIRES_PAGINATED_RESOURCE');
+      if (modifiedSince) throw new Error('CONTINUATION_WITH_MODIFIED_SINCE_UNSUPPORTED');
+      if (!previousRunId) throw new Error('CONTINUATION_PREVIOUS_RUN_REQUIRED');
+    }
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'INVALID_REQUEST' });
   }
 
-  const dryRun = body.dryRun !== false;
+  let continuationHighWatermark: string | null = null;
+  let continuationExpectedNumberOfPages: number | null = null;
+  if (previousRunId) {
+    const { data: previousRun, error: previousRunError } = await adminClient
+      .from('unleashed_sync_runs')
+      .select('id,status,requested_by,dry_run,resource_set,requested_modified_since,page_size,metadata')
+      .eq('id', previousRunId)
+      .maybeSingle();
+    if (previousRunError || !previousRun) return json(400, { error: 'CONTINUATION_PREVIOUS_RUN_NOT_FOUND' });
+    const previousMetadata = isRecord(previousRun.metadata) ? previousRun.metadata : {};
+    const previousWindows = Array.isArray(previousMetadata.pagination_windows)
+      ? previousMetadata.pagination_windows.filter(isRecord)
+      : [];
+    const previousWindow = previousWindows.find((entry) => entry.resource === resources[0]);
+    const previousNextPage = previousWindow && typeof previousWindow.next_page === 'number' ? previousWindow.next_page : null;
+    const previousNumberOfPages = previousWindow && typeof previousWindow.number_of_pages === 'number'
+      ? previousWindow.number_of_pages
+      : null;
+    const previousHighWatermark = previousWindow && typeof previousWindow.high_watermark === 'string'
+      ? previousWindow.high_watermark
+      : null;
+    const sameResource = Array.isArray(previousRun.resource_set)
+      && previousRun.resource_set.length === 1
+      && previousRun.resource_set[0] === resources[0];
+    if (
+      previousRun.status !== 'SUCCEEDED'
+      || previousRun.requested_by !== userData.user.id
+      || previousRun.dry_run !== dryRun
+      || !sameResource
+      || previousRun.requested_modified_since !== null
+      || previousRun.page_size !== pageSize
+      || previousWindow?.window_complete !== false
+      || previousNextPage !== startPage
+    ) {
+      return json(400, { error: 'CONTINUATION_PREVIOUS_RUN_MISMATCH' });
+    }
+    continuationHighWatermark = previousHighWatermark;
+    continuationExpectedNumberOfPages = previousNumberOfPages;
+  }
+
   const unleashedApiId = Deno.env.get('UNLEASHED_API_ID');
   const unleashedApiKey = Deno.env.get('UNLEASHED_API_KEY');
   const clientType = (Deno.env.get('UNLEASHED_CLIENT_TYPE') ?? DEFAULT_CLIENT_TYPE).trim().toLowerCase();
@@ -595,6 +671,7 @@ Deno.serve(async (req) => {
         allowed_methods: ['GET'],
         credentials_location: 'supabase_edge_function_secrets',
         target: target?.audit ?? null,
+        pagination_window: { start_page: startPage, max_pages: maxPages, previous_run_id: previousRunId },
       },
     })
     .select('id,requested_at')
@@ -623,6 +700,8 @@ Deno.serve(async (req) => {
         modifiedSince,
         pageSize,
         maxPages,
+        startPage,
+        previousRunId,
         status: 'FAILED',
         errorCode: 'MISSING_UNLEASHED_API_SECRETS',
       },
@@ -639,6 +718,7 @@ Deno.serve(async (req) => {
   let recordsUnchanged = 0;
   let recordsFailed = 0;
   const failedResources: ResourceName[] = [];
+  const resourceWindows: ResourceWindowResult[] = [];
   let finalStatus: 'SUCCEEDED' | 'PARTIAL' | 'FAILED' = 'SUCCEEDED';
   let finalErrorCode: string | null = null;
   let finalErrorMessage: string | null = null;
@@ -646,12 +726,16 @@ Deno.serve(async (req) => {
   for (const resource of resources) {
     const definition = RESOURCE_DEFINITIONS[resource];
     const paginatedRequest = definition.paginated && !target?.pathIdentifier;
-    let pageNumber = 1;
-    let knownNumberOfPages: number | null = paginatedRequest ? null : 1;
-    let resourceHighWatermark: string | null = null;
+    const resourceStartPage = paginatedRequest ? startPage : 1;
+    const windowEndPage = resourceStartPage + maxPages - 1;
+    let pageNumber = resourceStartPage;
+    let knownNumberOfPages: number | null = paginatedRequest ? continuationExpectedNumberOfPages : 1;
+    let resourceHighWatermark: string | null = paginatedRequest ? continuationHighWatermark : null;
     let resourceFailed = false;
+    let lastPageRead: number | null = null;
+    let terminalShortPage = false;
 
-    while (pageNumber <= maxPages && pageNumber <= (knownNumberOfPages ?? maxPages)) {
+    while (pageNumber <= windowEndPage && pageNumber <= (knownNumberOfPages ?? windowEndPage)) {
       const query = buildQuery(definition, pageSize, modifiedSince, target);
       const queryParams = Object.fromEntries(query.entries());
       const queryString = serializeUnleashedQuery(query);
@@ -728,6 +812,15 @@ Deno.serve(async (req) => {
         }
 
         const pagination = getPagination(payload);
+        const apiNumberOfPages = paginationNumber(pagination, 'NumberOfPages') ?? paginationNumber(pagination, 'numberOfPages');
+        if (
+          continuationExpectedNumberOfPages !== null
+          && apiNumberOfPages !== null
+          && apiNumberOfPages !== continuationExpectedNumberOfPages
+        ) throw new Error('UNLEASHED_PAGINATION_TOTAL_DRIFT');
+        if (apiNumberOfPages !== null && startPage > Math.max(1, apiNumberOfPages)) {
+          throw new Error('UNLEASHED_CONTINUATION_PAGE_OUT_OF_RANGE');
+        }
         const upstreamItems = getItems(payload, definition, Boolean(target?.pathIdentifier));
         const items = selectTargetItems(upstreamItems, target);
         const pageHighWatermark = summarizeHighWatermark(items);
@@ -829,9 +922,10 @@ Deno.serve(async (req) => {
           highWatermark: pageHighWatermark,
         });
 
-        const apiNumberOfPages = paginationNumber(pagination, 'NumberOfPages') ?? paginationNumber(pagination, 'numberOfPages');
+        lastPageRead = pageNumber;
         if (apiNumberOfPages !== null) knownNumberOfPages = Math.max(1, apiNumberOfPages);
-        if (!paginatedRequest || upstreamItems.length < pageSize) break;
+        terminalShortPage = upstreamItems.length < pageSize;
+        if (!paginatedRequest || terminalShortPage) break;
         pageNumber += 1;
       } catch (error) {
         recordsFailed += 1;
@@ -856,19 +950,67 @@ Deno.serve(async (req) => {
       }
     }
 
+    const summarizedWindow = summarizePaginationWindow({
+      paginated: paginatedRequest,
+      startPage: resourceStartPage,
+      lastPageRead,
+      numberOfPages: knownNumberOfPages,
+      terminalShortPage,
+      failed: resourceFailed,
+      highWatermark: resourceHighWatermark,
+    });
+    const windowEvidence: ResourceWindowResult = { resource, ...summarizedWindow };
+    resourceWindows.push(windowEvidence);
+
     if (!dryRun) {
-      await adminClient.from('unleashed_resource_cursors').upsert({
-        resource,
-        cursor_status: resourceFailed ? 'FAILED' : 'READY',
-        last_successful_run_id: resourceFailed ? null : run.id,
-        last_successful_at: resourceFailed ? null : new Date().toISOString(),
-        last_successful_modified_since: resourceFailed ? null : modifiedSince,
-        high_watermark_at: resourceFailed ? null : resourceHighWatermark,
-        next_modified_since: resourceFailed ? null : resourceHighWatermark,
-        last_error_code: resourceFailed ? finalErrorCode : null,
-        last_error_message: resourceFailed ? finalErrorMessage : null,
-        metadata: { dry_run: dryRun, target: target?.audit ?? null },
-      }, { onConflict: 'resource' });
+      const cursorMetadata = {
+        dry_run: dryRun,
+        target: target?.audit ?? null,
+        pagination_window: {
+          start_page: windowEvidence.startPage,
+          last_page: windowEvidence.lastPage,
+          number_of_pages: windowEvidence.numberOfPages,
+          window_complete: windowEvidence.windowComplete,
+          next_page: windowEvidence.nextPage,
+          previous_run_id: previousRunId,
+          high_watermark: windowEvidence.highWatermark,
+        },
+      };
+      if (resourceFailed) {
+        await adminClient.from('unleashed_resource_cursors').upsert({
+          resource,
+          cursor_status: 'FAILED',
+          last_successful_run_id: null,
+          last_successful_at: null,
+          last_successful_modified_since: null,
+          high_watermark_at: null,
+          next_modified_since: null,
+          last_error_code: finalErrorCode,
+          last_error_message: finalErrorMessage,
+          metadata: cursorMetadata,
+        }, { onConflict: 'resource' });
+      } else if (windowEvidence.windowComplete) {
+        await adminClient.from('unleashed_resource_cursors').upsert({
+          resource,
+          cursor_status: 'READY',
+          last_successful_run_id: run.id,
+          last_successful_at: new Date().toISOString(),
+          last_successful_modified_since: modifiedSince,
+          high_watermark_at: resourceHighWatermark,
+          next_modified_since: resourceHighWatermark,
+          last_error_code: null,
+          last_error_message: null,
+          metadata: cursorMetadata,
+        }, { onConflict: 'resource' });
+      } else {
+        await adminClient.from('unleashed_resource_cursors').upsert({
+          resource,
+          cursor_status: 'RUNNING',
+          last_error_code: null,
+          last_error_message: null,
+          metadata: cursorMetadata,
+        }, { onConflict: 'resource' });
+      }
     }
 
     if (resourceFailed) {
@@ -878,6 +1020,9 @@ Deno.serve(async (req) => {
   }
 
   finalStatus = recordsFailed === 0 ? 'SUCCEEDED' : pageResults.length ? 'PARTIAL' : 'FAILED';
+  const allResourcesComplete = failedResources.length === 0
+    && resourceWindows.length === resources.length
+    && resourceWindows.every((window) => window.windowComplete);
 
   const { error: updateError } = await adminClient.from('unleashed_sync_runs').update({
     status: finalStatus,
@@ -897,6 +1042,17 @@ Deno.serve(async (req) => {
       records_changed: recordsChanged,
       records_unchanged: recordsUnchanged,
       failed_resources: failedResources,
+      all_resources_complete: allResourcesComplete,
+      pagination_windows: resourceWindows.map((window) => ({
+        resource: window.resource,
+        start_page: window.startPage,
+        last_page: window.lastPage,
+        number_of_pages: window.numberOfPages,
+        window_complete: window.windowComplete,
+        next_page: window.nextPage,
+        previous_run_id: previousRunId,
+        high_watermark: window.highWatermark,
+      })),
     },
   }).eq('id', run.id);
   if (updateError) return json(500, { error: 'UNLEASHED_SYNC_RUN_UPDATE_FAILED', runId: run.id, details: updateError.message });
@@ -915,6 +1071,8 @@ Deno.serve(async (req) => {
       modifiedSince,
       pageSize,
       maxPages,
+      startPage,
+      previousRunId,
       target: target?.audit ?? null,
       status: finalStatus,
       recordsSeen,
@@ -924,6 +1082,8 @@ Deno.serve(async (req) => {
       recordsUnchanged,
       recordsFailed,
       failedResources,
+      allResourcesComplete,
+      paginationWindows: resourceWindows,
     },
     user_agent: req.headers.get('user-agent'),
   });
@@ -937,6 +1097,10 @@ Deno.serve(async (req) => {
     resources,
     pageSize,
     maxPages,
+    startPage,
+    previousRunId,
+    allResourcesComplete,
+    paginationWindows: resourceWindows,
     target: target?.audit ?? null,
     recordsSeen,
     recordsStaged,
