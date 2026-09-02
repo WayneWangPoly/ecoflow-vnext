@@ -118,13 +118,25 @@ jobs:
           test ! -e scripts/chat-lease-audit-alignment.py
           test ! -e .github/workflows/chat-lease-serialization-fix.yml
           test ! -e .github/workflows/chat-lease-serialization-fix-v2.yml
-          git diff -- .github/workflows/unleashed-master-data-bridge-check.yml
           git status --short
       - name: Commit verified engineering patch only
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            scripts/audit-unleashed-master-data-bridge.mjs \
+            scripts/unleashed-master-data-bridge-contract.test.mjs \
+            scripts/unleashed-master-data-bridge-db-contract-test.sql \
+            supabase/functions/trigger-unleashed-master-migration/index.ts \
+            supabase/migrations/20260831235500_unleashed_master_data_bridge.sql
+          git add -u -- \
+            scripts/chat-lease-serialization-fix.py \
+            scripts/chat-lease-static-alignment.py \
+            scripts/chat-lease-audit-alignment.py
           git diff --cached --check
+          if git diff --cached --name-only | grep -q '^\.github/workflows/'; then
+            echo 'workflow mutation unexpectedly staged' >&2
+            exit 1
+          fi
           git commit -m "UNLEASHED-MIGRATION-003 serialize copy lease transitions"
           git push origin HEAD:agent/platform/unleashed-migration-003-master-data-bridge
