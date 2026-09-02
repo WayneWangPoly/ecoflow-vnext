@@ -66,8 +66,8 @@ test('non-dry acquisition authority is DB fenced', () => {
   assert.match(loop, /ecoflow_record_unleashed_snapshot_page_failure/);
   assert.match(loop, /ecoflow_finalize_unleashed_snapshot_resource/);
   assert.match(loop, /ecoflow_release_unleashed_targeted_snapshot_acquisition/);
-  assert.match(loop, /p_snapshot_rows:\s*semanticRows/);
-  assert.match(loop, /p_identity_rows:\s*identitiesNeedingWrite/);
+  assert.ok(loop.includes('p_snapshot_rows: semanticRows'));
+  assert.ok(loop.includes('p_identity_rows: identitiesNeedingWrite'));
 });
 
 test('targeted writes release the lease without full-resource cursor publication', () => {
@@ -78,10 +78,17 @@ test('targeted writes release the lease without full-resource cursor publication
 });
 
 test('direct batch inserts are confined to the dry-run helper', () => {
-  const directBatchWrites = edge.match(/\.from\('unleashed_sync_batches'\)\s*\.insert\(/g) ?? [];
-  assert.equal(directBatchWrites.length, 1);
-  assert.match(edge, /async function insertDryRunBatch\(/);
-  assert.ok(!loop.includes(".from('unleashed_sync_batches')"));
+  const marker = ".from('unleashed_sync_batches')";
+  let count = 0;
+  for (let offset = 0; ; ) {
+    const found = edge.indexOf(marker, offset);
+    if (found < 0) break;
+    count += 1;
+    offset = found + marker.length;
+  }
+  assert.equal(count, 1);
+  assert.ok(edge.includes('async function insertDryRunBatch('));
+  assert.ok(!loop.includes(marker));
 });
 
 test('fencing tokens are not returned or copied into audit evidence', () => {
