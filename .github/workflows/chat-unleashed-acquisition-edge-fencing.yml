@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install dependencies
+        run: npm ci
       - name: Check staging applier syntax
         run: node --check scripts/chat-unleashed-acquisition-edge-apply.mjs
       - name: Apply bounded Edge fencing integration
