@@ -1,6 +1,6 @@
 name: Unleashed snapshot acquisition fencing
 
-# Credential-free PostgreSQL 17 contract for #337 acquisition fencing; rerun after DB evidence hardening.
+# Credential-free PostgreSQL 17 contract for #337 acquisition fencing; rerun after targeted/failure hardening.
 on:
   pull_request:
     paths:
