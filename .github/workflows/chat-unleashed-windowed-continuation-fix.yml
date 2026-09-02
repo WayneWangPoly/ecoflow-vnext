@@ -1,0 +1,52 @@
+name: Chat Unleashed windowed continuation correction
+
+on:
+  push:
+    branches:
+      - agent/platform/unleashed-migration-002-windowed-continuation
+    paths:
+      - scripts/chat-unleashed-windowed-continuation-fix.mjs
+      - .github/workflows/chat-unleashed-windowed-continuation-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/platform/unleashed-migration-002-windowed-continuation
+          fetch-depth: 0
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Apply deterministic patch
+        run: node scripts/chat-unleashed-windowed-continuation-fix.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Check Edge Function syntax
+        run: node scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Run connector regressions
+        run: node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs scripts/unleashed-readonly-killswitch-retention.test.mjs
+      - name: Verify bounded scope
+        run: |
+          git status --short
+          test -n "$(git status --short)"
+          git diff --check
+      - name: Commit permanent correction only
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            supabase/functions/trigger-unleashed-readonly-sync/index.ts \
+            supabase/functions/trigger-unleashed-readonly-sync/core.ts \
+            scripts/unleashed-readonly-connector-core.test.mjs \
+            scripts/unleashed-readonly-connector-contract.test.mjs
+          git diff --cached --quiet && { echo 'No permanent changes staged'; exit 1; }
+          git commit -m "fix: add chained Unleashed snapshot continuation windows"
+          git push origin HEAD:agent/platform/unleashed-migration-002-windowed-continuation
