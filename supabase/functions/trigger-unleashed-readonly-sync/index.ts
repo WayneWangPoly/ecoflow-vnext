@@ -1007,6 +1007,11 @@ Deno.serve(async (req) => {
         await adminClient.from('unleashed_resource_cursors').upsert({
           resource,
           cursor_status: 'RUNNING',
+          last_successful_run_id: null,
+          last_successful_at: null,
+          last_successful_modified_since: null,
+          high_watermark_at: null,
+          next_modified_since: null,
           last_error_code: null,
           last_error_message: null,
           metadata: cursorMetadata,

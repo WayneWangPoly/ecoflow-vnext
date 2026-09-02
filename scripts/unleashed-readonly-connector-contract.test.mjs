@@ -352,6 +352,7 @@ test('windowed continuation is chained and cannot promote an incomplete cursor',
   assert.match(edgeFunction, /UNLEASHED_PAGINATION_TOTAL_DRIFT/);
   assert.match(edgeFunction, /const windowEndPage = resourceStartPage \+ maxPages - 1/);
   assert.match(edgeFunction, /cursor_status: 'RUNNING'/);
+  assert.match(edgeFunction, /cursor_status: 'RUNNING'[\s\S]*last_successful_run_id: null[\s\S]*high_watermark_at: null[\s\S]*next_modified_since: null/);
   assert.match(edgeFunction, /else if \(windowEvidence\.windowComplete\)[\s\S]*cursor_status: 'READY'/);
   assert.match(edgeFunction, /all_resources_complete: allResourcesComplete/);
   assert.match(edgeFunction, /pagination_windows: resourceWindows\.map/);
