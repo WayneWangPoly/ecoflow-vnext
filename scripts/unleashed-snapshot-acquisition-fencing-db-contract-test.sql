@@ -169,7 +169,10 @@ begin
     (v_new,'BOUNDED_SNAPSHOT','RUNNING',v_actor,false,array['customers'],100,5,now(),jsonb_build_object('pagination_window',jsonb_build_object('start_page',1,'previous_run_id',null)));
 
   v_old_token := (public.ecoflow_claim_unleashed_snapshot_acquisition(v_old,'customers',1,null)->>'leaseToken')::uuid;
-  update public.unleashed_snapshot_acquisition_leases set expires_at=clock_timestamp()-interval '1 second' where resource='customers';
+  update public.unleashed_snapshot_acquisition_leases set
+    acquired_at=clock_timestamp()-interval '20 minutes',
+    expires_at=clock_timestamp()-interval '1 second'
+  where resource='customers';
   v_new_token := (public.ecoflow_claim_unleashed_snapshot_acquisition(v_new,'customers',1,null)->>'leaseToken')::uuid;
   if v_new_token=v_old_token then raise exception 'UNLEASHED_ACQUISITION_TAKEOVER_REUSED_TOKEN'; end if;
 
