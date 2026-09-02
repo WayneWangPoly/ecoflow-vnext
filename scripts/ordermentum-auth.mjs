@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  ORDERMENTUM_API_ORIGIN,
+  assertOrdermentumApiBaseUrl,
+} from './ordermentum-api-origin-guard.mjs';
 
 function env(name, options = {}) {
   const value = process.env[name];
@@ -30,15 +34,21 @@ function writeCachedToken(token, expiresInHours = 23) {
   }, null, 2));
 }
 
-export function getOrdermentumBaseUrl() {
-  const explicit = process.env.ORDERMENTUM_BASE_URL;
-  if (explicit) return explicit.replace(/\/$/, '');
-  const mode = getOrdermentumAuthMode();
-  return (mode === 'api-key' || mode === 'x-api-key' ? 'https://api.ordermentum.com' : 'https://app.ordermentum.com');
+export function getOrdermentumAuthMode() {
+  return env('ORDERMENTUM_AUTH_MODE', { default: 'legacy-bearer' }).toLowerCase();
 }
 
-export function getOrdermentumAuthMode() {
-  return env('ORDERMENTUM_AUTH_MODE', { default: process.env.ORDERMENTUM_API_KEY ? 'api-key' : 'legacy-bearer' }).toLowerCase();
+export function isOrdermentumApiKeyMode(mode = getOrdermentumAuthMode()) {
+  return mode === 'api-key' || mode === 'x-api-key';
+}
+
+export function getOrdermentumBaseUrl() {
+  const mode = getOrdermentumAuthMode();
+  const explicit = process.env.ORDERMENTUM_BASE_URL?.trim();
+  if (isOrdermentumApiKeyMode(mode)) {
+    return assertOrdermentumApiBaseUrl(explicit || ORDERMENTUM_API_ORIGIN);
+  }
+  return (explicit || 'https://app.ordermentum.com').replace(/\/$/, '');
 }
 
 export async function getLegacyBearerToken({ forceRefresh = false } = {}) {
@@ -69,7 +79,7 @@ export async function getLegacyBearerToken({ forceRefresh = false } = {}) {
 
 export async function getOrdermentumAuthHeaders({ forceRefresh = false } = {}) {
   const mode = getOrdermentumAuthMode();
-  if (mode === 'api-key' || mode === 'x-api-key') {
+  if (isOrdermentumApiKeyMode(mode)) {
     const key = env('ORDERMENTUM_API_KEY', { required: true });
     return { 'x-api-key': key };
   }
