@@ -242,6 +242,7 @@ test('full-sync API-key errors also redact a percent-encoded token echo', async 
 
 test('master-data API-key boundary pins origin and refuses redirects without following them', async () => {
   await withEnv({
+    ORDERMENTUM_AUTH_MODE: 'api-key',
     ORDERMENTUM_API_KEY: FAKE_KEY,
     ORDERMENTUM_API_BASE_URL: ORDERMENTUM_API_ORIGIN,
     ORDERMENTUM_FETCH_RETRIES: '0',
@@ -271,6 +272,7 @@ test('master-data API-key boundary pins origin and refuses redirects without fol
 
 test('master-data API-key boundary rejects an off-origin configured API base before fetch', async () => {
   await withEnv({
+    ORDERMENTUM_AUTH_MODE: 'api-key',
     ORDERMENTUM_API_KEY: FAKE_KEY,
     ORDERMENTUM_API_BASE_URL: 'https://evil.example',
     ORDERMENTUM_FETCH_RETRIES: '0',
