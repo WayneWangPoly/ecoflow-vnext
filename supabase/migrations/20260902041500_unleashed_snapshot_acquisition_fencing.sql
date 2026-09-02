@@ -23,6 +23,9 @@ begin
   if to_regclass('public.unleashed_resource_cursors') is null then
     v_missing := array_append(v_missing, 'unleashed_resource_cursors');
   end if;
+  if to_regprocedure('extensions.digest(text,text)') is null then
+    v_missing := array_append(v_missing, 'extensions.digest(text,text)');
+  end if;
   if array_length(v_missing, 1) is not null then
     raise exception 'UNLEASHED_ACQUISITION_FENCING_DEPENDENCIES_MISSING:%', array_to_string(v_missing, ',');
   end if;
@@ -139,7 +142,7 @@ begin
     raise exception 'UNLEASHED_ACQUISITION_RESOURCE_LEASE_BUSY';
   end if;
 
-  v_token := extensions.gen_random_uuid();
+  v_token := pg_catalog.gen_random_uuid();
   v_generation := case when found then v_lease.generation+1 else 1 end;
 
   insert into public.unleashed_snapshot_acquisition_leases(

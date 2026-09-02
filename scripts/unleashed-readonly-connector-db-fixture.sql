@@ -3,7 +3,8 @@
 -- Minimal EcoFlow dependency shell for UNLEASHED-MIGRATION-002 SQL contract
 -- checks. This mirrors dependency names used by production without importing
 -- business data.
-create extension if not exists pgcrypto;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 do $$
 begin
