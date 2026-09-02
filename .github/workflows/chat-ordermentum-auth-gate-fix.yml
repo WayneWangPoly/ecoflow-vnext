@@ -40,14 +40,13 @@ jobs:
           node --test scripts/ordermentum-api-origin-guard*.test.mjs
       - name: Diff hygiene
         run: git diff --check
-      - name: Commit verified correction only
+      - name: Commit verified correction without workflow mutation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
-            .github/workflows/ordermentum-api-origin-guard-check.yml \
             .github/workflows/ordermentum-cloud-sync.yml \
             .github/workflows/ordermentum-targeted-store-sync.yml \
             .github/workflows/ordermentum-complete-mirror.yml \
