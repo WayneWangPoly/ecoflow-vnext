@@ -57,7 +57,7 @@ requireText('edgeFunction', 'const MAX_FETCH_ATTEMPTS = 3', 'transient GET retri
 requireText('edgeFunction', 'TARGET_REQUIRES_ONE_RESOURCE', 'targeted reads must be limited to one resource');
 requireText('edgeFunction', 'TARGET_NOT_SUPPORTED_FOR_RESOURCE', 'targeted reads must reject resources outside the exact allowlist');
 requireText('edgeFunction', 'UNLEASHED_TARGET_AMBIGUOUS', 'targeted reads must reject ambiguous results');
-requireText('edgeFunction', 'const semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed]', 'unchanged payloads must not be upserted');
+requireText('edgeFunction', 'semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed]', 'unchanged payloads must not enter semantic writes');
 requireText('edgeFunction', 'records_unchanged: recordsUnchanged', 'unchanged replay evidence must be durable');
 requireText('edgeFunction', 'failedResources.push(resource)', 'failed resources must remain explicit in the run result');
 requireText('edgeFunction', "finalStatus = recordsFailed === 0 ? 'SUCCEEDED' : pageResults.length ? 'PARTIAL' : 'FAILED'", 'final status must reflect all attempted resources');
@@ -68,6 +68,17 @@ requireText('edgeFunction', 'SALES_INTELLIGENCE_RESOURCES', 'paid Sales BI seed 
 requireText('edgeFunction', ".from('app_user_profiles')", 'role check must be server-side');
 requireText('edgeFunction', ".from('app_security_audit_events')", 'connector runs must audit completion/failure');
 requireText('edgeFunction', "normalizeBaseUrl(Deno.env.get('UNLEASHED_API_BASE_URL')", 'API base URL must be validated and configurable');
+
+// 002D authority boundary: non-dry-run staging and cursor publication are DB-fenced.
+requireText('edgeFunction', 'ecoflow_commit_unleashed_snapshot_page', 'non-dry-run snapshot and identity writes must use the atomic fenced DB commit');
+requireText('edgeFunction', 'p_snapshot_rows: semanticRows', 'semantic snapshot rows must be handed to the fenced DB commit');
+requireText('edgeFunction', 'p_identity_rows: identitiesNeedingWrite', 'identity rows must be handed to the fenced DB commit');
+requireText('edgeFunction', 'ecoflow_finalize_unleashed_snapshot_resource', 'full-resource cursor publication must use the fenced DB finalizer');
+requireText('edgeFunction', 'p_cursor_status: cursorStatus', 'cursor state must be passed to the fenced DB finalizer');
+requireText('edgeFunction', 'ecoflow_release_unleashed_targeted_snapshot_acquisition', 'targeted acquisition must release through its dedicated fenced RPC');
+forbid('edgeFunction', /\.from\('unleashed_raw_snapshots'\)[\s\S]{0,300}\.upsert\(/, 'Edge must not directly upsert raw snapshots');
+forbid('edgeFunction', /\.from\('unleashed_external_identities'\)[\s\S]{0,300}\.upsert\(/, 'Edge must not directly upsert external identities');
+forbid('edgeFunction', /\.from\('unleashed_resource_cursors'\)[\s\S]{0,400}\.(?:upsert|update|insert)\(/, 'Edge must not directly publish resource cursors');
 
 forbid('edgeFunction', /console\.(log|warn|error|info)\(/, 'function must not log payloads or credentials');
 forbid('edgeFunction', /method:\s*['"`](PUT|PATCH|DELETE)['"`]/, 'function must not contain Unleashed write methods');
@@ -107,4 +118,4 @@ if (failures.length) {
 }
 
 console.log('UNLEASHED-MIGRATION-002 connector audit: PASS');
-console.log('Connector is bounded, GET-only, dry-run by default, server-secret backed, and browser-write closed.');
+console.log('Connector is bounded, GET-only, dry-run by default, server-secret backed, browser-write closed, and DB-fenced for non-dry-run source staging.');

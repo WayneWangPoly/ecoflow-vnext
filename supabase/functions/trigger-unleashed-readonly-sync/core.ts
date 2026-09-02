@@ -310,3 +310,39 @@ export async function fetchUnleashedWithRetry(url: URL, headers: HeadersInit, de
   const detail = lastError instanceof Error ? lastError.message.slice(0, 300) : 'network failure';
   throw new Error(`UNLEASHED_API_RETRY_EXHAUSTED:${detail}`);
 }
+
+
+export type PaginationWindowSummary = {
+  startPage: number;
+  lastPage: number | null;
+  numberOfPages: number | null;
+  windowComplete: boolean;
+  nextPage: number | null;
+  highWatermark: string | null;
+};
+
+export function summarizePaginationWindow(input: {
+  paginated: boolean;
+  startPage: number;
+  lastPageRead: number | null;
+  numberOfPages: number | null;
+  terminalShortPage: boolean;
+  failed: boolean;
+  highWatermark: string | null;
+}): PaginationWindowSummary {
+  const windowComplete = !input.failed && (
+    !input.paginated
+    || (input.lastPageRead !== null && (
+      (input.numberOfPages !== null && input.lastPageRead >= input.numberOfPages)
+      || input.terminalShortPage
+    ))
+  );
+  return {
+    startPage: input.paginated ? input.startPage : 1,
+    lastPage: input.lastPageRead,
+    numberOfPages: input.numberOfPages,
+    windowComplete,
+    nextPage: windowComplete || input.failed || input.lastPageRead === null ? null : input.lastPageRead + 1,
+    highWatermark: input.highWatermark,
+  };
+}

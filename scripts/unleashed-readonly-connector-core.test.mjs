@@ -9,6 +9,7 @@ import {
   serializeUnleashedQuery,
   selectTargetItems,
   sourceIdentityForItem,
+  summarizePaginationWindow,
 } from '../supabase/functions/trigger-unleashed-readonly-sync/core.ts';
 
 const productGuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -202,4 +203,61 @@ test('GET retry does not retry non-transient responses and exhausts network fail
   );
   assert.equal(networkCalls, 3);
   assert.deepEqual(delays, [250, 500]);
+});
+
+
+test('pagination windows distinguish bounded success from complete coverage', () => {
+  assert.deepEqual(summarizePaginationWindow({
+    paginated: true,
+    startPage: 1,
+    lastPageRead: 5,
+    numberOfPages: 12,
+    terminalShortPage: false,
+    failed: false,
+    highWatermark: '2026-09-02T00:00:00.000Z',
+  }), {
+    startPage: 1,
+    lastPage: 5,
+    numberOfPages: 12,
+    windowComplete: false,
+    nextPage: 6,
+    highWatermark: '2026-09-02T00:00:00.000Z',
+  });
+
+  assert.deepEqual(summarizePaginationWindow({
+    paginated: true,
+    startPage: 11,
+    lastPageRead: 12,
+    numberOfPages: 12,
+    terminalShortPage: false,
+    failed: false,
+    highWatermark: '2026-09-02T01:00:00.000Z',
+  }), {
+    startPage: 11,
+    lastPage: 12,
+    numberOfPages: 12,
+    windowComplete: true,
+    nextPage: null,
+    highWatermark: '2026-09-02T01:00:00.000Z',
+  });
+
+  assert.equal(summarizePaginationWindow({
+    paginated: true,
+    startPage: 6,
+    lastPageRead: 7,
+    numberOfPages: null,
+    terminalShortPage: true,
+    failed: false,
+    highWatermark: null,
+  }).windowComplete, true);
+
+  assert.deepEqual(summarizePaginationWindow({
+    paginated: true,
+    startPage: 6,
+    lastPageRead: 6,
+    numberOfPages: 12,
+    terminalShortPage: false,
+    failed: true,
+    highWatermark: null,
+  }).nextPage, null);
 });
