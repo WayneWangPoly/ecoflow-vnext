@@ -61,14 +61,15 @@ for (const functionName of [
   'statement-dispatch',
   'storage-retention',
   'trigger-unleashed-readonly-sync',
+  'trigger-unleashed-master-migration',
 ]) {
   const command = `-- supabase functions deploy ${functionName} --project-ref`;
   assert.ok(deployment.includes(command), `Edge Function retry wiring missing: ${functionName}`);
 }
 assert.equal(
   (deployment.match(/node scripts\/run-transient-supabase-command\.mjs/g) ?? []).length,
-  7,
-  'Production deployment must use the retry runner for one link and six Edge Functions',
+  8,
+  'Production deployment must use the retry runner for one link and seven Edge Functions',
 );
 assert.ok(!deployment.includes('pull_request:'), 'Production deployment must never run from a pull request');
 
