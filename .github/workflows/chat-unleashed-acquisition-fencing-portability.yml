@@ -6,6 +6,7 @@ on:
       - agent/platform/unleashed-migration-002d-acquisition-fencing
     paths:
       - scripts/chat-unleashed-acquisition-fencing-portability.mjs
+      - .github/workflows/chat-unleashed-acquisition-fencing-portability.yml
 
 permissions:
   contents: write
