@@ -1,7 +1,17 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getOrdermentumAuthHeaders } from './ordermentum-auth.mjs';
+import {
+  getOrdermentumAuthHeaders,
+  getOrdermentumAuthMode,
+  isOrdermentumApiKeyMode,
+} from './ordermentum-auth.mjs';
+import {
+  assertNoCredentialedOrdermentumRedirect,
+  assertOrdermentumApiKeyRequestShape,
+  assertOrdermentumApiRequestUrl,
+  redactOrdermentumSecret,
+} from './ordermentum-api-origin-guard.mjs';
 
 export function env(name, options = {}) {
   const value = process.env[name];
@@ -117,19 +127,44 @@ export function templateUrl(template, values) {
 }
 
 export async function ordermentumFetch(url, options = {}) {
+  const authMode = getOrdermentumAuthMode();
+  const apiKeyMode = isOrdermentumApiKeyMode(authMode);
+  const apiKey = apiKeyMode ? env('ORDERMENTUM_API_KEY', { required: true }).trim() : '';
+  const requestUrl = apiKeyMode ? assertOrdermentumApiRequestUrl(url) : url;
+
+  if (apiKeyMode) {
+    assertOrdermentumApiKeyRequestShape({
+      apiKey,
+      requestUrl,
+      body: options.body,
+      callerHeaders: options.headers || {},
+    });
+  }
+
   async function doFetch(forceRefresh = false) {
     const authHeaders = await getOrdermentumAuthHeaders({ forceRefresh });
-    const headers = {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      ...authHeaders,
-      ...(options.headers || {}),
-    };
-    return fetch(url, { ...options, headers });
+    const headers = apiKeyMode
+      ? {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          ...(options.headers || {}),
+          ...authHeaders,
+        }
+      : {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          ...authHeaders,
+          ...(options.headers || {}),
+        };
+    const requestOptions = apiKeyMode
+      ? { ...options, headers, redirect: 'manual' }
+      : { ...options, headers };
+    return fetch(requestUrl, requestOptions);
   }
 
   let response = await doFetch(false);
-  if (response.status === 401 && !process.env.ORDERMENTUM_API_KEY) {
+  if (apiKeyMode) assertNoCredentialedOrdermentumRedirect(response, requestUrl);
+  if (response.status === 401 && !apiKeyMode) {
     response = await doFetch(true);
   }
   if (response.status === 429) {
@@ -140,9 +175,10 @@ export async function ordermentumFetch(url, options = {}) {
     throw error;
   }
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const safeText = apiKeyMode ? redactOrdermentumSecret(text, apiKey) : text;
+  const data = safeText ? JSON.parse(safeText) : null;
   if (!response.ok) {
-    const error = new Error(`Ordermentum API ${response.status}: ${text.slice(0, 500)}`);
+    const error = new Error(`Ordermentum API ${response.status}: ${safeText.slice(0, 500)}`);
     error.status = response.status;
     error.payload = data;
     throw error;
