@@ -5,7 +5,7 @@ on:
     branches:
       - agent/platform/unleashed-migration-002d-acquisition-fencing
     paths:
-      - scripts/chat-unleashed-acquisition-fencing-expiry-fixture.mjs
+      - scripts/chat-unleashed-acquisition-fencing-db-hardening.mjs
       - .github/workflows/chat-unleashed-acquisition-fencing-portability.yml
 
 permissions:
@@ -21,16 +21,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node scripts/chat-unleashed-acquisition-fencing-expiry-fixture.mjs
+      - run: node scripts/chat-unleashed-acquisition-fencing-db-hardening.mjs
       - name: Verify exact patch scope
         run: |
           git diff --check
           git diff --name-only
-          test "$(git diff --name-only | tr '\n' ' ')" = "scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql "
-      - name: Commit expiry fixture correction
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql "
+      - name: Commit DB hardening
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql
-          git commit -m 'test: model elapsed Unleashed lease time correctly'
+          git add scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
+          git commit -m 'fix: harden Unleashed acquisition fencing evidence'
           git push origin HEAD:agent/platform/unleashed-migration-002d-acquisition-fencing
