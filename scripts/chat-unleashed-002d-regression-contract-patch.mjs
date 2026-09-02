@@ -7,9 +7,9 @@ function replaceTest(startMarker, nextMarker, replacement) {
   const start = source.indexOf(startMarker);
   if (start < 0) throw new Error(`START_NOT_FOUND:${startMarker}`);
   if (source.indexOf(startMarker, start + 1) >= 0) throw new Error(`START_AMBIGUOUS:${startMarker}`);
-  const end = source.indexOf(nextMarker, start);
+  const end = nextMarker === null ? source.length : source.indexOf(nextMarker, start);
   if (end < 0) throw new Error(`END_NOT_FOUND:${nextMarker}`);
-  source = source.slice(0, start) + replacement + source.slice(end);
+  source = source.slice(0, start) + replacement + (nextMarker === null ? '\n' : source.slice(end));
 }
 
 replaceTest(
@@ -35,7 +35,7 @@ replaceTest(
 
 replaceTest(
   "test('windowed continuation is chained and cannot promote an incomplete cursor', () => {",
-  '',
+  null,
   `test('windowed continuation is chained and cursor publication is DB-fenced', () => {
   assert.match(edgeFunction, /const HARD_MAX_PAGES = 5/);
   assert.match(edgeFunction, /startPage\\?: number/);
