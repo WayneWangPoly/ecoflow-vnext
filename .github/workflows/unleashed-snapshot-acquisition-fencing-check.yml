@@ -1,5 +1,6 @@
 name: Unleashed snapshot acquisition fencing
 
+# Credential-free PostgreSQL 17 contract for #337 acquisition fencing.
 on:
   pull_request:
     paths:
