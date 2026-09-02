@@ -1,0 +1,36 @@
+name: Chat Unleashed targeted failure fencing staging
+
+on:
+  push:
+    branches:
+      - agent/platform/unleashed-migration-002d-acquisition-fencing
+    paths:
+      - scripts/chat-unleashed-acquisition-targeted-failure-hardening.mjs
+      - .github/workflows/chat-unleashed-acquisition-targeted-failure-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/platform/unleashed-migration-002d-acquisition-fencing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/chat-unleashed-acquisition-targeted-failure-hardening.mjs
+      - name: Verify exact patch scope
+        run: |
+          git diff --check
+          git diff --name-only
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql "
+      - name: Commit targeted and failure fencing hardening
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
+          git commit -m 'fix: fence targeted and failed Unleashed acquisitions'
+          git push origin HEAD:agent/platform/unleashed-migration-002d-acquisition-fencing
