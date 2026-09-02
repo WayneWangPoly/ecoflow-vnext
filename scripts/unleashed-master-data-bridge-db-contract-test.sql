@@ -509,4 +509,121 @@ begin
   if v_audits<4 then raise exception 'governed audit evidence missing: %',v_audits; end if;
 end $$;
 
+
+-- COPY lease is a database invariant: claim, completion/failure, and stale
+-- expiry all serialize on the owning run row and use the same 15-minute clock.
+do $$
+declare
+  v_identity uuid := '91000000-0000-4000-8000-000000000001';
+  v_snapshot uuid := '92000000-0000-4000-8000-000000000001';
+  v_asset_active uuid := '93000000-0000-4000-8000-000000000001';
+  v_asset_expired uuid := '93000000-0000-4000-8000-000000000002';
+  v_auth uuid := '95000000-0000-4000-8000-000000000001';
+  v_run_active uuid := '94000000-0000-4000-8000-000000000001';
+  v_run_expired uuid := '94000000-0000-4000-8000-000000000002';
+  v_hash text;
+  v_failed boolean;
+  v_status text;
+  v_claim uuid;
+  v_error text;
+begin
+  update public.ecoflow_unleashed_asset_copy_runs
+  set status='FAILED',completed_at=coalesce(completed_at,now()),error_code=coalesce(error_code,'DB_TEST_RESET')
+  where status='RUNNING';
+  update public.ecoflow_unleashed_asset_authorizations set is_current=false where is_current;
+
+  insert into public.unleashed_external_identities(id,resource,external_key,external_guid,external_code,last_seen_run_id)
+  values(v_identity,'products','guid:91000000-0000-4000-8000-000000000001',v_identity::text,'LEASE-TEST','20000000-0000-4000-8000-000000000001')
+  on conflict(id) do nothing;
+  v_hash := encode(extensions.digest('{"ProductCode":"LEASE-TEST","Obsolete":false}'::jsonb::text,'sha256'),'hex');
+  insert into public.unleashed_raw_snapshots(id,resource,external_key,payload,payload_sha256,last_seen_at)
+  values(v_snapshot,'products','guid:91000000-0000-4000-8000-000000000001','{"ProductCode":"LEASE-TEST","Obsolete":false}'::jsonb,v_hash,now())
+  on conflict(id) do update set payload_sha256=excluded.payload_sha256,last_seen_at=excluded.last_seen_at;
+  insert into public.ecoflow_unleashed_asset_authorizations(
+    id,authorization_status,is_current,revision,evidence_reference,rights_scope,
+    storage_budget_bytes,max_object_bytes,authorized_by,authorized_at,reason,command_id
+  ) values(
+    v_auth,'APPROVED',true,999,'DB contract lease evidence','DB contract only',
+    10485760,10485760,'10000000-0000-4000-8000-000000000001',now(),
+    'DB contract lease authorization','97000000-0000-4000-8000-000000000001'
+  );
+
+  insert into public.ecoflow_unleashed_asset_copy_runs(
+    id,command_id,command_payload_sha256,requested_by,requested_limit,authorization_id,started_at
+  ) values(
+    v_run_active,'96000000-0000-4000-8000-000000000001',repeat('a',64),
+    '10000000-0000-4000-8000-000000000001',1,v_auth,now()
+  );
+  insert into public.ecoflow_unleashed_product_assets(
+    id,identity_id,source_snapshot_id,source_payload_sha256,source_image_url,
+    source_locator_sha256,source_host,asset_status,source_observed_at
+  ) values(
+    v_asset_active,v_identity,v_snapshot,v_hash,
+    'https://unlappcdn.unleashedsoftware.com/images/lease-active.jpg',repeat('b',64),
+    'unlappcdn.unleashedsoftware.com','PLANNED',now()
+  );
+
+  perform public.ecoflow_claim_unleashed_product_asset(v_run_active,v_asset_active,v_snapshot,v_hash);
+  select asset_status,claimed_in_run_id into v_status,v_claim
+  from public.ecoflow_unleashed_product_assets where id=v_asset_active;
+  if v_status<>'COPYING' or v_claim is distinct from v_run_active then
+    raise exception 'active COPY lease claim did not persist: %/%',v_status,v_claim;
+  end if;
+
+  v_failed:=false;
+  begin
+    perform public.ecoflow_expire_unleashed_asset_copy_run(v_run_active);
+  exception when others then
+    if position('COPY_RUN_LEASE_ACTIVE' in sqlerrm)>0 then v_failed:=true; else raise; end if;
+  end;
+  if not v_failed then raise exception 'active COPY lease was incorrectly expired'; end if;
+
+  perform public.ecoflow_fail_unleashed_product_asset_copy(
+    v_run_active,v_asset_active,false,'DB_TEST_RELEASE','DB contract active lease release'
+  );
+  perform public.ecoflow_complete_unleashed_asset_copy_run(
+    v_run_active,'FAILED',1,0,0,1,0,'DB_TEST_COMPLETE','DB contract active run completed'
+  );
+
+  insert into public.ecoflow_unleashed_asset_copy_runs(
+    id,command_id,command_payload_sha256,requested_by,requested_limit,authorization_id,started_at
+  ) values(
+    v_run_expired,'96000000-0000-4000-8000-000000000002',repeat('c',64),
+    '10000000-0000-4000-8000-000000000001',1,v_auth,now()-interval '16 minutes'
+  );
+  insert into public.ecoflow_unleashed_product_assets(
+    id,identity_id,source_snapshot_id,source_payload_sha256,source_image_url,
+    source_locator_sha256,source_host,asset_status,claimed_in_run_id,source_observed_at
+  ) values(
+    v_asset_expired,v_identity,v_snapshot,v_hash,
+    'https://unlappcdn.unleashedsoftware.com/images/lease-expired.jpg',repeat('d',64),
+    'unlappcdn.unleashedsoftware.com','COPYING',v_run_expired,now()
+  );
+
+  perform public.ecoflow_expire_unleashed_asset_copy_run(v_run_expired);
+  select status,error_code into v_status,v_error
+  from public.ecoflow_unleashed_asset_copy_runs where id=v_run_expired;
+  if v_status<>'FAILED' or v_error<>'COPY_RUN_LEASE_EXPIRED' then
+    raise exception 'expired run was not atomically failed: %/%',v_status,v_error;
+  end if;
+  select asset_status,claimed_in_run_id,last_error_code into v_status,v_claim,v_error
+  from public.ecoflow_unleashed_product_assets where id=v_asset_expired;
+  if v_status<>'FAILED' or v_claim is not null or v_error<>'COPY_RUN_LEASE_EXPIRED' then
+    raise exception 'expired claim was not atomically released: %/%/%',v_status,v_claim,v_error;
+  end if;
+
+  v_failed:=false;
+  begin
+    perform public.ecoflow_claim_unleashed_product_asset(v_run_expired,v_asset_expired,v_snapshot,v_hash);
+  exception when others then
+    if position('COPY_RUN_LEASE_LOST' in sqlerrm)>0 then v_failed:=true; else raise; end if;
+  end;
+  if not v_failed then raise exception 'post-expiry re-claim was not rejected'; end if;
+  select asset_status,claimed_in_run_id into v_status,v_claim
+  from public.ecoflow_unleashed_product_assets where id=v_asset_expired;
+  if v_status<>'FAILED' or v_claim is not null then
+    raise exception 'post-expiry claim rejection mutated asset: %/%',v_status,v_claim;
+  end if;
+end $$;
+
 select 'UNLEASHED_MASTER_DATA_BRIDGE_DB_CONTRACT_PASS' as result;

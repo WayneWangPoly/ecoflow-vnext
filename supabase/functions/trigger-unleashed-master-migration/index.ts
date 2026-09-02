@@ -69,7 +69,6 @@ type PlannedAsset = {
   claimed_in_run_id: string | null;
 };
 
-const COPY_RUN_LEASE_MS = 15 * 60 * 1000;
 const IMAGE_FETCH_TIMEOUT_MS = 20 * 1000;
 const ASSET_BUCKET = 'unleashed-product-images';
 const ASSET_BUCKET_OPTIONS = {
@@ -289,33 +288,21 @@ function copyRunResponse(row: Record<string, unknown>, replayed: boolean) {
   };
 }
 
-function copyRunLeaseExpired(row: Record<string, unknown>) {
-  const startedAt = typeof row.started_at === 'string' ? Date.parse(row.started_at) : Number.NaN;
-  return !Number.isFinite(startedAt) || startedAt + COPY_RUN_LEASE_MS <= Date.now();
-}
-
 async function expireStaleCopyRun(
   adminClient: ReturnType<typeof createClient>,
   row: Record<string, unknown>,
 ) {
   const runId = String(row.id ?? '');
   if (!runId) throw new Error('COPY_RUN_LEASE_INVALID');
-  const completedAt = new Date().toISOString();
-  const { error: resetError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
-    asset_status: 'FAILED',
-    claimed_in_run_id: null,
-    last_error_code: 'COPY_RUN_LEASE_EXPIRED',
-    last_error_message: 'The prior image-copy worker did not complete within its bounded lease',
-    updated_at: completedAt,
-  }).eq('claimed_in_run_id', runId).eq('asset_status', 'COPYING');
-  if (resetError) throw new Error(`COPY_RUN_LEASE_ASSET_RESET_FAILED:${resetError.message}`);
-  const { error: runUpdateError } = await adminClient.from('ecoflow_unleashed_asset_copy_runs').update({
-    status: 'FAILED',
-    completed_at: completedAt,
-    error_code: 'COPY_RUN_LEASE_EXPIRED',
-    error_message: 'Image-copy worker lease expired before completion',
-  }).eq('id', runId).eq('status', 'RUNNING');
-  if (runUpdateError) throw new Error(`COPY_RUN_LEASE_RELEASE_FAILED:${runUpdateError.message}`);
+  const { data, error } = await adminClient.rpc('ecoflow_expire_unleashed_asset_copy_run', {
+    p_run_id: runId,
+  });
+  if (error) {
+    if (error.message.includes('COPY_RUN_LEASE_ACTIVE')) throw new Error('COPY_RUN_LEASE_ACTIVE');
+    throw new Error(`COPY_RUN_LEASE_RELEASE_FAILED:${error.message}`);
+  }
+  if (!data || typeof data !== 'object') throw new Error('COPY_RUN_LEASE_RELEASE_FAILED');
+  return data as Record<string, unknown>;
 }
 
 Deno.serve(async (req) => {
@@ -443,13 +430,13 @@ Deno.serve(async (req) => {
       if (existingRunError) throw new Error(`COPY_RUN_REPLAY_READ_FAILED:${existingRunError.message}`);
       if (existingRun) {
         if (existingRun.command_payload_sha256 !== commandPayloadSha256) throw new Error('COMMAND_REPLAY_PAYLOAD_MISMATCH');
-        if (existingRun.status === 'RUNNING' && copyRunLeaseExpired(existingRun)) {
-          await expireStaleCopyRun(adminClient, existingRun);
-          return json(200, copyRunResponse({
-            ...existingRun,
-            status: 'FAILED',
-            error_code: 'COPY_RUN_LEASE_EXPIRED',
-          }, true));
+        if (existingRun.status === 'RUNNING') {
+          try {
+            const resolvedRun = await expireStaleCopyRun(adminClient, existingRun);
+            return json(200, copyRunResponse(resolvedRun, true));
+          } catch (error) {
+            if (errorCode(error) !== 'COPY_RUN_LEASE_ACTIVE') throw error;
+          }
         }
         return json(200, copyRunResponse(existingRun, true));
       }
@@ -467,8 +454,12 @@ Deno.serve(async (req) => {
         .from('ecoflow_unleashed_asset_copy_runs').select('*').eq('status', 'RUNNING').maybeSingle();
       if (activeRunError) throw new Error(`COPY_RUN_LEASE_READ_FAILED:${activeRunError.message}`);
       if (activeRun) {
-        if (!copyRunLeaseExpired(activeRun)) throw new Error('COPY_RUN_ALREADY_RUNNING');
-        await expireStaleCopyRun(adminClient, activeRun);
+        try {
+          await expireStaleCopyRun(adminClient, activeRun);
+        } catch (error) {
+          if (errorCode(error) === 'COPY_RUN_LEASE_ACTIVE') throw new Error('COPY_RUN_ALREADY_RUNNING');
+          throw error;
+        }
       }
 
       const { data: copiedRows, error: copiedReadError } = await adminClient
@@ -511,19 +502,21 @@ Deno.serve(async (req) => {
           if (currentSnapshotError || !currentSnapshot) throw new Error('SOURCE_SNAPSHOT_NOT_FOUND');
           if (currentSnapshot.payload_sha256 !== asset.source_payload_sha256) throw new Error('SOURCE_SNAPSHOT_CHANGED');
           const sourceUrl = normalizeUnleashedImageUrl(asset.source_image_url);
-          const { data: claimedAsset, error: claimError } = await adminClient
-            .from('ecoflow_unleashed_product_assets').update({
-            asset_status: 'COPYING',
-            claimed_in_run_id: run.id,
-            attempt_count: asset.attempt_count + 1,
-            last_error_code: null,
-            last_error_message: null,
-            updated_at: new Date().toISOString(),
-          }).eq('id', asset.id).in('asset_status', ['PLANNED', 'FAILED'])
-            .eq('source_snapshot_id', asset.source_snapshot_id)
-            .eq('source_payload_sha256', asset.source_payload_sha256)
-            .is('claimed_in_run_id', null).select('id').maybeSingle();
-          if (claimError) throw new Error(`ASSET_COPY_CLAIM_FAILED:${claimError.message}`);
+          const { data: claimedAsset, error: claimError } = await adminClient.rpc(
+            'ecoflow_claim_unleashed_product_asset',
+            {
+              p_run_id: run.id,
+              p_asset_id: asset.id,
+              p_source_snapshot_id: asset.source_snapshot_id,
+              p_source_payload_sha256: asset.source_payload_sha256,
+            },
+          );
+          if (claimError) {
+            if (claimError.message.includes('COPY_RUN_LEASE_LOST')) throw new Error('COPY_RUN_LEASE_LOST');
+            if (claimError.message.includes('SOURCE_SNAPSHOT_CHANGED')) throw new Error('SOURCE_SNAPSHOT_CHANGED');
+            if (claimError.message.includes('ASSET_COPY_CLAIM_CONFLICT')) throw new Error('ASSET_COPY_CLAIM_CONFLICT');
+            throw new Error(`ASSET_COPY_CLAIM_FAILED:${claimError.message}`);
+          }
           if (!claimedAsset) throw new Error('ASSET_COPY_CLAIM_CONFLICT');
           claimedByRun = true;
 
@@ -576,24 +569,24 @@ Deno.serve(async (req) => {
             logicalCopyOutcome = 'REUSED';
           }
 
-          const { data: copiedAsset, error: assetUpdateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
-            asset_status: 'COPIED',
-            content_type: image.contentType,
-            content_length: image.contentLength,
-            content_sha256: contentSha256,
-            bucket_id: ASSET_BUCKET,
-            object_path: objectPath,
-            claimed_in_run_id: null,
-            copied_in_run_id: run.id,
-            copied_at: new Date().toISOString(),
-            last_error_code: null,
-            last_error_message: null,
-            updated_at: new Date().toISOString(),
-          }).eq('id', asset.id)
-            .eq('asset_status', 'COPYING')
-            .eq('claimed_in_run_id', run.id)
-            .select('id').maybeSingle();
-          if (assetUpdateError) throw new Error(`ASSET_PROVENANCE_UPDATE_FAILED:${assetUpdateError.message}`);
+          const { data: copiedAsset, error: assetUpdateError } = await adminClient.rpc(
+            'ecoflow_commit_unleashed_product_asset_copy',
+            {
+              p_run_id: run.id,
+              p_asset_id: asset.id,
+              p_content_type: image.contentType,
+              p_content_length: image.contentLength,
+              p_content_sha256: contentSha256,
+              p_bucket_id: ASSET_BUCKET,
+              p_object_path: objectPath,
+            },
+          );
+          if (assetUpdateError) {
+            if (assetUpdateError.message.includes('COPY_RUN_LEASE_LOST')) throw new Error('COPY_RUN_LEASE_LOST');
+            if (assetUpdateError.message.includes('ASSET_RIGHTS_NOT_APPROVED')) throw new Error('ASSET_RIGHTS_NOT_APPROVED');
+            if (assetUpdateError.message.includes('ASSET_COPY_CLAIM_LOST')) throw new Error('ASSET_COPY_CLAIM_LOST');
+            throw new Error(`ASSET_PROVENANCE_UPDATE_FAILED:${assetUpdateError.message}`);
+          }
           if (!copiedAsset) throw new Error('ASSET_COPY_CLAIM_LOST');
           if (logicalCopyOutcome === 'COPIED') copied += 1;
           else if (logicalCopyOutcome === 'REUSED') reused += 1;
@@ -605,20 +598,23 @@ Deno.serve(async (req) => {
             || code === 'UNLEASHED_IMAGE_HTTPS_REQUIRED'
             || code === 'SOURCE_SNAPSHOT_CHANGED';
           let failureStateError: { message: string } | null = null;
-          let failureStateLostLease = false;
           if (claimedByRun) {
-            const { data: releasedAsset, error: updateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
-              asset_status: blocked ? 'BLOCKED' : 'FAILED',
-              claimed_in_run_id: null,
-              last_error_code: code,
-              last_error_message: error instanceof Error ? error.message.slice(0, 500) : code,
-              updated_at: new Date().toISOString(),
-            }).eq('id', asset.id)
-              .eq('asset_status', 'COPYING')
-              .eq('claimed_in_run_id', run.id)
-              .select('id').maybeSingle();
-            failureStateError = updateError;
-            failureStateLostLease = !updateError && !releasedAsset;
+            const { data: releasedAsset, error: updateError } = await adminClient.rpc(
+              'ecoflow_fail_unleashed_product_asset_copy',
+              {
+                p_run_id: run.id,
+                p_asset_id: asset.id,
+                p_blocked: blocked,
+                p_error_code: code,
+                p_error_message: error instanceof Error ? error.message.slice(0, 500) : code,
+              },
+            );
+            if (updateError) {
+              if (updateError.message.includes('COPY_RUN_LEASE_LOST')) throw new Error('COPY_RUN_LEASE_LOST');
+              if (updateError.message.includes('ASSET_COPY_CLAIM_LOST')) throw new Error('ASSET_COPY_CLAIM_LOST');
+              throw new Error(`ASSET_COPY_FAILURE_STATE_WRITE_FAILED:${updateError.message}`);
+            }
+            if (!releasedAsset) throw new Error('ASSET_COPY_CLAIM_LOST');
           } else {
             const { error: updateError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
               asset_status: blocked ? 'BLOCKED' : 'FAILED',
@@ -636,25 +632,30 @@ Deno.serve(async (req) => {
           if (failureStateError) {
             throw new Error(`ASSET_COPY_FAILURE_STATE_WRITE_FAILED:${failureStateError.message}`);
           }
-          if (failureStateLostLease) throw new Error('COPY_RUN_LEASE_LOST');
           if (code === 'ASSET_COPY_CLAIM_LOST') throw error;
         }
       }
 
       const status = failed === 0 ? 'SUCCEEDED' : copied + reused > 0 ? 'PARTIAL' : 'FAILED';
-      const { data: completedRun, error: completeError } = await adminClient
-        .from('ecoflow_unleashed_asset_copy_runs').update({
-          status,
-          assets_planned: planned?.length ?? 0,
-          assets_copied: copied,
-          assets_reused: reused,
-          assets_failed: failed,
-          bytes_copied: runBytes,
-          completed_at: new Date().toISOString(),
-          error_code: failed ? 'UNLEASHED_IMAGE_COPY_ITEM_FAILED' : null,
-          error_message: failed ? `${failed} bounded image copy item(s) failed` : null,
-        }).eq('id', run.id).eq('status', 'RUNNING').select('*').maybeSingle();
-      if (completeError) throw new Error(`COPY_RUN_COMPLETE_FAILED:${completeError.message}`);
+      const { data: completedRun, error: completeError } = await adminClient.rpc(
+        'ecoflow_complete_unleashed_asset_copy_run',
+        {
+          p_run_id: run.id,
+          p_status: status,
+          p_assets_planned: planned?.length ?? 0,
+          p_assets_copied: copied,
+          p_assets_reused: reused,
+          p_assets_failed: failed,
+          p_bytes_copied: runBytes,
+          p_error_code: failed ? 'UNLEASHED_IMAGE_COPY_ITEM_FAILED' : null,
+          p_error_message: failed ? `${failed} bounded image copy item(s) failed` : null,
+        },
+      );
+      if (completeError) {
+        if (completeError.message.includes('COPY_RUN_LEASE_LOST')) throw new Error('COPY_RUN_LEASE_LOST');
+        if (completeError.message.includes('COPY_RUN_ASSETS_STILL_CLAIMED')) throw new Error('COPY_RUN_ASSETS_STILL_CLAIMED');
+        throw new Error(`COPY_RUN_COMPLETE_FAILED:${completeError.message}`);
+      }
       if (!completedRun) throw new Error('COPY_RUN_LEASE_LOST');
 
       await recordAudit(adminClient, {

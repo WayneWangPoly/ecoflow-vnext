@@ -148,7 +148,7 @@ test('Edge Function rejects unsafe assets before any Storage mutation', () => {
   assert.match(edgeFunction, /SOURCE_SNAPSHOT_CHANGED/);
   assert.match(edgeFunction, /from\(ASSET_BUCKET\)\.upload/);
   assert.match(edgeFunction, /COPY_RUN_ALREADY_RUNNING/);
-  assert.match(edgeFunction, /COPY_RUN_LEASE_EXPIRED/);
+  assert.match(migration, /COPY_RUN_LEASE_EXPIRED/);
   assert.match(edgeFunction, /positiveSafeInteger\(body\.limit \?\? 10, 'INVALID_COPY_LIMIT', 10\)/);
   assert.match(migration, /requested_limit between 1 and 10/);
   assert.match(edgeFunction, /claimed_in_run_id/);
@@ -169,11 +169,23 @@ test('Edge Function rejects unsafe assets before any Storage mutation', () => {
   assert.match(edgeFunction, /else if \(logicalCopyOutcome === 'REUSED'\) reused \+= 1/);
   assert.match(edgeFunction, /ASSET_COPY_CLAIM_LOST/);
   assert.match(edgeFunction, /ASSET_COPY_FAILURE_STATE_WRITE_FAILED/);
-  assert.match(edgeFunction, /failureStateLostLease = !updateError && !releasedAsset/);
-  assert.match(edgeFunction, /\.eq\('asset_status', 'COPYING'\)[\s\S]{0,120}\.eq\('claimed_in_run_id', run\.id\)/);
-  assert.match(edgeFunction, /\.eq\('id', run\.id\)\.eq\('status', 'RUNNING'\)\.select\('\*'\)\.maybeSingle\(\)/);
+  assert.match(migration, /ecoflow_fail_unleashed_product_asset_copy/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_claim_unleashed_product_asset'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_complete_unleashed_asset_copy_run'/);
   assert.match(edgeFunction, /COPY_RUN_LEASE_LOST/);
   assert.match(migration, /where status='RUNNING'/);
+  assert.match(migration, /ecoflow_claim_unleashed_product_asset/);
+  assert.match(migration, /ecoflow_commit_unleashed_product_asset_copy/);
+  assert.match(migration, /ecoflow_fail_unleashed_product_asset_copy/);
+  assert.match(migration, /ecoflow_expire_unleashed_asset_copy_run/);
+  assert.match(migration, /ecoflow_complete_unleashed_asset_copy_run/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /interval '15 minutes'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_claim_unleashed_product_asset'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_commit_unleashed_product_asset_copy'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_fail_unleashed_product_asset_copy'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_expire_unleashed_asset_copy_run'/);
+  assert.match(edgeFunction, /rpc\(\s*'ecoflow_complete_unleashed_asset_copy_run'/);
 });
 
 test('migration trigger remains JWT protected and Unleashed read-only', () => {

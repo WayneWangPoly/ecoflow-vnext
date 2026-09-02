@@ -899,6 +899,277 @@ begin
 end;
 $$;
 
+
+-- COPY lease transitions are serialized at the database boundary. Every
+-- claimed-state transition locks the owning run first, so stale-run expiry,
+-- claim, provenance commit and failure release cannot interleave across
+-- independent PostgREST transactions.
+create or replace function public.ecoflow_claim_unleashed_product_asset(
+  p_run_id uuid,
+  p_asset_id uuid,
+  p_source_snapshot_id uuid,
+  p_source_payload_sha256 text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_run public.ecoflow_unleashed_asset_copy_runs%rowtype;
+  v_asset public.ecoflow_unleashed_product_assets%rowtype;
+begin
+  select * into v_run
+  from public.ecoflow_unleashed_asset_copy_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING'
+     or v_run.started_at + interval '15 minutes' <= clock_timestamp() then
+    raise exception 'COPY_RUN_LEASE_LOST';
+  end if;
+
+  select * into v_asset
+  from public.ecoflow_unleashed_product_assets a
+  where a.id=p_asset_id
+  for update;
+  if not found
+     or v_asset.asset_status not in ('PLANNED','FAILED')
+     or v_asset.claimed_in_run_id is not null
+     or v_asset.source_snapshot_id is distinct from p_source_snapshot_id
+     or v_asset.source_payload_sha256 is distinct from p_source_payload_sha256 then
+    raise exception 'ASSET_COPY_CLAIM_CONFLICT';
+  end if;
+  if not exists (
+    select 1 from public.unleashed_raw_snapshots s
+    where s.id=p_source_snapshot_id
+      and s.payload_sha256=p_source_payload_sha256
+  ) then
+    raise exception 'SOURCE_SNAPSHOT_CHANGED';
+  end if;
+
+  update public.ecoflow_unleashed_product_assets a set
+    asset_status='COPYING',
+    claimed_in_run_id=p_run_id,
+    attempt_count=a.attempt_count+1,
+    last_error_code=null,
+    last_error_message=null,
+    updated_at=now()
+  where a.id=p_asset_id;
+
+  return jsonb_build_object(
+    'assetId',p_asset_id,
+    'runId',p_run_id,
+    'attemptCount',v_asset.attempt_count+1
+  );
+end;
+$$;
+
+create or replace function public.ecoflow_commit_unleashed_product_asset_copy(
+  p_run_id uuid,
+  p_asset_id uuid,
+  p_content_type text,
+  p_content_length bigint,
+  p_content_sha256 text,
+  p_bucket_id text,
+  p_object_path text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_run public.ecoflow_unleashed_asset_copy_runs%rowtype;
+  v_asset_id uuid;
+begin
+  select * into v_run
+  from public.ecoflow_unleashed_asset_copy_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING'
+     or v_run.started_at + interval '15 minutes' <= clock_timestamp() then
+    raise exception 'COPY_RUN_LEASE_LOST';
+  end if;
+  if not exists (
+    select 1 from public.ecoflow_unleashed_asset_authorizations a
+    where a.id=v_run.authorization_id
+      and a.is_current
+      and a.authorization_status='APPROVED'
+      and (a.expires_at is null or a.expires_at>clock_timestamp())
+  ) then
+    raise exception 'ASSET_RIGHTS_NOT_APPROVED';
+  end if;
+
+  update public.ecoflow_unleashed_product_assets a set
+    asset_status='COPIED',
+    content_type=p_content_type,
+    content_length=p_content_length,
+    content_sha256=p_content_sha256,
+    bucket_id=p_bucket_id,
+    object_path=p_object_path,
+    claimed_in_run_id=null,
+    copied_in_run_id=p_run_id,
+    copied_at=now(),
+    last_error_code=null,
+    last_error_message=null,
+    updated_at=now()
+  where a.id=p_asset_id
+    and a.asset_status='COPYING'
+    and a.claimed_in_run_id=p_run_id
+  returning a.id into v_asset_id;
+  if v_asset_id is null then raise exception 'ASSET_COPY_CLAIM_LOST'; end if;
+
+  return jsonb_build_object('assetId',v_asset_id,'runId',p_run_id,'status','COPIED');
+end;
+$$;
+
+create or replace function public.ecoflow_fail_unleashed_product_asset_copy(
+  p_run_id uuid,
+  p_asset_id uuid,
+  p_blocked boolean,
+  p_error_code text,
+  p_error_message text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_run public.ecoflow_unleashed_asset_copy_runs%rowtype;
+  v_asset_id uuid;
+begin
+  select * into v_run
+  from public.ecoflow_unleashed_asset_copy_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING'
+     or v_run.started_at + interval '15 minutes' <= clock_timestamp() then
+    raise exception 'COPY_RUN_LEASE_LOST';
+  end if;
+
+  update public.ecoflow_unleashed_product_assets a set
+    asset_status=case when p_blocked then 'BLOCKED' else 'FAILED' end,
+    claimed_in_run_id=null,
+    last_error_code=nullif(btrim(coalesce(p_error_code,'')),''),
+    last_error_message=left(coalesce(p_error_message,p_error_code,'ASSET_COPY_FAILED'),500),
+    updated_at=now()
+  where a.id=p_asset_id
+    and a.asset_status='COPYING'
+    and a.claimed_in_run_id=p_run_id
+  returning a.id into v_asset_id;
+  if v_asset_id is null then raise exception 'ASSET_COPY_CLAIM_LOST'; end if;
+
+  return jsonb_build_object(
+    'assetId',v_asset_id,
+    'runId',p_run_id,
+    'status',case when p_blocked then 'BLOCKED' else 'FAILED' end
+  );
+end;
+$$;
+
+create or replace function public.ecoflow_expire_unleashed_asset_copy_run(p_run_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_run public.ecoflow_unleashed_asset_copy_runs%rowtype;
+begin
+  select * into v_run
+  from public.ecoflow_unleashed_asset_copy_runs r
+  where r.id=p_run_id
+  for update;
+  if not found then raise exception 'COPY_RUN_LEASE_INVALID'; end if;
+  if v_run.status<>'RUNNING' then return to_jsonb(v_run); end if;
+  if v_run.started_at + interval '15 minutes' > clock_timestamp() then
+    raise exception 'COPY_RUN_LEASE_ACTIVE';
+  end if;
+
+  update public.ecoflow_unleashed_product_assets a set
+    asset_status='FAILED',
+    claimed_in_run_id=null,
+    last_error_code='COPY_RUN_LEASE_EXPIRED',
+    last_error_message='The prior image-copy worker did not complete within its bounded lease',
+    updated_at=now()
+  where a.claimed_in_run_id=p_run_id
+    and a.asset_status='COPYING';
+
+  update public.ecoflow_unleashed_asset_copy_runs r set
+    status='FAILED',
+    completed_at=now(),
+    error_code='COPY_RUN_LEASE_EXPIRED',
+    error_message='Image-copy worker lease expired before completion'
+  where r.id=p_run_id and r.status='RUNNING'
+  returning r.* into v_run;
+  if not found then raise exception 'COPY_RUN_LEASE_LOST'; end if;
+
+  return to_jsonb(v_run);
+end;
+$$;
+
+create or replace function public.ecoflow_complete_unleashed_asset_copy_run(
+  p_run_id uuid,
+  p_status text,
+  p_assets_planned integer,
+  p_assets_copied integer,
+  p_assets_reused integer,
+  p_assets_failed integer,
+  p_bytes_copied bigint,
+  p_error_code text,
+  p_error_message text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_run public.ecoflow_unleashed_asset_copy_runs%rowtype;
+begin
+  if p_status not in ('SUCCEEDED','PARTIAL','FAILED')
+     or coalesce(p_assets_planned,-1)<0
+     or coalesce(p_assets_copied,-1)<0
+     or coalesce(p_assets_reused,-1)<0
+     or coalesce(p_assets_failed,-1)<0
+     or coalesce(p_bytes_copied,-1)<0 then
+    raise exception 'COPY_RUN_COMPLETION_INVALID';
+  end if;
+
+  select * into v_run
+  from public.ecoflow_unleashed_asset_copy_runs r
+  where r.id=p_run_id
+  for update;
+  if not found or v_run.status<>'RUNNING'
+     or v_run.started_at + interval '15 minutes' <= clock_timestamp() then
+    raise exception 'COPY_RUN_LEASE_LOST';
+  end if;
+  if exists (
+    select 1 from public.ecoflow_unleashed_product_assets a
+    where a.claimed_in_run_id=p_run_id and a.asset_status='COPYING'
+  ) then
+    raise exception 'COPY_RUN_ASSETS_STILL_CLAIMED';
+  end if;
+
+  update public.ecoflow_unleashed_asset_copy_runs r set
+    status=p_status,
+    assets_planned=p_assets_planned,
+    assets_copied=p_assets_copied,
+    assets_reused=p_assets_reused,
+    assets_failed=p_assets_failed,
+    bytes_copied=p_bytes_copied,
+    completed_at=now(),
+    error_code=p_error_code,
+    error_message=p_error_message
+  where r.id=p_run_id and r.status='RUNNING'
+  returning r.* into v_run;
+  if not found then raise exception 'COPY_RUN_LEASE_LOST'; end if;
+
+  return to_jsonb(v_run);
+end;
+$$;
+
 alter table public.ecoflow_unleashed_master_mappings enable row level security;
 alter table public.ecoflow_unleashed_master_candidates enable row level security;
 alter table public.ecoflow_unleashed_mapping_commands enable row level security;
@@ -989,6 +1260,17 @@ grant select on table public.v_ecoflow_unleashed_master_review_queue to authenti
 grant select on table public.v_ecoflow_unleashed_asset_readiness to authenticated;
 revoke all on table public.v_ecoflow_unleashed_master_review_queue from anon;
 revoke all on table public.v_ecoflow_unleashed_asset_readiness from anon;
+
+revoke all on function public.ecoflow_claim_unleashed_product_asset(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.ecoflow_claim_unleashed_product_asset(uuid,uuid,uuid,text) to service_role;
+revoke all on function public.ecoflow_commit_unleashed_product_asset_copy(uuid,uuid,text,bigint,text,text,text) from public,anon,authenticated;
+grant execute on function public.ecoflow_commit_unleashed_product_asset_copy(uuid,uuid,text,bigint,text,text,text) to service_role;
+revoke all on function public.ecoflow_fail_unleashed_product_asset_copy(uuid,uuid,boolean,text,text) from public,anon,authenticated;
+grant execute on function public.ecoflow_fail_unleashed_product_asset_copy(uuid,uuid,boolean,text,text) to service_role;
+revoke all on function public.ecoflow_expire_unleashed_asset_copy_run(uuid) from public,anon,authenticated;
+grant execute on function public.ecoflow_expire_unleashed_asset_copy_run(uuid) to service_role;
+revoke all on function public.ecoflow_complete_unleashed_asset_copy_run(uuid,text,integer,integer,integer,integer,bigint,text,text) from public,anon,authenticated;
+grant execute on function public.ecoflow_complete_unleashed_asset_copy_run(uuid,text,integer,integer,integer,integer,bigint,text,text) to service_role;
 
 revoke all on function public.ecoflow_plan_unleashed_master_mappings(uuid,text) from public,anon,authenticated;
 grant execute on function public.ecoflow_plan_unleashed_master_mappings(uuid,text) to service_role;

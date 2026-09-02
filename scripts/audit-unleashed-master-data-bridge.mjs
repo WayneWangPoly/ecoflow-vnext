@@ -139,9 +139,14 @@ check(
   'copy budget has a recoverable singleton lease',
   /where status='RUNNING'/.test(migration)
     && /claimed_in_run_id/.test(migration + edge)
-    && /COPY_RUN_LEASE_EXPIRED/.test(edge)
-    && /COPY_RUN_ALREADY_RUNNING/.test(edge),
-  'only one run can spend the aggregate budget; expired claims fail closed',
+    && /COPY_RUN_LEASE_EXPIRED/.test(migration)
+    && /COPY_RUN_ALREADY_RUNNING/.test(edge)
+    && /ecoflow_claim_unleashed_product_asset/.test(migration + edge)
+    && /ecoflow_expire_unleashed_asset_copy_run/.test(migration + edge)
+    && /ecoflow_complete_unleashed_asset_copy_run/.test(migration + edge)
+    && /interval '15 minutes'/.test(migration)
+    && /for update/.test(migration),
+  'only one run can spend the aggregate budget; database-owned lease transitions serialize claims and stale expiry',
 );
 check(
   'copy crash reconciliation preserves budget',
