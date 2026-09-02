@@ -1,0 +1,74 @@
+name: Unleashed snapshot acquisition fencing
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/unleashed-snapshot-acquisition-fencing-check.yml'
+      - 'scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql'
+      - 'scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs'
+      - 'scripts/audit-unleashed-readonly-connector.mjs'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
+      - 'supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql'
+  push:
+    branches:
+      - 'agent/platform/unleashed-migration-002d-*'
+    paths:
+      - '.github/workflows/unleashed-snapshot-acquisition-fencing-check.yml'
+      - 'scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql'
+      - 'scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs'
+      - 'scripts/audit-unleashed-readonly-connector.mjs'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  fencing-contract:
+    name: DB-owned lease and reconciliation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci
+      - name: Check Edge Function syntax
+        run: node scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Run fencing static contract if present
+        run: |
+          if test -f scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs; then
+            node --experimental-strip-types --test scripts/unleashed-snapshot-acquisition-fencing-contract.test.mjs
+          fi
+      - name: Prepare Unleashed DB fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-readonly-connector-db-fixture.sql
+      - name: Apply connector foundation and fencing migration
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
+      - name: Run acquisition fencing DB contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql
