@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { getOrdermentumAuthMode, makeOrdermentumUrl } from './ordermentum-auth.mjs';
 import { ordermentumFetch } from './ordermentum-sync-common.mjs';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const PROBE_NAME = 'ordermentum-api-key-purchaser';
 
 function sha256(value) {
@@ -60,6 +60,17 @@ export function summarizeProbePayload(payload, purchaserId) {
   };
 }
 
+async function fetchProbePayload(fetchJson, url) {
+  try {
+    return await fetchJson(url);
+  } catch (error) {
+    const status = Number.isInteger(error?.status) ? error.status : null;
+    const wrapped = new Error(`Ordermentum purchaser probe provider request failed${status ? ` status ${status}` : ''}`);
+    if (status) wrapped.status = status;
+    throw wrapped;
+  }
+}
+
 export async function runProbe({
   purchaserId = process.env.ORDERMENTUM_PROBE_PURCHASER_ID,
   fetchJson = ordermentumFetch,
@@ -69,7 +80,7 @@ export async function runProbe({
   }
   const id = validateProbePurchaserId(purchaserId);
   const url = buildPurchaserProbeUrl(id);
-  const payload = await fetchJson(url);
+  const payload = await fetchProbePayload(fetchJson, url);
   return summarizeProbePayload(payload, id);
 }
 
@@ -83,7 +94,7 @@ if (isMainModule()) {
       process.stdout.write(`${JSON.stringify(summary)}\n`);
     })
     .catch((error) => {
-      process.stderr.write(`Ordermentum acceptance probe failed: ${String(error?.message || error).slice(0, 500)}\n`);
+      process.stderr.write(`Ordermentum acceptance probe failed: ${String(error?.message || 'blocked')}\n`);
       process.exitCode = 1;
     });
 }
