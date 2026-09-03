@@ -12,6 +12,7 @@ on:
       - 'src/features/productIdentity/barcodeSurveyReconciliation.css'
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
+      - 'supabase/migrations/20260903172543_product_identity_bounded_batch.sql'
   workflow_dispatch:
 
 permissions:
@@ -59,6 +60,9 @@ jobs:
 
       - name: Static reconciliation authority contract
         run: node --test scripts/warehouse-survey-002-contract.test.mjs
+
+      - name: Static bounded-batch repair contract and audit
+        run: npm run audit:warehouse-survey-002-bounded-batch
 
       - name: Prepare production-shaped Product Identity and Survey fixture
         run: |
@@ -160,6 +164,12 @@ jobs:
 
       - name: Apply Survey-to-Product-Identity reconciliation authority
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql
+
+      - name: Apply bounded Product Identity batch repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260903172543_product_identity_bounded_batch.sql
+
+      - name: Execute bounded-batch isolation and canonical resolver contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-bounded-batch-db-contract-test.sql
 
       - name: Execute reconciliation, role, provenance, conflict and publication contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-db-contract-test.sql
