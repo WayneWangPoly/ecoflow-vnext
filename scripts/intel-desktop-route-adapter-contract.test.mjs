@@ -65,7 +65,7 @@ test('unknown and invalid routes remain explicit rather than falling back', () =
   );
 });
 
-test('reserved routes without a migrated legacy panel show a migration boundary', () => {
+test('reserved routes without a migrated panel show a migration boundary', () => {
   assert.deepEqual(
     deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/returns', role: 'owner', legacyTab: 'delivery' }).boundary,
     {
@@ -75,6 +75,15 @@ test('reserved routes without a migrated legacy panel show a migration boundary'
       reason: 'WORKSPACE_NOT_MIGRATED',
     },
   );
+  for (const pathname of ['/products', '/suppliers', '/purchases', '/purchases/PO-1001']) {
+    const result = deriveDesktopRouteAdapterModel({ enabled: true, pathname, role: 'owner', legacyTab: 'dashboard' });
+    assert.deepEqual(result.boundary, {
+      status: 'UNAVAILABLE',
+      pathname,
+      workspace: pathname.startsWith('/products') ? 'products' : pathname.startsWith('/suppliers') ? 'suppliers' : 'purchases',
+      reason: 'WORKSPACE_NOT_MIGRATED',
+    });
+  }
 });
 
 test('sidebar navigation writes canonical paths and preserves current query context', () => {
