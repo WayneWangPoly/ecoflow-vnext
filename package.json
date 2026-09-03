@@ -29,6 +29,7 @@
     "audit:transform-008a": "node scripts/audit-transform-008a-analytics-productivity-truth.mjs",
     "audit:unleashed": "node scripts/check-unleashed-edge-function-syntax.mjs && node --experimental-strip-types --test scripts/unleashed-readonly-connector-contract.test.mjs scripts/unleashed-readonly-connector-core.test.mjs && node scripts/audit-unleashed-readonly-connector.mjs",
     "audit:unleashed-master-data": "node --experimental-strip-types --test scripts/unleashed-master-data-bridge-contract.test.mjs && node scripts/audit-unleashed-master-data-bridge.mjs",
+    "audit:unleashed-inventory-reference": "node --experimental-strip-types --test scripts/unleashed-inventory-reference-contract.test.mjs && node scripts/audit-unleashed-inventory-reference.mjs",
     "test:data-boundary": "node --experimental-strip-types --test scripts/production-data-boundary.test.mjs",
     "test:pick-sync": "node --experimental-strip-types --test scripts/serial-sync-session.test.mjs scripts/pick-sync-cursor.test.mjs",
     "test:warehouse": "node scripts/audit-warehouse-productisation.mjs && node scripts/audit-stocktake-field-journal.mjs && node scripts/audit-desktop-density-stocktake-coverage.mjs && node scripts/audit-warehouse-physical-layout.mjs",

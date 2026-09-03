@@ -1,0 +1,66 @@
+name: Unleashed inventory reference contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/unleashed-inventory-reference-check.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-004-inventory-reference.md'
+      - 'scripts/unleashed-inventory-reference-*'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - 'supabase/migrations/20260903170435_unleashed_inventory_reference.sql'
+      - 'package.json'
+  push:
+    branches:
+      - 'agent/inventory/339a-*'
+    paths:
+      - '.github/workflows/unleashed-inventory-reference-check.yml'
+      - 'docs/engineering/work-packages/UNLEASHED-MIGRATION-004-inventory-reference.md'
+      - 'scripts/unleashed-inventory-reference-*'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - 'supabase/migrations/20260903170435_unleashed_inventory_reference.sql'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Immutable reference and readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Run static inventory-reference contract
+        run: node --experimental-strip-types --test scripts/unleashed-inventory-reference-contract.test.mjs
+      - name: Run migration, RLS, replay and readiness contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-inventory-reference-db-contract-test.sql
+      - name: Run bounded non-authority audit
+        run: node scripts/audit-unleashed-inventory-reference.mjs
+      - name: Regress the deployed master-data bridge contract
+        run: npm run audit:unleashed-master-data
+      - name: Build existing application
+        run: npm run build
