@@ -4,9 +4,12 @@ export type IntelligenceWorkspaceId =
   | 'control-room'
   | 'ordermentum'
   | 'orders'
+  | 'products'
   | 'inventory'
   | 'product-identity'
   | 'customers'
+  | 'suppliers'
+  | 'purchases'
   | 'stores'
   | 'delivery'
   | 'returns'
@@ -19,9 +22,12 @@ export type IntelligenceWorkspaceId =
 
 export type IntelligenceEntityKind =
   | 'order'
+  | 'product'
   | 'commercial-sku'
   | 'physical-sku'
   | 'customer'
+  | 'supplier'
+  | 'purchase-order'
   | 'store'
   | 'account'
   | 'return'
@@ -76,9 +82,16 @@ const STATIC_ROUTES: readonly StaticRoute[] = [
   { path: '/control-room', workspace: 'control-room', legacyDesktopTab: 'dashboard' },
   { path: '/ordermentum', workspace: 'ordermentum', legacyDesktopTab: 'ordermentum' },
   { path: '/orders', workspace: 'orders', legacyDesktopTab: 'orders' },
+  // #340A reserves native office workspaces in the unified router before the
+  // read surfaces are mounted. null is intentional: the desktop adapter must
+  // show an explicit WORKSPACE_NOT_MIGRATED boundary rather than silently
+  // falling back to a legacy panel while Chat 2 completes the surface.
+  { path: '/products', workspace: 'products', legacyDesktopTab: null },
   { path: '/inventory', workspace: 'inventory', legacyDesktopTab: 'inventory' },
   { path: '/commissioning/product-identity', workspace: 'product-identity', legacyDesktopTab: null },
   { path: '/customers', workspace: 'customers', legacyDesktopTab: 'stores' },
+  { path: '/suppliers', workspace: 'suppliers', legacyDesktopTab: null },
+  { path: '/purchases', workspace: 'purchases', legacyDesktopTab: null },
   { path: '/delivery', workspace: 'delivery', legacyDesktopTab: 'delivery' },
   { path: '/returns', workspace: 'returns', legacyDesktopTab: null },
   { path: '/accounts', workspace: 'accounts', legacyDesktopTab: null },
@@ -91,9 +104,12 @@ const STATIC_ROUTES: readonly StaticRoute[] = [
 
 const DYNAMIC_ROUTES: readonly DynamicRoute[] = [
   { path: '/orders/:orderId', pattern: /^\/orders\/([^/]+)\/?$/, workspace: 'orders', entityKind: 'order', legacyDesktopTab: 'orders' },
+  { path: '/products/:productId', pattern: /^\/products\/([^/]+)\/?$/, workspace: 'products', entityKind: 'product', legacyDesktopTab: null },
   { path: '/inventory/commercial/:skuId', pattern: /^\/inventory\/commercial\/([^/]+)\/?$/, workspace: 'inventory', entityKind: 'commercial-sku', legacyDesktopTab: 'inventory' },
   { path: '/inventory/physical/:itemId', pattern: /^\/inventory\/physical\/([^/]+)\/?$/, workspace: 'inventory', entityKind: 'physical-sku', legacyDesktopTab: 'inventory' },
   { path: '/customers/:customerId', pattern: /^\/customers\/([^/]+)\/?$/, workspace: 'customers', entityKind: 'customer', legacyDesktopTab: 'stores' },
+  { path: '/suppliers/:supplierId', pattern: /^\/suppliers\/([^/]+)\/?$/, workspace: 'suppliers', entityKind: 'supplier', legacyDesktopTab: null },
+  { path: '/purchases/:purchaseOrderId', pattern: /^\/purchases\/([^/]+)\/?$/, workspace: 'purchases', entityKind: 'purchase-order', legacyDesktopTab: null },
   { path: '/stores/:storeId', pattern: /^\/stores\/([^/]+)\/?$/, workspace: 'stores', entityKind: 'store', legacyDesktopTab: 'stores' },
   { path: '/delivery/runs/:runCode', pattern: /^\/delivery\/runs\/([^/]+)\/?$/, workspace: 'delivery', entityKind: 'delivery-run', legacyDesktopTab: 'delivery' },
   { path: '/accounts/:storeId', pattern: /^\/accounts\/([^/]+)\/?$/, workspace: 'accounts', entityKind: 'account', legacyDesktopTab: null },
