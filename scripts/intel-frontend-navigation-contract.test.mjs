@@ -19,17 +19,23 @@ import {
 } from '../src/features/intelligence/navigation/overlayState.ts';
 import { resolveIntelligenceFeatureFlags } from '../src/features/intelligence/featureFlags.ts';
 
-test('canonical route registry covers the ADR-0008 route families', () => {
+test('canonical route registry covers the ADR-0008 and #340A route families', () => {
   const paths = new Set(canonicalIntelligencePaths());
   for (const required of [
     '/control-room',
     '/orders',
     '/orders/:orderId',
+    '/products',
+    '/products/:productId',
     '/inventory',
     '/inventory/commercial/:skuId',
     '/inventory/physical/:itemId',
     '/customers',
     '/customers/:customerId',
+    '/suppliers',
+    '/suppliers/:supplierId',
+    '/purchases',
+    '/purchases/:purchaseOrderId',
     '/stores/:storeId',
     '/delivery',
     '/delivery/runs/:runCode',
@@ -86,11 +92,42 @@ test('deep entity routes retain decoded identity and typed legacy adapter', () =
       legacyDesktopTab: 'delivery',
     },
   });
+  assert.deepEqual(matchIntelligenceRoute('/products/R-360Y'), {
+    status: 'READY',
+    route: {
+      workspace: 'products',
+      canonicalPath: '/products/:productId',
+      entityKind: 'product',
+      entityId: 'R-360Y',
+      legacyDesktopTab: null,
+    },
+  });
+  assert.deepEqual(matchIntelligenceRoute('/purchases/PO-1001'), {
+    status: 'READY',
+    route: {
+      workspace: 'purchases',
+      canonicalPath: '/purchases/:purchaseOrderId',
+      entityKind: 'purchase-order',
+      entityId: 'PO-1001',
+      legacyDesktopTab: null,
+    },
+  });
   assert.deepEqual(matchIntelligenceRoute('/orders/%E0%A4%A'), {
     status: 'UNAVAILABLE',
     pathname: '/orders/%E0%A4%A',
     reason: 'INVALID_ENTITY_ID',
   });
+});
+
+test('#340A office routes are Owner/Admin only until explicit capability work expands them', () => {
+  for (const path of ['/products', '/suppliers', '/purchases']) {
+    assert.equal(resolveIntelligenceRoute(path, 'owner').status, 'READY');
+    assert.equal(resolveIntelligenceRoute(path, 'admin').status, 'READY');
+    assert.equal(resolveIntelligenceRoute(path, 'account').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'viewer').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'warehouse').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'driver').status, 'FORBIDDEN');
+  }
 });
 
 test('unknown routes and role violations fail closed without dashboard fallback', () => {
