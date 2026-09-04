@@ -1,3 +1,4 @@
+import type { CatalogRow } from '@/domain/types';
 import type { NativeReadListRequest, NativeReadResult } from './nativeReadModel';
 
 export const PRODUCT_MASTER_FILTER_ORDER = [
@@ -63,3 +64,137 @@ export type ProductMasterListResult = NativeReadResult<ProductMasterRow>;
 export type ProductMasterReader = {
   readList(request?: ProductMasterListRequest): Promise<ProductMasterListResult>;
 };
+
+type FilterMap = Map<string, string[]>;
+
+const SOURCE_PRIORITY: Readonly<Record<CatalogRow['source'], number>> = {
+  product: 0,
+  variant: 1,
+  'order-detail': 2,
+};
+
+function clean(value: string | null | undefined) {
+  return String(value || '').trim();
+}
+
+function filterMap(filters?: readonly string[]): FilterMap {
+  const result = new Map<string, string[]>();
+  for (const raw of filters ?? []) {
+    const separator = raw.indexOf(':');
+    if (separator <= 0) continue;
+    const key = raw.slice(0, separator).trim();
+    const value = raw.slice(separator + 1).trim();
+    if (!key || !value) continue;
+    result.set(key, [...(result.get(key) ?? []), value]);
+  }
+  return result;
+}
+
+function matchesNullableText(value: string | null, accepted?: string[]) {
+  if (!accepted?.length) return true;
+  const normalized = clean(value).toLowerCase();
+  return accepted.some((candidate) => normalized === clean(candidate).toLowerCase());
+}
+
+function matchesBoolean(value: boolean | null, accepted?: string[]) {
+  if (!accepted?.length) return true;
+  return accepted.some((candidate) => {
+    const normalized = clean(candidate).toLowerCase();
+    if (normalized === 'all') return true;
+    if (value === null) return normalized === 'unknown';
+    return normalized === String(value);
+  });
+}
+
+function catalogToRows(catalog: readonly CatalogRow[], sourceObservedAt: string | null): ProductMasterRow[] {
+  const bySku = new Map<string, CatalogRow>();
+  for (const candidate of catalog) {
+    const sku = clean(candidate.sku);
+    if (!sku) continue;
+    const key = sku.toUpperCase();
+    const current = bySku.get(key);
+    if (!current || SOURCE_PRIORITY[candidate.source] < SOURCE_PRIORITY[current.source]) bySku.set(key, candidate);
+  }
+
+  return [...bySku.values()]
+    .map((row): ProductMasterRow => ({
+      // Commercial SKU is the durable route identity for this read-only surface.
+      // It deliberately does not claim to be a Physical SKU id.
+      productId: clean(row.sku),
+      productCode: clean(row.sku),
+      description: clean(row.name) || clean(row.sku),
+      productGroup: clean(row.category) || null,
+      brand: null,
+      supplierName: null,
+      supplierProductCode: null,
+      basePack: null,
+      baseUnit: clean(row.unit) || null,
+      barcode: null,
+      imagePath: null,
+      allocated: null,
+      onHand: null,
+      inventoryAuthority: 'UNAVAILABLE',
+      isObsolete: null,
+      isSellable: typeof row.visible === 'boolean' ? row.visible : null,
+      isPurchasable: null,
+      sourceObservedAt,
+    }))
+    .sort((left, right) => left.productCode.localeCompare(right.productCode, 'en-AU', { numeric: true }));
+}
+
+function applyRequest(rows: ProductMasterRow[], request: ProductMasterListRequest): ProductMasterRow[] {
+  const filters = filterMap(request.filters);
+  const search = clean(request.search).toLowerCase();
+  let next = rows.filter((row) => {
+    if (search && ![row.productCode, row.description, row.productGroup].some((value) => clean(value).toLowerCase().includes(search))) return false;
+    if (!matchesNullableText(row.productGroup, filters.get('product-group'))) return false;
+    if (!matchesNullableText(row.brand, filters.get('brand'))) return false;
+    if (!matchesNullableText(row.supplierName, filters.get('supplier'))) return false;
+    if (!matchesNullableText(row.supplierProductCode, filters.get('supplier-product'))) return false;
+    if (!matchesNullableText(row.barcode, filters.get('barcode'))) return false;
+    if (!matchesBoolean(row.isObsolete, filters.get('obsolete'))) return false;
+    if (!matchesBoolean(row.isSellable, filters.get('sellable'))) return false;
+    if (!matchesBoolean(row.isPurchasable, filters.get('purchasable'))) return false;
+    return true;
+  });
+
+  const sort = clean(request.sort);
+  if (sort === 'description') next = [...next].sort((a, b) => a.description.localeCompare(b.description));
+  else if (sort === 'product-group') next = [...next].sort((a, b) => clean(a.productGroup).localeCompare(clean(b.productGroup)) || a.productCode.localeCompare(b.productCode));
+  else if (sort === 'product-code-desc') next = [...next].sort((a, b) => b.productCode.localeCompare(a.productCode, 'en-AU', { numeric: true }));
+
+  const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 50));
+  return next.slice(0, pageSize);
+}
+
+export function createProductMasterReader(input: {
+  catalog: readonly CatalogRow[];
+  sourceObservedAt?: string | null;
+}): ProductMasterReader {
+  const sourceObservedAt = input.sourceObservedAt ?? null;
+  const sourceRows = catalogToRows(input.catalog, sourceObservedAt);
+
+  return {
+    async readList(request = {}) {
+      const rows = applyRequest(sourceRows, request);
+      const readAt = new Date().toISOString();
+      return {
+        state: sourceRows.length ? 'DEGRADED' : 'EMPTY',
+        rows,
+        metadata: {
+          source: 'governed Ordermentum commercial catalog projection',
+          authority: 'ORDERMENTUM_COMMERCIAL',
+          isAuthoritative: true,
+          freshness: sourceObservedAt ? 'CURRENT' : 'UNKNOWN',
+          readAt,
+          sourceObservedAt,
+        },
+        issues: sourceRows.length ? [
+          'Allocated and on-hand quantities are intentionally unavailable until an approved WAYNX location-ledger read model is joined.',
+          'Brand, supplier, barcode and Product Identity fields are not inferred from the commercial catalog projection.',
+          'Product Master remains separate from Inventory and Physical SKU commissioning authority.',
+        ] : [],
+      };
+    },
+  };
+}
