@@ -29,6 +29,7 @@ on:
       - 'scripts/native-operational-route-contract.test.mjs'
       - 'scripts/intel-frontend-navigation-contract.test.mjs'
       - 'scripts/intel-desktop-route-adapter-contract.test.mjs'
+      - 'scripts/unleashed-340a-audit-regression.test.mjs'
       - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
       - '.github/workflows/native-operational-routes-check.yml'
   push:
@@ -62,6 +63,7 @@ on:
       - 'scripts/native-operational-route-contract.test.mjs'
       - 'scripts/intel-frontend-navigation-contract.test.mjs'
       - 'scripts/intel-desktop-route-adapter-contract.test.mjs'
+      - 'scripts/unleashed-340a-audit-regression.test.mjs'
       - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
       - '.github/workflows/native-operational-routes-check.yml'
 
@@ -90,7 +92,7 @@ jobs:
       - name: Audit native route ownership
         run: node scripts/audit-native-operational-routes.mjs
       - name: Test route, parity and pagination contracts
-        run: node --experimental-strip-types --test scripts/native-operational-route-contract.test.mjs scripts/intel-frontend-navigation-contract.test.mjs scripts/intel-desktop-route-adapter-contract.test.mjs
+        run: node --experimental-strip-types --test scripts/native-operational-route-contract.test.mjs scripts/intel-frontend-navigation-contract.test.mjs scripts/intel-desktop-route-adapter-contract.test.mjs scripts/unleashed-340a-audit-regression.test.mjs
       - name: TypeScript
         run: npm run typecheck
       - name: Vite production build
