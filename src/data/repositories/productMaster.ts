@@ -265,11 +265,15 @@ export function createProductMasterReader(input: {
           source: 'governed Ordermentum commercial catalog projection',
           authority: 'ORDERMENTUM_COMMERCIAL',
           isAuthoritative: true,
-          freshness: sourceObservedAt ? 'CURRENT' : 'UNKNOWN',
+          // #340A has no approved staleness threshold for this projection. Keep
+          // the observed timestamp visible, but do not assert CURRENT merely
+          // because a timestamp exists.
+          freshness: 'UNKNOWN',
           readAt,
           sourceObservedAt,
         },
         issues: sourceRows.length ? [
+          'Commercial source last-observed time is shown, but freshness is not classified as CURRENT without an approved staleness threshold.',
           'Allocated and on-hand quantities are intentionally unavailable until an approved WAYNX location-ledger read model is joined.',
           'Supplier, barcode and sellability fields are not inferred from the commercial catalog projection.',
           'Product Master remains separate from Inventory and Physical SKU commissioning authority.',
