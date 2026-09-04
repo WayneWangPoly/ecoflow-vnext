@@ -10,6 +10,7 @@ test('#340A governed Product Master catalog remains complete and read-only', () 
   const repository = source('src/data/repositories/productCommercialCatalog.ts');
   assert.match(repository, /\.from\('v_ecoflow_synced_sku_catalog'\)/);
   assert.match(repository, /\.range\(offset, offset \+ COMMERCIAL_CATALOG_BATCH_SIZE - 1\)/);
+  assert.doesNotMatch(repository, /\.order\('sku'/);
   assert.doesNotMatch(repository, /ordermentum_raw_master_resources|unleashed_raw_snapshots/);
   assert.doesNotMatch(repository, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
 });

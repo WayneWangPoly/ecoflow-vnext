@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CatalogRow } from '@/domain/types';
 import { supabase } from '@/lib/supabaseClient';
 
-const COMMERCIAL_CATALOG_BATCH_SIZE = 500;
+const COMMERCIAL_CATALOG_BATCH_SIZE = 100;
 
 type SyncedSkuCatalogRow = {
   sku: string | null;
@@ -53,7 +53,6 @@ export async function readOrdermentumCommercialCatalog(
     const { data, error } = await client
       .from('v_ecoflow_synced_sku_catalog')
       .select('sku,product_name,base_price,source_type,last_synced_at')
-      .order('sku', { ascending: true })
       .range(offset, offset + COMMERCIAL_CATALOG_BATCH_SIZE - 1);
     if (error) throw new Error(message(error));
     const batch = (data ?? []) as SyncedSkuCatalogRow[];
