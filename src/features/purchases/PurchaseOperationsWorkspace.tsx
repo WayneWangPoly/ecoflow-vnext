@@ -159,6 +159,7 @@ export function PurchaseOperationsWorkspace() {
       <div className="office-parity-heading"><div><h1>Purchases</h1><p>Purchase Orders in familiar office order, backed by the existing WAYNX read RPC. This #340A surface is intentionally read-only.</p></div></div>
 
       {result ? <div className="office-parity-state" data-state={result.state}><strong>{result.state}</strong><span>{result.metadata.source}</span><small>Authority: {result.metadata.authority} · Freshness: {result.metadata.freshness}</small></div> : <div className="office-parity-state"><strong>LOADING</strong><span>Loading governed purchase orders…</span></div>}
+      {result?.issues.length ? <ul className="office-parity-issues">{result.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
 
       <section className="panel">
         <div className="panel-head"><h2>Purchase order search</h2><span>Filter order follows the established parity contract.</span></div>
@@ -175,7 +176,7 @@ export function PurchaseOperationsWorkspace() {
       </section>
 
       <section className="office-parity-table-wrap" aria-label="Purchase Orders table">
-        {result ? <div className="office-parity-count">{result.totalCount.toLocaleString('en-AU')} exact records · Page {result.page} of {Math.max(1, Math.ceil(result.totalCount / result.pageSize))}</div> : null}
+        {result ? <div className="office-parity-count">{result.countExact ? `${result.totalCount.toLocaleString('en-AU')} exact records` : `${result.totalCount.toLocaleString('en-AU')}+ matching records in the first ${result.sourceLimit.toLocaleString('en-AU')} governed rows · exact count unavailable`} · Page {result.page} of {Math.max(1, Math.ceil(result.totalCount / result.pageSize))}</div> : null}
         <div className="office-parity-row purchases header"><span>PO no.</span><span>Order date</span><span>Delivery date</span><span>Supplier</span><span>Supplier ref</span><span>Status</span><span>Warehouse</span><span>Currency</span><span>Total</span><span>Action</span></div>
         {result?.rows.map((row) => (
           <div className="office-parity-row purchases" key={row.id}>
