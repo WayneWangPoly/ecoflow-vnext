@@ -29,7 +29,7 @@ function numeric(value: number | string | null | undefined) {
 function latestIso(rows: readonly SyncedSkuCatalogRow[]) {
   return rows
     .map((row) => row.last_synced_at)
-    .filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value)))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value)))
     .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
 }
 
@@ -74,7 +74,7 @@ export async function readOrdermentumCommercialCatalog(
       sku,
       name: clean(row.product_name) || sku,
       basePrice,
-      displayPrice: Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : 'Unavailable',
+      displayPrice: `$${basePrice.toFixed(2)}`,
       unit: '',
       category: '',
       // Visibility/sellability is not asserted by this projection. Product Master
