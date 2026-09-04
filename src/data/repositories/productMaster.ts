@@ -203,7 +203,9 @@ function catalogToRows(
         onHand: null,
         inventoryAuthority: 'UNAVAILABLE',
         isObsolete: null,
-        isSellable: typeof row.visible === 'boolean' ? row.visible : null,
+        // The governed commercial SKU projection used by #340A does not expose a
+        // sellability flag. Do not reinterpret a catalog visibility placeholder.
+        isSellable: null,
         isPurchasable: null,
         sourceObservedAt,
         identity,
@@ -269,7 +271,7 @@ export function createProductMasterReader(input: {
         },
         issues: sourceRows.length ? [
           'Allocated and on-hand quantities are intentionally unavailable until an approved WAYNX location-ledger read model is joined.',
-          'Supplier and barcode fields are not inferred from the commercial catalog projection.',
+          'Supplier, barcode and sellability fields are not inferred from the commercial catalog projection.',
           'Product Master remains separate from Inventory and Physical SKU commissioning authority.',
         ] : [],
       };
