@@ -88,6 +88,8 @@ const VIEWS: Record<OperationalRecordsWorkspace,readonly ViewDefinition[]> = {
   ],
 };
 
+const CUSTOMER_OPERATIONAL_EVIDENCE_DOMAINS = ['Orders','Delivery','Pricing','Accounts','Contacts','Timeline'] as const;
+
 const DETAIL_TABS: Record<OperationalRecordsWorkspace,readonly DetailTab[]> = {
   inventory: [
     { label:'Overview',kinds:['SUMMARY'] },
@@ -103,7 +105,7 @@ const DETAIL_TABS: Record<OperationalRecordsWorkspace,readonly DetailTab[]> = {
     { label:'Contact',kinds:['CONTACT'] },
     { label:'Address',kinds:['ADDRESS'] },
     { label:'Sell Price Tier',kinds:['PRICING'] },
-    { label:'Other Customer Details',kinds:['CUSTOMER_DETAIL'] },
+    { label:'Other Customer Details',kinds:['CUSTOMER_DETAIL','ACCOUNT','TIMELINE'] },
     { label:'Sales',kinds:['ORDER'] },
     { label:'Shipments',kinds:['DELIVERY'] },
     { label:'Costings',kinds:[] },
@@ -311,6 +313,7 @@ function RecordDetail({
     {workspace==='accounts' && summary ? <div className="operational-record-authority"><span>Release authority</span><strong>{display(summary.release_authority)}</strong></div> : null}
     {workspace==='returns' && summary ? <div className="operational-record-authority"><span>Inventory consequence</span><strong>{display(summary.inventory_consequence_status)}</strong></div> : null}
     {workspace==='customers' ? <div className="operational-record-authority"><span>Customer authority</span><strong>Ordermentum-owned facts only</strong></div> : null}
+    {workspace==='customers' ? <div className="operational-record-authority"><span>Operational evidence coverage</span><strong>{CUSTOMER_OPERATIONAL_EVIDENCE_DOMAINS.join(' · ')}</strong></div> : null}
     {workspace==='inventory' ? <div className="operational-record-authority"><span>Inventory authority</span><strong>Governed location-ledger facts</strong></div> : null}
     <nav className="operational-record-detail-tabs" aria-label="Record detail sections">{tabs.map((tab)=><button key={tab.label} type="button" className={tab.label===active.label?'active':''} onClick={()=>setActiveTab(tab.label)}>{tab.label}</button>)}</nav>
     {loading ? <NativeWorkspaceLoading label="record detail"/> : null}
