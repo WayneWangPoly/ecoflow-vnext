@@ -141,9 +141,12 @@ function NativeUnifiedWorkspace({
       }).catch((error) => setLoadError(error instanceof Error ? error.message : String(error)));
       return () => { active = false; };
     }
-    // Ordermentum, Products and Delivery consume the governed aggregate commercial projection.
-    // Products uses only commercial catalog facts from it; inventory/Product Identity remain separate authorities.
-    if (workspace === 'ordermentum' || workspace === 'products' || workspace === 'delivery') void reloadViews();
+    // Ordermentum and Delivery still need their aggregate operational model. Control Room owns the
+    // bounded bootstrap introduced by TRANSFORM-001 and keeps reloadViews only as secondary flow enrichment.
+    if (workspace === 'ordermentum') void reloadViews();
+    // Products consumes only commercial catalog facts; inventory/Product Identity remain separate authorities.
+    if (workspace === 'products') void reloadViews();
+    if (workspace === 'delivery') void reloadViews();
     return undefined;
   }, [reloadViews, workspace]);
 

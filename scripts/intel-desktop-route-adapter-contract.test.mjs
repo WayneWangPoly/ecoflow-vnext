@@ -65,7 +65,7 @@ test('unknown and invalid routes remain explicit rather than falling back', () =
   );
 });
 
-test('reserved routes without a migrated panel show a migration boundary', () => {
+test('reserved routes without a migrated legacy panel show a migration boundary', () => {
   assert.deepEqual(
     deriveDesktopRouteAdapterModel({ enabled: true, pathname: '/returns', role: 'owner', legacyTab: 'delivery' }).boundary,
     {
