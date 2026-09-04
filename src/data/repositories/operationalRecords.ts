@@ -8,6 +8,32 @@ export type AccountsRecordsView = 'overview' | 'held' | 'overdue' | 'open';
 export type ReturnsRecordsView = 'overview' | 'reported' | 'received' | 'inspection' | 'consequence' | 'closed';
 export type OperationalRecordsView = InventoryRecordsView | CustomerRecordsView | AccountsRecordsView | ReturnsRecordsView;
 
+export const CUSTOMER_MASTER_FILTER_ORDER = ['customer-type', 'customer', 'obsolete'] as const;
+export const CUSTOMER_MASTER_COLUMN_ORDER = ['code', 'name', 'customer-type', 'currency', 'website', 'phone', 'mobile', 'email', 'action'] as const;
+export const CUSTOMER_MASTER_DETAIL_TAB_ORDER = [
+  'Details',
+  'Contact',
+  'Address',
+  'Sell Price Tier',
+  'Other Customer Details',
+  'Sales',
+  'Shipments',
+  'Costings',
+] as const;
+
+export type CustomerMasterProjection = {
+  recordId: string | null;
+  code: string | null;
+  name: string | null;
+  customerType: string | null;
+  currency: string | null;
+  website: string | null;
+  phone: string | null;
+  mobile: string | null;
+  email: string | null;
+  obsolete: boolean | null;
+};
+
 export type OperationalRecordsPage = {
   rows: Record<string, unknown>[];
   summary: Record<string, unknown>;
@@ -20,6 +46,8 @@ export type OperationalRecordDetail = {
   data: Record<string, unknown>;
   readAt: string | null;
 };
+
+const CUSTOMER_GOVERNED_METRIC_KEY_PATTERN = /(?:^|_)(?:revenue|gross_profit|grossprofit|profit|margin|cogs)(?:_|$)/i;
 
 function activeClient(input?: SupabaseClient | null) {
   const value = input ?? supabase;
@@ -37,6 +65,54 @@ function errorMessage(error: unknown) {
       .join(' · ') || JSON.stringify(row);
   }
   return String(error);
+}
+
+function explicitString(row: Record<string, unknown>, keys: readonly string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function explicitBoolean(row: Record<string, unknown>, keys: readonly string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1' || value === 'true' || value === 'TRUE') return true;
+    if (value === 0 || value === '0' || value === 'false' || value === 'FALSE') return false;
+  }
+  return null;
+}
+
+/**
+ * #340A Customer Master projection. Every field is copied only from an explicit
+ * governed row key. Missing facts stay null; order totals, addresses, names, or
+ * other strings are never repurposed to fill absent master-data fields.
+ */
+export function projectCustomerMasterRow(row: Record<string, unknown>): CustomerMasterProjection {
+  return {
+    recordId: explicitString(row, ['store_id', 'customer_id', 'id']),
+    code: explicitString(row, ['customer_code', 'store_code', 'external_code', 'ordermentum_code', 'store_id']),
+    name: explicitString(row, ['customer_name', 'store_name', 'name']),
+    customerType: explicitString(row, ['customer_type', 'customer_type_name', 'type']),
+    currency: explicitString(row, ['currency', 'currency_code']),
+    website: explicitString(row, ['website', 'website_url']),
+    phone: explicitString(row, ['phone', 'phone_number', 'telephone']),
+    mobile: explicitString(row, ['mobile', 'mobile_number']),
+    email: explicitString(row, ['email', 'email_address']),
+    obsolete: explicitBoolean(row, ['obsolete', 'is_obsolete']),
+  };
+}
+
+/**
+ * Revenue / Gross Profit and derivative profitability fields belong to #345's
+ * governed metric registry. #340A may show source-owned order facts, but it must
+ * not surface or locally compute these aggregate metrics as Customer Master data.
+ */
+export function isDeferredCustomerMetricKey(key: string) {
+  return CUSTOMER_GOVERNED_METRIC_KEY_PATTERN.test(key);
 }
 
 export async function readOperationalRecordsPage(input: {
