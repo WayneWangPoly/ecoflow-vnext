@@ -199,7 +199,21 @@ test('Admin probe UI can only request the one-page dry-run contract', () => {
   assert.match(probeClient, /maxPages: 1/);
   assert.match(probeClient, /result\.recordsStaged === 0/);
   assert.doesNotMatch(probeClient, /dryRun: false/);
-  assert.doesNotMatch(probeClient, /bounded_snapshot/);
+});
+
+test('#338 census is fixed to four sequential one-page dry-run requests', () => {
+  for (const resource of ['products', 'customers', 'customer_delivery_addresses', 'suppliers']) {
+    assert.match(probeClient, new RegExp(`'${resource}'`));
+  }
+  assert.match(probeClient, /for \(const resource of UNLEASHED_DRY_RUN_CENSUS_RESOURCES\)/);
+  assert.match(probeClient, /mode: 'bounded_snapshot'/);
+  assert.match(probeClient, /resources: \[resource\]/);
+  assert.match(probeClient, /dryRun: true/);
+  assert.match(probeClient, /pageSize: 1/);
+  assert.match(probeClient, /maxPages: 1/);
+  assert.match(probeClient, /result\.recordsStaged === 0/);
+  assert.match(probeClient, /result\.recordsFailed === 0/);
+  assert.doesNotMatch(probeClient, /dryRun: false/);
 });
 
 test('Production acceptance requires a bounded four-resource write and proves unchanged replay', () => {
@@ -226,7 +240,7 @@ test('Production acceptance requires a bounded four-resource write and proves un
 
   assert.match(probePanel, /type="checkbox"/);
   assert.match(probePanel, /I confirm this bounded source-snapshot write/);
-  assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running\}/);
+  assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running \|\| censusRunning\}/);
   assert.match(probePanel, /setAcceptanceAcknowledged\(false\)/);
   assert.match(probePanel, /Store sample and verify replay/);
 });

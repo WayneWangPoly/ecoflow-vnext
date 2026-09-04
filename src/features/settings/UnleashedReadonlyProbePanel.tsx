@@ -6,7 +6,12 @@ import {
   type UnleashedAcceptanceResource,
   type UnleashedAcceptanceResult,
 } from '../team/unleashedConnectorAcceptance';
-import { runUnleashedReadonlyProbe, type UnleashedProbeResult } from '../team/unleashedReadonlyProbe';
+import {
+  runRemainingUnleashedDryRunCensus,
+  runUnleashedReadonlyProbe,
+  type UnleashedDryRunCensusResult,
+  type UnleashedProbeResult,
+} from '../team/unleashedReadonlyProbe';
 import './teamAccessSettings.css';
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
@@ -36,6 +41,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [error, setError] = useState('');
+  const [censusRunning, setCensusRunning] = useState(false);
+  const [censusResults, setCensusResults] = useState<UnleashedDryRunCensusResult[]>([]);
+  const [censusError, setCensusError] = useState('');
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [acceptanceAcknowledged, setAcceptanceAcknowledged] = useState(false);
   const [acceptanceRunning, setAcceptanceRunning] = useState(false);
@@ -43,7 +51,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [acceptanceError, setAcceptanceError] = useState('');
 
   async function runProbe() {
-    if (running || acceptanceRunning) return;
+    if (running || censusRunning || acceptanceRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -56,8 +64,22 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
+  async function runCensus() {
+    if (running || censusRunning || acceptanceRunning) return;
+    setCensusRunning(true);
+    setCensusResults([]);
+    setCensusError('');
+    try {
+      setCensusResults(await runRemainingUnleashedDryRunCensus(supabase));
+    } catch (runError) {
+      setCensusError(runError instanceof Error ? runError.message : String(runError));
+    } finally {
+      setCensusRunning(false);
+    }
+  }
+
   async function runAcceptance() {
-    if (!acceptanceAcknowledged || acceptanceRunning || running) return;
+    if (!acceptanceAcknowledged || acceptanceRunning || running || censusRunning) return;
     setAcceptanceRunning(true);
     setAcceptanceResult(null);
     setAcceptanceError('');
@@ -89,21 +111,47 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || acceptanceRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || censusRunning || acceptanceRunning}>
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page test'}
+        </button>
+        <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning || acceptanceRunning}>
+          <RadioTower aria-hidden="true" size={17} />
+          {censusRunning ? 'Running #338 census…' : 'Run remaining #338 dry-run census'}
         </button>
         <button
           type="button"
           aria-expanded={acceptanceOpen}
           aria-controls="unleashed-production-acceptance"
           onClick={() => setAcceptanceOpen((current) => !current)}
-          disabled={running || acceptanceRunning}
+          disabled={running || censusRunning || acceptanceRunning}
         >
           <ShieldCheck aria-hidden="true" size={17} />
           {acceptanceOpen ? 'Close acceptance' : 'Review production acceptance'}
         </button>
       </div>
+
+      {censusError ? <div className="error-message" role="alert">{censusError}</div> : null}
+      {censusResults.length ? (
+        <div className="unleashed-acceptance-result" role="status">
+          <div className="unleashed-acceptance-checks">
+            {censusResults.map((censusResult) => {
+              const page = censusResult.pages[0];
+              const itemCount = Number(page.pagination.NumberOfItems ?? page.recordsSeen);
+              const pageCount = Number(page.pagination.NumberOfPages ?? 1);
+              return (
+                <div key={page.resource}>
+                  <span>
+                    <strong>{page.resource}</strong>
+                    <small>{itemCount} items · {pageCount} pages · run {censusResult.runId.slice(0, 8)} · staged 0</small>
+                  </span>
+                  <b className="pill pill-good">DRY RUN</b>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {acceptanceOpen ? (
         <div className="unleashed-acceptance" id="unleashed-production-acceptance">
@@ -160,7 +208,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <button
             type="button"
             className="primary unleashed-acceptance-run"
-            disabled={!acceptanceAcknowledged || acceptanceRunning || running}
+            disabled={!acceptanceAcknowledged || acceptanceRunning || running || censusRunning}
             onClick={() => void runAcceptance()}
           >
             <Database aria-hidden="true" size={17} />
