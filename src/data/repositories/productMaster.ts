@@ -1,4 +1,5 @@
 import type { CatalogRow } from '@/domain/types';
+import type { ProductIdentityRow } from './productIdentity';
 import type { NativeReadListRequest, NativeReadResult } from './nativeReadModel';
 
 export const PRODUCT_MASTER_FILTER_ORDER = [
@@ -49,10 +50,42 @@ export type ProductMasterRow = {
   isSellable: boolean | null;
   isPurchasable: boolean | null;
   sourceObservedAt: string | null;
+  identity: ProductMasterIdentitySummary | null;
 };
 
 export type ProductMasterListRequest = NativeReadListRequest;
-export type ProductMasterListResult = NativeReadResult<ProductMasterRow>;
+export type ProductMasterListResult = NativeReadResult<ProductMasterRow> & {
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ProductMasterIdentitySummary = {
+  commercialSkuId: string;
+  ordermentumSku: string | null;
+  identityStatus: ProductIdentityRow['identityStatus'];
+  taskStatus: ProductIdentityRow['taskStatus'];
+  familyCode: string | null;
+  familyName: string | null;
+  preferredPhysicalCode: string | null;
+  preferredPhysicalName: string | null;
+  brand: string | null;
+  substitutionPolicy: ProductIdentityRow['substitutionPolicy'];
+  publishedBarcodeCount: number;
+};
+
+export type ProductMasterIdentityEvidence = {
+  summary: ProductMasterIdentitySummary | null;
+  barcodes: Array<{
+    barcode: string;
+    physicalSkuCode: string | null;
+    packageLevel: string | null;
+    unitsInBaseUnit: number | null;
+  }>;
+  readAt: string | null;
+  state: 'READY' | 'DEGRADED' | 'UNAVAILABLE';
+  issues: string[];
+};
 
 /**
  * #340A Product Master is a Commercial Product read model. It must be composed
@@ -106,8 +139,41 @@ function matchesBoolean(value: boolean | null, accepted?: string[]) {
   });
 }
 
-function catalogToRows(catalog: readonly CatalogRow[], sourceObservedAt: string | null): ProductMasterRow[] {
+export function toProductMasterIdentitySummary(row: ProductIdentityRow): ProductMasterIdentitySummary {
+  return {
+    commercialSkuId: row.commercialSkuId,
+    ordermentumSku: row.ordermentumSku,
+    identityStatus: row.identityStatus,
+    taskStatus: row.taskStatus,
+    familyCode: row.familyCode,
+    familyName: row.familyName,
+    preferredPhysicalCode: row.preferredPhysicalCode,
+    preferredPhysicalName: row.preferredPhysicalName,
+    brand: row.brand,
+    substitutionPolicy: row.substitutionPolicy,
+    publishedBarcodeCount: row.publishedBarcodeCount,
+  };
+}
+
+function identityIndex(rows: readonly ProductIdentityRow[]) {
+  const index = new Map<string, ProductMasterIdentitySummary>();
+  for (const row of rows) {
+    const summary = toProductMasterIdentitySummary(row);
+    for (const key of [row.commercialSkuCode, row.ordermentumSku]) {
+      const normalized = clean(key).toUpperCase();
+      if (normalized) index.set(normalized, summary);
+    }
+  }
+  return index;
+}
+
+function catalogToRows(
+  catalog: readonly CatalogRow[],
+  sourceObservedAt: string | null,
+  identityRows: readonly ProductIdentityRow[],
+): ProductMasterRow[] {
   const bySku = new Map<string, CatalogRow>();
+  const identities = identityIndex(identityRows);
   for (const candidate of catalog) {
     const sku = clean(candidate.sku);
     if (!sku) continue;
@@ -117,32 +183,36 @@ function catalogToRows(catalog: readonly CatalogRow[], sourceObservedAt: string 
   }
 
   return [...bySku.values()]
-    .map((row): ProductMasterRow => ({
-      // Commercial SKU is the durable route identity for this read-only surface.
-      // It deliberately does not claim to be a Physical SKU id.
-      productId: clean(row.sku),
-      productCode: clean(row.sku),
-      description: clean(row.name) || clean(row.sku),
-      productGroup: clean(row.category) || null,
-      brand: null,
-      supplierName: null,
-      supplierProductCode: null,
-      basePack: null,
-      baseUnit: clean(row.unit) || null,
-      barcode: null,
-      imagePath: null,
-      allocated: null,
-      onHand: null,
-      inventoryAuthority: 'UNAVAILABLE',
-      isObsolete: null,
-      isSellable: typeof row.visible === 'boolean' ? row.visible : null,
-      isPurchasable: null,
-      sourceObservedAt,
-    }))
+    .map((row): ProductMasterRow => {
+      const identity = identities.get(clean(row.sku).toUpperCase()) ?? null;
+      return {
+        // Commercial SKU is the durable route identity for this read-only surface.
+        // It deliberately does not claim to be a Physical SKU id.
+        productId: clean(row.sku),
+        productCode: clean(row.sku),
+        description: clean(row.name) || clean(row.sku),
+        productGroup: clean(row.category) || null,
+        brand: identity?.brand ?? null,
+        supplierName: null,
+        supplierProductCode: null,
+        basePack: null,
+        baseUnit: clean(row.unit) || null,
+        barcode: null,
+        imagePath: null,
+        allocated: null,
+        onHand: null,
+        inventoryAuthority: 'UNAVAILABLE',
+        isObsolete: null,
+        isSellable: typeof row.visible === 'boolean' ? row.visible : null,
+        isPurchasable: null,
+        sourceObservedAt,
+        identity,
+      };
+    })
     .sort((left, right) => left.productCode.localeCompare(right.productCode, 'en-AU', { numeric: true }));
 }
 
-function applyRequest(rows: ProductMasterRow[], request: ProductMasterListRequest): ProductMasterRow[] {
+function applyRequest(rows: ProductMasterRow[], request: ProductMasterListRequest) {
   const filters = filterMap(request.filters);
   const search = clean(request.search).toLowerCase();
   let next = rows.filter((row) => {
@@ -164,23 +234,31 @@ function applyRequest(rows: ProductMasterRow[], request: ProductMasterListReques
   else if (sort === 'product-code-desc') next = [...next].sort((a, b) => b.productCode.localeCompare(a.productCode, 'en-AU', { numeric: true }));
 
   const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 50));
-  return next.slice(0, pageSize);
+  const totalCount = next.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = Math.min(totalPages, Math.max(1, request.page ?? 1));
+  const offset = (page - 1) * pageSize;
+  return { rows: next.slice(offset, offset + pageSize), totalCount, page, pageSize };
 }
 
 export function createProductMasterReader(input: {
   catalog: readonly CatalogRow[];
   sourceObservedAt?: string | null;
+  identityRows?: readonly ProductIdentityRow[];
 }): ProductMasterReader {
   const sourceObservedAt = input.sourceObservedAt ?? null;
-  const sourceRows = catalogToRows(input.catalog, sourceObservedAt);
+  const sourceRows = catalogToRows(input.catalog, sourceObservedAt, input.identityRows ?? []);
 
   return {
     async readList(request = {}) {
-      const rows = applyRequest(sourceRows, request);
+      const page = applyRequest(sourceRows, request);
       const readAt = new Date().toISOString();
       return {
         state: sourceRows.length ? 'DEGRADED' : 'EMPTY',
-        rows,
+        rows: page.rows,
+        totalCount: page.totalCount,
+        page: page.page,
+        pageSize: page.pageSize,
         metadata: {
           source: 'governed Ordermentum commercial catalog projection',
           authority: 'ORDERMENTUM_COMMERCIAL',
@@ -191,7 +269,7 @@ export function createProductMasterReader(input: {
         },
         issues: sourceRows.length ? [
           'Allocated and on-hand quantities are intentionally unavailable until an approved WAYNX location-ledger read model is joined.',
-          'Brand, supplier, barcode and Product Identity fields are not inferred from the commercial catalog projection.',
+          'Supplier and barcode fields are not inferred from the commercial catalog projection.',
           'Product Master remains separate from Inventory and Physical SKU commissioning authority.',
         ] : [],
       };

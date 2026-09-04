@@ -22,11 +22,17 @@ import { resolveIntelligenceFeatureFlags } from '../src/features/intelligence/fe
 import {
   PRODUCT_MASTER_COLUMN_ORDER,
   PRODUCT_MASTER_FILTER_ORDER,
+  createProductMasterReader,
 } from '../src/data/repositories/productMaster.ts';
 import {
   SUPPLIER_MASTER_COLUMN_ORDER,
   SUPPLIER_MASTER_FILTER_ORDER,
 } from '../src/data/repositories/supplierMaster.ts';
+import {
+  PURCHASE_OPERATIONS_COLUMN_ORDER,
+  PURCHASE_OPERATIONS_FILTER_ORDER,
+  mapPurchaseOrderFamiliarStatus,
+} from '../src/data/repositories/purchaseOperationsContract.ts';
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -143,7 +149,7 @@ test('#340A office routes are Owner/Admin only until explicit capability work ex
   }
 });
 
-test('#340A preserves Product and Supplier muscle-memory contracts without inventing authority', () => {
+test('#340A preserves Product, Supplier and Purchase muscle-memory contracts without inventing authority', () => {
   assert.deepEqual(PRODUCT_MASTER_FILTER_ORDER, [
     'search', 'product-group', 'brand', 'supplier', 'supplier-product', 'barcode', 'obsolete', 'sellable', 'purchasable',
   ]);
@@ -152,6 +158,54 @@ test('#340A preserves Product and Supplier muscle-memory contracts without inven
   ]);
   assert.deepEqual(SUPPLIER_MASTER_FILTER_ORDER, ['supplier', 'obsolete']);
   assert.deepEqual(SUPPLIER_MASTER_COLUMN_ORDER, ['code', 'name', 'city', 'country', 'currency', 'action']);
+  assert.deepEqual(PURCHASE_OPERATIONS_FILTER_ORDER, [
+    'status', 'purchase-order', 'supplier', 'warehouse', 'supplier-reference', 'sales-order-reference', 'printed-export',
+  ]);
+  assert.deepEqual(PURCHASE_OPERATIONS_COLUMN_ORDER, [
+    'purchase-order', 'order-date', 'delivery-date', 'supplier', 'supplier-reference', 'status', 'warehouse', 'currency', 'total', 'action',
+  ]);
+});
+
+test('#340A uses an explicit conservative mapping from WAYNX purchase states', () => {
+  assert.equal(mapPurchaseOrderFamiliarStatus('OPEN'), 'Open');
+  assert.equal(mapPurchaseOrderFamiliarStatus('PART_RECEIVED'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('AWAITING_REVIEW'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('VARIANCE'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('MATCHED'), 'Complete');
+  assert.equal(mapPurchaseOrderFamiliarStatus('CLOSED'), 'Complete');
+  assert.equal(mapPurchaseOrderFamiliarStatus('CANCELLED'), 'Deleted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('UNKNOWN'), null);
+});
+
+test('#340A Product Master preserves the R-360Y Commercial and Physical identity separation', async () => {
+  const reader = createProductMasterReader({
+    catalog: [{
+      id: 'commercial-catalog-r360y', source: 'product', sku: 'R-360Y', name: '360ml Clear BioCup',
+      basePrice: 0, displayPrice: '$0.00', unit: 'Carton', category: 'Cups', visible: true, tierPrices: {},
+    }],
+    sourceObservedAt: '2026-09-04T00:00:00Z',
+    identityRows: [{
+      commercialSkuId: '6946f415-68ea-484a-91f4-848b7ec048ec', commercialSkuCode: 'R-360Y', commercialName: '360ml Clear BioCup',
+      ordermentumSku: 'R-360Y', taskStatus: 'RESOLVED', identityStatus: 'READY', familyCode: 'FAMILY-R-360Y',
+      familyName: '360ml Clear BioCup', preferredPhysicalCode: 'R-360Y', preferredPhysicalName: '360ml Clear BioCup', brand: null,
+      substitutionPolicy: 'PROHIBITED', publishedBarcodeCount: 1, draftBarcodeCount: 0, legacyBarcodeCount: 0,
+      legacyBarcodeExample: null, taskDetail: 'Published canonical identity is active.',
+    }],
+  });
+  const result = await reader.readList({ page: 1, pageSize: 50 });
+  assert.equal(result.totalCount, 1);
+  assert.equal(result.rows[0].productCode, 'R-360Y');
+  assert.equal(result.rows[0].identity?.commercialSkuId, '6946f415-68ea-484a-91f4-848b7ec048ec');
+  assert.equal(result.rows[0].identity?.preferredPhysicalCode, 'R-360Y');
+  assert.equal(result.rows[0].identity?.identityStatus, 'READY');
+  assert.equal(result.rows[0].identity?.substitutionPolicy, 'PROHIBITED');
+  assert.equal(result.rows[0].onHand, null);
+  const deliveryContract = source('src/data/repositories/productMasterIdentity.ts');
+  assert.match(deliveryContract, /entry\.kind === 'BARCODE'/);
+  const engineeringContract = source('docs/UNLEASHED-MIGRATION-005-340A-READ-PARITY.md');
+  for (const fixture of ['6946f415-68ea-484a-91f4-848b7ec048ec', '8905b519-6418-4bb1-a2a4-bdd8d48157f7', '19344062000652']) {
+    assert.ok(engineeringContract.includes(fixture), `R-360Y fixture contract lost ${fixture}`);
+  }
 });
 
 test('#340A preserves Customer Master filter, column and detail order', () => {
@@ -204,11 +258,25 @@ test('#340A native office surfaces are owned by the unified React shell', () => 
   assert.match(routes, /ProductMasterWorkspace/);
   assert.match(routes, /SupplierMasterWorkspace/);
   assert.match(routes, /PurchaseOperationsWorkspace/);
+  const expectedNavigation = [
+    'ACTION_PATHS.CONTROL_ROOM', 'ACTION_PATHS.ORDERS', 'ACTION_PATHS.PURCHASES', 'ACTION_PATHS.PRODUCTS',
+    'ACTION_PATHS.INVENTORY', 'ACTION_PATHS.PRODUCT_IDENTITY', 'ACTION_PATHS.CUSTOMERS', 'ACTION_PATHS.SUPPLIERS',
+    'ACTION_PATHS.EXCEPTIONS', 'ACTION_PATHS.DELIVERY', 'ACTION_PATHS.RETURNS', 'ACTION_PATHS.ACCOUNTS',
+    'ACTION_PATHS.ANALYTICS', 'ACTION_PATHS.LOGS', 'ACTION_PATHS.SETTINGS',
+  ];
+  let cursor = shell.indexOf('OPERATIONAL_NAVIGATION');
+  for (const marker of expectedNavigation) {
+    const next = shell.indexOf(marker, cursor);
+    assert.ok(next > cursor, `Owner/Admin navigation order lost ${marker}`);
+    cursor = next;
+  }
+  assert.doesNotMatch(shell.slice(shell.indexOf('OPERATIONAL_NAVIGATION'), shell.indexOf('roleLabel')), /workspace: 'ordermentum'/);
 });
 
 test('#340A supplier and purchase surfaces fail closed on data and mutation authority', () => {
   const supplierRepository = source('src/data/repositories/supplierMaster.ts');
   const productRepository = source('src/data/repositories/productMaster.ts');
+  const productIdentityRepository = source('src/data/repositories/productMasterIdentity.ts');
   const purchaseRepository = source('src/data/repositories/purchaseOperations.ts');
   const purchaseSurface = source('src/features/purchases/PurchaseOperationsWorkspace.tsx');
   assert.doesNotMatch(supplierRepository, /unleashed_raw_snapshots/);
@@ -220,6 +288,9 @@ test('#340A supplier and purchase surfaces fail closed on data and mutation auth
   assert.match(supplierRepository, /state: 'DEGRADED'/);
   assert.match(supplierRepository, /'UNAVAILABLE'/);
   assert.match(supplierRepository, /isAuthoritative: false/);
+  assert.match(productIdentityRepository, /readProductIdentityPage/);
+  assert.match(productIdentityRepository, /readOperationalRecordDetail/);
+  assert.match(source('src/features/products/ProductMasterWorkspace.tsx'), /active canonical barcode binding/);
 });
 
 test('#340A Inventory and Customer enrichment stays on governed operational reads', () => {
@@ -299,6 +370,14 @@ test('query serialisation is stable, bounded and shareable', () => {
   assert.equal(query, 'date=2026-07-29&from=2026-07-01&to=2026-07-29&compare=previous-period&filter=status%3AREADY&filter=store%3A42&sort=priority&cursor=page-2&selected=order-1&drawer=order%3Aorder-1&inspector=store%3Astore-42&view=morning');
   assert.equal(withWorkspaceQuery('/orders', state), `/orders?${query}`);
   assert.deepEqual(parseWorkspaceQuery(query).state, state);
+});
+
+test('#340A page state is URL-backed and resets independently from cursor state', () => {
+  const state = parseWorkspaceQuery('?q=R-360Y&page=3&limit=50').state;
+  assert.equal(state.search, 'R-360Y');
+  assert.equal(state.page, 3);
+  assert.equal(state.pageSize, 50);
+  assert.equal(serialiseWorkspaceQuery(state), 'q=R-360Y&page=3&limit=50');
 });
 
 test('overlay reducer enforces one primary and one replaceable secondary', () => {

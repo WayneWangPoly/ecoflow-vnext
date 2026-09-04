@@ -38,5 +38,6 @@ export type NativeReadListRequest = {
   filters?: readonly string[];
   sort?: string;
   cursor?: string;
+  page?: number;
   pageSize?: number;
 };

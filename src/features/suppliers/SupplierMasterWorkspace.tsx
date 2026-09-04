@@ -78,10 +78,11 @@ export function SupplierMasterWorkspace() {
       search: parsed.state.search,
       filters: parsed.state.filters,
       sort: parsed.state.sort,
+      page: parsed.state.page ?? 1,
       pageSize: parsed.state.pageSize ?? 50,
     }).then((next) => { if (active) setResult(next); });
     return () => { active = false; };
-  }, [reader, parsed.state.filters, parsed.state.pageSize, parsed.state.search, parsed.state.sort]);
+  }, [reader, parsed.state.filters, parsed.state.page, parsed.state.pageSize, parsed.state.search, parsed.state.sort]);
 
   useEffect(() => {
     if (!reader || !supplierId) {
@@ -103,6 +104,7 @@ export function SupplierMasterWorkspace() {
       ...(input.sort !== undefined ? { sort: input.sort || undefined } : {}),
       filters,
       cursor: undefined,
+      page: undefined,
     }), { replace: true });
   }
 
@@ -149,6 +151,7 @@ export function SupplierMasterWorkspace() {
       </section>
 
       <section className="office-parity-table-wrap" aria-label="Supplier Master table">
+        {result ? <div className="office-parity-count">{result.totalCount.toLocaleString('en-AU')} exact records · Page {result.page} of {Math.max(1, Math.ceil(result.totalCount / result.pageSize))}</div> : null}
         <div className="office-parity-row suppliers header"><span>Code</span><span>Name</span><span>City</span><span>Country</span><span>Currency</span><span>Action</span></div>
         {result?.rows.map((row) => (
           <div className="office-parity-row suppliers" key={row.supplierId ?? row.code}>
@@ -157,6 +160,7 @@ export function SupplierMasterWorkspace() {
           </div>
         ))}
         {result && !result.rows.length ? <div className="office-parity-empty">No canonical Supplier master is available. EcoFlow is deliberately not substituting PO supplier strings or raw Unleashed staging data.</div> : null}
+        {result ? <nav className="native-workspace-pager" aria-label="Supplier pagination"><button type="button" disabled={result.page <= 1} onClick={() => navigate(withWorkspaceQuery('/suppliers', { ...parsed.state, page: result.page - 1 }), { replace: true })}>Previous</button><button type="button" disabled={result.page >= Math.max(1, Math.ceil(result.totalCount / result.pageSize))} onClick={() => navigate(withWorkspaceQuery('/suppliers', { ...parsed.state, page: result.page + 1 }), { replace: true })}>Next</button></nav> : null}
       </section>
       {parsed.issues.length ? <div className="office-parity-state" data-state="DEGRADED"><strong>QUERY NOTICE</strong><span>{parsed.issues.map((issue) => issue.code).join(', ')}</span></div> : null}
     </section>

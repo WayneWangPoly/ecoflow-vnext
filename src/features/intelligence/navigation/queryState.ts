@@ -7,6 +7,7 @@ export type WorkspaceQueryState = {
   filters: string[];
   sort?: string;
   cursor?: string;
+  page?: number;
   pageSize?: number;
   selected?: string;
   primaryDrawer?: string;
@@ -96,6 +97,13 @@ function boundedPageSize(
   return parsed;
 }
 
+function boundedPage(params: URLSearchParams): number | undefined {
+  const raw = cleanValue(params.get('page'));
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function toParams(input: URLSearchParams | string): URLSearchParams {
   if (input instanceof URLSearchParams) return new URLSearchParams(input);
   return new URLSearchParams(input.startsWith('?') ? input.slice(1) : input);
@@ -124,6 +132,7 @@ export function parseWorkspaceQuery(input: URLSearchParams | string): ParsedWork
   }
 
   const search = boundedValue(params, 'q', issues);
+  const page = boundedPage(params);
   const pageSize = boundedPageSize(params, issues);
 
   return {
@@ -136,6 +145,7 @@ export function parseWorkspaceQuery(input: URLSearchParams | string): ParsedWork
       filters,
       sort: boundedValue(params, 'sort', issues),
       cursor: boundedValue(params, 'cursor', issues),
+      ...(page ? { page } : {}),
       ...(pageSize ? { pageSize } : {}),
       selected: boundedValue(params, 'selected', issues),
       primaryDrawer: boundedValue(params, 'drawer', issues),
@@ -164,6 +174,9 @@ export function serialiseWorkspaceQuery(state: WorkspaceQueryState): string {
   });
   appendIfPresent(params, 'sort', state.sort);
   appendIfPresent(params, 'cursor', state.cursor);
+  if (Number.isSafeInteger(state.page) && Number(state.page) > 1) {
+    params.set('page', String(state.page));
+  }
   if (Number.isInteger(state.pageSize)
     && Number(state.pageSize) >= MIN_PAGE_SIZE
     && Number(state.pageSize) <= MAX_PAGE_SIZE) {

@@ -405,7 +405,7 @@ export function OperationalRecordsWorkspace({
       </form>}
       {workspace==='inventory' ? <section className="operational-records-boundary" data-state="governed"><strong>Governed inventory read authority</strong><span>Location-ledger and physical movement facts remain separate from Product Identity. Unleashed warehouse-level reference quantities are not allocated to a preferred Physical SKU.</span><small>Freshness: {adelaide(result.readAt)} · read-only server RPC</small></section> : null}
       {workspace==='customers' ? <section className="operational-records-boundary" data-state="governed"><strong>Ordermentum-owned Customer Master read</strong><span>Only explicit source-owned master fields are displayed. Missing Customer Type, Currency, Website, Phone, Mobile, Email or Obsolete facts remain Unavailable.</span><small>Revenue / Gross Profit are deferred to #345 governed metric registry · freshness {adelaide(result.readAt)}</small></section> : null}
-      {workspace==='customers' ? null : <SummaryStrip summary={result.summary} workspace={workspace}/>} 
+      {workspace==='customers' ? null : <SummaryStrip summary={result.summary} workspace={workspace}/>}
       <div className={selected?'operational-records-layout has-detail':'operational-records-layout'}>
         <section className="operational-records-list">
           {loading ? <NativeWorkspaceLoading label={copy.title.toLowerCase()}/> : null}

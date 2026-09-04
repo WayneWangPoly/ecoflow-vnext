@@ -14,16 +14,17 @@ import { parseWorkspaceQuery, withWorkspaceQuery } from '@/features/intelligence
 import '@/features/officeParity/nativeReadSurfaces.css';
 
 function text(value: string | null | undefined) {
-  return value?.trim() || '—';
+  return value?.trim() || 'Unavailable';
 }
 
 function number(value: number | string | null | undefined) {
+  if (value === null || value === undefined || String(value).trim() === '') return 'Unavailable';
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed.toLocaleString('en-AU') : '—';
+  return Number.isFinite(parsed) ? parsed.toLocaleString('en-AU') : 'Unavailable';
 }
 
 function date(value: string | null | undefined) {
-  if (!value) return '—';
+  if (!value) return 'Unavailable';
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-AU');
 }
@@ -52,7 +53,7 @@ function PurchaseDetail({ detail, onBack }: { detail: PurchaseOperationsDetailRe
           <h1>{order.po_number}</h1>
           <p>{order.supplier_name} · read-only purchase-order authority</p>
         </div>
-        <div className="office-parity-state" data-state="READY"><strong>{order.po_status}</strong><span>{detail.metadata.source}</span></div>
+        <div className="office-parity-state" data-state="READY"><strong>{order.familiarStatus ?? 'STATUS UNMAPPED'}</strong><span>WAYNX {order.po_status} · {detail.metadata.source}</span></div>
       </div>
 
       <div className="office-parity-tabs" aria-label="Purchase detail sections"><span className="active">Details</span><span>Order lines</span><span>Receipt history</span></div>
@@ -65,7 +66,10 @@ function PurchaseDetail({ detail, onBack }: { detail: PurchaseOperationsDetailRe
           <div><span>Order date</span><strong>{date(order.order_date)}</strong></div>
           <div><span>Expected date</span><strong>{date(order.expected_date)}</strong></div>
           <div><span>Currency</span><strong>{order.currency}</strong></div>
-          <div><span>Status</span><strong>{order.po_status}</strong></div>
+          <div><span>Status</span><strong>{order.familiarStatus ?? 'Unavailable'}</strong><small>WAYNX source state: {order.po_status}</small></div>
+          <div><span>Supplier reference</span><strong>Unavailable</strong></div>
+          <div><span>Warehouse</span><strong>Unavailable</strong></div>
+          <div><span>Total</span><strong>Unavailable</strong><small>No client-side financial calculation.</small></div>
           <div><span>Ordered units</span><strong>{number(order.ordered_units)}</strong></div>
           <div><span>Received units</span><strong>{number(order.received_units)}</strong></div>
           <div><span>Variance units</span><strong>{number(order.variance_units)}</strong></div>
@@ -118,12 +122,13 @@ export function PurchaseOperationsWorkspace() {
       search: parsed.state.search,
       filters: parsed.state.filters,
       sort: parsed.state.sort,
+      page: parsed.state.page ?? 1,
       pageSize: parsed.state.pageSize ?? 50,
     }).then((next) => { if (active) setResult(next); }).catch((caught) => {
       if (active) setError(caught instanceof Error ? caught.message : String(caught));
     });
     return () => { active = false; };
-  }, [parsed.state.filters, parsed.state.pageSize, parsed.state.search, parsed.state.sort, purchaseId]);
+  }, [parsed.state.filters, parsed.state.page, parsed.state.pageSize, parsed.state.search, parsed.state.sort, purchaseId]);
 
   useEffect(() => {
     if (!purchaseId) {
@@ -142,7 +147,7 @@ export function PurchaseOperationsWorkspace() {
     const prefix = `${key}:`;
     let filters = parsed.state.filters.filter((item) => !item.startsWith(prefix));
     if (nextValue) filters = [...filters, `${key}:${nextValue}`];
-    navigate(withWorkspaceQuery('/purchases', { ...parsed.state, filters, cursor: undefined }), { replace: true });
+    navigate(withWorkspaceQuery('/purchases', { ...parsed.state, filters, cursor: undefined, page: undefined }), { replace: true });
   }
 
   if (purchaseId && detail) return <PurchaseDetail detail={detail} onBack={() => navigate(withWorkspaceQuery('/purchases', parsed.state))} />;
@@ -159,25 +164,27 @@ export function PurchaseOperationsWorkspace() {
         <div className="panel-head"><h2>Purchase order search</h2><span>Filter order follows the established parity contract.</span></div>
         <div className="office-parity-filters">
           <label><span>Status</span><select value={filterValue(parsed.state.filters, 'status')} onChange={(event) => replaceFilter('status', event.currentTarget.value)}><option value="">All statuses</option>{PURCHASE_ORDER_FAMILIAR_STATUS_ORDER.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
-          <label><span>Purchase order</span><input value={parsed.state.search ?? ''} onChange={(event) => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, search: event.currentTarget.value || undefined, cursor: undefined }), { replace: true })} placeholder="PO number / supplier" /></label>
+          <label><span>Purchase order</span><input value={parsed.state.search ?? ''} onChange={(event) => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, search: event.currentTarget.value || undefined, cursor: undefined, page: undefined }), { replace: true })} placeholder="PO number / supplier" /></label>
           <label><span>Supplier</span><input value={filterValue(parsed.state.filters, 'supplier')} onChange={(event) => replaceFilter('supplier', event.currentTarget.value)} placeholder="Supplier name" /></label>
           <label><span>Warehouse</span><input disabled placeholder="Unavailable in PO summary" /></label>
-          <label><span>Order date</span><input type="date" value={filterValue(parsed.state.filters, 'order-date')} onChange={(event) => replaceFilter('order-date', event.currentTarget.value)} /></label>
-          <label><span>Expected date</span><input type="date" value={filterValue(parsed.state.filters, 'expected-date')} onChange={(event) => replaceFilter('expected-date', event.currentTarget.value)} /></label>
-          <label><span>Product</span><input disabled placeholder="Use detail lines" /></label>
-          <label><span>Sort</span><select value={parsed.state.sort ?? ''} onChange={(event) => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, sort: event.currentTarget.value || undefined, cursor: undefined }), { replace: true })}><option value="">PO number</option><option value="po-desc">PO number ↓</option><option value="supplier">Supplier</option><option value="order-date-desc">Order date ↓</option></select></label>
+          <label><span>Supplier reference</span><input disabled placeholder="Unavailable in governed summary" /></label>
+          <label><span>Sales-order reference</span><input disabled placeholder="Unavailable in governed summary" /></label>
+          <label><span>Printed / export</span><select disabled defaultValue=""><option value="">Unavailable</option></select></label>
+          <label><span>Sort</span><select value={parsed.state.sort ?? ''} onChange={(event) => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, sort: event.currentTarget.value || undefined, cursor: undefined, page: undefined }), { replace: true })}><option value="">PO number</option><option value="po-desc">PO number ↓</option><option value="supplier">Supplier</option><option value="order-date-desc">Order date ↓</option></select></label>
         </div>
       </section>
 
       <section className="office-parity-table-wrap" aria-label="Purchase Orders table">
-        <div className="office-parity-row purchases header"><span>Purchase order</span><span>Supplier</span><span>Order date</span><span>Expected</span><span>Currency</span><span>Status</span><span>Ordered</span><span>Received</span><span>Variance</span><span>Action</span></div>
+        {result ? <div className="office-parity-count">{result.totalCount.toLocaleString('en-AU')} exact records · Page {result.page} of {Math.max(1, Math.ceil(result.totalCount / result.pageSize))}</div> : null}
+        <div className="office-parity-row purchases header"><span>PO no.</span><span>Order date</span><span>Delivery date</span><span>Supplier</span><span>Supplier ref</span><span>Status</span><span>Warehouse</span><span>Currency</span><span>Total</span><span>Action</span></div>
         {result?.rows.map((row) => (
           <div className="office-parity-row purchases" key={row.id}>
-            <strong>{row.po_number}</strong><span>{row.supplier_name}</span><span>{date(row.order_date)}</span><span>{date(row.expected_date)}</span><span>{row.currency}</span><span>{row.po_status}</span><span>{number(row.ordered_units)}</span><span>{number(row.received_units)}</span><span>{number(row.variance_units)}</span>
+            <strong>{row.po_number}</strong><span>{date(row.order_date)}</span><span>{date(row.expected_date)}</span><span>{row.supplier_name}</span><span>Unavailable</span><span>{row.familiarStatus ?? 'Unavailable'}<small>WAYNX {row.po_status}</small></span><span>Unavailable</span><span>{row.currency}</span><span>Unavailable</span>
             <button className="office-parity-link-button" type="button" onClick={() => navigate(`/purchases/${encodeURIComponent(row.id)}${location.search}`)}>View</button>
           </div>
         ))}
         {result && !result.rows.length ? <div className="office-parity-empty">No purchase orders match the current governed read/filter context.</div> : null}
+        {result ? <nav className="native-workspace-pager" aria-label="Purchase pagination"><button type="button" disabled={result.page <= 1} onClick={() => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, page: result.page - 1 }), { replace: true })}>Previous</button><button type="button" disabled={result.page >= Math.max(1, Math.ceil(result.totalCount / result.pageSize))} onClick={() => navigate(withWorkspaceQuery('/purchases', { ...parsed.state, page: result.page + 1 }), { replace: true })}>Next</button></nav> : null}
       </section>
       {parsed.issues.length ? <div className="office-parity-state" data-state="DEGRADED"><strong>QUERY NOTICE</strong><span>{parsed.issues.map((issue) => issue.code).join(', ')}</span></div> : null}
     </section>

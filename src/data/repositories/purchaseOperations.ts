@@ -8,47 +8,26 @@ import {
   type PurchaseOrderSummary,
 } from './purchaseOrders';
 import type { NativeReadListRequest, NativeReadMetadata, NativeReadResult, NativeReadSurfaceState } from './nativeReadModel';
-
-export const PURCHASE_ORDER_FAMILIAR_STATUS_ORDER = [
-  'Open',
-  'Unapproved',
-  'Parked',
-  'Placed',
-  'Costed',
-  'Receipted',
-  'Deleted',
-  'Complete',
-] as const;
-
-export const PURCHASE_OPERATIONS_FILTER_ORDER = [
-  'status',
-  'purchase-order',
-  'supplier',
-  'warehouse',
-  'order-date',
-  'expected-date',
-  'product',
-] as const;
-
-export const PURCHASE_OPERATIONS_COLUMN_ORDER = [
-  'purchase-order',
-  'supplier',
-  'order-date',
-  'expected-date',
-  'currency',
-  'status',
-  'ordered',
-  'received',
-  'variance',
-  'action',
-] as const;
-
-export type PurchaseOperationsRow = PurchaseOrderSummary;
-export type PurchaseOperationsListResult = NativeReadResult<PurchaseOperationsRow>;
+import {
+  mapPurchaseOrderFamiliarStatus,
+  type PurchaseOrderFamiliarStatus,
+} from './purchaseOperationsContract';
+export {
+  PURCHASE_OPERATIONS_COLUMN_ORDER,
+  PURCHASE_OPERATIONS_FILTER_ORDER,
+  PURCHASE_ORDER_FAMILIAR_STATUS_ORDER,
+  mapPurchaseOrderFamiliarStatus,
+} from './purchaseOperationsContract';
+export type PurchaseOperationsRow = PurchaseOrderSummary & { familiarStatus: PurchaseOrderFamiliarStatus | null };
+export type PurchaseOperationsListResult = NativeReadResult<PurchaseOperationsRow> & {
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
 
 export type PurchaseOperationsDetailResult = {
   state: Exclude<NativeReadSurfaceState, 'LOADING'>;
-  order: PurchaseOrderSummary | null;
+  order: PurchaseOperationsRow | null;
   lines: PurchaseOrderLine[];
   receipts: PurchaseOrderReceipt[];
   metadata: NativeReadMetadata;
@@ -59,7 +38,7 @@ function clean(value: string | null | undefined) {
   return String(value || '').trim();
 }
 
-function latestUpdatedAt(rows: PurchaseOperationsRow[]): string | null {
+function latestUpdatedAt(rows: readonly PurchaseOrderSummary[]): string | null {
   const candidates = rows
     .map((row) => row.updated_at)
     .filter((value): value is string => Boolean(value))
@@ -69,7 +48,7 @@ function latestUpdatedAt(rows: PurchaseOperationsRow[]): string | null {
   return candidates[0]?.value ?? null;
 }
 
-function metadata(rows: PurchaseOperationsRow[]): NativeReadMetadata {
+function metadata(rows: readonly PurchaseOrderSummary[]): NativeReadMetadata {
   return {
     source: 'ecoflow_read_purchase_orders',
     authority: 'WAYNX_PURCHASE_ORDER',
@@ -89,21 +68,21 @@ function filterValues(filters: readonly string[] | undefined, key: string) {
   });
 }
 
-function applyRequest(rows: PurchaseOperationsRow[], request: NativeReadListRequest) {
+function applyRequest(sourceRows: readonly PurchaseOrderSummary[], request: NativeReadListRequest) {
+  const rows = sourceRows.map((row): PurchaseOperationsRow => ({
+    ...row,
+    familiarStatus: mapPurchaseOrderFamiliarStatus(row.po_status),
+  }));
   const search = clean(request.search).toLowerCase();
   const statuses = filterValues(request.filters, 'status').map((value) => value.toLowerCase());
   const poNumbers = filterValues(request.filters, 'purchase-order').map((value) => value.toLowerCase());
   const suppliers = filterValues(request.filters, 'supplier').map((value) => value.toLowerCase());
-  const orderDates = filterValues(request.filters, 'order-date');
-  const expectedDates = filterValues(request.filters, 'expected-date');
 
   let next = rows.filter((row) => {
     if (search && ![row.po_number, row.supplier_name, row.po_status].some((value) => clean(value).toLowerCase().includes(search))) return false;
-    if (statuses.length && !statuses.includes(clean(row.po_status).toLowerCase())) return false;
+    if (statuses.length && !statuses.includes(clean(row.familiarStatus).toLowerCase())) return false;
     if (poNumbers.length && !poNumbers.some((value) => clean(row.po_number).toLowerCase().includes(value))) return false;
     if (suppliers.length && !suppliers.some((value) => clean(row.supplier_name).toLowerCase().includes(value))) return false;
-    if (orderDates.length && !orderDates.includes(row.order_date)) return false;
-    if (expectedDates.length && !expectedDates.includes(row.expected_date || '')) return false;
     return true;
   });
 
@@ -112,7 +91,12 @@ function applyRequest(rows: PurchaseOperationsRow[], request: NativeReadListRequ
   else if (request.sort === 'order-date-desc') next = [...next].sort((a, b) => b.order_date.localeCompare(a.order_date));
   else next = [...next].sort((a, b) => a.po_number.localeCompare(b.po_number, 'en-AU', { numeric: true }));
 
-  return next.slice(0, Math.min(100, Math.max(1, request.pageSize ?? 50)));
+  const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 50));
+  const totalCount = next.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = Math.min(totalPages, Math.max(1, request.page ?? 1));
+  const offset = (page - 1) * pageSize;
+  return { rows: next.slice(offset, offset + pageSize), totalCount, page, pageSize };
 }
 
 /**
@@ -124,10 +108,13 @@ export async function readPurchaseOperationsList(
   client?: SupabaseClient | null,
 ): Promise<PurchaseOperationsListResult> {
   const sourceRows = await loadPurchaseOrders(client);
-  const rows = applyRequest(sourceRows, request);
+  const page = applyRequest(sourceRows, request);
   return {
-    state: sourceRows.length ? (rows.length ? 'READY' : 'EMPTY') : 'EMPTY',
-    rows,
+    state: sourceRows.length ? (page.rows.length ? 'READY' : 'EMPTY') : 'EMPTY',
+    rows: page.rows,
+    totalCount: page.totalCount,
+    page: page.page,
+    pageSize: page.pageSize,
     metadata: metadata(sourceRows),
     issues: [],
   };
@@ -151,7 +138,8 @@ export async function readPurchaseOperationsDetail(
   }
 
   const orders = await loadPurchaseOrders(client);
-  const order = orders.find((row) => row.id === id) ?? null;
+  const sourceOrder = orders.find((row) => row.id === id) ?? null;
+  const order = sourceOrder ? { ...sourceOrder, familiarStatus: mapPurchaseOrderFamiliarStatus(sourceOrder.po_status) } : null;
   if (!order) {
     return {
       state: 'UNAVAILABLE',

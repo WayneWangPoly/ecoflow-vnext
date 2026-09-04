@@ -31,7 +31,11 @@ export type SupplierMasterRow = {
 };
 
 export type SupplierMasterListRequest = NativeReadListRequest;
-export type SupplierMasterListResult = NativeReadResult<SupplierMasterRow>;
+export type SupplierMasterListResult = NativeReadResult<SupplierMasterRow> & {
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
 
 /**
  * #340A deliberately defines Supplier Master independently from purchase-order
@@ -127,13 +131,21 @@ function applyRequest(rows: SupplierMasterRow[], request: SupplierMasterListRequ
 
   if (request.sort === 'code-desc') next = [...next].sort((a, b) => b.code.localeCompare(a.code, 'en-AU', { numeric: true }));
   else next = [...next].sort((a, b) => a.code.localeCompare(b.code, 'en-AU', { numeric: true }));
-  return next.slice(0, Math.min(100, Math.max(1, request.pageSize ?? 50)));
+  const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 50));
+  const totalCount = next.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const page = Math.min(totalPages, Math.max(1, request.page ?? 1));
+  const offset = (page - 1) * pageSize;
+  return { rows: next.slice(offset, offset + pageSize), totalCount, page, pageSize };
 }
 
 function unavailableResult(state: 'UNAVAILABLE' | 'PERMISSION_DENIED', issue: string): SupplierMasterListResult {
   return {
     state,
     rows: [],
+    totalCount: 0,
+    page: 1,
+    pageSize: 50,
     metadata: {
       source: 'governed Unleashed supplier mapping reference',
       authority: 'UNLEASHED_MAPPING_REFERENCE',
@@ -146,17 +158,20 @@ function unavailableResult(state: 'UNAVAILABLE' | 'PERMISSION_DENIED', issue: st
   };
 }
 
-function degradedResult(rows: SupplierMasterRow[]): SupplierMasterListResult {
+function degradedResult(page: { rows: SupplierMasterRow[]; totalCount: number; page: number; pageSize: number }): SupplierMasterListResult {
   return {
     state: 'DEGRADED',
-    rows,
+    rows: page.rows,
+    totalCount: page.totalCount,
+    page: page.page,
+    pageSize: page.pageSize,
     metadata: {
       source: 'ecoflow_unleashed_master_mappings · SUPPLIER references',
       authority: 'UNLEASHED_MAPPING_REFERENCE',
       isAuthoritative: false,
-      freshness: latestObservedAt(rows) ? 'CURRENT' : 'UNKNOWN',
+      freshness: latestObservedAt(page.rows) ? 'CURRENT' : 'UNKNOWN',
       readAt: new Date().toISOString(),
-      sourceObservedAt: latestObservedAt(rows),
+      sourceObservedAt: latestObservedAt(page.rows),
     },
     issues: [
       'Supplier mapping references are migration evidence, not a canonical Supplier directory.',
@@ -198,7 +213,7 @@ export function createSupplierMasterReader(client: SupabaseClient): SupplierMast
         .maybeSingle();
       if (error) return unavailableResult(isPermissionError(error) ? 'PERMISSION_DENIED' : 'UNAVAILABLE', message(error));
       if (!data) return unavailableResult('UNAVAILABLE', 'The requested governed Supplier reference does not exist or is not visible to this role.');
-      return degradedResult([mapReference(data as SupplierMappingReferenceRow)]);
+      return degradedResult({ rows: [mapReference(data as SupplierMappingReferenceRow)], totalCount: 1, page: 1, pageSize: 1 });
     },
   };
 }
