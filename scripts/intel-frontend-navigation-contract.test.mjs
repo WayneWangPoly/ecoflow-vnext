@@ -27,13 +27,6 @@ import {
   SUPPLIER_MASTER_COLUMN_ORDER,
   SUPPLIER_MASTER_FILTER_ORDER,
 } from '../src/data/repositories/supplierMaster.ts';
-import {
-  CUSTOMER_MASTER_COLUMN_ORDER,
-  CUSTOMER_MASTER_DETAIL_TAB_ORDER,
-  CUSTOMER_MASTER_FILTER_ORDER,
-  isDeferredCustomerMetricKey,
-  projectCustomerMasterRow,
-} from '../src/data/repositories/operationalRecords.ts';
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -162,53 +155,41 @@ test('#340A preserves Product and Supplier muscle-memory contracts without inven
 });
 
 test('#340A preserves Customer Master filter, column and detail order', () => {
-  assert.deepEqual(CUSTOMER_MASTER_FILTER_ORDER, ['customer-type', 'customer', 'obsolete']);
-  assert.deepEqual(CUSTOMER_MASTER_COLUMN_ORDER, ['code', 'name', 'customer-type', 'currency', 'website', 'phone', 'mobile', 'email', 'action']);
-  assert.deepEqual(CUSTOMER_MASTER_DETAIL_TAB_ORDER, [
-    'Details', 'Contact', 'Address', 'Sell Price Tier', 'Other Customer Details', 'Sales', 'Shipments', 'Costings',
-  ]);
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  assert.match(repository, /CUSTOMER_MASTER_FILTER_ORDER = \['customer-type', 'customer', 'obsolete'\] as const/);
+  assert.match(repository, /CUSTOMER_MASTER_COLUMN_ORDER = \['code', 'name', 'customer-type', 'currency', 'website', 'phone', 'mobile', 'email', 'action'\] as const/);
+  const details = ['Details', 'Contact', 'Address', 'Sell Price Tier', 'Other Customer Details', 'Sales', 'Shipments', 'Costings'];
+  let cursor = repository.indexOf('CUSTOMER_MASTER_DETAIL_TAB_ORDER');
+  assert.notEqual(cursor, -1);
+  for (const label of details) {
+    const next = repository.indexOf(`'${label}'`, cursor);
+    assert.ok(next > cursor, `Customer detail contract lost order at ${label}`);
+    cursor = next;
+  }
 });
 
-test('#340A Customer Master projection copies explicit governed facts and leaves missing facts null', () => {
-  assert.deepEqual(projectCustomerMasterRow({
-    store_id: 'store-1',
-    customer_code: 'C-100',
-    store_name: 'North Cafe',
-    customer_type: 'Cafe',
-    currency_code: 'AUD',
-    website_url: 'https://example.test',
-    phone_number: '08 8000 0000',
-    mobile_number: '0400 000 000',
-    email_address: 'ops@example.test',
-    is_obsolete: false,
-    revenue_30d: 999,
-  }), {
-    recordId: 'store-1',
-    code: 'C-100',
-    name: 'North Cafe',
-    customerType: 'Cafe',
-    currency: 'AUD',
-    website: 'https://example.test',
-    phone: '08 8000 0000',
-    mobile: '0400 000 000',
-    email: 'ops@example.test',
-    obsolete: false,
-  });
-  assert.deepEqual(projectCustomerMasterRow({ store_id: 'store-2', store_name: 'South Cafe' }), {
-    recordId: 'store-2',
-    code: 'store-2',
-    name: 'South Cafe',
-    customerType: null,
-    currency: null,
-    website: null,
-    phone: null,
-    mobile: null,
-    email: null,
-    obsolete: null,
-  });
-  assert.equal(isDeferredCustomerMetricKey('revenue_30d'), true);
-  assert.equal(isDeferredCustomerMetricKey('gross_profit_30d'), true);
-  assert.equal(isDeferredCustomerMetricKey('order_total'), false);
+test('#340A Customer Master projection is explicit-key only and defers governed profitability metrics', () => {
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  for (const marker of [
+    "recordId: explicitString(row, ['store_id', 'customer_id', 'id'])",
+    "code: explicitString(row, ['customer_code', 'store_code', 'external_code', 'ordermentum_code', 'store_id'])",
+    "name: explicitString(row, ['customer_name', 'store_name', 'name'])",
+    "customerType: explicitString(row, ['customer_type', 'customer_type_name', 'type'])",
+    "currency: explicitString(row, ['currency', 'currency_code'])",
+    "website: explicitString(row, ['website', 'website_url'])",
+    "phone: explicitString(row, ['phone', 'phone_number', 'telephone'])",
+    "mobile: explicitString(row, ['mobile', 'mobile_number'])",
+    "email: explicitString(row, ['email', 'email_address'])",
+    "obsolete: explicitBoolean(row, ['obsolete', 'is_obsolete'])",
+  ]) {
+    assert.ok(repository.includes(marker), `Customer projection lost explicit-key contract: ${marker}`);
+  }
+  assert.match(repository, /CUSTOMER_GOVERNED_METRIC_KEY_PATTERN/);
+  for (const deferred of ['revenue', 'gross_profit', 'profit', 'margin', 'cogs']) {
+    assert.ok(repository.includes(deferred), `Deferred metric contract lost ${deferred}`);
+  }
+  assert.match(repository, /Missing facts stay null/);
+  assert.match(repository, /must not surface or locally compute these aggregate metrics/);
 });
 
 test('#340A native office surfaces are owned by the unified React shell', () => {
