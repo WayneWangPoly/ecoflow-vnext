@@ -26,13 +26,19 @@ function nullableNumber(value: unknown) {
 export async function readProductMasterIdentityRows(client?: SupabaseClient | null): Promise<ProductIdentityRow[]> {
   const pageSize = 100;
   const rows: ProductIdentityRow[] = [];
+  const seenPageSignatures = new Set<string>();
   let page = 1;
   let totalCount = Number.POSITIVE_INFINITY;
-  while (rows.length < totalCount && page <= 20) {
+  while (rows.length < totalCount) {
     const result = await readProductIdentityPage({ filter: 'ALL', page, pageSize }, client);
     totalCount = result.totalCount;
-    rows.push(...result.rows);
     if (!result.rows.length) break;
+    const signature = result.rows.map((row) => row.commercialSkuId).join('|');
+    if (seenPageSignatures.has(signature)) {
+      throw new Error('Product Identity paging repeated before the governed total count was reached.');
+    }
+    seenPageSignatures.add(signature);
+    rows.push(...result.rows);
     page += 1;
   }
   return rows;
