@@ -97,7 +97,8 @@ function mapReference(row: SupplierMappingReferenceRow): SupplierMasterRow {
 function latestObservedAt(rows: SupplierMasterRow[]) {
   return rows
     .map((row) => row.sourceObservedAt)
-    .filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value)))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .filter((value) => Number.isFinite(Date.parse(value)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
 }
 
