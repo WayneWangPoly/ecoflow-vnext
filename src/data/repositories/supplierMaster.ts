@@ -57,6 +57,8 @@ type SupplierMappingReferenceRow = {
   mapping_status: string;
 };
 
+const SUPPLIER_REFERENCE_BATCH_SIZE = 500;
+
 function clean(value: string | null | undefined) {
   return String(value || '').trim();
 }
@@ -104,6 +106,28 @@ function latestObservedAt(rows: SupplierMasterRow[]) {
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .filter((value) => Number.isFinite(Date.parse(value)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+}
+
+async function readAllSupplierMappingReferences(client: SupabaseClient): Promise<{
+  rows: SupplierMappingReferenceRow[];
+  error: unknown | null;
+}> {
+  const rows: SupplierMappingReferenceRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await client
+      .from('ecoflow_unleashed_master_mappings')
+      .select('id,source_external_code,source_external_key,source_observed_at,canonical_code,mapping_status')
+      .eq('entity_type', 'SUPPLIER')
+      .order('source_external_code', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true })
+      .range(offset, offset + SUPPLIER_REFERENCE_BATCH_SIZE - 1);
+    if (error) return { rows: [], error };
+    const batch = (data ?? []) as SupplierMappingReferenceRow[];
+    rows.push(...batch);
+    if (batch.length < SUPPLIER_REFERENCE_BATCH_SIZE) return { rows, error: null };
+    offset += SUPPLIER_REFERENCE_BATCH_SIZE;
+  }
 }
 
 function applyRequest(rows: SupplierMasterRow[], request: SupplierMasterListRequest) {
@@ -158,7 +182,11 @@ function unavailableResult(state: 'UNAVAILABLE' | 'PERMISSION_DENIED', issue: st
   };
 }
 
-function degradedResult(page: { rows: SupplierMasterRow[]; totalCount: number; page: number; pageSize: number }): SupplierMasterListResult {
+function degradedResult(
+  page: { rows: SupplierMasterRow[]; totalCount: number; page: number; pageSize: number },
+  sourceRows: SupplierMasterRow[],
+): SupplierMasterListResult {
+  const sourceObservedAt = latestObservedAt(sourceRows);
   return {
     state: 'DEGRADED',
     rows: page.rows,
@@ -169,9 +197,9 @@ function degradedResult(page: { rows: SupplierMasterRow[]; totalCount: number; p
       source: 'ecoflow_unleashed_master_mappings · SUPPLIER references',
       authority: 'UNLEASHED_MAPPING_REFERENCE',
       isAuthoritative: false,
-      freshness: latestObservedAt(page.rows) ? 'CURRENT' : 'UNKNOWN',
+      freshness: sourceObservedAt ? 'CURRENT' : 'UNKNOWN',
       readAt: new Date().toISOString(),
-      sourceObservedAt: latestObservedAt(page.rows),
+      sourceObservedAt,
     },
     issues: [
       'Supplier mapping references are migration evidence, not a canonical Supplier directory.',
@@ -184,22 +212,21 @@ function degradedResult(page: { rows: SupplierMasterRow[]; totalCount: number; p
 export function createSupplierMasterReader(client: SupabaseClient): SupplierMasterReader {
   return {
     async readList(request = {}) {
-      const { data, error } = await client
-        .from('ecoflow_unleashed_master_mappings')
-        .select('id,source_external_code,source_external_key,source_observed_at,canonical_code,mapping_status')
-        .eq('entity_type', 'SUPPLIER')
-        .order('source_external_code', { ascending: true, nullsFirst: false })
-        .limit(500);
-
-      if (error) return unavailableResult(isPermissionError(error) ? 'PERMISSION_DENIED' : 'UNAVAILABLE', message(error));
-      const sourceRows = ((data ?? []) as SupplierMappingReferenceRow[]).map(mapReference);
+      const referenceRead = await readAllSupplierMappingReferences(client);
+      if (referenceRead.error) {
+        return unavailableResult(
+          isPermissionError(referenceRead.error) ? 'PERMISSION_DENIED' : 'UNAVAILABLE',
+          message(referenceRead.error),
+        );
+      }
+      const sourceRows = referenceRead.rows.map(mapReference);
       if (!sourceRows.length) {
         return unavailableResult(
           'UNAVAILABLE',
           'No governed Supplier mapping references are available. EcoFlow will not substitute purchase-order strings or raw Unleashed evidence for a canonical Supplier master.',
         );
       }
-      return degradedResult(applyRequest(sourceRows, request));
+      return degradedResult(applyRequest(sourceRows, request), sourceRows);
     },
 
     async readDetail(supplierId: string) {
@@ -213,7 +240,8 @@ export function createSupplierMasterReader(client: SupabaseClient): SupplierMast
         .maybeSingle();
       if (error) return unavailableResult(isPermissionError(error) ? 'PERMISSION_DENIED' : 'UNAVAILABLE', message(error));
       if (!data) return unavailableResult('UNAVAILABLE', 'The requested governed Supplier reference does not exist or is not visible to this role.');
-      return degradedResult({ rows: [mapReference(data as SupplierMappingReferenceRow)], totalCount: 1, page: 1, pageSize: 1 });
+      const row = mapReference(data as SupplierMappingReferenceRow);
+      return degradedResult({ rows: [row], totalCount: 1, page: 1, pageSize: 1 }, [row]);
     },
   };
 }
