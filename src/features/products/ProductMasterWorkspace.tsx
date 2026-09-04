@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { CatalogRow } from '@/domain/types';
 import {
@@ -9,6 +9,7 @@ import {
   type ProductMasterListResult,
   type ProductMasterRow,
 } from '@/data/repositories/productMaster';
+import { readOrdermentumCommercialCatalog } from '@/data/repositories/productCommercialCatalog';
 import {
   readProductMasterIdentityEvidence,
   readProductMasterIdentityRows,
@@ -136,10 +137,18 @@ export function ProductMasterWorkspace({
   const location = useLocation();
   const navigate = useNavigate();
   const parsed = useMemo(() => parseWorkspaceQuery(location.search), [location.search]);
+  const [commercialCatalog, setCommercialCatalog] = useState<readonly CatalogRow[]>(catalog);
+  const [commercialSourceObservedAt, setCommercialSourceObservedAt] = useState<string | null>(sourceObservedAt ?? null);
+  const [commercialLoading, setCommercialLoading] = useState(true);
+  const [commercialResolved, setCommercialResolved] = useState(false);
+  const [commercialError, setCommercialError] = useState('');
   const [identityRows, setIdentityRows] = useState<ProductIdentityRow[]>([]);
   const [identityLoading, setIdentityLoading] = useState(true);
   const [identityError, setIdentityError] = useState('');
-  const reader = useMemo(() => createProductMasterReader({ catalog, sourceObservedAt, identityRows }), [catalog, identityRows, sourceObservedAt]);
+  const reader = useMemo(
+    () => createProductMasterReader({ catalog: commercialCatalog, sourceObservedAt: commercialSourceObservedAt, identityRows }),
+    [commercialCatalog, commercialSourceObservedAt, identityRows],
+  );
   const [result, setResult] = useState<ProductMasterListResult | null>(null);
   const [detail, setDetail] = useState<ProductMasterRow | null>(null);
   const [detailResolved, setDetailResolved] = useState(false);
@@ -147,6 +156,30 @@ export function ProductMasterWorkspace({
   const [identityEvidenceError, setIdentityEvidenceError] = useState('');
   const resolution = useMemo(() => matchIntelligenceRoute(location.pathname), [location.pathname]);
   const productId = resolution.status === 'READY' && resolution.route.workspace === 'products' ? resolution.route.entityId : undefined;
+
+  const reloadCommercialCatalog = useCallback(async () => {
+    setCommercialLoading(true);
+    setCommercialError('');
+    try {
+      const snapshot = await readOrdermentumCommercialCatalog();
+      setCommercialCatalog(snapshot.catalog);
+      setCommercialSourceObservedAt(snapshot.sourceObservedAt);
+      setCommercialResolved(true);
+    } catch (caught) {
+      setCommercialResolved(true);
+      setCommercialError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setCommercialLoading(false);
+    }
+  }, []);
+
+  const refreshCommercialSource = useCallback(async () => {
+    await Promise.allSettled([reloadCommercialCatalog(), onReload()]);
+  }, [onReload, reloadCommercialCatalog]);
+
+  useEffect(() => {
+    void reloadCommercialCatalog();
+  }, [reloadCommercialCatalog]);
 
   useEffect(() => {
     let active = true;
@@ -211,7 +244,7 @@ export function ProductMasterWorkspace({
     return () => { active = false; };
   }, [productId]);
 
-  const groups = useMemo(() => [...new Set(catalog.map((row) => row.category?.trim()).filter((value): value is string => Boolean(value)))].sort(), [catalog]);
+  const groups = useMemo(() => [...new Set(commercialCatalog.map((row) => row.category?.trim()).filter((value): value is string => Boolean(value)))].sort(), [commercialCatalog]);
 
   function updateQuery(input: { search?: string; filterKey?: string; filterValue?: string; sort?: string }) {
     let filters = parsed.state.filters;
@@ -234,14 +267,26 @@ export function ProductMasterWorkspace({
     return <ProductDetail row={detail} evidence={identityEvidence} evidenceError={identityEvidenceError} onBack={() => navigate(withWorkspaceQuery('/products', parsed.state))} />;
   }
 
-  if (loading && !available) {
+  if (commercialLoading && !commercialResolved) {
     return <section className="office-parity-workspace"><div className="office-parity-state"><strong>LOADING</strong><span>Loading governed commercial Product Master…</span></div></section>;
   }
 
-  if (loadError && !available) {
+  if (commercialError && !commercialCatalog.length) {
     return (
       <section className="office-parity-workspace">
-        <div className="office-parity-state" data-state="UNAVAILABLE"><strong>UNAVAILABLE</strong><span>{loadError}</span><button type="button" onClick={() => void onReload()}>Retry</button></div>
+        <div className="office-parity-state" data-state="UNAVAILABLE"><strong>UNAVAILABLE</strong><span>{commercialError}</span><button type="button" onClick={() => void refreshCommercialSource()}>Retry</button></div>
+      </section>
+    );
+  }
+
+  if (!commercialResolved && loading && !available && !commercialCatalog.length) {
+    return <section className="office-parity-workspace"><div className="office-parity-state"><strong>LOADING</strong><span>Loading governed commercial Product Master…</span></div></section>;
+  }
+
+  if (!commercialResolved && loadError && !available && !commercialCatalog.length) {
+    return (
+      <section className="office-parity-workspace">
+        <div className="office-parity-state" data-state="UNAVAILABLE"><strong>UNAVAILABLE</strong><span>{loadError}</span><button type="button" onClick={() => void refreshCommercialSource()}>Retry</button></div>
       </section>
     );
   }
@@ -254,7 +299,7 @@ export function ProductMasterWorkspace({
     <section className="office-parity-workspace" data-filter-contract={PRODUCT_MASTER_FILTER_ORDER.join(',')} data-column-contract={PRODUCT_MASTER_COLUMN_ORDER.join(',')}>
       <div className="office-parity-heading">
         <div><h1>Products</h1><p>Commercial Product Master in the familiar office order. Physical SKU identity and location stock remain separate authorities.</p></div>
-        <button className="soft-button" type="button" onClick={() => void onReload()}>Refresh commercial source</button>
+        <button className="soft-button" type="button" onClick={() => void refreshCommercialSource()}>Refresh commercial source</button>
       </div>
 
       {result ? (
@@ -267,7 +312,7 @@ export function ProductMasterWorkspace({
           {result.issues.length ? <ul className="office-parity-issues">{result.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
           {identityLoading ? <div className="office-parity-state" data-state="LOADING"><strong>IDENTITY LOADING</strong><span>Reading governed mapping and Physical SKU status…</span></div> : null}
           {identityError ? <div className="office-parity-state" data-state="UNAVAILABLE"><strong>IDENTITY UNAVAILABLE</strong><span>{identityError}</span></div> : null}
-          {loadError && available ? <div className="office-parity-state" data-state="DEGRADED"><strong>LAST-TRUSTED COMMERCIAL READ</strong><span>{loadError}</span></div> : null}
+          {commercialError && commercialCatalog.length ? <div className="office-parity-state" data-state="DEGRADED"><strong>LAST-TRUSTED COMMERCIAL READ</strong><span>{commercialError}</span></div> : null}
         </>
       ) : null}
 
@@ -275,15 +320,15 @@ export function ProductMasterWorkspace({
         <div className="panel-head"><h2>Product search</h2><span>Unleashed-familiar filter order; unsupported facts stay disabled.</span></div>
         <div className="office-parity-filters">
           <label><span>Search</span><input value={parsed.state.search ?? ''} onChange={(event) => updateQuery({ search: event.currentTarget.value })} placeholder="Code or description" /></label>
-          <label><span>Product group</span><select value={filterValue(parsed.state.filters, 'product-group')} onChange={(event) => updateQuery({ filterKey: 'product-group', filterValue: event.currentTarget.value })}><option value="">All groups</option>{groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
+          <label><span>Product group</span><select disabled={!groups.length} value={filterValue(parsed.state.filters, 'product-group')} onChange={(event) => updateQuery({ filterKey: 'product-group', filterValue: event.currentTarget.value })}><option value="">{groups.length ? 'All groups' : 'Unavailable'}</option>{groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
           <label><span>Brand</span><input value={filterValue(parsed.state.filters, 'brand')} disabled={identityLoading || Boolean(identityError)} onChange={(event) => updateQuery({ filterKey: 'brand', filterValue: event.currentTarget.value })} placeholder={identityLoading ? 'Loading' : identityError ? 'Unavailable' : 'Brand'} /></label>
           <label><span>Supplier</span><input disabled placeholder="Unavailable" /></label>
           <label><span>Supplier product</span><input disabled placeholder="Unavailable" /></label>
           <label><span>Barcode</span><input disabled placeholder="Unavailable" /></label>
           <label><span>Obsolete</span><select disabled defaultValue=""><option value="">Unavailable</option></select></label>
-          <label><span>Sellable</span><select value={filterValue(parsed.state.filters, 'sellable')} onChange={(event) => updateQuery({ filterKey: 'sellable', filterValue: event.currentTarget.value })}><option value="">All</option><option value="true">Yes</option><option value="false">No</option></select></label>
+          <label><span>Sellable</span><select disabled defaultValue=""><option value="">Unavailable</option></select></label>
           <label><span>Purchasable</span><select disabled defaultValue=""><option value="">Unavailable</option></select></label>
-          <label><span>Sort</span><select value={parsed.state.sort ?? ''} onChange={(event) => updateQuery({ sort: event.currentTarget.value })}><option value="">Product code</option><option value="product-code-desc">Product code ↓</option><option value="description">Description</option><option value="product-group">Product group</option></select></label>
+          <label><span>Sort</span><select value={parsed.state.sort ?? ''} onChange={(event) => updateQuery({ sort: event.currentTarget.value })}><option value="">Product code</option><option value="product-code-desc">Product code ↓</option><option value="description">Description</option><option value="product-group" disabled={!groups.length}>Product group</option></select></label>
         </div>
       </section>
 
