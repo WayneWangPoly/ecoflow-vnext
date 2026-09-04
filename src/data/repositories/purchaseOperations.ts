@@ -18,11 +18,16 @@ export {
   PURCHASE_ORDER_FAMILIAR_STATUS_ORDER,
   mapPurchaseOrderFamiliarStatus,
 } from './purchaseOperationsContract';
+
+export const PURCHASE_OPERATIONS_READ_LIMIT = 300;
+
 export type PurchaseOperationsRow = PurchaseOrderSummary & { familiarStatus: PurchaseOrderFamiliarStatus | null };
 export type PurchaseOperationsListResult = NativeReadResult<PurchaseOperationsRow> & {
   totalCount: number;
   page: number;
   pageSize: number;
+  countExact: boolean;
+  sourceLimit: number;
 };
 
 export type PurchaseOperationsDetailResult = {
@@ -102,21 +107,30 @@ function applyRequest(sourceRows: readonly PurchaseOrderSummary[], request: Nati
 /**
  * Read-only #340A adapter over the existing governed purchase-order RPC. No
  * receiving, costing, review, or inventory mutation is exposed from this file.
+ * The inherited RPC caps its result at 300 rows. If that cap is reached, this
+ * reader must not describe the client-side filtered count as exact.
  */
 export async function readPurchaseOperationsList(
   request: NativeReadListRequest = {},
   client?: SupabaseClient | null,
 ): Promise<PurchaseOperationsListResult> {
-  const sourceRows = await loadPurchaseOrders(client);
+  const sourceRows = await loadPurchaseOrders(client, PURCHASE_OPERATIONS_READ_LIMIT);
+  const countExact = sourceRows.length < PURCHASE_OPERATIONS_READ_LIMIT;
   const page = applyRequest(sourceRows, request);
   return {
-    state: sourceRows.length ? (page.rows.length ? 'READY' : 'EMPTY') : 'EMPTY',
+    state: countExact
+      ? (sourceRows.length ? (page.rows.length ? 'READY' : 'EMPTY') : 'EMPTY')
+      : 'DEGRADED',
     rows: page.rows,
     totalCount: page.totalCount,
     page: page.page,
     pageSize: page.pageSize,
+    countExact,
+    sourceLimit: PURCHASE_OPERATIONS_READ_LIMIT,
     metadata: metadata(sourceRows),
-    issues: [],
+    issues: countExact ? [] : [
+      'The governed purchase-order summary RPC reached its 300-row ceiling. Filtered counts and paging are bounded to that visible read window, so EcoFlow will not report them as exact.',
+    ],
   };
 }
 
@@ -137,17 +151,20 @@ export async function readPurchaseOperationsDetail(
     };
   }
 
-  const orders = await loadPurchaseOrders(client);
+  const orders = await loadPurchaseOrders(client, PURCHASE_OPERATIONS_READ_LIMIT);
   const sourceOrder = orders.find((row) => row.id === id) ?? null;
   const order = sourceOrder ? { ...sourceOrder, familiarStatus: mapPurchaseOrderFamiliarStatus(sourceOrder.po_status) } : null;
   if (!order) {
+    const bounded = orders.length >= PURCHASE_OPERATIONS_READ_LIMIT;
     return {
       state: 'UNAVAILABLE',
       order: null,
       lines: [],
       receipts: [],
       metadata: metadata(orders),
-      issues: ['The requested purchase order is not present in the governed purchase-order read model.'],
+      issues: [bounded
+        ? 'The requested purchase order is not visible inside the governed 300-row summary window. #340A will not bypass the existing RPC authority to guess or direct-read the record.'
+        : 'The requested purchase order is not present in the governed purchase-order read model.'],
     };
   }
 
