@@ -108,8 +108,7 @@ export function projectCustomerMasterRow(row: Record<string, unknown>): Customer
 
 /**
  * Revenue / Gross Profit and derivative profitability fields belong to #345's
- * governed metric registry. #340A may show source-owned order facts, but it must
- * not surface or locally compute these aggregate metrics as Customer Master data.
+ * governed metric registry. #340A may show source-owned order facts, but it must not surface or locally compute these aggregate metrics as Customer Master data.
  */
 export function isDeferredCustomerMetricKey(key: string) {
   return CUSTOMER_GOVERNED_METRIC_KEY_PATTERN.test(key);
