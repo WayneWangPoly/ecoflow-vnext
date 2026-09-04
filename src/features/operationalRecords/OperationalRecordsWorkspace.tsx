@@ -9,6 +9,11 @@ import {
 } from '@/features/navigation/NativeWorkspaceFrame';
 import { useWorkspaceQueryState } from '@/features/navigation/useWorkspaceQueryState';
 import {
+  CUSTOMER_MASTER_COLUMN_ORDER,
+  CUSTOMER_MASTER_DETAIL_TAB_ORDER,
+  CUSTOMER_MASTER_FILTER_ORDER,
+  isDeferredCustomerMetricKey,
+  projectCustomerMasterRow,
   readOperationalRecordDetail,
   readOperationalRecordsPage,
   type OperationalRecordDetail,
@@ -23,7 +28,13 @@ import './operationalRecordsWorkspace.css';
 const PAGE_SIZES = [10,20,25,50,100] as const;
 type PageSize = (typeof PAGE_SIZES)[number];
 type DataRow = Record<string, unknown>;
-type Column = { key: string; label: string; format?: (value: unknown) => string };
+type Column = {
+  key: string;
+  label: string;
+  format?: (value: unknown) => string;
+  value?: (row: DataRow) => unknown;
+  action?: boolean;
+};
 type ViewDefinition = { id: OperationalRecordsView; label: string };
 type DetailTab = { label: string; kinds: readonly string[] };
 
@@ -35,8 +46,8 @@ const WORKSPACE_COPY: Record<OperationalRecordsWorkspace,{ title:string; detail:
   },
   customers: {
     title: 'Customers',
-    detail: 'Ordermentum-owned store facts with bounded EcoFlow operational, delivery and account context.',
-    eyebrow: 'CUSTOMER OPERATIONS',
+    detail: 'Ordermentum-owned Customer Master facts. Missing master fields stay unavailable and governed commercial metrics remain outside #340A.',
+    eyebrow: 'CUSTOMER MASTER READ',
   },
   accounts: {
     title: 'Accounts',
@@ -88,13 +99,14 @@ const DETAIL_TABS: Record<OperationalRecordsWorkspace,readonly DetailTab[]> = {
     { label:'Identity exceptions',kinds:['IDENTITY_EXCEPTION'] },
   ],
   customers: [
-    { label:'Overview',kinds:['SUMMARY'] },
-    { label:'Orders',kinds:['ORDER'] },
-    { label:'Delivery',kinds:['DELIVERY'] },
-    { label:'Pricing',kinds:['PRICING'] },
-    { label:'Accounts',kinds:['ACCOUNT'] },
-    { label:'Contacts',kinds:['CONTACT'] },
-    { label:'Timeline',kinds:['TIMELINE'] },
+    { label:'Details',kinds:['SUMMARY'] },
+    { label:'Contact',kinds:['CONTACT'] },
+    { label:'Address',kinds:['ADDRESS'] },
+    { label:'Sell Price Tier',kinds:['PRICING'] },
+    { label:'Other Customer Details',kinds:['CUSTOMER_DETAIL'] },
+    { label:'Sales',kinds:['ORDER'] },
+    { label:'Shipments',kinds:['DELIVERY'] },
+    { label:'Costings',kinds:[] },
   ],
   accounts: [
     { label:'Overview',kinds:['SUMMARY'] },
@@ -121,6 +133,11 @@ function display(value: unknown) {
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
   if (typeof value==='object') return JSON.stringify(value);
   return String(value);
+}
+
+function customerDisplay(value: unknown) {
+  const rendered=display(value);
+  return rendered==='—' ? 'Unavailable' : rendered;
 }
 
 function numberValue(value: unknown) {
@@ -154,7 +171,8 @@ function basePath(workspace: OperationalRecordsWorkspace) {
 
 function recordIdFor(workspace: OperationalRecordsWorkspace,row: DataRow) {
   if (workspace==='inventory') return text(row.sku);
-  if (workspace==='customers' || workspace==='accounts') return text(row.store_id);
+  if (workspace==='customers') return projectCustomerMasterRow(row).recordId || '';
+  if (workspace==='accounts') return text(row.store_id);
   return text(row.return_code) || text(row.id);
 }
 
@@ -201,9 +219,15 @@ function columnsFor(workspace: OperationalRecordsWorkspace,view: OperationalReco
     ];
   }
   if (workspace==='customers') return [
-    {key:'store_name',label:'Store'}, {key:'suburb',label:'Suburb'}, {key:'price_group_id',label:'Price group'},
-    {key:'orders_30d',label:'Orders 30d',format:numberFormat}, {key:'revenue_30d',label:'Revenue 30d',format:money},
-    {key:'store_signal',label:'Signal'}, {key:'account_hold_active',label:'Hold'},
+    {key:'code',label:'Code',value:(row)=>projectCustomerMasterRow(row).code,format:customerDisplay},
+    {key:'name',label:'Name',value:(row)=>projectCustomerMasterRow(row).name,format:customerDisplay},
+    {key:'customer-type',label:'Customer Type',value:(row)=>projectCustomerMasterRow(row).customerType,format:customerDisplay},
+    {key:'currency',label:'Currency',value:(row)=>projectCustomerMasterRow(row).currency,format:customerDisplay},
+    {key:'website',label:'Website',value:(row)=>projectCustomerMasterRow(row).website,format:customerDisplay},
+    {key:'phone',label:'Phone',value:(row)=>projectCustomerMasterRow(row).phone,format:customerDisplay},
+    {key:'mobile',label:'Mobile',value:(row)=>projectCustomerMasterRow(row).mobile,format:customerDisplay},
+    {key:'email',label:'Email',value:(row)=>projectCustomerMasterRow(row).email,format:customerDisplay},
+    {key:'action',label:'Action',action:true},
   ];
   if (workspace==='accounts') return [
     {key:'store_name',label:'Store'}, {key:'accounts_priority',label:'Priority'},
@@ -219,16 +243,21 @@ function columnsFor(workspace: OperationalRecordsWorkspace,view: OperationalReco
   ];
 }
 
-function SummaryStrip({ summary }: { summary: Record<string,unknown> }) {
-  const values=Object.entries(summary).filter(([,value])=>['string','number'].includes(typeof value) || value===null).slice(0,8);
+function SummaryStrip({ summary, workspace }: { summary: Record<string,unknown>; workspace: OperationalRecordsWorkspace }) {
+  const values=Object.entries(summary)
+    .filter(([key])=>workspace!=='customers' || !isDeferredCustomerMetricKey(key))
+    .filter(([,value])=>['string','number'].includes(typeof value) || value===null)
+    .slice(0,8);
   if (!values.length) return null;
   return <section className="operational-records-summary" aria-label="Workspace summary">
     {values.map(([key,value])=><article key={key}><span>{titleCase(key)}</span><strong>{display(value)}</strong></article>)}
   </section>;
 }
 
-function DetailRecord({ record }: { record: OperationalRecordDetail }) {
-  const entries=Object.entries(record.data).filter(([,value])=>value!==null && value!==undefined && value!=='');
+function DetailRecord({ record, workspace }: { record: OperationalRecordDetail; workspace: OperationalRecordsWorkspace }) {
+  const entries=Object.entries(record.data)
+    .filter(([key])=>workspace!=='customers' || !isDeferredCustomerMetricKey(key))
+    .filter(([,value])=>value!==null && value!==undefined && value!=='');
   return <article className="operational-record-detail-card">
     <dl>{entries.map(([key,value])=><div key={key}><dt>{titleCase(key)}</dt><dd>{key.endsWith('_at') ? adelaide(value) : display(value)}</dd></div>)}</dl>
   </article>;
@@ -270,6 +299,7 @@ function RecordDetail({
   const active=tabs.find((tab)=>tab.label===activeTab) ?? tabs[0];
   const visible=records.filter((record)=>active.kinds.includes(record.kind));
   const summary=records.find((record)=>record.kind==='SUMMARY')?.data;
+  const deferredCustomerCostings=workspace==='customers' && active.label==='Costings';
   const refreshAfterCommand=()=>{
     setReloadKey((value)=>value+1);
     onAuthorityChanged();
@@ -280,11 +310,14 @@ function RecordDetail({
     {workspace==='returns' ? <ReturnCommandPanel returnId={recordId} role={profile.app_role} onAuthorityChanged={refreshAfterCommand}/> : null}
     {workspace==='accounts' && summary ? <div className="operational-record-authority"><span>Release authority</span><strong>{display(summary.release_authority)}</strong></div> : null}
     {workspace==='returns' && summary ? <div className="operational-record-authority"><span>Inventory consequence</span><strong>{display(summary.inventory_consequence_status)}</strong></div> : null}
+    {workspace==='customers' ? <div className="operational-record-authority"><span>Customer authority</span><strong>Ordermentum-owned facts only</strong></div> : null}
+    {workspace==='inventory' ? <div className="operational-record-authority"><span>Inventory authority</span><strong>Governed location-ledger facts</strong></div> : null}
     <nav className="operational-record-detail-tabs" aria-label="Record detail sections">{tabs.map((tab)=><button key={tab.label} type="button" className={tab.label===active.label?'active':''} onClick={()=>setActiveTab(tab.label)}>{tab.label}</button>)}</nav>
     {loading ? <NativeWorkspaceLoading label="record detail"/> : null}
     {!loading && error ? <NativeWorkspaceUnavailable label="Record detail" detail={error} onRetry={()=>setReloadKey((value)=>value+1)}/> : null}
-    {!loading && !error && visible.length===0 ? <NativeWorkspaceEmpty title="No recorded evidence" detail="The server returned no records for this section. EcoFlow has not inferred missing history."/> : null}
-    {!loading && !error && visible.length ? <div className="operational-record-detail-list">{visible.map((record,index)=><DetailRecord key={`${record.kind}:${text(record.data.id)||text(record.data.event_at)||index}`} record={record}/>)}</div> : null}
+    {!loading && !error && deferredCustomerCostings ? <div className="operational-records-boundary" data-state="unavailable"><strong>Costings unavailable in #340A</strong><span>Revenue, Gross Profit and governed profitability metrics enter only through #345 metric registry. No local calculation is performed here.</span></div> : null}
+    {!loading && !error && !deferredCustomerCostings && visible.length===0 ? <NativeWorkspaceEmpty title="No recorded evidence" detail="The server returned no records for this section. EcoFlow has not inferred missing history."/> : null}
+    {!loading && !error && !deferredCustomerCostings && visible.length ? <div className="operational-record-detail-list">{visible.map((record,index)=><DetailRecord key={`${record.kind}:${text(record.data.id)||text(record.data.event_at)||index}`} record={record} workspace={workspace}/>)}</div> : null}
   </aside>;
 }
 
@@ -301,7 +334,7 @@ export function OperationalRecordsWorkspace({
   const allowedTabs=definitions.map((view)=>view.id);
   const query=useWorkspaceQueryState({
     tab:definitions[0].id,search:'',filter:'',sort:'',page:1,pageSize:25,
-    allowedTabs,allowedPageSizes:PAGE_SIZES,
+    allowedTabs,allowedFilters:workspace==='customers' ? [''] : undefined,allowedPageSizes:PAGE_SIZES,
   });
   const [searchDraft,setSearchDraft]=useState(query.state.search);
   const [result,setResult]=useState<OperationalRecordsPage>({rows:[],summary:{},totalCount:0,readAt:null});
@@ -318,7 +351,7 @@ export function OperationalRecordsWorkspace({
     try {
       setResult(await readOperationalRecordsPage({
         workspace,view,page:query.state.page,pageSize:query.state.pageSize as PageSize,
-        search:query.state.search,filter:query.state.filter,sort:query.state.sort,
+        search:query.state.search,filter:workspace==='customers' ? null : query.state.filter,sort:query.state.sort,
       }));
     } catch(loadError) {
       setResult({rows:[],summary:{},totalCount:0,readAt:null});
@@ -349,26 +382,46 @@ export function OperationalRecordsWorkspace({
     notice={releaseNotice}
     noticeTone="information"
   >
-    <nav className="native-workspace-tabs" aria-label={`${copy.title} views`}>{definitions.map((definition)=><button key={definition.id} type="button" className={definition.id===view?'active':''} onClick={()=>query.update({tab:definition.id})}>{definition.label}</button>)}</nav>
-    <form className="operational-records-toolbar" onSubmit={search}>
-      <label><span>Search</span><input value={searchDraft} placeholder={`Search ${copy.title.toLowerCase()}`} onChange={(event)=>setSearchDraft(event.target.value)}/></label>
-      <label><span>Filter</span><input value={query.state.filter} placeholder="Exact status / signal" onChange={(event)=>query.update({filter:event.target.value})}/></label>
-      <label><span>Rows</span><select value={query.state.pageSize} onChange={(event)=>query.update({pageSize:Number(event.target.value)})}>{PAGE_SIZES.map((size)=><option key={size} value={size}>{size}</option>)}</select></label>
-      <button type="submit">Apply search</button><button type="button" onClick={()=>{setSearchDraft('');query.clear();}}>Clear URL state</button>
-    </form>
-    <SummaryStrip summary={result.summary}/>
-    <div className={selected?'operational-records-layout has-detail':'operational-records-layout'}>
-      <section className="operational-records-list">
-        {loading ? <NativeWorkspaceLoading label={copy.title.toLowerCase()}/> : null}
-        {!loading && error ? <NativeWorkspaceUnavailable label={copy.title} detail={error} onRetry={()=>setReloadKey((value)=>value+1)}/> : null}
-        {!loading && !error && result.rows.length===0 ? <NativeWorkspaceEmpty title="No matching records" detail="The bounded server query completed successfully and returned no records."/> : null}
-        {!loading && !error && result.rows.length ? <div className="native-server-table operational-records-table" role="region" aria-label={`${copy.title} results`} tabIndex={0}><table><caption>{result.totalCount.toLocaleString()} exact records</caption><thead><tr>{columns.map((column)=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{result.rows.map((row,index)=>{
-          const id=recordIdFor(workspace,row);
-          return <tr key={id||`${workspace}:${index}`} className={selected===id?'selected':undefined}>{columns.map((column,columnIndex)=><td key={column.key}>{columnIndex===0 && id && detailEligible ? <Link className="operational-record-link" to={`${detailPath(workspace,id)}${location.search}`}>{column.format?column.format(row[column.key]):display(row[column.key])}</Link> : column.format?column.format(row[column.key]):display(row[column.key])}</td>)}</tr>;
-        })}</tbody></table></div> : null}
-        {!loading && !error ? <nav className="native-workspace-pager" aria-label={`${copy.title} pagination`}><span>{result.totalCount.toLocaleString()} exact records · Page {Math.min(query.state.page,totalPages)} of {totalPages}</span><div className="row-actions"><button type="button" disabled={query.state.page<=1} onClick={()=>query.update({page:query.state.page-1},{preservePage:true})}>Previous</button><button type="button" disabled={query.state.page>=totalPages} onClick={()=>query.update({page:query.state.page+1},{preservePage:true})}>Next</button></div></nav> : null}
-      </section>
-      {selected ? <RecordDetail workspace={workspace} recordId={selected} profile={profile} onAuthorityChanged={()=>setReloadKey((value)=>value+1)}/> : null}
+    <div
+      data-customer-filter-contract={workspace==='customers' ? CUSTOMER_MASTER_FILTER_ORDER.join(',') : undefined}
+      data-customer-column-contract={workspace==='customers' ? CUSTOMER_MASTER_COLUMN_ORDER.join(',') : undefined}
+      data-customer-detail-contract={workspace==='customers' ? CUSTOMER_MASTER_DETAIL_TAB_ORDER.join(',') : undefined}
+    >
+      <nav className="native-workspace-tabs" aria-label={`${copy.title} views`}>{definitions.map((definition)=><button key={definition.id} type="button" className={definition.id===view?'active':''} onClick={()=>query.update({tab:definition.id})}>{definition.label}</button>)}</nav>
+      {workspace==='customers' ? <form className="operational-records-toolbar customer-master-toolbar" onSubmit={search}>
+        <label><span>Customer Type</span><select disabled defaultValue=""><option value="">Unavailable from governed master read</option></select></label>
+        <label><span>Customer</span><input value={searchDraft} placeholder="Customer code or name" onChange={(event)=>setSearchDraft(event.target.value)}/></label>
+        <label><span>Obsolete</span><select disabled defaultValue=""><option value="">Unavailable from governed master read</option></select></label>
+        <label><span>Rows</span><select value={query.state.pageSize} onChange={(event)=>query.update({pageSize:Number(event.target.value)})}>{PAGE_SIZES.map((size)=><option key={size} value={size}>{size}</option>)}</select></label>
+        <button type="submit">Apply customer search</button><button type="button" onClick={()=>{setSearchDraft('');query.clear();}}>Clear URL state</button>
+      </form> : <form className="operational-records-toolbar" onSubmit={search}>
+        <label><span>Search</span><input value={searchDraft} placeholder={`Search ${copy.title.toLowerCase()}`} onChange={(event)=>setSearchDraft(event.target.value)}/></label>
+        <label><span>Filter</span><input value={query.state.filter} placeholder="Exact status / signal" onChange={(event)=>query.update({filter:event.target.value})}/></label>
+        <label><span>Rows</span><select value={query.state.pageSize} onChange={(event)=>query.update({pageSize:Number(event.target.value)})}>{PAGE_SIZES.map((size)=><option key={size} value={size}>{size}</option>)}</select></label>
+        <button type="submit">Apply search</button><button type="button" onClick={()=>{setSearchDraft('');query.clear();}}>Clear URL state</button>
+      </form>}
+      {workspace==='inventory' ? <section className="operational-records-boundary" data-state="governed"><strong>Governed inventory read authority</strong><span>Location-ledger and physical movement facts remain separate from Product Identity. Unleashed warehouse-level reference quantities are not allocated to a preferred Physical SKU.</span><small>Freshness: {adelaide(result.readAt)} · read-only server RPC</small></section> : null}
+      {workspace==='customers' ? <section className="operational-records-boundary" data-state="governed"><strong>Ordermentum-owned Customer Master read</strong><span>Only explicit source-owned master fields are displayed. Missing Customer Type, Currency, Website, Phone, Mobile, Email or Obsolete facts remain Unavailable.</span><small>Revenue / Gross Profit are deferred to #345 governed metric registry · freshness {adelaide(result.readAt)}</small></section> : null}
+      {workspace==='customers' ? null : <SummaryStrip summary={result.summary} workspace={workspace}/>} 
+      <div className={selected?'operational-records-layout has-detail':'operational-records-layout'}>
+        <section className="operational-records-list">
+          {loading ? <NativeWorkspaceLoading label={copy.title.toLowerCase()}/> : null}
+          {!loading && error ? <NativeWorkspaceUnavailable label={copy.title} detail={error} onRetry={()=>setReloadKey((value)=>value+1)}/> : null}
+          {!loading && !error && result.rows.length===0 ? <NativeWorkspaceEmpty title="No matching records" detail="The bounded server query completed successfully and returned no records."/> : null}
+          {!loading && !error && result.rows.length ? <div className="native-server-table operational-records-table" role="region" aria-label={`${copy.title} results`} tabIndex={0}><table><caption>{result.totalCount.toLocaleString()} exact records</caption><thead><tr>{columns.map((column)=><th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{result.rows.map((row,index)=>{
+            const id=recordIdFor(workspace,row);
+            return <tr key={id||`${workspace}:${index}`} className={selected===id?'selected':undefined}>{columns.map((column,columnIndex)=>{
+              const value=column.value ? column.value(row) : row[column.key];
+              const rendered=column.format ? column.format(value) : display(value);
+              if (column.action) return <td key={column.key}>{id && detailEligible ? <Link className="operational-record-link" to={`${detailPath(workspace,id)}${location.search}`}>View</Link> : 'Unavailable'}</td>;
+              if (columnIndex===0 && id && detailEligible && workspace!=='customers') return <td key={column.key}><Link className="operational-record-link" to={`${detailPath(workspace,id)}${location.search}`}>{rendered}</Link></td>;
+              return <td key={column.key}>{rendered}</td>;
+            })}</tr>;
+          })}</tbody></table></div> : null}
+          {!loading && !error ? <nav className="native-workspace-pager" aria-label={`${copy.title} pagination`}><span>{result.totalCount.toLocaleString()} exact records · Page {Math.min(query.state.page,totalPages)} of {totalPages}</span><div className="row-actions"><button type="button" disabled={query.state.page<=1} onClick={()=>query.update({page:query.state.page-1},{preservePage:true})}>Previous</button><button type="button" disabled={query.state.page>=totalPages} onClick={()=>query.update({page:query.state.page+1},{preservePage:true})}>Next</button></div></nav> : null}
+        </section>
+        {selected ? <RecordDetail workspace={workspace} recordId={selected} profile={profile} onAuthorityChanged={()=>setReloadKey((value)=>value+1)}/> : null}
+      </div>
     </div>
   </NativeWorkspaceFrame>;
 }
