@@ -10,6 +10,7 @@ import { usePickSync } from '@/app/usePickSync';
 import { BrandMark } from '@/app/Brand';
 import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
+import { ControlRoomReadParityPanel } from '@/features/dashboard/ControlRoomReadParityPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DeliveryOperationsWorkspace } from '@/features/delivery/DeliveryOperationsWorkspace';
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
@@ -157,17 +158,20 @@ function NativeUnifiedWorkspace({
 
   if (workspace === 'dashboard') {
     return (
-      <DashboardPage
-        role={role}
-        data={data}
-        orders={effectiveOrders}
-        snapshotReady={snapshotReady}
-        loading={snapshotLoading}
-        loadError={loadError || undefined}
-        healthNotice={healthNotice || undefined}
-        onReload={reloadViews}
-        onOpenTab={openTab}
-      />
+      <>
+        <DashboardPage
+          role={role}
+          data={data}
+          orders={effectiveOrders}
+          snapshotReady={snapshotReady}
+          loading={snapshotLoading}
+          loadError={loadError || undefined}
+          healthNotice={healthNotice || undefined}
+          onReload={reloadViews}
+          onOpenTab={openTab}
+        />
+        <ControlRoomReadParityPanel />
+      </>
     );
   }
 
