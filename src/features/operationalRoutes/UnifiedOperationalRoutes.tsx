@@ -10,11 +10,15 @@ import { usePickSync } from '@/app/usePickSync';
 import { BrandMark } from '@/app/Brand';
 import { EmailLoginScreen } from '@/features/auth/EmailLoginScreen';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
+import { ControlRoomReadParityPanel } from '@/features/dashboard/ControlRoomReadParityPanel';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DeliveryOperationsWorkspace } from '@/features/delivery/DeliveryOperationsWorkspace';
 import { AnalyticsHealthConsole } from '@/features/intelligence/analytics';
 import { OrdermentumWorkspacePage } from '@/features/ordermentum/OrdermentumWorkspacePage';
 import { ProductIdentityCommissioningWithSurvey } from '@/features/productIdentity/ProductIdentityCommissioningWithSurvey';
+import { ProductMasterWorkspace } from '@/features/products/ProductMasterWorkspace';
+import { SupplierMasterWorkspace } from '@/features/suppliers/SupplierMasterWorkspace';
+import { PurchaseOperationsWorkspace } from '@/features/purchases/PurchaseOperationsWorkspace';
 import { OperationalRecordsWorkspace } from '@/features/operationalRecords/OperationalRecordsWorkspace';
 import {
   OperationalPagedWorkspace,
@@ -41,6 +45,9 @@ type UnifiedWorkspace =
   | 'dashboard'
   | 'ordermentum'
   | 'orders'
+  | 'products'
+  | 'suppliers'
+  | 'purchases'
   | 'inventory'
   | 'product-identity'
   | 'stores'
@@ -53,12 +60,15 @@ type UnifiedWorkspace =
   | 'settings'
   | 'warehouse-control';
 
-type NativeWorkspace = Extract<UnifiedWorkspace, 'dashboard' | 'ordermentum' | 'delivery' | 'analytics'>;
+type NativeWorkspace = Extract<UnifiedWorkspace, 'dashboard' | 'ordermentum' | 'products' | 'delivery' | 'analytics'>;
 
 export function unifiedOperationalWorkspace(pathname: string): UnifiedWorkspace | null {
   if (pathname === '/control-room') return 'dashboard';
   if (pathname === '/ordermentum') return 'ordermentum';
   if (pathname === '/orders' || pathname.startsWith('/orders/')) return 'orders';
+  if (pathname === '/products' || pathname.startsWith('/products/')) return 'products';
+  if (pathname === '/suppliers' || pathname.startsWith('/suppliers/')) return 'suppliers';
+  if (pathname === '/purchases' || pathname.startsWith('/purchases/')) return 'purchases';
   if (pathname === '/inventory' || pathname.startsWith('/inventory/')) return 'inventory';
   if (pathname === '/commissioning/product-identity') return 'product-identity';
   if (pathname === '/customers' || pathname.startsWith('/customers/') || pathname === '/stores' || pathname.startsWith('/stores/')) return 'stores';
@@ -134,6 +144,8 @@ function NativeUnifiedWorkspace({
     // Ordermentum and Delivery still need their aggregate operational model. Control Room owns the
     // bounded bootstrap introduced by TRANSFORM-001 and keeps reloadViews only as secondary flow enrichment.
     if (workspace === 'ordermentum') void reloadViews();
+    // Products consumes only commercial catalog facts; inventory/Product Identity remain separate authorities.
+    if (workspace === 'products') void reloadViews();
     if (workspace === 'delivery') void reloadViews();
     return undefined;
   }, [reloadViews, workspace]);
@@ -149,21 +161,37 @@ function NativeUnifiedWorkspace({
 
   if (workspace === 'dashboard') {
     return (
-      <DashboardPage
-        role={role}
-        data={data}
-        orders={effectiveOrders}
-        snapshotReady={snapshotReady}
-        loading={snapshotLoading}
-        loadError={loadError || undefined}
-        healthNotice={healthNotice || undefined}
-        onReload={reloadViews}
-        onOpenTab={openTab}
-      />
+      <>
+        <DashboardPage
+          role={role}
+          data={data}
+          orders={effectiveOrders}
+          snapshotReady={snapshotReady}
+          loading={snapshotLoading}
+          loadError={loadError || undefined}
+          healthNotice={healthNotice || undefined}
+          onReload={reloadViews}
+          onOpenTab={openTab}
+        />
+        <ControlRoomReadParityPanel />
+      </>
     );
   }
 
   if (workspace === 'analytics') return <AnalyticsHealthConsole />;
+
+  if (workspace === 'products') {
+    return (
+      <ProductMasterWorkspace
+        catalog={data.catalog}
+        sourceObservedAt={data.syncBatch.completedAt}
+        loading={snapshotLoading}
+        available={snapshotReady}
+        loadError={loadError || undefined}
+        onReload={reloadViews}
+      />
+    );
+  }
 
   if (workspace === 'delivery') {
     if (snapshotLoading && !snapshotReady) {
@@ -352,8 +380,12 @@ export default function UnifiedOperationalRoutes() {
 
   const businessDay = businessDateFromIso(new Date().toISOString());
   let content;
-  if (workspace === 'dashboard' || workspace === 'ordermentum' || workspace === 'delivery' || workspace === 'analytics') {
+  if (workspace === 'dashboard' || workspace === 'ordermentum' || workspace === 'products' || workspace === 'delivery' || workspace === 'analytics') {
     content = <NativeUnifiedWorkspace workspace={workspace} role={role} profile={profile} />;
+  } else if (workspace === 'suppliers') {
+    content = <SupplierMasterWorkspace />;
+  } else if (workspace === 'purchases') {
+    content = <PurchaseOperationsWorkspace />;
   } else if (workspace === 'settings') {
     content = <OperationalSettingsWorkspace profile={profile} />;
   } else if (workspace === 'inventory' || workspace === 'stores' || workspace === 'accounts' || workspace === 'returns') {

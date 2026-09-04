@@ -85,8 +85,9 @@ function message(error: unknown) {
   return String(error);
 }
 
-export async function loadPurchaseOrders(client?: SupabaseClient | null) {
-  const { data, error } = await activeClient(client).rpc('ecoflow_read_purchase_orders', { p_limit: 160 });
+export async function loadPurchaseOrders(client?: SupabaseClient | null, limit = 160) {
+  const requestedLimit = Math.min(300, Math.max(1, Number.isFinite(limit) ? Math.trunc(limit) : 160));
+  const { data, error } = await activeClient(client).rpc('ecoflow_read_purchase_orders', { p_limit: requestedLimit });
   if (error) throw new Error(message(error));
   return (data ?? []) as PurchaseOrderSummary[];
 }

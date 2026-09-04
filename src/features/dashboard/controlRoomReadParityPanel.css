@@ -1,0 +1,100 @@
+.control-room-read-parity {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--border-subtle,#d4dbd7);
+  border-radius: 14px;
+  background: var(--surface,#fff);
+}
+
+.control-room-read-parity > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.control-room-read-parity > header span {
+  display: block;
+  color: var(--accent-strong,#065f46);
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.control-room-read-parity > header h2 {
+  margin: 4px 0 5px;
+}
+
+.control-room-read-parity > header p,
+.control-room-read-parity > footer {
+  margin: 0;
+  color: var(--text-muted,#66736b);
+}
+
+.control-room-read-parity > header > strong {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid var(--border-subtle,#d4dbd7);
+  border-radius: 999px;
+  font-size: .72rem;
+  letter-spacing: .05em;
+}
+
+.control-room-read-parity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+  gap: 9px;
+}
+
+.control-room-read-parity-card {
+  display: grid;
+  gap: 6px;
+  min-height: 154px;
+  padding: 13px;
+  border: 1px solid var(--border-subtle,#d4dbd7);
+  border-radius: 11px;
+  background: #fbfcfb;
+  color: inherit;
+  text-decoration: none;
+}
+
+.control-room-read-parity-card:hover,
+.control-room-read-parity-card:focus-visible {
+  border-color: var(--accent,#087f5b);
+  outline: none;
+}
+
+.control-room-read-parity-card > span {
+  color: var(--text-muted,#66736b);
+  font-size: .66rem;
+  font-weight: 850;
+  letter-spacing: .055em;
+}
+
+.control-room-read-parity-card > strong {
+  font-size: 1rem;
+}
+
+.control-room-read-parity-card > small {
+  color: var(--text-muted,#66736b);
+  line-height: 1.42;
+}
+
+.control-room-read-parity-card > b {
+  align-self: end;
+  color: var(--accent-strong,#065f46);
+  font-size: .78rem;
+}
+
+.control-room-read-parity > footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle,#d4dbd7);
+  font-size: .8rem;
+}
+
+@media (max-width: 640px) {
+  .control-room-read-parity > header { display: grid; }
+  .control-room-read-parity-grid { grid-template-columns: 1fr; }
+}

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   canonicalIntelligencePaths,
   matchIntelligenceRoute,
@@ -18,18 +19,42 @@ import {
   reduceIntelligenceOverlay,
 } from '../src/features/intelligence/navigation/overlayState.ts';
 import { resolveIntelligenceFeatureFlags } from '../src/features/intelligence/featureFlags.ts';
+import {
+  PRODUCT_MASTER_COLUMN_ORDER,
+  PRODUCT_MASTER_FILTER_ORDER,
+  createProductMasterReader,
+} from '../src/data/repositories/productMaster.ts';
+import {
+  SUPPLIER_MASTER_COLUMN_ORDER,
+  SUPPLIER_MASTER_FILTER_ORDER,
+} from '../src/data/repositories/supplierMaster.ts';
+import {
+  PURCHASE_OPERATIONS_COLUMN_ORDER,
+  PURCHASE_OPERATIONS_FILTER_ORDER,
+  mapPurchaseOrderFamiliarStatus,
+} from '../src/data/repositories/purchaseOperationsContract.ts';
 
-test('canonical route registry covers the ADR-0008 route families', () => {
+function source(path) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+}
+
+test('canonical route registry covers the ADR-0008 and #340A route families', () => {
   const paths = new Set(canonicalIntelligencePaths());
   for (const required of [
     '/control-room',
     '/orders',
     '/orders/:orderId',
+    '/products',
+    '/products/:productId',
     '/inventory',
     '/inventory/commercial/:skuId',
     '/inventory/physical/:itemId',
     '/customers',
     '/customers/:customerId',
+    '/suppliers',
+    '/suppliers/:supplierId',
+    '/purchases',
+    '/purchases/:purchaseOrderId',
     '/stores/:storeId',
     '/delivery',
     '/delivery/runs/:runCode',
@@ -86,11 +111,213 @@ test('deep entity routes retain decoded identity and typed legacy adapter', () =
       legacyDesktopTab: 'delivery',
     },
   });
+  assert.deepEqual(matchIntelligenceRoute('/products/R-360Y'), {
+    status: 'READY',
+    route: {
+      workspace: 'products',
+      canonicalPath: '/products/:productId',
+      entityKind: 'product',
+      entityId: 'R-360Y',
+      legacyDesktopTab: null,
+    },
+  });
+  assert.deepEqual(matchIntelligenceRoute('/purchases/PO-1001'), {
+    status: 'READY',
+    route: {
+      workspace: 'purchases',
+      canonicalPath: '/purchases/:purchaseOrderId',
+      entityKind: 'purchase-order',
+      entityId: 'PO-1001',
+      legacyDesktopTab: null,
+    },
+  });
   assert.deepEqual(matchIntelligenceRoute('/orders/%E0%A4%A'), {
     status: 'UNAVAILABLE',
     pathname: '/orders/%E0%A4%A',
     reason: 'INVALID_ENTITY_ID',
   });
+});
+
+test('#340A office routes are Owner/Admin only until explicit capability work expands them', () => {
+  for (const path of ['/products', '/suppliers', '/purchases']) {
+    assert.equal(resolveIntelligenceRoute(path, 'owner').status, 'READY');
+    assert.equal(resolveIntelligenceRoute(path, 'admin').status, 'READY');
+    assert.equal(resolveIntelligenceRoute(path, 'account').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'viewer').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'warehouse').status, 'FORBIDDEN');
+    assert.equal(resolveIntelligenceRoute(path, 'driver').status, 'FORBIDDEN');
+  }
+});
+
+test('#340A preserves Product, Supplier and Purchase muscle-memory contracts without inventing authority', () => {
+  assert.deepEqual(PRODUCT_MASTER_FILTER_ORDER, [
+    'search', 'product-group', 'brand', 'supplier', 'supplier-product', 'barcode', 'obsolete', 'sellable', 'purchasable',
+  ]);
+  assert.deepEqual(PRODUCT_MASTER_COLUMN_ORDER, [
+    'image', 'product-code', 'description', 'product-group', 'base-pack', 'allocated', 'on-hand', 'base-unit', 'status-action',
+  ]);
+  assert.deepEqual(SUPPLIER_MASTER_FILTER_ORDER, ['supplier', 'obsolete']);
+  assert.deepEqual(SUPPLIER_MASTER_COLUMN_ORDER, ['code', 'name', 'city', 'country', 'currency', 'action']);
+  assert.deepEqual(PURCHASE_OPERATIONS_FILTER_ORDER, [
+    'status', 'purchase-order', 'supplier', 'warehouse', 'supplier-reference', 'sales-order-reference', 'printed-export',
+  ]);
+  assert.deepEqual(PURCHASE_OPERATIONS_COLUMN_ORDER, [
+    'purchase-order', 'order-date', 'delivery-date', 'supplier', 'supplier-reference', 'status', 'warehouse', 'currency', 'total', 'action',
+  ]);
+});
+
+test('#340A uses an explicit conservative mapping from WAYNX purchase states', () => {
+  assert.equal(mapPurchaseOrderFamiliarStatus('OPEN'), 'Open');
+  assert.equal(mapPurchaseOrderFamiliarStatus('PART_RECEIVED'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('AWAITING_REVIEW'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('VARIANCE'), 'Receipted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('MATCHED'), 'Complete');
+  assert.equal(mapPurchaseOrderFamiliarStatus('CLOSED'), 'Complete');
+  assert.equal(mapPurchaseOrderFamiliarStatus('CANCELLED'), 'Deleted');
+  assert.equal(mapPurchaseOrderFamiliarStatus('UNKNOWN'), null);
+});
+
+test('#340A Product Master preserves the R-360Y Commercial and Physical identity separation', async () => {
+  const reader = createProductMasterReader({
+    catalog: [{
+      id: 'commercial-catalog-r360y', source: 'product', sku: 'R-360Y', name: '360ml Clear BioCup',
+      basePrice: 0, displayPrice: '$0.00', unit: 'Carton', category: 'Cups', visible: true, tierPrices: {},
+    }],
+    sourceObservedAt: '2026-09-04T00:00:00Z',
+    identityRows: [{
+      commercialSkuId: '6946f415-68ea-484a-91f4-848b7ec048ec', commercialSkuCode: 'R-360Y', commercialName: '360ml Clear BioCup',
+      ordermentumSku: 'R-360Y', taskStatus: 'RESOLVED', identityStatus: 'READY', familyCode: 'FAMILY-R-360Y',
+      familyName: '360ml Clear BioCup', preferredPhysicalCode: 'R-360Y', preferredPhysicalName: '360ml Clear BioCup', brand: null,
+      substitutionPolicy: 'PROHIBITED', publishedBarcodeCount: 1, draftBarcodeCount: 0, legacyBarcodeCount: 0,
+      legacyBarcodeExample: null, taskDetail: 'Published canonical identity is active.',
+    }],
+  });
+  const result = await reader.readList({ page: 1, pageSize: 50 });
+  assert.equal(result.totalCount, 1);
+  assert.equal(result.rows[0].productCode, 'R-360Y');
+  assert.equal(result.rows[0].identity?.commercialSkuId, '6946f415-68ea-484a-91f4-848b7ec048ec');
+  assert.equal(result.rows[0].identity?.preferredPhysicalCode, 'R-360Y');
+  assert.equal(result.rows[0].identity?.identityStatus, 'READY');
+  assert.equal(result.rows[0].identity?.substitutionPolicy, 'PROHIBITED');
+  assert.equal(result.rows[0].onHand, null);
+  const deliveryContract = source('src/data/repositories/productMasterIdentity.ts');
+  assert.match(deliveryContract, /entry\.kind === 'BARCODE'/);
+  const engineeringContract = source('docs/UNLEASHED-MIGRATION-005-340A-READ-PARITY.md');
+  for (const fixture of ['6946f415-68ea-484a-91f4-848b7ec048ec', '8905b519-6418-4bb1-a2a4-bdd8d48157f7', '19344062000652']) {
+    assert.ok(engineeringContract.includes(fixture), `R-360Y fixture contract lost ${fixture}`);
+  }
+});
+
+test('#340A preserves Customer Master filter, column and detail order', () => {
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  assert.match(repository, /CUSTOMER_MASTER_FILTER_ORDER = \['customer-type', 'customer', 'obsolete'\] as const/);
+  assert.match(repository, /CUSTOMER_MASTER_COLUMN_ORDER = \['code', 'name', 'customer-type', 'currency', 'website', 'phone', 'mobile', 'email', 'action'\] as const/);
+  const details = ['Details', 'Contact', 'Address', 'Sell Price Tier', 'Other Customer Details', 'Sales', 'Shipments', 'Costings'];
+  let cursor = repository.indexOf('CUSTOMER_MASTER_DETAIL_TAB_ORDER');
+  assert.notEqual(cursor, -1);
+  for (const label of details) {
+    const next = repository.indexOf(`'${label}'`, cursor);
+    assert.ok(next > cursor, `Customer detail contract lost order at ${label}`);
+    cursor = next;
+  }
+});
+
+test('#340A Customer Master projection is explicit-key only and defers governed profitability metrics', () => {
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  for (const marker of [
+    "recordId: explicitString(row, ['store_id', 'customer_id', 'id'])",
+    "code: explicitString(row, ['customer_code', 'store_code', 'external_code', 'ordermentum_code', 'store_id'])",
+    "name: explicitString(row, ['customer_name', 'store_name', 'name'])",
+    "customerType: explicitString(row, ['customer_type', 'customer_type_name', 'type'])",
+    "currency: explicitString(row, ['currency', 'currency_code'])",
+    "website: explicitString(row, ['website', 'website_url'])",
+    "phone: explicitString(row, ['phone', 'phone_number', 'telephone'])",
+    "mobile: explicitString(row, ['mobile', 'mobile_number'])",
+    "email: explicitString(row, ['email', 'email_address'])",
+    "obsolete: explicitBoolean(row, ['obsolete', 'is_obsolete'])",
+  ]) {
+    assert.ok(repository.includes(marker), `Customer projection lost explicit-key contract: ${marker}`);
+  }
+  assert.match(repository, /CUSTOMER_GOVERNED_METRIC_KEY_PATTERN/);
+  for (const deferred of ['revenue', 'gross_profit', 'profit', 'margin', 'cogs']) {
+    assert.ok(repository.includes(deferred), `Deferred metric contract lost ${deferred}`);
+  }
+  assert.match(repository, /Missing facts stay null/);
+  assert.match(repository, /must not surface or locally compute these aggregate metrics/);
+});
+
+test('#340A native office surfaces are owned by the unified React shell', () => {
+  const main = source('src/main.tsx');
+  const routes = source('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+  const shell = source('src/features/navigation/OperationalAppShell.tsx');
+  for (const path of ['/products', '/suppliers', '/purchases']) {
+    assert.match(main, new RegExp(`pathname === '${path.replace('/', '\\/')}'`));
+    assert.match(routes, new RegExp(`pathname === '${path.replace('/', '\\/')}'`));
+    assert.match(shell, new RegExp(`path: '${path.replace('/', '\\/')}'`));
+  }
+  assert.match(routes, /ProductMasterWorkspace/);
+  assert.match(routes, /SupplierMasterWorkspace/);
+  assert.match(routes, /PurchaseOperationsWorkspace/);
+  const expectedNavigation = [
+    'ACTION_PATHS.CONTROL_ROOM', 'ACTION_PATHS.ORDERS', 'ACTION_PATHS.PURCHASES', 'ACTION_PATHS.PRODUCTS',
+    'ACTION_PATHS.INVENTORY', 'ACTION_PATHS.PRODUCT_IDENTITY', 'ACTION_PATHS.CUSTOMERS', 'ACTION_PATHS.SUPPLIERS',
+    'ACTION_PATHS.EXCEPTIONS', 'ACTION_PATHS.DELIVERY', 'ACTION_PATHS.RETURNS', 'ACTION_PATHS.ACCOUNTS',
+    'ACTION_PATHS.ANALYTICS', 'ACTION_PATHS.LOGS', 'ACTION_PATHS.SETTINGS',
+  ];
+  let cursor = shell.indexOf('OPERATIONAL_NAVIGATION');
+  for (const marker of expectedNavigation) {
+    const next = shell.indexOf(marker, cursor);
+    assert.ok(next > cursor, `Owner/Admin navigation order lost ${marker}`);
+    cursor = next;
+  }
+  assert.doesNotMatch(shell.slice(shell.indexOf('OPERATIONAL_NAVIGATION'), shell.indexOf('roleLabel')), /workspace: 'ordermentum'/);
+});
+
+test('#340A supplier and purchase surfaces fail closed on data and mutation authority', () => {
+  const supplierRepository = source('src/data/repositories/supplierMaster.ts');
+  const productRepository = source('src/data/repositories/productMaster.ts');
+  const productIdentityRepository = source('src/data/repositories/productMasterIdentity.ts');
+  const purchaseRepository = source('src/data/repositories/purchaseOperations.ts');
+  const purchaseSurface = source('src/features/purchases/PurchaseOperationsWorkspace.tsx');
+  assert.doesNotMatch(supplierRepository, /unleashed_raw_snapshots/);
+  assert.doesNotMatch(productRepository, /unleashed_raw_snapshots/);
+  for (const forbidden of ['createPurchaseOrder', 'startPurchaseOrderReceipt', 'uploadReceivingDocument', 'reviewPurchaseOrder']) {
+    assert.equal(purchaseRepository.includes(forbidden), false, `purchase read adapter leaked ${forbidden}`);
+    assert.equal(purchaseSurface.includes(forbidden), false, `purchase surface leaked ${forbidden}`);
+  }
+  assert.match(supplierRepository, /state: 'DEGRADED'/);
+  assert.match(supplierRepository, /'UNAVAILABLE'/);
+  assert.match(supplierRepository, /isAuthoritative: false/);
+  assert.match(productIdentityRepository, /readProductIdentityPage/);
+  assert.match(productIdentityRepository, /readOperationalRecordDetail/);
+  assert.match(source('src/features/products/ProductMasterWorkspace.tsx'), /active canonical barcode binding/);
+});
+
+test('#340A Inventory and Customer enrichment stays on governed operational reads', () => {
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  const workspace = source('src/features/operationalRecords/OperationalRecordsWorkspace.tsx');
+  assert.match(repository, /ecoflow_read_operational_records_v1/);
+  assert.match(repository, /ecoflow_read_operational_record_detail_v1/);
+  assert.doesNotMatch(repository, /unleashed_raw_snapshots/);
+  assert.doesNotMatch(workspace, /Revenue 30d/);
+  assert.doesNotMatch(workspace, /revenue_30d/);
+  assert.doesNotMatch(workspace, /gross_profit/);
+  assert.match(workspace, /Unleashed warehouse-level reference quantities are not allocated to a preferred Physical SKU/);
+  assert.match(workspace, /Revenue \/ Gross Profit are deferred to #345 governed metric registry/);
+  for (const forbidden of ['createPurchaseOrder', 'startPurchaseOrderReceipt', 'startStocktake', 'postStockMovement', 'reviewPurchaseOrder']) {
+    assert.equal(workspace.includes(forbidden), false, `read parity workspace leaked ${forbidden}`);
+  }
+});
+
+test('#340A Control Room enrichment links only to governed read surfaces and defers metrics', () => {
+  const routes = source('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+  const panel = source('src/features/dashboard/ControlRoomReadParityPanel.tsx');
+  assert.match(routes, /ControlRoomReadParityPanel/);
+  for (const path of ['/products', '/suppliers', '/purchases', '/inventory', '/customers']) {
+    assert.match(panel, new RegExp(`path: '${path.replace('/', '\\/')}'`));
+  }
+  assert.match(panel, /#345 metric registry/);
+  assert.doesNotMatch(panel, /reduce\(|grossProfit|gross_profit_30d|revenue_30d/);
 });
 
 test('unknown routes and role violations fail closed without dashboard fallback', () => {
@@ -143,6 +370,14 @@ test('query serialisation is stable, bounded and shareable', () => {
   assert.equal(query, 'date=2026-07-29&from=2026-07-01&to=2026-07-29&compare=previous-period&filter=status%3AREADY&filter=store%3A42&sort=priority&cursor=page-2&selected=order-1&drawer=order%3Aorder-1&inspector=store%3Astore-42&view=morning');
   assert.equal(withWorkspaceQuery('/orders', state), `/orders?${query}`);
   assert.deepEqual(parseWorkspaceQuery(query).state, state);
+});
+
+test('#340A page state is URL-backed and resets independently from cursor state', () => {
+  const state = parseWorkspaceQuery('?q=R-360Y&page=3&limit=50').state;
+  assert.equal(state.search, 'R-360Y');
+  assert.equal(state.page, 3);
+  assert.equal(state.pageSize, 50);
+  assert.equal(serialiseWorkspaceQuery(state), 'q=R-360Y&page=3&limit=50');
 });
 
 test('overlay reducer enforces one primary and one replaceable secondary', () => {

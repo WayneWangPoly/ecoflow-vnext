@@ -63,6 +63,12 @@ export function isUnifiedOperationalPath(pathname: string) {
     || pathname === '/commissioning/product-identity'
     || pathname === '/orders'
     || pathname.startsWith('/orders/')
+    || pathname === '/products'
+    || pathname.startsWith('/products/')
+    || pathname === '/suppliers'
+    || pathname.startsWith('/suppliers/')
+    || pathname === '/purchases'
+    || pathname.startsWith('/purchases/')
     || pathname === '/inventory'
     || pathname.startsWith('/inventory/')
     || pathname === '/customers'

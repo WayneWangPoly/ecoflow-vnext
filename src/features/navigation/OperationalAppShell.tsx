@@ -18,10 +18,13 @@ type NavigationItem = {
 
 const ACTION_PATHS: Readonly<Record<string, NavigationItem>> = {
   CONTROL_ROOM: { label: 'Control Room', path: '/control-room', workspace: 'control-room' },
-  ORDERS: { label: 'Orders', path: '/orders', workspace: 'orders' },
+  ORDERS: { label: 'Sales Orders', path: '/orders', workspace: 'orders' },
+  PRODUCTS: { label: 'Products', path: '/products', workspace: 'products' },
+  CUSTOMERS: { label: 'Customers', path: '/customers', workspace: 'customers' },
+  SUPPLIERS: { label: 'Suppliers', path: '/suppliers', workspace: 'suppliers' },
+  PURCHASES: { label: 'Purchases', path: '/purchases', workspace: 'purchases' },
   INVENTORY: { label: 'Inventory', path: '/inventory', workspace: 'inventory' },
   PRODUCT_IDENTITY: { label: 'Product Identity', path: '/commissioning/product-identity', workspace: 'product-identity' },
-  CUSTOMERS: { label: 'Customers', path: '/customers', workspace: 'customers' },
   DELIVERY: { label: 'Delivery', path: '/delivery', workspace: 'delivery' },
   RETURNS: { label: 'Returns', path: '/returns', workspace: 'returns' },
   ACCOUNTS: { label: 'Accounts', path: '/accounts', workspace: 'accounts' },
@@ -38,11 +41,13 @@ export const LEGACY_RECONCILIATION_ROUTE = {
 
 export const OPERATIONAL_NAVIGATION: readonly NavigationItem[] = [
   ACTION_PATHS.CONTROL_ROOM,
-  { label: 'Ordermentum', path: '/ordermentum', workspace: 'ordermentum' },
   ACTION_PATHS.ORDERS,
+  ACTION_PATHS.PURCHASES,
+  ACTION_PATHS.PRODUCTS,
   ACTION_PATHS.INVENTORY,
   ACTION_PATHS.PRODUCT_IDENTITY,
   ACTION_PATHS.CUSTOMERS,
+  ACTION_PATHS.SUPPLIERS,
   ACTION_PATHS.EXCEPTIONS,
   ACTION_PATHS.DELIVERY,
   ACTION_PATHS.RETURNS,
