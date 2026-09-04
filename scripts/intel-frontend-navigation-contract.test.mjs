@@ -27,6 +27,13 @@ import {
   SUPPLIER_MASTER_COLUMN_ORDER,
   SUPPLIER_MASTER_FILTER_ORDER,
 } from '../src/data/repositories/supplierMaster.ts';
+import {
+  CUSTOMER_MASTER_COLUMN_ORDER,
+  CUSTOMER_MASTER_DETAIL_TAB_ORDER,
+  CUSTOMER_MASTER_FILTER_ORDER,
+  isDeferredCustomerMetricKey,
+  projectCustomerMasterRow,
+} from '../src/data/repositories/operationalRecords.ts';
 
 function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -154,6 +161,56 @@ test('#340A preserves Product and Supplier muscle-memory contracts without inven
   assert.deepEqual(SUPPLIER_MASTER_COLUMN_ORDER, ['code', 'name', 'city', 'country', 'currency', 'action']);
 });
 
+test('#340A preserves Customer Master filter, column and detail order', () => {
+  assert.deepEqual(CUSTOMER_MASTER_FILTER_ORDER, ['customer-type', 'customer', 'obsolete']);
+  assert.deepEqual(CUSTOMER_MASTER_COLUMN_ORDER, ['code', 'name', 'customer-type', 'currency', 'website', 'phone', 'mobile', 'email', 'action']);
+  assert.deepEqual(CUSTOMER_MASTER_DETAIL_TAB_ORDER, [
+    'Details', 'Contact', 'Address', 'Sell Price Tier', 'Other Customer Details', 'Sales', 'Shipments', 'Costings',
+  ]);
+});
+
+test('#340A Customer Master projection copies explicit governed facts and leaves missing facts null', () => {
+  assert.deepEqual(projectCustomerMasterRow({
+    store_id: 'store-1',
+    customer_code: 'C-100',
+    store_name: 'North Cafe',
+    customer_type: 'Cafe',
+    currency_code: 'AUD',
+    website_url: 'https://example.test',
+    phone_number: '08 8000 0000',
+    mobile_number: '0400 000 000',
+    email_address: 'ops@example.test',
+    is_obsolete: false,
+    revenue_30d: 999,
+  }), {
+    recordId: 'store-1',
+    code: 'C-100',
+    name: 'North Cafe',
+    customerType: 'Cafe',
+    currency: 'AUD',
+    website: 'https://example.test',
+    phone: '08 8000 0000',
+    mobile: '0400 000 000',
+    email: 'ops@example.test',
+    obsolete: false,
+  });
+  assert.deepEqual(projectCustomerMasterRow({ store_id: 'store-2', store_name: 'South Cafe' }), {
+    recordId: 'store-2',
+    code: 'store-2',
+    name: 'South Cafe',
+    customerType: null,
+    currency: null,
+    website: null,
+    phone: null,
+    mobile: null,
+    email: null,
+    obsolete: null,
+  });
+  assert.equal(isDeferredCustomerMetricKey('revenue_30d'), true);
+  assert.equal(isDeferredCustomerMetricKey('gross_profit_30d'), true);
+  assert.equal(isDeferredCustomerMetricKey('order_total'), false);
+});
+
 test('#340A native office surfaces are owned by the unified React shell', () => {
   const main = source('src/main.tsx');
   const routes = source('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
@@ -182,6 +239,33 @@ test('#340A supplier and purchase surfaces fail closed on data and mutation auth
   assert.match(supplierRepository, /state: 'DEGRADED'/);
   assert.match(supplierRepository, /'UNAVAILABLE'/);
   assert.match(supplierRepository, /isAuthoritative: false/);
+});
+
+test('#340A Inventory and Customer enrichment stays on governed operational reads', () => {
+  const repository = source('src/data/repositories/operationalRecords.ts');
+  const workspace = source('src/features/operationalRecords/OperationalRecordsWorkspace.tsx');
+  assert.match(repository, /ecoflow_read_operational_records_v1/);
+  assert.match(repository, /ecoflow_read_operational_record_detail_v1/);
+  assert.doesNotMatch(repository, /unleashed_raw_snapshots/);
+  assert.doesNotMatch(workspace, /Revenue 30d/);
+  assert.doesNotMatch(workspace, /revenue_30d/);
+  assert.doesNotMatch(workspace, /gross_profit/);
+  assert.match(workspace, /Unleashed warehouse-level reference quantities are not allocated to a preferred Physical SKU/);
+  assert.match(workspace, /Revenue \/ Gross Profit are deferred to #345 governed metric registry/);
+  for (const forbidden of ['createPurchaseOrder', 'startPurchaseOrderReceipt', 'startStocktake', 'postStockMovement', 'reviewPurchaseOrder']) {
+    assert.equal(workspace.includes(forbidden), false, `read parity workspace leaked ${forbidden}`);
+  }
+});
+
+test('#340A Control Room enrichment links only to governed read surfaces and defers metrics', () => {
+  const routes = source('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+  const panel = source('src/features/dashboard/ControlRoomReadParityPanel.tsx');
+  assert.match(routes, /ControlRoomReadParityPanel/);
+  for (const path of ['/products', '/suppliers', '/purchases', '/inventory', '/customers']) {
+    assert.match(panel, new RegExp(`path: '${path.replace('/', '\\/')}'`));
+  }
+  assert.match(panel, /#345 metric registry/);
+  assert.doesNotMatch(panel, /reduce\(|grossProfit|gross_profit_30d|revenue_30d/);
 });
 
 test('unknown routes and role violations fail closed without dashboard fallback', () => {
