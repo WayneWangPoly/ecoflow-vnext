@@ -7,6 +7,13 @@ on:
       - 'src/main.tsx'
       - 'src/features/operationalRoutes/**'
       - 'src/features/navigation/**'
+      - 'src/features/products/**'
+      - 'src/features/suppliers/**'
+      - 'src/features/purchases/**'
+      - 'src/features/officeParity/**'
+      - 'src/data/repositories/productMaster.ts'
+      - 'src/data/repositories/supplierMaster.ts'
+      - 'src/data/repositories/purchaseOperations.ts'
       - 'src/features/stores/**'
       - 'src/features/inventory/**'
       - 'src/features/ordermentum/**'
@@ -14,16 +21,26 @@ on:
       - 'src/features/warehouse/WarehouseMapPage.tsx'
       - 'scripts/audit-native-operational-routes.mjs'
       - 'scripts/native-operational-route-contract.test.mjs'
+      - 'scripts/intel-frontend-navigation-contract.test.mjs'
+      - 'scripts/intel-desktop-route-adapter-contract.test.mjs'
       - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
       - '.github/workflows/native-operational-routes-check.yml'
   push:
     branches:
       - main
       - 'agent/phase9c/**'
+      - 'agent/unleashed/**'
     paths:
       - 'src/main.tsx'
       - 'src/features/operationalRoutes/**'
       - 'src/features/navigation/**'
+      - 'src/features/products/**'
+      - 'src/features/suppliers/**'
+      - 'src/features/purchases/**'
+      - 'src/features/officeParity/**'
+      - 'src/data/repositories/productMaster.ts'
+      - 'src/data/repositories/supplierMaster.ts'
+      - 'src/data/repositories/purchaseOperations.ts'
       - 'src/features/stores/**'
       - 'src/features/inventory/**'
       - 'src/features/ordermentum/**'
@@ -31,6 +48,8 @@ on:
       - 'src/features/warehouse/WarehouseMapPage.tsx'
       - 'scripts/audit-native-operational-routes.mjs'
       - 'scripts/native-operational-route-contract.test.mjs'
+      - 'scripts/intel-frontend-navigation-contract.test.mjs'
+      - 'scripts/intel-desktop-route-adapter-contract.test.mjs'
       - 'docs/PHASE-9C-NATIVE-OPERATIONAL-ROUTES.md'
       - '.github/workflows/native-operational-routes-check.yml'
 
@@ -58,8 +77,8 @@ jobs:
         run: npm ci
       - name: Audit native route ownership
         run: node scripts/audit-native-operational-routes.mjs
-      - name: Test route and pagination contracts
-        run: node --experimental-strip-types --test scripts/native-operational-route-contract.test.mjs scripts/intel-desktop-route-adapter-contract.test.mjs
+      - name: Test route, parity and pagination contracts
+        run: node --experimental-strip-types --test scripts/native-operational-route-contract.test.mjs scripts/intel-frontend-navigation-contract.test.mjs scripts/intel-desktop-route-adapter-contract.test.mjs
       - name: TypeScript
         run: npm run typecheck
       - name: Vite production build
