@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   canonicalIntelligencePaths,
   matchIntelligenceRoute,
@@ -18,6 +19,18 @@ import {
   reduceIntelligenceOverlay,
 } from '../src/features/intelligence/navigation/overlayState.ts';
 import { resolveIntelligenceFeatureFlags } from '../src/features/intelligence/featureFlags.ts';
+import {
+  PRODUCT_MASTER_COLUMN_ORDER,
+  PRODUCT_MASTER_FILTER_ORDER,
+} from '../src/data/repositories/productMaster.ts';
+import {
+  SUPPLIER_MASTER_COLUMN_ORDER,
+  SUPPLIER_MASTER_FILTER_ORDER,
+} from '../src/data/repositories/supplierMaster.ts';
+
+function source(path) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+}
 
 test('canonical route registry covers the ADR-0008 and #340A route families', () => {
   const paths = new Set(canonicalIntelligencePaths());
@@ -128,6 +141,47 @@ test('#340A office routes are Owner/Admin only until explicit capability work ex
     assert.equal(resolveIntelligenceRoute(path, 'warehouse').status, 'FORBIDDEN');
     assert.equal(resolveIntelligenceRoute(path, 'driver').status, 'FORBIDDEN');
   }
+});
+
+test('#340A preserves Product and Supplier muscle-memory contracts without inventing authority', () => {
+  assert.deepEqual(PRODUCT_MASTER_FILTER_ORDER, [
+    'search', 'product-group', 'brand', 'supplier', 'supplier-product', 'barcode', 'obsolete', 'sellable', 'purchasable',
+  ]);
+  assert.deepEqual(PRODUCT_MASTER_COLUMN_ORDER, [
+    'image', 'product-code', 'description', 'product-group', 'base-pack', 'allocated', 'on-hand', 'base-unit', 'status-action',
+  ]);
+  assert.deepEqual(SUPPLIER_MASTER_FILTER_ORDER, ['supplier', 'obsolete']);
+  assert.deepEqual(SUPPLIER_MASTER_COLUMN_ORDER, ['code', 'name', 'city', 'country', 'currency', 'action']);
+});
+
+test('#340A native office surfaces are owned by the unified React shell', () => {
+  const main = source('src/main.tsx');
+  const routes = source('src/features/operationalRoutes/UnifiedOperationalRoutes.tsx');
+  const shell = source('src/features/navigation/OperationalAppShell.tsx');
+  for (const path of ['/products', '/suppliers', '/purchases']) {
+    assert.match(main, new RegExp(`pathname === '${path.replace('/', '\\/')}'`));
+    assert.match(routes, new RegExp(`pathname === '${path.replace('/', '\\/')}'`));
+    assert.match(shell, new RegExp(`path: '${path.replace('/', '\\/')}'`));
+  }
+  assert.match(routes, /ProductMasterWorkspace/);
+  assert.match(routes, /SupplierMasterWorkspace/);
+  assert.match(routes, /PurchaseOperationsWorkspace/);
+});
+
+test('#340A supplier and purchase surfaces fail closed on data and mutation authority', () => {
+  const supplierRepository = source('src/data/repositories/supplierMaster.ts');
+  const productRepository = source('src/data/repositories/productMaster.ts');
+  const purchaseRepository = source('src/data/repositories/purchaseOperations.ts');
+  const purchaseSurface = source('src/features/purchases/PurchaseOperationsWorkspace.tsx');
+  assert.doesNotMatch(supplierRepository, /unleashed_raw_snapshots/);
+  assert.doesNotMatch(productRepository, /unleashed_raw_snapshots/);
+  for (const forbidden of ['createPurchaseOrder', 'startPurchaseOrderReceipt', 'uploadReceivingDocument', 'reviewPurchaseOrder']) {
+    assert.equal(purchaseRepository.includes(forbidden), false, `purchase read adapter leaked ${forbidden}`);
+    assert.equal(purchaseSurface.includes(forbidden), false, `purchase surface leaked ${forbidden}`);
+  }
+  assert.match(supplierRepository, /state: 'DEGRADED'/);
+  assert.match(supplierRepository, /'UNAVAILABLE'/);
+  assert.match(supplierRepository, /isAuthoritative: false/);
 });
 
 test('unknown routes and role violations fail closed without dashboard fallback', () => {
