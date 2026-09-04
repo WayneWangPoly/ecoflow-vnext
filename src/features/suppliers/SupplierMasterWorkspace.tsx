@@ -153,7 +153,7 @@ export function SupplierMasterWorkspace() {
         {result?.rows.map((row) => (
           <div className="office-parity-row suppliers" key={row.supplierId ?? row.code}>
             <span>{row.code}</span><span>{value(row.name)}</span><span>{value(row.city)}</span><span>{value(row.country)}</span><span>{value(row.currency)}</span>
-            {row.supplierId ? <button className="office-parity-link-button" type="button" onClick={() => navigate(`/suppliers/${encodeURIComponent(row.supplierId)}${location.search}`)}>View reference</button> : <span>Unavailable</span>}
+            {row.supplierId ? <button className="office-parity-link-button" type="button" onClick={() => navigate(`/suppliers/${encodeURIComponent(row.supplierId ?? '')}${location.search}`)}>View reference</button> : <span>Unavailable</span>}
           </div>
         ))}
         {result && !result.rows.length ? <div className="office-parity-empty">No canonical Supplier master is available. EcoFlow is deliberately not substituting PO supplier strings or raw Unleashed staging data.</div> : null}
