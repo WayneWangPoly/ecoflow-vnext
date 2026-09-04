@@ -22,6 +22,13 @@ test('#340A unsupported Product sellability stays unavailable', () => {
   assert.match(workspace, /<span>Sellable<\/span><select disabled/);
 });
 
+test('#340A commercial freshness is not asserted without an approved threshold', () => {
+  const repository = source('src/data/repositories/productMaster.ts');
+  assert.match(repository, /freshness: 'UNKNOWN'/);
+  assert.doesNotMatch(repository, /freshness:\s*sourceObservedAt\s*\?\s*'CURRENT'/);
+  assert.match(repository, /freshness is not classified as CURRENT without an approved staleness threshold/);
+});
+
 test('#340A Product Identity paging has no arbitrary 20-page ceiling', () => {
   const repository = source('src/data/repositories/productMasterIdentity.ts');
   assert.match(repository, /while \(rows\.length < totalCount\)/);
