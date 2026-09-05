@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, RadioTower } from 'lucide-react';
 import {
@@ -12,8 +12,8 @@ import {
 } from '../team/unleashedRemainingMasterDrySurvey';
 import { CUSTOMER_STAGING_PLAN } from '../team/unleashedCustomerStagingPlan';
 import {
-  runAuthorizedCustomerC1,
-  type CustomerC1Result,
+  runAuthorizedCustomerC2,
+  type CustomerC2Result,
 } from '../team/unleashedCustomerStaging';
 import './teamAccessSettings.css';
 
@@ -33,13 +33,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [customerC1Running, setCustomerC1Running] = useState(false);
-  const [customerC1Result, setCustomerC1Result] = useState<CustomerC1Result | null>(null);
+  const [customerC2Running, setCustomerC2Running] = useState(false);
+  const [customerC2Attempted, setCustomerC2Attempted] = useState(false);
+  const [customerC2Result, setCustomerC2Result] = useState<CustomerC2Result | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [customerC1Error, setCustomerC1Error] = useState('');
+  const [customerC2Error, setCustomerC2Error] = useState('');
+  const customerMutationAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || customerC1Running;
+  const anyRunning = running || surveyRunning || customerC2Running;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -69,16 +71,18 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runCustomerC1() {
-    if (anyRunning || customerC1Result) return;
-    setCustomerC1Running(true);
-    setCustomerC1Error('');
+  async function runCustomerC2() {
+    if (anyRunning || customerC2Result || customerMutationAttemptedRef.current) return;
+    customerMutationAttemptedRef.current = true;
+    setCustomerC2Attempted(true);
+    setCustomerC2Running(true);
+    setCustomerC2Error('');
     try {
-      setCustomerC1Result(await runAuthorizedCustomerC1(supabase));
+      setCustomerC2Result(await runAuthorizedCustomerC2(supabase));
     } catch (runError) {
-      setCustomerC1Error(runError instanceof Error ? runError.message : String(runError));
+      setCustomerC2Error(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setCustomerC1Running(false);
+      setCustomerC2Running(false);
     }
   }
 
@@ -97,9 +101,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Address acquisition</span><strong>1B-5B closed · 184/184 staged</strong></div>
-        <div><span>Customer source</span><strong>623 records · 4 pages · dry evidence locked</strong></div>
-        <div><span>Authorized scope</span><strong>C1-C4 · one window then verify</strong></div>
-        <div><span>Currently exposed</span><strong>C1 only · page 1 · 200 rows</strong></div>
+        <div><span>Customer C1</span><strong>verified · 200/623 unique staged</strong></div>
+        <div><span>C1 continuation anchor</span><strong>{CUSTOMER_STAGING_PLAN.c1Verification.continuationAnchorRunId.slice(0, 8)}</strong></div>
+        <div><span>Currently exposed</span><strong>C2 only · page 2 · 200 rows</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -111,26 +115,26 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runCustomerC1()} disabled={anyRunning || Boolean(customerC1Result)}>
+        <button type="button" className="primary" onClick={() => void runCustomerC2()} disabled={anyRunning || customerC2Attempted || Boolean(customerC2Result)}>
           <Database aria-hidden="true" size={17} />
-          {customerC1Running ? 'Executing customer C1…' : customerC1Result ? 'Customer C1 completed' : 'Execute authorized #338 customer C1'}
+          {customerC2Running ? 'Executing customer C2…' : customerC2Result ? 'Customer C2 completed' : customerC2Attempted ? 'Customer C2 attempt sent' : 'Execute authorized #338 customer C2'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Customer C1 is the only exposed non-dry action. It invokes exactly customers page 1 with pageSize={CUSTOMER_STAGING_PLAN.executionShape.pageSize}, maxPages=1 and no previousRunId. Acceptance requires exactly 200 inserted rows, the locked page-1 SHA from dry run {CUSTOMER_STAGING_PLAN.freshSourceEvidence.dryRunId.slice(0, 8)}, zero changed/unchanged/failed rows, an incomplete window with next_page=2, and the locked high-water mark. C2 remains hidden until Chat verifies C1 production evidence. Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        C1 is closed from production evidence. Its first run inserted exactly 200 rows and a subsequent idempotent page-1 replay inserted 0 / reported 200 unchanged, leaving exactly 200 unique customer snapshots and identities. The earlier UI rejection was caused by comparing a full four-page dry-window high-water mark against a single-page window; that invalid comparison has been removed. C2 is now the only non-dry action and is bound to previousRunId={CUSTOMER_STAGING_PLAN.c1Verification.continuationAnchorRunId}. It requires the locked page-2 SHA, exactly 200 inserts, zero changed/unchanged/failed rows and next_page=3. The button uses a synchronous one-shot lock: after one attempt it cannot be clicked again on this page. C3 remains hidden until Chat verifies C2. Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
       </p>
 
-      {customerC1Error ? <div className="error-message" role="alert">{customerC1Error}</div> : null}
-      {customerC1Result ? (
+      {customerC2Error ? <div className="error-message" role="alert">{customerC2Error}</div> : null}
+      {customerC2Result ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>customers C1</strong>
-                <small>{customerC1Result.recordsInserted} inserted · page 1 · run {customerC1Result.runId.slice(0, 8)}</small>
+                <strong>customers C2</strong>
+                <small>{customerC2Result.recordsInserted} inserted · page 2 · run {customerC2Result.runId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">C1 COMPLETE</b>
+              <b className="pill pill-good">C2 COMPLETE</b>
             </div>
           </div>
         </div>
