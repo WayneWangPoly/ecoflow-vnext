@@ -5,8 +5,9 @@ const RESOURCE = 'products' as const;
 const PAGE_SIZE = 200 as const;
 const TOTAL_ITEMS = 466;
 const TOTAL_PAGES = 3;
-const P1 = PRODUCT_STAGING_PLAN.expectedSequence[0];
-const P1_SHA = PRODUCT_STAGING_PLAN.freshSourceEvidence.pages[0].responseSha256;
+const P2 = PRODUCT_STAGING_PLAN.expectedSequence[1];
+const P2_SHA = PRODUCT_STAGING_PLAN.freshSourceEvidence.pages[1].responseSha256;
+const P1_RUN_ID = PRODUCT_STAGING_PLAN.verifiedWindows.P1.runId;
 
 type ConnectorError = { error?: string; details?: string };
 
@@ -37,7 +38,7 @@ type ProductWindow = {
   highWatermark: string | null;
 };
 
-export type ProductP1Result = {
+export type ProductP2Result = {
   ok: boolean;
   runId: string;
   requestedAt: string;
@@ -46,8 +47,8 @@ export type ProductP1Result = {
   resources: [typeof RESOURCE];
   pageSize: typeof PAGE_SIZE;
   maxPages: 1;
-  startPage: 1;
-  previousRunId: null;
+  startPage: 2;
+  previousRunId: string;
   allResourcesComplete: false;
   paginationWindows: ProductWindow[];
   recordsSeen: number;
@@ -69,16 +70,9 @@ function paginationNumber(page: ProductPage | undefined, key: 'NumberOfItems' | 
   return null;
 }
 
-function withinOverlapBudget(inserted: number, changed: number, unchanged: number, expectedRows: number) {
-  const overlap = changed + unchanged;
-  return overlap >= 0
-    && overlap <= PRODUCT_STAGING_PLAN.overlapBudget.remaining
-    && inserted + changed + unchanged === expectedRows;
-}
-
-function isExactP1(value: unknown): value is ProductP1Result {
+function isExactP2(value: unknown): value is ProductP2Result {
   if (!value || typeof value !== 'object') return false;
-  const result = value as Partial<ProductP1Result>;
+  const result = value as Partial<ProductP2Result>;
   if (
     result.ok !== true
     || result.status !== 'SUCCEEDED'
@@ -88,10 +82,14 @@ function isExactP1(value: unknown): value is ProductP1Result {
     || result.resources[0] !== RESOURCE
     || result.pageSize !== PAGE_SIZE
     || result.maxPages !== 1
-    || result.startPage !== P1.startPage
-    || result.previousRunId !== null
+    || result.startPage !== P2.startPage
+    || result.previousRunId !== P1_RUN_ID
     || result.allResourcesComplete !== false
-    || result.recordsSeen !== P1.expectedRowsSeen
+    || result.recordsSeen !== P2.expectedRowsSeen
+    || result.recordsStaged !== P2.expectedRowsSeen
+    || result.recordsInserted !== P2.expectedRowsSeen
+    || result.recordsChanged !== 0
+    || result.recordsUnchanged !== 0
     || result.recordsFailed !== 0
     || !Array.isArray(result.failedResources)
     || result.failedResources.length !== 0
@@ -99,39 +97,32 @@ function isExactP1(value: unknown): value is ProductP1Result {
     || result.pages.length !== 1
     || !Array.isArray(result.paginationWindows)
     || result.paginationWindows.length !== 1
-    || typeof result.recordsInserted !== 'number'
-    || typeof result.recordsChanged !== 'number'
-    || typeof result.recordsUnchanged !== 'number'
-    || typeof result.recordsStaged !== 'number'
-    || !withinOverlapBudget(result.recordsInserted, result.recordsChanged, result.recordsUnchanged, P1.expectedRowsSeen)
-    || result.recordsStaged !== result.recordsInserted + result.recordsChanged
   ) return false;
 
   const page = result.pages[0];
   if (
     !page
     || page.resource !== RESOURCE
-    || page.pageNumber !== P1.startPage
+    || page.pageNumber !== P2.startPage
     || page.pageSize !== PAGE_SIZE
     || page.httpStatus !== 200
-    || page.responseSha256 !== P1_SHA
-    || page.recordsSeen !== P1.expectedRowsSeen
-    || typeof page.recordsInserted !== 'number'
-    || typeof page.recordsChanged !== 'number'
-    || typeof page.recordsUnchanged !== 'number'
-    || !withinOverlapBudget(page.recordsInserted, page.recordsChanged, page.recordsUnchanged, P1.expectedRowsSeen)
-    || page.recordsStaged !== page.recordsInserted + page.recordsChanged
+    || page.responseSha256 !== P2_SHA
+    || page.recordsSeen !== P2.expectedRowsSeen
+    || page.recordsStaged !== P2.expectedRowsSeen
+    || page.recordsInserted !== P2.expectedRowsSeen
+    || page.recordsChanged !== 0
+    || page.recordsUnchanged !== 0
     || paginationNumber(page, 'NumberOfItems') !== TOTAL_ITEMS
     || paginationNumber(page, 'NumberOfPages') !== TOTAL_PAGES
   ) return false;
 
   const window = result.paginationWindows[0];
   return window.resource === RESOURCE
-    && window.startPage === P1.startPage
-    && window.lastPage === P1.startPage
+    && window.startPage === P2.startPage
+    && window.lastPage === P2.startPage
     && window.numberOfPages === TOTAL_PAGES
-    && window.windowComplete === P1.expectedWindowComplete
-    && window.nextPage === P1.expectedNextPage
+    && window.windowComplete === P2.expectedWindowComplete
+    && window.nextPage === P2.expectedNextPage
     && typeof window.highWatermark === 'string'
     && window.highWatermark.length > 0;
 }
@@ -146,9 +137,12 @@ async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
   return data;
 }
 
-export async function runAuthorizedProductP1(supabase: SupabaseClient): Promise<ProductP1Result> {
-  if (!PRODUCT_STAGING_PLAN.authorization.granted || PRODUCT_STAGING_PLAN.authorization.currentExposedWindow !== 'P1') {
-    throw new Error('UNLEASHED_PRODUCT_P1_NOT_AUTHORIZED');
+export async function runAuthorizedProductP2(supabase: SupabaseClient): Promise<ProductP2Result> {
+  if (!PRODUCT_STAGING_PLAN.authorization.granted || PRODUCT_STAGING_PLAN.authorization.currentExposedWindow !== 'P2') {
+    throw new Error('UNLEASHED_PRODUCT_P2_NOT_AUTHORIZED');
+  }
+  if (PRODUCT_STAGING_PLAN.overlapBudget.remaining !== 0) {
+    throw new Error('UNLEASHED_PRODUCT_P2_OVERLAP_BUDGET_NOT_EXHAUSTED');
   }
 
   const result = await invoke(supabase, {
@@ -157,12 +151,13 @@ export async function runAuthorizedProductP1(supabase: SupabaseClient): Promise<
     dryRun: false,
     pageSize: PAGE_SIZE,
     maxPages: 1,
-    startPage: P1.startPage,
-    reason: `#338 authorized product P1 only; one-overlap budget=${PRODUCT_STAGING_PLAN.overlapBudget.remaining}; fresh dry evidence ${PRODUCT_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
+    startPage: P2.startPage,
+    previousRunId: P1_RUN_ID,
+    reason: `#338 authorized product P2 only; historical overlap already consumed in P1; fresh dry evidence ${PRODUCT_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
   });
 
-  if (!isExactP1(result)) {
-    throw new Error('UNLEASHED_PRODUCT_P1_RESULT_REJECTED');
+  if (!isExactP2(result)) {
+    throw new Error('UNLEASHED_PRODUCT_P2_RESULT_REJECTED');
   }
   return result;
 }
