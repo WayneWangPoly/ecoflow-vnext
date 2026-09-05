@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, RadioTower } from 'lucide-react';
 import {
@@ -10,6 +10,10 @@ import {
   runRemainingMasterDrySurvey,
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
+import {
+  runAuthorizedMasterPlan,
+  type AuthorizedMasterPlanResult,
+} from '../team/unleashedMasterMigrationPlan';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -22,10 +26,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
+  const [planRunning, setPlanRunning] = useState(false);
+  const [planAttempted, setPlanAttempted] = useState(false);
+  const [planResult, setPlanResult] = useState<AuthorizedMasterPlanResult | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
+  const [planError, setPlanError] = useState('');
+  const planAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning;
+  const anyRunning = running || surveyRunning || planRunning;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -55,13 +64,28 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
+  async function runPlan() {
+    if (anyRunning || planAttemptedRef.current || planResult) return;
+    planAttemptedRef.current = true;
+    setPlanAttempted(true);
+    setPlanRunning(true);
+    setPlanError('');
+    try {
+      setPlanResult(await runAuthorizedMasterPlan(supabase));
+    } catch (runError) {
+      setPlanError(runError instanceof Error ? runError.message : String(runError));
+    } finally {
+      setPlanRunning(false);
+    }
+  }
+
   const customerCount = surveyResult ? itemCountForResource(surveyResult, 'customers') : null;
   const productCount = surveyResult ? itemCountForResource(surveyResult, 'products') : null;
 
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 bounded acquisition controls</span></div>
+        <div><h2>Unleashed connection</h2><span>GET-only source · #338 governed migration controls</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -69,10 +93,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       {result ? <div className="success-message" role="status">Connection test recorded · {result.runId.slice(0, 8)}</div> : null}
 
       <div className="system-status-grid">
-        <div><span>Address acquisition</span><strong>closed · 184/184 staged</strong></div>
-        <div><span>Customer acquisition</span><strong>closed · 623/623 staged</strong></div>
-        <div><span>Product acquisition</span><strong>closed · 466/466 staged</strong></div>
-        <div><span>Non-dry master gates</span><strong>customers / products / stock_on_hand · CLOSED_DRY_ONLY</strong></div>
+        <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
+        <div><span>Mapping PLAN baseline</span><strong>1300 planned · 158 matched · 1141 unmatched · 1 retired</strong></div>
+        <div><span>Raw non-dry gates</span><strong>customers / products / stock_on_hand · CLOSED_DRY_ONLY</strong></div>
+        <div><span>Currently exposed</span><strong>governed PLAN + asset locator plan only</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -84,11 +108,30 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
+        <button type="button" className="primary" onClick={() => void runPlan()} disabled={anyRunning || planAttempted || Boolean(planResult)}>
+          <Database aria-hidden="true" size={17} />
+          {planRunning ? 'Executing governed PLAN…' : planResult ? 'Governed PLAN completed' : planAttempted ? 'Governed PLAN attempt sent' : 'Execute authorized #338 governed PLAN + asset plan'}
+        </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Customer staging is closed at 623/623. Product P1-P3 is also fully closed at 466/466: P1 run 162e9838-bcb1-45b9-84c3-334bca8c202c inserted 199 and consumed the one historical overlap as 1 unchanged; P2 run 4a531e9f-68ff-4c41-9d39-7eef57cdc0eb inserted 200; P3 final run 6121d235-4597-492a-a980-45754f917163 inserted 66, matched the locked page-3 SHA, completed the 466-record source window and returned the cursor to READY before closure. The consumed product authorization exposes no non-dry action. Production cursor gates are now DISABLED for customers, products and stock_on_hand, so DB-owned acquisition claims reject non-dry writes while dry GET evidence remains available. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        Downstream #338 authority is granted, but the migration still advances through evidence gates. This action is deliberately limited to the deployed PLAN contract: it re-plans deterministic mappings idempotently, creates/updates only product-image locator plan rows, and ensures the private EcoFlow image bucket exists. Expected evidence is exactly 1300 mappings (158 matched, 0 ambiguous, 1141 unmatched, 1 retired) and 467 asset-plan rows discovered from the current 466 Product snapshots (27 blocked/missing). It copies zero image bytes, publishes zero Product Identity records, changes zero inventory quantities, and performs no cutover. Product Identity remains evidence-gated because no #328 reconciliation is READY yet; later inventory and cutover remain dependency-gated even though authorization has been granted.
       </p>
+
+      {planError ? <div className="error-message" role="alert">{planError}</div> : null}
+      {planResult ? (
+        <div className="unleashed-acceptance-result" role="status">
+          <div className="unleashed-acceptance-checks">
+            <div>
+              <span>
+                <strong>#338 governed PLAN</strong>
+                <small>{planResult.mappings.planned} mappings · {planResult.mappings.matched} matched · {planResult.assets.discovered} asset rows · {planResult.assets.blocked} blocked</small>
+              </span>
+              <b className="pill pill-good">PLAN COMPLETE</b>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
       {surveyResult ? (
