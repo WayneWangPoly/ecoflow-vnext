@@ -11,9 +11,9 @@ import {
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
 import {
-  runAuthorizedAssetAuthorization,
-  type AuthorizedAssetAuthorizationResult,
-} from '../team/unleashedAssetAuthorization';
+  runAuthorizedImageCopyWindow1,
+  type AuthorizedImageCopyWindowResult,
+} from '../team/unleashedImageCopyWindow1';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -26,15 +26,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [authorizationRunning, setAuthorizationRunning] = useState(false);
-  const [authorizationAttempted, setAuthorizationAttempted] = useState(false);
-  const [authorizationResult, setAuthorizationResult] = useState<AuthorizedAssetAuthorizationResult | null>(null);
+  const [copyRunning, setCopyRunning] = useState(false);
+  const [copyAttempted, setCopyAttempted] = useState(false);
+  const [copyResult, setCopyResult] = useState<AuthorizedImageCopyWindowResult | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [authorizationError, setAuthorizationError] = useState('');
-  const authorizationAttemptedRef = useRef(false);
+  const [copyError, setCopyError] = useState('');
+  const copyAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || authorizationRunning;
+  const anyRunning = running || surveyRunning || copyRunning;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -64,18 +64,18 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function authorizeAssets() {
-    if (anyRunning || authorizationAttemptedRef.current || authorizationResult) return;
-    authorizationAttemptedRef.current = true;
-    setAuthorizationAttempted(true);
-    setAuthorizationRunning(true);
-    setAuthorizationError('');
+  async function runCopyWindow1() {
+    if (anyRunning || copyAttemptedRef.current || copyResult) return;
+    copyAttemptedRef.current = true;
+    setCopyAttempted(true);
+    setCopyRunning(true);
+    setCopyError('');
     try {
-      setAuthorizationResult(await runAuthorizedAssetAuthorization(supabase));
+      setCopyResult(await runAuthorizedImageCopyWindow1(supabase));
     } catch (runError) {
-      setAuthorizationError(runError instanceof Error ? runError.message : String(runError));
+      setCopyError(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setAuthorizationRunning(false);
+      setCopyRunning(false);
     }
   }
 
@@ -95,8 +95,8 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
         <div><span>Governed PLAN</span><strong>complete · 1300 mappings · 440 image locators · 27 missing</strong></div>
-        <div><span>Image storage</span><strong>private bucket · 0 objects · 0 bytes copied</strong></div>
-        <div><span>Currently exposed</span><strong>bounded image-copy authorization only</strong></div>
+        <div><span>Image authorization</span><strong>APPROVED · revision 1 · 64 MiB total · 2 MiB/object</strong></div>
+        <div><span>Currently exposed</span><strong>COPY_IMAGES window 1 only · max 10 assets</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -108,26 +108,26 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void authorizeAssets()} disabled={anyRunning || authorizationAttempted || Boolean(authorizationResult)}>
+        <button type="button" className="primary" onClick={() => void runCopyWindow1()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}>
           <Database aria-hidden="true" size={17} />
-          {authorizationRunning ? 'Authorizing bounded image copy…' : authorizationResult ? 'Image-copy authorization recorded' : authorizationAttempted ? 'Image-copy authorization attempt sent' : 'Authorize bounded #338 image copy'}
+          {copyRunning ? 'Copying bounded image window 1…' : copyResult ? 'Image window 1 completed' : copyAttempted ? 'Image window 1 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 1'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        The production PLAN is closed at 1300 deterministic mappings and 467 asset rows: 440 PLANNED image locators plus 27 BLOCKED/missing rows. This action does not copy images. It records one current Owner/Admin authorization scoped only to the product-image locators already planned from the EcoFlow Unleashed tenant into the private unleashed-product-images bucket for the internal replacement-system migration. Hard limits are 64 MiB aggregate storage budget and 2 MiB per image; those limits reserve no storage. COPY_IMAGES remains a separate bounded action capped at 10 assets per run and will not be exposed until this authorization is production-verified. Product Identity, inventory/opening balance and cutover remain dependency-gated.
+        The production image authorization is current and APPROVED at revision 1. This action is the first binary-copy window and is capped at 10 planned assets. It uses one fixed command id so a browser retry cannot create a second run. The Edge Function re-checks rights, source snapshot hash, HTTPS host, MIME/content signature, the 2 MiB per-object limit and the 64 MiB aggregate budget before committing provenance. No continuation window is exposed until production verification of copied/reused/failed counts and actual bytes. Product Identity, inventory/opening balance and cutover remain dependency-gated.
       </p>
 
-      {authorizationError ? <div className="error-message" role="alert">{authorizationError}</div> : null}
-      {authorizationResult ? (
+      {copyError ? <div className="error-message" role="alert">{copyError}</div> : null}
+      {copyResult ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>#338 image-copy authorization</strong>
-                <small>APPROVED · revision {authorizationResult.authorization.revision} · {authorizationResult.authorization.authorizationId.slice(0, 8)}</small>
+                <strong>#338 COPY_IMAGES window 1</strong>
+                <small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small>
               </span>
-              <b className="pill pill-good">AUTHORIZED</b>
+              <b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b>
             </div>
           </div>
         </div>
