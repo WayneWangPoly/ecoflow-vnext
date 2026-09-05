@@ -6,8 +6,8 @@ import {
   type UnleashedProbeResult,
 } from '../team/unleashedReadonlyProbe';
 import {
-  runCustomerDeliveryAddressFirstWindow,
-  type AddressStagingResult,
+  runCustomerDeliveryAddressContinuationPreflight,
+  type AddressContinuationPreflightResult,
 } from '../team/unleashedCustomerDeliveryAddressStaging';
 import './teamAccessSettings.css';
 
@@ -25,13 +25,13 @@ function probeTone(result: UnleashedProbeResult | null) {
 export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseClient }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
-  const [stagingRunning, setStagingRunning] = useState(false);
-  const [stagingResult, setStagingResult] = useState<AddressStagingResult | null>(null);
+  const [preflightRunning, setPreflightRunning] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<AddressContinuationPreflightResult | null>(null);
   const [error, setError] = useState('');
-  const [stagingError, setStagingError] = useState('');
+  const [preflightError, setPreflightError] = useState('');
 
   async function runProbe() {
-    if (running || stagingRunning) return;
+    if (running || preflightRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -44,24 +44,24 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runFirstWindow() {
-    if (running || stagingRunning) return;
-    setStagingRunning(true);
-    setStagingResult(null);
-    setStagingError('');
+  async function runContinuationPreflight() {
+    if (running || preflightRunning) return;
+    setPreflightRunning(true);
+    setPreflightResult(null);
+    setPreflightError('');
     try {
-      setStagingResult(await runCustomerDeliveryAddressFirstWindow(supabase));
+      setPreflightResult(await runCustomerDeliveryAddressContinuationPreflight(supabase));
     } catch (runError) {
-      setStagingError(runError instanceof Error ? runError.message : String(runError));
+      setPreflightError(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setStagingRunning(false);
+      setPreflightRunning(false);
     }
   }
 
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 address first-window staging gate</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 address continuation dry preflight</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -71,35 +71,35 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Last test</span><strong>{formatTime(result?.requestedAt)}</strong></div>
         <div><span>Resource</span><strong>Customer delivery addresses only</strong></div>
-        <div><span>Authorized window</span><strong>Pages 1-2 · 50/page · max 100</strong></div>
-        <div><span>PLAN</span><strong>Blocked</strong></div>
+        <div><span>Dry preflight</span><strong>184 records · 4 pages · no staging</strong></div>
+        <div><span>Non-dry</span><strong>Blocked</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || stagingRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || preflightRunning}>
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page dry test'}
         </button>
-        <button type="button" onClick={() => void runFirstWindow()} disabled={running || stagingRunning}>
+        <button type="button" onClick={() => void runContinuationPreflight()} disabled={running || preflightRunning}>
           <Database aria-hidden="true" size={17} />
-          {stagingRunning ? 'Staging addresses pages 1-2…' : 'Run #338 address pages 1-2 staging'}
+          {preflightRunning ? 'Reading all 4 address pages…' : 'Run #338 address continuation dry preflight'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Authorized Batch 1B-5A only. A dry preflight must prove customer_delivery_addresses is exactly 184 records / 4 pages at pageSize=50. Only then may one non-dry pages 1-2 window run, capped at 100 records. The preflight and non-dry page hashes/high-watermarks must match. Expected post-run continuation is nextPage=3 with windowComplete=false. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
+        Groundwork only after Batch 1B-5A closure. This action is dryRun=true and reads exactly customer_delivery_addresses at pageSize=50/maxPages=4. It is accepted only if the source is still exactly 184 records across 4 pages. No non-dry continuation action is exposed. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
       </p>
 
-      {stagingError ? <div className="error-message" role="alert">{stagingError}</div> : null}
-      {stagingResult ? (
+      {preflightError ? <div className="error-message" role="alert">{preflightError}</div> : null}
+      {preflightResult ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
                 <strong>customer_delivery_addresses</strong>
-                <small>{stagingResult.recordsSeen} seen · {stagingResult.recordsStaged} staged · next page {stagingResult.paginationWindows[0]?.nextPage ?? 'n/a'} · run {stagingResult.runId.slice(0, 8)}</small>
+                <small>{preflightResult.recordsSeen} seen · 0 staged · page 3 SHA {preflightResult.pages[2]?.responseSha256.slice(0, 8)}… · page 4 SHA {preflightResult.pages[3]?.responseSha256.slice(0, 8)}… · run {preflightResult.runId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">PAGES 1-2 STAGED</b>
+              <b className="pill pill-good">DRY PREFLIGHT PASS</b>
             </div>
           </div>
         </div>
