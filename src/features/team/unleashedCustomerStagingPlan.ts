@@ -1,5 +1,5 @@
 // #338 customer staging authorization contract.
-// Authorization scope: customers C1-C4 only, one window at a time with production verification between windows.
+// Customer C1-C4 is complete and the authorization is consumed.
 // Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory/opening-balance authority and cutover remain forbidden.
 
 export const CUSTOMER_STAGING_PLAN = {
@@ -21,10 +21,11 @@ export const CUSTOMER_STAGING_PLAN = {
     ],
   },
   authorization: {
-    granted: true,
+    granted: false,
+    consumed: true,
     scope: 'C1-C4',
     executionPolicy: 'ONE_WINDOW_THEN_VERIFY',
-    currentExposedWindow: 'C4',
+    currentExposedWindow: null,
   },
   c1Verification: {
     accepted: true,
@@ -79,6 +80,24 @@ export const CUSTOMER_STAGING_PLAN = {
     cursorStatus: 'RUNNING',
     databaseBytesAfterC3: 348974227,
   },
+  c4Verification: {
+    accepted: true,
+    runId: 'f274c6b9-4a81-4a0e-8e9d-61113dad88f3',
+    previousRunId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753',
+    inserted: 23,
+    changed: 0,
+    unchanged: 0,
+    failed: 0,
+    page4ShaMatched: true,
+    uniqueSnapshotsAfterC4: 623,
+    uniqueIdentitiesAfterC4: 623,
+    activeLeaseCountAfterVerification: 0,
+    cursorNextPage: null,
+    cursorStatus: 'READY',
+    windowComplete: true,
+    allResourcesComplete: true,
+    databaseBytesAfterC4: 349039763,
+  },
   executionShape: {
     pageSize: 200,
     maxPagesPerRun: 1,
@@ -92,7 +111,7 @@ export const CUSTOMER_STAGING_PLAN = {
     { window: 'C1', startPage: 1, maxPages: 1, expectedRows: 200, previousRunId: null, expectedWindowComplete: false, expectedNextPage: 2, status: 'VERIFIED' },
     { window: 'C2', startPage: 2, maxPages: 1, expectedRows: 200, previousRunId: '892cc23c-67c7-4d94-856b-7af90a3fd5e3', expectedWindowComplete: false, expectedNextPage: 3, status: 'VERIFIED' },
     { window: 'C3', startPage: 3, maxPages: 1, expectedRows: 200, previousRunId: '98e9ad73-b49e-4d27-adac-6dbe5472daf7', expectedWindowComplete: false, expectedNextPage: 4, status: 'VERIFIED' },
-    { window: 'C4', startPage: 4, maxPages: 1, expectedRows: 23, previousRunId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753', expectedWindowComplete: true, expectedNextPage: null, status: 'EXPOSED' },
+    { window: 'C4', startPage: 4, maxPages: 1, expectedRows: 23, previousRunId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753', expectedWindowComplete: true, expectedNextPage: null, status: 'VERIFIED' },
   ],
   acceptance: {
     httpStatus: 200,
