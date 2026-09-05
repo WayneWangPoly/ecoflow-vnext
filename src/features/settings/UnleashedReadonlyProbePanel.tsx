@@ -11,9 +11,9 @@ import {
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
 import {
-  runAuthorizedMasterPlan,
-  type AuthorizedMasterPlanResult,
-} from '../team/unleashedMasterMigrationPlan';
+  runAuthorizedAssetAuthorization,
+  type AuthorizedAssetAuthorizationResult,
+} from '../team/unleashedAssetAuthorization';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -26,15 +26,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [planRunning, setPlanRunning] = useState(false);
-  const [planAttempted, setPlanAttempted] = useState(false);
-  const [planResult, setPlanResult] = useState<AuthorizedMasterPlanResult | null>(null);
+  const [authorizationRunning, setAuthorizationRunning] = useState(false);
+  const [authorizationAttempted, setAuthorizationAttempted] = useState(false);
+  const [authorizationResult, setAuthorizationResult] = useState<AuthorizedAssetAuthorizationResult | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [planError, setPlanError] = useState('');
-  const planAttemptedRef = useRef(false);
+  const [authorizationError, setAuthorizationError] = useState('');
+  const authorizationAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || planRunning;
+  const anyRunning = running || surveyRunning || authorizationRunning;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -64,18 +64,18 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runPlan() {
-    if (anyRunning || planAttemptedRef.current || planResult) return;
-    planAttemptedRef.current = true;
-    setPlanAttempted(true);
-    setPlanRunning(true);
-    setPlanError('');
+  async function authorizeAssets() {
+    if (anyRunning || authorizationAttemptedRef.current || authorizationResult) return;
+    authorizationAttemptedRef.current = true;
+    setAuthorizationAttempted(true);
+    setAuthorizationRunning(true);
+    setAuthorizationError('');
     try {
-      setPlanResult(await runAuthorizedMasterPlan(supabase));
+      setAuthorizationResult(await runAuthorizedAssetAuthorization(supabase));
     } catch (runError) {
-      setPlanError(runError instanceof Error ? runError.message : String(runError));
+      setAuthorizationError(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setPlanRunning(false);
+      setAuthorizationRunning(false);
     }
   }
 
@@ -94,9 +94,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
-        <div><span>Mapping PLAN baseline</span><strong>1300 planned · 158 matched · 1141 unmatched · 1 retired</strong></div>
-        <div><span>Raw non-dry gates</span><strong>customers / products / stock_on_hand · CLOSED_DRY_ONLY</strong></div>
-        <div><span>Currently exposed</span><strong>governed PLAN + asset locator plan only</strong></div>
+        <div><span>Governed PLAN</span><strong>complete · 1300 mappings · 440 image locators · 27 missing</strong></div>
+        <div><span>Image storage</span><strong>private bucket · 0 objects · 0 bytes copied</strong></div>
+        <div><span>Currently exposed</span><strong>bounded image-copy authorization only</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -108,26 +108,26 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runPlan()} disabled={anyRunning || planAttempted || Boolean(planResult)}>
+        <button type="button" className="primary" onClick={() => void authorizeAssets()} disabled={anyRunning || authorizationAttempted || Boolean(authorizationResult)}>
           <Database aria-hidden="true" size={17} />
-          {planRunning ? 'Executing governed PLAN…' : planResult ? 'Governed PLAN completed' : planAttempted ? 'Governed PLAN attempt sent' : 'Execute authorized #338 governed PLAN + asset plan'}
+          {authorizationRunning ? 'Authorizing bounded image copy…' : authorizationResult ? 'Image-copy authorization recorded' : authorizationAttempted ? 'Image-copy authorization attempt sent' : 'Authorize bounded #338 image copy'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Downstream #338 authority is granted, but the migration still advances through evidence gates. This action is deliberately limited to the deployed PLAN contract: it re-plans deterministic mappings idempotently, creates/updates only product-image locator plan rows, and ensures the private EcoFlow image bucket exists. Expected evidence is exactly 1300 mappings (158 matched, 0 ambiguous, 1141 unmatched, 1 retired) and 467 asset-plan rows discovered from the current 466 Product snapshots (27 blocked/missing). It copies zero image bytes, publishes zero Product Identity records, changes zero inventory quantities, and performs no cutover. Product Identity remains evidence-gated because no #328 reconciliation is READY yet; later inventory and cutover remain dependency-gated even though authorization has been granted.
+        The production PLAN is closed at 1300 deterministic mappings and 467 asset rows: 440 PLANNED image locators plus 27 BLOCKED/missing rows. This action does not copy images. It records one current Owner/Admin authorization scoped only to the product-image locators already planned from the EcoFlow Unleashed tenant into the private unleashed-product-images bucket for the internal replacement-system migration. Hard limits are 64 MiB aggregate storage budget and 2 MiB per image; those limits reserve no storage. COPY_IMAGES remains a separate bounded action capped at 10 assets per run and will not be exposed until this authorization is production-verified. Product Identity, inventory/opening balance and cutover remain dependency-gated.
       </p>
 
-      {planError ? <div className="error-message" role="alert">{planError}</div> : null}
-      {planResult ? (
+      {authorizationError ? <div className="error-message" role="alert">{authorizationError}</div> : null}
+      {authorizationResult ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>#338 governed PLAN</strong>
-                <small>{planResult.mappings.planned} mappings · {planResult.mappings.matched} matched · {planResult.assets.discovered} asset rows · {planResult.assets.blocked} blocked</small>
+                <strong>#338 image-copy authorization</strong>
+                <small>APPROVED · revision {authorizationResult.authorization.revision} · {authorizationResult.authorization.authorizationId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">PLAN COMPLETE</b>
+              <b className="pill pill-good">AUTHORIZED</b>
             </div>
           </div>
         </div>
