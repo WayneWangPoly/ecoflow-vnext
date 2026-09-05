@@ -78,7 +78,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Address acquisition</span><strong>1B-5B closed · 184/184 staged</strong></div>
         <div><span>Next resource</span><strong>Customers · 623 source records</strong></div>
-        <div><span>Proposed customer window</span><strong>{CUSTOMER_STAGING_PLAN.proposedWindow.maxRows} rows / 1 page</strong></div>
+        <div><span>Customer window</span><strong>{CUSTOMER_STAGING_PLAN.executionShape.maxRowsPerRun} rows / 1 page</strong></div>
         <div><span>Non-dry authority</span><strong>Not authorized</strong></div>
       </div>
 
@@ -94,7 +94,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       </div>
 
       <p className="unleashed-acceptance-note">
-        The consumed 1B-5B non-dry action has been retired from this preview. Customers are next, but customer non-dry staging is not exposed. A fresh GET-only dry preflight must establish the current 623-record/4-page shape and exact page hashes before any new authorization. Proposed customer staging is one page at a time with pageSize={CUSTOMER_STAGING_PLAN.proposedWindow.pageSize} and maxPages={CUSTOMER_STAGING_PLAN.proposedWindow.maxPages}. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        Fresh dry evidence is locked at run {CUSTOMER_STAGING_PLAN.freshSourceEvidence.dryRunId}: customers remain exactly 623 records / 4 pages and all four page hashes match the earlier baseline. Customer non-dry staging is still not exposed. The locked execution contract is four same-actor continuation windows, one page at a time with pageSize={CUSTOMER_STAGING_PLAN.executionShape.pageSize} and maxPages=1, stopping on any SHA/count/cursor/lease mismatch. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
       </p>
 
       {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
