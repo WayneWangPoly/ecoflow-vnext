@@ -6,9 +6,9 @@ import {
   type UnleashedProbeResult,
 } from '../team/unleashedReadonlyProbe';
 import {
-  runSupplierUnleashedStaging,
-  type SupplierStagingResult,
-} from '../team/unleashedSupplierStaging';
+  runCustomerDeliveryAddressFirstWindow,
+  type AddressStagingResult,
+} from '../team/unleashedCustomerDeliveryAddressStaging';
 import './teamAccessSettings.css';
 
 function formatTime(value?: string | null) {
@@ -26,7 +26,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [stagingRunning, setStagingRunning] = useState(false);
-  const [stagingResult, setStagingResult] = useState<SupplierStagingResult | null>(null);
+  const [stagingResult, setStagingResult] = useState<AddressStagingResult | null>(null);
   const [error, setError] = useState('');
   const [stagingError, setStagingError] = useState('');
 
@@ -44,13 +44,13 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runSupplierReplay() {
+  async function runFirstWindow() {
     if (running || stagingRunning) return;
     setStagingRunning(true);
     setStagingResult(null);
     setStagingError('');
     try {
-      setStagingResult(await runSupplierUnleashedStaging(supabase));
+      setStagingResult(await runCustomerDeliveryAddressFirstWindow(supabase));
     } catch (runError) {
       setStagingError(runError instanceof Error ? runError.message : String(runError));
     } finally {
@@ -61,7 +61,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 suppliers idempotency gate</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 address first-window staging gate</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -70,8 +70,8 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Last test</span><strong>{formatTime(result?.requestedAt)}</strong></div>
-        <div><span>Resource</span><strong>Suppliers only</strong></div>
-        <div><span>Expected result</span><strong>26 unchanged · staged 0</strong></div>
+        <div><span>Resource</span><strong>Customer delivery addresses only</strong></div>
+        <div><span>Authorized window</span><strong>Pages 1-2 · 50/page · max 100</strong></div>
         <div><span>PLAN</span><strong>Blocked</strong></div>
       </div>
 
@@ -80,14 +80,14 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page dry test'}
         </button>
-        <button type="button" onClick={() => void runSupplierReplay()} disabled={running || stagingRunning}>
+        <button type="button" onClick={() => void runFirstWindow()} disabled={running || stagingRunning}>
           <Database aria-hidden="true" size={17} />
-          {stagingRunning ? 'Replaying suppliers…' : 'Run #338 supplier idempotent replay'}
+          {stagingRunning ? 'Staging addresses pages 1-2…' : 'Run #338 address pages 1-2 staging'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Authorized Batch 1B-4 only. A dry preflight first proves the supplier source is still exactly 26 records in one page. Then exactly one non-dry suppliers replay runs. It is accepted only if seen=26, staged=0, inserted=0, changed=0, unchanged=26 and failed=0. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
+        Authorized Batch 1B-5A only. A dry preflight must prove customer_delivery_addresses is exactly 184 records / 4 pages at pageSize=50. Only then may one non-dry pages 1-2 window run, capped at 100 records. The preflight and non-dry page hashes/high-watermarks must match. Expected post-run continuation is nextPage=3 with windowComplete=false. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
       </p>
 
       {stagingError ? <div className="error-message" role="alert">{stagingError}</div> : null}
@@ -96,10 +96,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>suppliers</strong>
-                <small>{stagingResult.recordsSeen} seen · {stagingResult.recordsStaged} staged · {stagingResult.recordsUnchanged} unchanged · run {stagingResult.runId.slice(0, 8)}</small>
+                <strong>customer_delivery_addresses</strong>
+                <small>{stagingResult.recordsSeen} seen · {stagingResult.recordsStaged} staged · next page {stagingResult.paginationWindows[0]?.nextPage ?? 'n/a'} · run {stagingResult.runId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">IDEMPOTENT</b>
+              <b className="pill pill-good">PAGES 1-2 STAGED</b>
             </div>
           </div>
         </div>
