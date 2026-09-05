@@ -2,12 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const RESOURCE = 'customer_delivery_addresses' as const;
 const PAGE_SIZE = 50 as const;
-const MAX_PAGES = 2 as const;
+const MAX_PAGES = 4 as const;
 const EXPECTED_ITEMS = 184;
 const EXPECTED_TOTAL_PAGES = 4;
-const EXPECTED_WINDOW_RECORDS = 100;
 
-export type AddressStagingPage = {
+export type AddressDryPage = {
   resource: typeof RESOURCE;
   endpointPath: string;
   pageNumber: number;
@@ -24,7 +23,7 @@ export type AddressStagingPage = {
   pagination: Record<string, unknown>;
 };
 
-export type AddressStagingWindow = {
+export type AddressDryWindow = {
   resource: typeof RESOURCE;
   startPage: number;
   lastPage: number | null;
@@ -34,19 +33,19 @@ export type AddressStagingWindow = {
   highWatermark: string | null;
 };
 
-export type AddressStagingResult = {
+export type AddressContinuationPreflightResult = {
   ok: boolean;
   runId: string;
   requestedAt: string;
   status: 'SUCCEEDED' | 'PARTIAL' | 'FAILED';
-  dryRun: boolean;
+  dryRun: true;
   resources: [typeof RESOURCE];
   pageSize: typeof PAGE_SIZE;
   maxPages: typeof MAX_PAGES;
   startPage: 1;
   previousRunId: null;
-  allResourcesComplete: boolean;
-  paginationWindows: AddressStagingWindow[];
+  allResourcesComplete: true;
+  paginationWindows: AddressDryWindow[];
   recordsSeen: number;
   recordsStaged: number;
   recordsInserted: number;
@@ -54,27 +53,27 @@ export type AddressStagingResult = {
   recordsUnchanged: number;
   recordsFailed: number;
   failedResources: string[];
-  pages: AddressStagingPage[];
+  pages: AddressDryPage[];
   errorCode: string | null;
   errorMessage: string | null;
 };
 
 type ConnectorError = { error?: string; details?: string };
 
-function paginationNumber(page: AddressStagingPage | undefined, key: 'NumberOfItems' | 'NumberOfPages') {
+function paginationNumber(page: AddressDryPage | undefined, key: 'NumberOfItems' | 'NumberOfPages') {
   const value = page?.pagination?.[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
   return null;
 }
 
-function hasExactWindowShape(value: unknown, dryRun: boolean): value is AddressStagingResult {
+function isExactFullDryPreflight(value: unknown): value is AddressContinuationPreflightResult {
   if (!value || typeof value !== 'object') return false;
-  const result = value as Partial<AddressStagingResult>;
+  const result = value as Partial<AddressContinuationPreflightResult>;
   if (
     result.ok !== true
     || result.status !== 'SUCCEEDED'
-    || result.dryRun !== dryRun
+    || result.dryRun !== true
     || !Array.isArray(result.resources)
     || result.resources.length !== 1
     || result.resources[0] !== RESOURCE
@@ -82,69 +81,45 @@ function hasExactWindowShape(value: unknown, dryRun: boolean): value is AddressS
     || result.maxPages !== MAX_PAGES
     || result.startPage !== 1
     || result.previousRunId !== null
-    || result.allResourcesComplete !== false
-    || result.recordsSeen !== EXPECTED_WINDOW_RECORDS
+    || result.allResourcesComplete !== true
+    || result.recordsSeen !== EXPECTED_ITEMS
+    || result.recordsStaged !== 0
+    || result.recordsInserted !== 0
+    || result.recordsChanged !== 0
     || result.recordsFailed !== 0
     || !Array.isArray(result.failedResources)
     || result.failedResources.length !== 0
     || !Array.isArray(result.pages)
-    || result.pages.length !== 2
+    || result.pages.length !== EXPECTED_TOTAL_PAGES
     || !Array.isArray(result.paginationWindows)
     || result.paginationWindows.length !== 1
   ) return false;
 
-  const [first, second] = result.pages;
   for (const [index, page] of result.pages.entries()) {
+    const expectedSeen = index < 3 ? PAGE_SIZE : 34;
     if (
       page.resource !== RESOURCE
       || page.pageNumber !== index + 1
       || page.pageSize !== PAGE_SIZE
       || page.httpStatus !== 200
-      || page.recordsSeen !== PAGE_SIZE
+      || page.recordsSeen !== expectedSeen
+      || page.recordsStaged !== 0
+      || page.recordsInserted !== 0
+      || page.recordsChanged !== 0
       || page.fetchAttempts !== 1
+      || !page.responseSha256
       || paginationNumber(page, 'NumberOfItems') !== EXPECTED_ITEMS
       || paginationNumber(page, 'NumberOfPages') !== EXPECTED_TOTAL_PAGES
     ) return false;
   }
 
-  if (!first.responseSha256 || !second.responseSha256) return false;
-
   const window = result.paginationWindows[0];
   return window.resource === RESOURCE
     && window.startPage === 1
-    && window.lastPage === 2
+    && window.lastPage === 4
     && window.numberOfPages === EXPECTED_TOTAL_PAGES
-    && window.windowComplete === false
-    && window.nextPage === 3;
-}
-
-function isExactPreflight(value: unknown): value is AddressStagingResult {
-  if (!hasExactWindowShape(value, true)) return false;
-  return value.recordsStaged === 0
-    && value.recordsInserted === 0
-    && value.recordsChanged === 0
-    && value.pages.every((page) => page.recordsStaged === 0);
-}
-
-function isExactFirstWindowStaging(value: unknown): value is AddressStagingResult {
-  if (!hasExactWindowShape(value, false)) return false;
-  return value.recordsStaged === EXPECTED_WINDOW_RECORDS
-    && value.recordsInserted === EXPECTED_WINDOW_RECORDS
-    && value.recordsChanged === 0
-    && value.recordsUnchanged === 0
-    && value.pages.every((page) => page.recordsStaged === PAGE_SIZE
-      && page.recordsInserted === PAGE_SIZE
-      && page.recordsChanged === 0
-      && page.recordsUnchanged === 0);
-}
-
-function sameSourcePages(preflight: AddressStagingResult, staged: AddressStagingResult) {
-  return preflight.pages.every((page, index) => {
-    const stagedPage = staged.pages[index];
-    return stagedPage?.pageNumber === page.pageNumber
-      && stagedPage.responseSha256 === page.responseSha256
-      && stagedPage.highWatermark === page.highWatermark;
-  });
+    && window.windowComplete === true
+    && window.nextPage === null;
 }
 
 async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
@@ -157,36 +132,20 @@ async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
   return data;
 }
 
-export async function runCustomerDeliveryAddressFirstWindow(
+export async function runCustomerDeliveryAddressContinuationPreflight(
   supabase: SupabaseClient,
-): Promise<AddressStagingResult> {
-  const preflight = await invoke(supabase, {
+): Promise<AddressContinuationPreflightResult> {
+  const result = await invoke(supabase, {
     mode: 'bounded_snapshot',
     resources: [RESOURCE],
     dryRun: true,
     pageSize: PAGE_SIZE,
     maxPages: MAX_PAGES,
-    reason: `#338 Batch 1B-5A customer_delivery_addresses dry preflight 184/4; ${new Date().toISOString()}`,
+    reason: `#338 Batch 1B-5B customer_delivery_addresses full dry preflight 184/4; ${new Date().toISOString()}`,
   });
 
-  if (!isExactPreflight(preflight)) {
-    throw new Error('UNLEASHED_ADDRESS_1B5A_PREFLIGHT_REJECTED');
+  if (!isExactFullDryPreflight(result)) {
+    throw new Error('UNLEASHED_ADDRESS_1B5B_DRY_PREFLIGHT_REJECTED');
   }
-
-  const staged = await invoke(supabase, {
-    mode: 'bounded_snapshot',
-    resources: [RESOURCE],
-    dryRun: false,
-    pageSize: PAGE_SIZE,
-    maxPages: MAX_PAGES,
-    reason: `#338 Batch 1B-5A customer_delivery_addresses pages 1-2 bounded non-dry staging; ${new Date().toISOString()}`,
-  });
-
-  if (!isExactFirstWindowStaging(staged)) {
-    throw new Error('UNLEASHED_ADDRESS_1B5A_RESULT_REJECTED');
-  }
-  if (!sameSourcePages(preflight, staged)) {
-    throw new Error('UNLEASHED_ADDRESS_1B5A_SOURCE_CHANGED_BETWEEN_PREFLIGHT_AND_STAGING');
-  }
-  return staged;
+  return result;
 }
