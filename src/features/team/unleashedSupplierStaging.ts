@@ -64,11 +64,7 @@ type SupplierPreflightResult = {
   }>;
 };
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 0;
-}
-
-function isBoundedCompletePreflight(value: unknown): value is SupplierPreflightResult {
+function isExactSupplierIdempotencyPreflight(value: unknown): value is SupplierPreflightResult {
   if (!value || typeof value !== 'object') return false;
   const result = value as Partial<SupplierPreflightResult>;
   const page = result.pages?.[0];
@@ -82,6 +78,7 @@ function isBoundedCompletePreflight(value: unknown): value is SupplierPreflightR
     && result.resources[0] === 'suppliers'
     && result.pageSize === 26
     && result.maxPages === 1
+    && result.recordsSeen === 26
     && result.recordsStaged === 0
     && result.recordsFailed === 0
     && result.allResourcesComplete === true
@@ -90,16 +87,15 @@ function isBoundedCompletePreflight(value: unknown): value is SupplierPreflightR
     && page?.resource === 'suppliers'
     && page.pageSize === 26
     && page.httpStatus === 200
+    && page.recordsSeen === 26
     && page.recordsStaged === 0
     && Number.isFinite(pageCount)
     && pageCount === 1
     && Number.isFinite(itemCount)
-    && itemCount >= 0
-    && itemCount <= 26
-    && page.recordsSeen === itemCount;
+    && itemCount === 26;
 }
 
-function isSupplierStagingResult(value: unknown): value is SupplierStagingResult {
+function isExactSupplierIdempotentReplay(value: unknown): value is SupplierStagingResult {
   if (!value || typeof value !== 'object') return false;
   const result = value as Partial<SupplierStagingResult>;
   const page = result.pages?.[0];
@@ -116,15 +112,11 @@ function isSupplierStagingResult(value: unknown): value is SupplierStagingResult
     && result.startPage === 1
     && result.previousRunId === null
     && result.allResourcesComplete === true
-    && isNonNegativeInteger(result.recordsSeen)
-    && result.recordsSeen <= 26
-    && isNonNegativeInteger(result.recordsStaged)
-    && result.recordsStaged <= 26
-    && isNonNegativeInteger(result.recordsInserted)
-    && isNonNegativeInteger(result.recordsChanged)
-    && isNonNegativeInteger(result.recordsUnchanged)
-    && result.recordsStaged === result.recordsInserted + result.recordsChanged
-    && result.recordsSeen === result.recordsInserted + result.recordsChanged + result.recordsUnchanged
+    && result.recordsSeen === 26
+    && result.recordsStaged === 0
+    && result.recordsInserted === 0
+    && result.recordsChanged === 0
+    && result.recordsUnchanged === 26
     && result.recordsFailed === 0
     && Array.isArray(result.failedResources)
     && result.failedResources.length === 0
@@ -133,13 +125,15 @@ function isSupplierStagingResult(value: unknown): value is SupplierStagingResult
     && page?.resource === 'suppliers'
     && page.pageSize === 26
     && page.httpStatus === 200
-    && page.recordsSeen === result.recordsSeen
-    && page.recordsStaged === result.recordsStaged
-    && page.recordsStaged === page.recordsInserted + page.recordsChanged
+    && page.recordsSeen === 26
+    && page.recordsStaged === 0
+    && page.recordsInserted === 0
+    && page.recordsChanged === 0
+    && page.recordsUnchanged === 26
     && Number.isFinite(pageCount)
     && pageCount === 1
     && Number.isFinite(itemCount)
-    && itemCount === result.recordsSeen;
+    && itemCount === 26;
 }
 
 async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
@@ -161,24 +155,24 @@ export async function runSupplierUnleashedStaging(
     dryRun: true,
     pageSize: 26,
     maxPages: 1,
-    reason: `#338 Batch 1B-3 suppliers bounded preflight; ${new Date().toISOString()}`,
+    reason: `#338 Batch 1B-4 suppliers idempotency preflight; ${new Date().toISOString()}`,
   });
 
-  if (!isBoundedCompletePreflight(preflight)) {
-    throw new Error('UNLEASHED_SUPPLIER_STAGING_PREFLIGHT_REJECTED');
+  if (!isExactSupplierIdempotencyPreflight(preflight)) {
+    throw new Error('UNLEASHED_SUPPLIER_IDEMPOTENCY_PREFLIGHT_REJECTED');
   }
 
-  const staged = await invoke(supabase, {
+  const replay = await invoke(supabase, {
     mode: 'bounded_snapshot',
     resources: ['suppliers'],
     dryRun: false,
     pageSize: 26,
     maxPages: 1,
-    reason: `#338 Batch 1B-3 suppliers bounded non-dry staging; ${new Date().toISOString()}`,
+    reason: `#338 Batch 1B-4 suppliers single-resource non-dry idempotent replay; ${new Date().toISOString()}`,
   });
 
-  if (!isSupplierStagingResult(staged)) {
-    throw new Error('UNLEASHED_SUPPLIER_STAGING_RESULT_REJECTED');
+  if (!isExactSupplierIdempotentReplay(replay)) {
+    throw new Error('UNLEASHED_SUPPLIER_IDEMPOTENT_REPLAY_REJECTED');
   }
-  return staged;
+  return replay;
 }
