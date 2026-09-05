@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database, RadioTower, ShieldCheck } from 'lucide-react';
-import {
-  runUnleashedConnectorAcceptance,
-  type UnleashedAcceptanceResource,
-  type UnleashedAcceptanceResult,
-} from '../team/unleashedConnectorAcceptance';
+import { Database, RadioTower } from 'lucide-react';
 import {
   runUnleashedReadonlyProbe,
   type UnleashedDryRunCensusResult,
@@ -16,13 +11,6 @@ import {
   type WarehouseStagingResult,
 } from '../team/unleashedWarehouseStaging';
 import './teamAccessSettings.css';
-
-const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
-  products: 'Product',
-  stock_on_hand: 'Stock on hand',
-  sales_orders_open: 'Open sales order',
-  purchase_orders_open: 'Open purchase order',
-};
 
 function formatTime(value?: string | null) {
   if (!value) return 'Not run';
@@ -35,11 +23,6 @@ function probeTone(result: UnleashedProbeResult | null) {
   return result.ok && result.status === 'SUCCEEDED' && result.recordsFailed === 0 ? 'good' : 'danger';
 }
 
-function acceptanceTone(result: UnleashedAcceptanceResult | null) {
-  if (!result) return 'neutral';
-  return result.complete ? 'good' : 'warning';
-}
-
 export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseClient }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
@@ -47,14 +30,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [censusRunning, setCensusRunning] = useState(false);
   const [censusResults, setCensusResults] = useState<Array<UnleashedDryRunCensusResult | UnleashedProbeResult | WarehouseStagingResult>>([]);
   const [censusError, setCensusError] = useState('');
-  const [acceptanceOpen, setAcceptanceOpen] = useState(false);
-  const [acceptanceAcknowledged, setAcceptanceAcknowledged] = useState(false);
-  const [acceptanceRunning, setAcceptanceRunning] = useState(false);
-  const [acceptanceResult, setAcceptanceResult] = useState<UnleashedAcceptanceResult | null>(null);
-  const [acceptanceError, setAcceptanceError] = useState('');
 
   async function runProbe() {
-    if (running || censusRunning || acceptanceRunning) return;
+    if (running || censusRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -68,7 +46,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   }
 
   async function runCensus() {
-    if (running || censusRunning || acceptanceRunning) return;
+    if (running || censusRunning) return;
     setCensusRunning(true);
     setCensusResults([]);
     setCensusError('');
@@ -81,25 +59,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runAcceptance() {
-    if (!acceptanceAcknowledged || acceptanceRunning || running || censusRunning) return;
-    setAcceptanceRunning(true);
-    setAcceptanceResult(null);
-    setAcceptanceError('');
-    try {
-      setAcceptanceResult(await runUnleashedConnectorAcceptance(supabase));
-    } catch (runError) {
-      setAcceptanceError(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setAcceptanceRunning(false);
-      setAcceptanceAcknowledged(false);
-    }
-  }
-
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · bounded one page</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 warehouse staging gate</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -108,31 +71,25 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Last test</span><strong>{formatTime(result?.requestedAt)}</strong></div>
-        <div><span>Resource</span><strong>Warehouses</strong></div>
-        <div><span>Records checked</span><strong>{result?.recordsSeen ?? '—'}</strong></div>
-        <div><span>Records imported</span><strong>{result?.recordsStaged ?? 0}</strong></div>
+        <div><span>Resource</span><strong>Warehouses only</strong></div>
+        <div><span>Maximum records</span><strong>1</strong></div>
+        <div><span>PLAN</span><strong>Blocked</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || censusRunning || acceptanceRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || censusRunning}>
           <RadioTower aria-hidden="true" size={17} />
-          {running ? 'Testing…' : 'Run one-page test'}
+          {running ? 'Testing…' : 'Run one-page dry test'}
         </button>
-        <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning || acceptanceRunning}>
+        <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning}>
           <Database aria-hidden="true" size={17} />
           {censusRunning ? 'Staging warehouse…' : 'Run #338 warehouse staging'}
         </button>
-        <button
-          type="button"
-          aria-expanded={acceptanceOpen}
-          aria-controls="unleashed-production-acceptance"
-          onClick={() => setAcceptanceOpen((current) => !current)}
-          disabled={running || censusRunning || acceptanceRunning}
-        >
-          <ShieldCheck aria-hidden="true" size={17} />
-          {acceptanceOpen ? 'Close acceptance' : 'Review production acceptance'}
-        </button>
       </div>
+
+      <p className="unleashed-acceptance-note">
+        Authorized Batch 1B-1 only: one warehouse source snapshot. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
+      </p>
 
       {censusError ? <div className="error-message" role="alert">{censusError}</div> : null}
       {censusResults.length ? (
@@ -153,70 +110,6 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
               );
             })}
           </div>
-        </div>
-      ) : null}
-
-      {acceptanceOpen ? (
-        <div className="unleashed-acceptance" id="unleashed-production-acceptance">
-          <div className="unleashed-acceptance-head">
-            <div><h3>Bounded production acceptance</h3><span>Four source records maximum</span></div>
-            <b className={`pill pill-${acceptanceTone(acceptanceResult)}`}>
-              {acceptanceRunning ? 'RUNNING' : acceptanceResult ? `${acceptanceResult.verifiedCount}/4 VERIFIED` : 'NOT RUN'}
-            </b>
-          </div>
-
-          <p className="unleashed-acceptance-note">
-            Unleashed receives GET requests only. EcoFlow stores or refreshes at most one source snapshot for each resource below, then reads each exact target twice to verify that an unchanged replay writes nothing.
-          </p>
-          <ul className="unleashed-acceptance-scope">
-            {Object.values(ACCEPTANCE_RESOURCE_LABELS).map((label) => <li key={label}>{label}</li>)}
-          </ul>
-
-          <label className="unleashed-acceptance-confirm">
-            <input
-              type="checkbox"
-              checked={acceptanceAcknowledged}
-              disabled={acceptanceRunning}
-              onChange={(event) => setAcceptanceAcknowledged(event.target.checked)}
-            />
-            <span>I confirm this bounded source-snapshot write. Business records and inventory authority will not change.</span>
-          </label>
-
-          {acceptanceError ? <div className="error-message" role="alert">{acceptanceError}</div> : null}
-          {acceptanceResult ? (
-            <div className="unleashed-acceptance-result" role="status">
-              {acceptanceResult.seedStatus === 'PARTIAL' ? (
-                <div className="unleashed-acceptance-warning">
-                  Source coverage is incomplete. {acceptanceResult.seedRecordsFailed} resource read failed and remains unverified.
-                  {acceptanceResult.seedErrorMessage ? ` ${acceptanceResult.seedErrorMessage}.` : ''}
-                </div>
-              ) : null}
-              <div className="unleashed-acceptance-summary">
-                <span>Seed run <strong>{acceptanceResult.seedRunId.slice(0, 8)}</strong></span>
-                <span>Source records checked <strong>{acceptanceResult.seedRecordsSeen}</strong></span>
-                <span>Snapshots written <strong>{acceptanceResult.seedRecordsStaged}</strong></span>
-                <span>Source read failures <strong>{acceptanceResult.seedRecordsFailed}</strong></span>
-              </div>
-              <div className="unleashed-acceptance-checks">
-                {acceptanceResult.checks.map((check) => (
-                  <div key={check.resource}>
-                    <span><strong>{ACCEPTANCE_RESOURCE_LABELS[check.resource]}</strong><small>{check.error ?? 'Exact target read and unchanged replay passed.'}</small></span>
-                    <b className={`pill pill-${check.status === 'VERIFIED' ? 'good' : check.status === 'FAILED' ? 'danger' : 'warning'}`}>{check.status}</b>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className="primary unleashed-acceptance-run"
-            disabled={!acceptanceAcknowledged || acceptanceRunning || running || censusRunning}
-            onClick={() => void runAcceptance()}
-          >
-            <Database aria-hidden="true" size={17} />
-            {acceptanceRunning ? 'Running acceptance…' : 'Store sample and verify replay'}
-          </button>
         </div>
       ) : null}
     </section>
