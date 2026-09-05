@@ -7,11 +7,14 @@ import {
   type UnleashedAcceptanceResult,
 } from '../team/unleashedConnectorAcceptance';
 import {
-  runWarehouseUnleashedDryRunCensus,
   runUnleashedReadonlyProbe,
   type UnleashedDryRunCensusResult,
   type UnleashedProbeResult,
 } from '../team/unleashedReadonlyProbe';
+import {
+  runWarehouseUnleashedStaging,
+  type WarehouseStagingResult,
+} from '../team/unleashedWarehouseStaging';
 import './teamAccessSettings.css';
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
@@ -42,7 +45,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [error, setError] = useState('');
   const [censusRunning, setCensusRunning] = useState(false);
-  const [censusResults, setCensusResults] = useState<Array<UnleashedDryRunCensusResult | UnleashedProbeResult>>([]);
+  const [censusResults, setCensusResults] = useState<Array<UnleashedDryRunCensusResult | UnleashedProbeResult | WarehouseStagingResult>>([]);
   const [censusError, setCensusError] = useState('');
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [acceptanceAcknowledged, setAcceptanceAcknowledged] = useState(false);
@@ -70,7 +73,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     setCensusResults([]);
     setCensusError('');
     try {
-      setCensusResults([await runWarehouseUnleashedDryRunCensus(supabase)]);
+      setCensusResults([await runWarehouseUnleashedStaging(supabase)]);
     } catch (runError) {
       setCensusError(runError instanceof Error ? runError.message : String(runError));
     } finally {
@@ -96,7 +99,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only · dry-run · one page</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · bounded one page</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -116,8 +119,8 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           {running ? 'Testing…' : 'Run one-page test'}
         </button>
         <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning || acceptanceRunning}>
-          <RadioTower aria-hidden="true" size={17} />
-          {censusRunning ? 'Running warehouse census…' : 'Run final #338 warehouse dry-run'}
+          <Database aria-hidden="true" size={17} />
+          {censusRunning ? 'Staging warehouse…' : 'Run #338 warehouse staging'}
         </button>
         <button
           type="button"
@@ -143,9 +146,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
                 <div key={page.resource}>
                   <span>
                     <strong>{page.resource}</strong>
-                    <small>{itemCount} items · {pageCount} pages · run {censusResult.runId.slice(0, 8)} · staged 0</small>
+                    <small>{itemCount} items · {pageCount} pages · run {censusResult.runId.slice(0, 8)} · staged {page.recordsStaged}</small>
                   </span>
-                  <b className="pill pill-good">DRY RUN</b>
+                  <b className="pill pill-good">{censusResult.dryRun ? 'DRY RUN' : 'STAGED'}</b>
                 </div>
               );
             })}
