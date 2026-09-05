@@ -12,8 +12,8 @@ import {
 } from '../team/unleashedRemainingMasterDrySurvey';
 import { CUSTOMER_STAGING_PLAN } from '../team/unleashedCustomerStagingPlan';
 import {
-  runAuthorizedCustomerC3,
-  type CustomerC3Result,
+  runAuthorizedCustomerC4,
+  type CustomerC4Result,
 } from '../team/unleashedCustomerStaging';
 import './teamAccessSettings.css';
 
@@ -33,15 +33,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [customerC3Running, setCustomerC3Running] = useState(false);
-  const [customerC3Attempted, setCustomerC3Attempted] = useState(false);
-  const [customerC3Result, setCustomerC3Result] = useState<CustomerC3Result | null>(null);
+  const [customerC4Running, setCustomerC4Running] = useState(false);
+  const [customerC4Attempted, setCustomerC4Attempted] = useState(false);
+  const [customerC4Result, setCustomerC4Result] = useState<CustomerC4Result | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [customerC3Error, setCustomerC3Error] = useState('');
+  const [customerC4Error, setCustomerC4Error] = useState('');
   const customerMutationAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || customerC3Running;
+  const anyRunning = running || surveyRunning || customerC4Running;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -71,18 +71,18 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runCustomerC3() {
-    if (anyRunning || customerC3Result || customerMutationAttemptedRef.current) return;
+  async function runCustomerC4() {
+    if (anyRunning || customerC4Result || customerMutationAttemptedRef.current) return;
     customerMutationAttemptedRef.current = true;
-    setCustomerC3Attempted(true);
-    setCustomerC3Running(true);
-    setCustomerC3Error('');
+    setCustomerC4Attempted(true);
+    setCustomerC4Running(true);
+    setCustomerC4Error('');
     try {
-      setCustomerC3Result(await runAuthorizedCustomerC3(supabase));
+      setCustomerC4Result(await runAuthorizedCustomerC4(supabase));
     } catch (runError) {
-      setCustomerC3Error(runError instanceof Error ? runError.message : String(runError));
+      setCustomerC4Error(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setCustomerC3Running(false);
+      setCustomerC4Running(false);
     }
   }
 
@@ -101,9 +101,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Address acquisition</span><strong>1B-5B closed · 184/184 staged</strong></div>
-        <div><span>Customer C1-C2</span><strong>verified · 400/623 unique staged</strong></div>
-        <div><span>C2 continuation anchor</span><strong>{CUSTOMER_STAGING_PLAN.c2Verification.continuationAnchorRunId.slice(0, 8)}</strong></div>
-        <div><span>Currently exposed</span><strong>C3 only · page 3 · 200 rows</strong></div>
+        <div><span>Customer C1-C3</span><strong>verified · 600/623 unique staged</strong></div>
+        <div><span>C3 continuation anchor</span><strong>{CUSTOMER_STAGING_PLAN.c3Verification.continuationAnchorRunId.slice(0, 8)}</strong></div>
+        <div><span>Currently exposed</span><strong>C4 final · page 4 · 23 rows</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -115,26 +115,26 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runCustomerC3()} disabled={anyRunning || customerC3Attempted || Boolean(customerC3Result)}>
+        <button type="button" className="primary" onClick={() => void runCustomerC4()} disabled={anyRunning || customerC4Attempted || Boolean(customerC4Result)}>
           <Database aria-hidden="true" size={17} />
-          {customerC3Running ? 'Executing customer C3…' : customerC3Result ? 'Customer C3 completed' : customerC3Attempted ? 'Customer C3 attempt sent' : 'Execute authorized #338 customer C3'}
+          {customerC4Running ? 'Executing customer C4…' : customerC4Result ? 'Customer C4 completed' : customerC4Attempted ? 'Customer C4 attempt sent' : 'Execute authorized #338 customer C4'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        C2 is closed from production evidence: run {CUSTOMER_STAGING_PLAN.c2Verification.runId} inserted exactly 200 page-2 rows, matched the locked SHA, left zero changed/unchanged/failed rows, advanced the cursor to page 3 and left no active lease. The C2 UI rejection was a validator defect: the deployed Edge Function returns previousRunId at the response top level, not inside paginationWindows. C3 validation now follows the actual Edge Function response contract only. C3 is bound to previousRunId={CUSTOMER_STAGING_PLAN.c2Verification.continuationAnchorRunId}, must insert exactly 200 page-3 rows, match the locked SHA, report zero changed/unchanged/failed rows and advance to next_page=4. C4 remains hidden until Chat verifies C3. Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        C3 is closed from production evidence: run {CUSTOMER_STAGING_PLAN.c3Verification.runId} inserted exactly 200 page-3 rows, matched the locked SHA, left zero changed/unchanged/failed rows, advanced the cursor to page 4, left no active lease and produced exactly 600 unique customer snapshots and identities. C4 is the final authorized customer window and is bound to previousRunId={CUSTOMER_STAGING_PLAN.c3Verification.continuationAnchorRunId}. It must read exactly 23 rows from page 4, match the locked page-4 SHA, insert exactly 23 rows, report zero changed/unchanged/failed rows, finish with allResourcesComplete=true, window_complete=true and next_page=null. The button uses a synchronous one-shot lock. Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
       </p>
 
-      {customerC3Error ? <div className="error-message" role="alert">{customerC3Error}</div> : null}
-      {customerC3Result ? (
+      {customerC4Error ? <div className="error-message" role="alert">{customerC4Error}</div> : null}
+      {customerC4Result ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>customers C3</strong>
-                <small>{customerC3Result.recordsInserted} inserted · page 3 · run {customerC3Result.runId.slice(0, 8)}</small>
+                <strong>customers C4</strong>
+                <small>{customerC4Result.recordsInserted} inserted · page 4 · run {customerC4Result.runId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">C3 COMPLETE</b>
+              <b className="pill pill-good">CUSTOMERS COMPLETE</b>
             </div>
           </div>
         </div>
