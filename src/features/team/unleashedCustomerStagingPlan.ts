@@ -24,7 +24,7 @@ export const CUSTOMER_STAGING_PLAN = {
     granted: true,
     scope: 'C1-C4',
     executionPolicy: 'ONE_WINDOW_THEN_VERIFY',
-    currentExposedWindow: 'C3',
+    currentExposedWindow: 'C4',
   },
   c1Verification: {
     accepted: true,
@@ -62,6 +62,23 @@ export const CUSTOMER_STAGING_PLAN = {
     databaseBytesAfterC2: 348294291,
     frontendRejectionCause: 'VALIDATOR_REQUIRED_WINDOW_PREVIOUS_RUN_ID_BUT_EDGE_FUNCTION_WINDOW_RESPONSE_DOES_NOT_CONTAIN_THAT_FIELD',
   },
+  c3Verification: {
+    accepted: true,
+    runId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753',
+    continuationAnchorRunId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753',
+    previousRunId: '98e9ad73-b49e-4d27-adac-6dbe5472daf7',
+    inserted: 200,
+    changed: 0,
+    unchanged: 0,
+    failed: 0,
+    page3ShaMatched: true,
+    uniqueSnapshotsAfterC3: 600,
+    uniqueIdentitiesAfterC3: 600,
+    activeLeaseCountAfterVerification: 0,
+    cursorNextPage: 4,
+    cursorStatus: 'RUNNING',
+    databaseBytesAfterC3: 348974227,
+  },
   executionShape: {
     pageSize: 200,
     maxPagesPerRun: 1,
@@ -74,8 +91,8 @@ export const CUSTOMER_STAGING_PLAN = {
   expectedSequence: [
     { window: 'C1', startPage: 1, maxPages: 1, expectedRows: 200, previousRunId: null, expectedWindowComplete: false, expectedNextPage: 2, status: 'VERIFIED' },
     { window: 'C2', startPage: 2, maxPages: 1, expectedRows: 200, previousRunId: '892cc23c-67c7-4d94-856b-7af90a3fd5e3', expectedWindowComplete: false, expectedNextPage: 3, status: 'VERIFIED' },
-    { window: 'C3', startPage: 3, maxPages: 1, expectedRows: 200, previousRunId: '98e9ad73-b49e-4d27-adac-6dbe5472daf7', expectedWindowComplete: false, expectedNextPage: 4, status: 'EXPOSED' },
-    { window: 'C4', startPage: 4, maxPages: 1, expectedRows: 23, previousRunId: 'FROM_VERIFIED_C3_RUN_ID', expectedWindowComplete: true, expectedNextPage: null, status: 'BLOCKED_PENDING_C3_VERIFICATION' },
+    { window: 'C3', startPage: 3, maxPages: 1, expectedRows: 200, previousRunId: '98e9ad73-b49e-4d27-adac-6dbe5472daf7', expectedWindowComplete: false, expectedNextPage: 4, status: 'VERIFIED' },
+    { window: 'C4', startPage: 4, maxPages: 1, expectedRows: 23, previousRunId: '6a972f12-1a07-4cd5-a2f4-50e403d5c753', expectedWindowComplete: true, expectedNextPage: null, status: 'EXPOSED' },
   ],
   acceptance: {
     httpStatus: 200,
