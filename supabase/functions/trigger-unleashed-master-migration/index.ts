@@ -69,6 +69,13 @@ type PlannedAsset = {
   claimed_in_run_id: string | null;
 };
 
+type ExistingAssetPlanRow = {
+  id: string;
+  identity_id: string;
+  source_locator_sha256: string;
+  asset_status: string;
+};
+
 const IMAGE_FETCH_TIMEOUT_MS = 20 * 1000;
 const ASSET_BUCKET = 'unleashed-product-images';
 const ASSET_BUCKET_OPTIONS = {
@@ -77,6 +84,7 @@ const ASSET_BUCKET_OPTIONS = {
   fileSizeLimit: 10 * 1024 * 1024,
 };
 const ASSET_SIGNED_URL_TTL_SECONDS = 60;
+const POSTGREST_IN_CHUNK_SIZE = 100;
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -108,6 +116,12 @@ function optionalIsoDate(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) throw new Error('INVALID_ASSET_AUTHORIZATION_EXPIRY');
   return new Date(value).toISOString();
+}
+
+function chunks<T>(values: T[], size = POSTGREST_IN_CHUNK_SIZE) {
+  const result: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
+  return result;
 }
 
 async function recordAudit(adminClient: ReturnType<typeof createClient>, values: Record<string, unknown>) {
@@ -199,27 +213,31 @@ async function planAssets(
 
   if (assets.length) {
     const identityIds = [...new Set(assets.map((asset) => String(asset.identity_id)))];
-    const { data: existing, error: existingError } = await adminClient
-      .from('ecoflow_unleashed_product_assets')
-      .select('id,identity_id,source_locator_sha256,asset_status')
-      .in('identity_id', identityIds);
-    if (existingError) throw new Error(`PRODUCT_ASSET_PLAN_READ_FAILED:${existingError.message}`);
-    const existingByKey = new Map((existing ?? []).map((row) => [
+    const existing: ExistingAssetPlanRow[] = [];
+    for (const identityIdChunk of chunks(identityIds)) {
+      const { data, error } = await adminClient
+        .from('ecoflow_unleashed_product_assets')
+        .select('id,identity_id,source_locator_sha256,asset_status')
+        .in('identity_id', identityIdChunk);
+      if (error) throw new Error(`PRODUCT_ASSET_PLAN_READ_FAILED:${error.message}`);
+      existing.push(...((data ?? []) as ExistingAssetPlanRow[]));
+    }
+    const existingByKey = new Map(existing.map((row) => [
       `${row.identity_id}:${row.source_locator_sha256}`,
       row,
     ]));
     const currentKeys = new Set(assets.map((asset) => `${asset.identity_id}:${asset.source_locator_sha256}`));
-    const retiredIds = (existing ?? [])
+    const retiredIds = existing
       .filter((row) => !currentKeys.has(`${row.identity_id}:${row.source_locator_sha256}`)
         && !['COPIED', 'COPYING'].includes(row.asset_status))
       .map((row) => row.id);
-    if (retiredIds.length) {
+    for (const retiredIdChunk of chunks(retiredIds)) {
       const { error: retireError } = await adminClient.from('ecoflow_unleashed_product_assets').update({
         asset_status: 'RETIRED',
         last_error_code: 'UNLEASHED_IMAGE_SOURCE_SUPERSEDED',
         last_error_message: 'The locator is no longer present in the current product snapshot',
         updated_at: new Date().toISOString(),
-      }).in('id', retiredIds).is('claimed_in_run_id', null);
+      }).in('id', retiredIdChunk).is('claimed_in_run_id', null);
       if (retireError) throw new Error(`PRODUCT_ASSET_RETIRE_FAILED:${retireError.message}`);
     }
     const newAssets = assets
