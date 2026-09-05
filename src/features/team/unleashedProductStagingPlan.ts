@@ -1,14 +1,15 @@
-// #338 product staging groundwork only.
-// This file is deliberately NON-EXECUTABLE: products non-dry is not authorized.
+// #338 product staging authorization contract.
+// Authorization scope: products P1-P3 only, one window at a time with production verification between windows.
 // PLAN, COPY_IMAGES, Product Identity, inventory/opening-balance authority and cutover remain forbidden.
 
 export const PRODUCT_STAGING_PLAN = {
   resource: 'products',
   mode: 'bounded_snapshot',
   authorization: {
-    granted: false,
-    scope: 'NONE',
-    reason: 'Customer C1-C4 authorization explicitly excluded products non-dry.',
+    granted: true,
+    scope: 'P1-P3',
+    executionPolicy: 'ONE_WINDOW_THEN_VERIFY',
+    currentExposedWindow: 'P1',
   },
   freshSourceEvidence: {
     dryRunId: '833490c8-040b-4b9b-b895-d491efb5a256',
@@ -37,46 +38,40 @@ export const PRODUCT_STAGING_PLAN = {
       sourceLastModifiedAt: '2026-06-01T03:52:11.875Z',
     },
   },
-  existingSampleAccounting: {
-    initialOverlapCount: 1,
-    currentSingleRowDryEvidence: {
-      runId: 'ce84c647-299a-4fec-b1d3-f2f3689db6fb',
-      pageSize: 1,
-      recordsSeen: 1,
-      sourceTotalItems: 466,
-      pageHighWatermark: '2026-06-01T03:52:11.875Z',
-      note: 'The current first-row dry high-watermark matches the historical sample timestamp, but raw target identity is intentionally not returned by dry evidence.',
-    },
-    safeAcceptanceEnvelope: {
-      rule: 'Across P1-P3 exactly one source row may classify as changed or unchanged against the pre-existing snapshot; every other source row must classify as inserted. Never assume which page contains the overlap.',
-      perWindow: 'recordsInserted + recordsChanged + recordsUnchanged must equal exact rows seen; recordsChanged + recordsUnchanged must be 0 or 1 and must never exceed the one remaining historical overlap.',
-      chainTerminal: 'Across all three windows, sum(recordsChanged + recordsUnchanged) must equal 1, total source rows must equal 466, and final unique snapshots and identities must both equal 466.',
-      stopConditions: [
-        'more than one overlap is observed',
-        'final overlap count is zero',
-        'any page SHA or row count differs from fresh dry evidence',
-        'any failed row is reported',
-        'final snapshot or identity count is not 466',
-      ],
-    },
+  overlapBudget: {
+    initial: 1,
+    consumed: 0,
+    remaining: 1,
+    rule: 'Across P1-P3 exactly one row may classify as changed or unchanged because exactly one historical product snapshot already exists. Every other row must classify as inserted.',
   },
-  proposedSequence: [
-    { window: 'P1', startPage: 1, maxPages: 1, expectedRowsSeen: 200, previousRunId: null, status: 'BLOCKED_NOT_AUTHORIZED' },
-    { window: 'P2', startPage: 2, maxPages: 1, expectedRowsSeen: 200, previousRunId: 'FROM_VERIFIED_P1_RUN_ID', status: 'BLOCKED' },
-    { window: 'P3', startPage: 3, maxPages: 1, expectedRowsSeen: 66, previousRunId: 'FROM_VERIFIED_P2_RUN_ID', status: 'BLOCKED' },
+  expectedSequence: [
+    { window: 'P1', startPage: 1, maxPages: 1, expectedRowsSeen: 200, previousRunId: null, expectedWindowComplete: false, expectedNextPage: 2, status: 'EXPOSED' },
+    { window: 'P2', startPage: 2, maxPages: 1, expectedRowsSeen: 200, previousRunId: 'FROM_VERIFIED_P1_RUN_ID', expectedWindowComplete: false, expectedNextPage: 3, status: 'BLOCKED_PENDING_P1_VERIFICATION' },
+    { window: 'P3', startPage: 3, maxPages: 1, expectedRowsSeen: 66, previousRunId: 'FROM_VERIFIED_P2_RUN_ID', expectedWindowComplete: true, expectedNextPage: null, status: 'BLOCKED_PENDING_P2_VERIFICATION' },
   ],
   executionShape: {
     pageSize: 200,
     maxPagesPerRun: 1,
+    maxRowsPerRun: 200,
     oneWindowThenVerify: true,
     sameActorRequiredAcrossContinuationChain: true,
+    previousRunIdRequiredFromWindow2Onward: true,
     requireExactDryShaPerPage: true,
     requireCursorAndLeaseVerificationAfterEachWindow: true,
     requireDatabaseByteEvidenceAfterEachWindow: true,
     requireHistoricalOverlapBudgetTracking: true,
+    stopOnAnyMismatch: true,
+  },
+  acceptance: {
+    totalUniqueRecords: 466,
+    totalUniqueSnapshotsRequired: 466,
+    totalUniqueIdentitiesRequired: 466,
+    recordsFailed: 0,
+    requireExactPageCountAndRowCountPerWindow: true,
+    requireExactFreshPreflightShaPerPage: true,
+    oneOverlapAcrossWholeChain: true,
   },
   forbiddenAuthorities: [
-    'products non-dry until separately authorized',
     'PLAN',
     'COPY_IMAGES',
     'Product Identity',
