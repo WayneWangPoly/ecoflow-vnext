@@ -62,7 +62,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 warehouse staging gate</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 warehouse idempotency gate</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -72,7 +72,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Last test</span><strong>{formatTime(result?.requestedAt)}</strong></div>
         <div><span>Resource</span><strong>Warehouses only</strong></div>
-        <div><span>Maximum records</span><strong>1</strong></div>
+        <div><span>Expected staged</span><strong>0</strong></div>
         <div><span>PLAN</span><strong>Blocked</strong></div>
       </div>
 
@@ -83,12 +83,12 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
         </button>
         <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning}>
           <Database aria-hidden="true" size={17} />
-          {censusRunning ? 'Staging warehouse…' : 'Run #338 warehouse staging'}
+          {censusRunning ? 'Replaying warehouse…' : 'Run #338 warehouse idempotent replay'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Authorized Batch 1B-1 only: one warehouse source snapshot. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
+        Authorized Batch 1B-2 only: replay the same single warehouse snapshot. The result is accepted only if staged=0, inserted=0, changed=0 and unchanged=1. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
       </p>
 
       {censusError ? <div className="error-message" role="alert">{censusError}</div> : null}
@@ -105,7 +105,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
                     <strong>{page.resource}</strong>
                     <small>{itemCount} items · {pageCount} pages · run {censusResult.runId.slice(0, 8)} · staged {page.recordsStaged}</small>
                   </span>
-                  <b className="pill pill-good">{censusResult.dryRun ? 'DRY RUN' : 'STAGED'}</b>
+                  <b className="pill pill-good">IDEMPOTENT</b>
                 </div>
               );
             })}
