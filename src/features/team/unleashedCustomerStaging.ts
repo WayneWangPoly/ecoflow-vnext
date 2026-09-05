@@ -5,9 +5,9 @@ const RESOURCE = 'customers' as const;
 const PAGE_SIZE = 200 as const;
 const TOTAL_ITEMS = 623;
 const TOTAL_PAGES = 4;
-const C3 = CUSTOMER_STAGING_PLAN.expectedSequence[2];
-const C3_SHA = CUSTOMER_STAGING_PLAN.freshSourceEvidence.pages[2].responseSha256;
-const C3_PREVIOUS_RUN_ID = CUSTOMER_STAGING_PLAN.c2Verification.continuationAnchorRunId;
+const C4 = CUSTOMER_STAGING_PLAN.expectedSequence[3];
+const C4_SHA = CUSTOMER_STAGING_PLAN.freshSourceEvidence.pages[3].responseSha256;
+const C4_PREVIOUS_RUN_ID = CUSTOMER_STAGING_PLAN.c3Verification.continuationAnchorRunId;
 
 type ConnectorError = { error?: string; details?: string };
 
@@ -38,7 +38,7 @@ type CustomerWindow = {
   highWatermark: string | null;
 };
 
-export type CustomerC3Result = {
+export type CustomerC4Result = {
   ok: boolean;
   runId: string;
   requestedAt: string;
@@ -47,9 +47,9 @@ export type CustomerC3Result = {
   resources: [typeof RESOURCE];
   pageSize: typeof PAGE_SIZE;
   maxPages: 1;
-  startPage: 3;
+  startPage: 4;
   previousRunId: string;
-  allResourcesComplete: false;
+  allResourcesComplete: true;
   paginationWindows: CustomerWindow[];
   recordsSeen: number;
   recordsStaged: number;
@@ -70,9 +70,9 @@ function paginationNumber(page: CustomerPage | undefined, key: 'NumberOfItems' |
   return null;
 }
 
-function isExactC3(value: unknown): value is CustomerC3Result {
+function isExactC4(value: unknown): value is CustomerC4Result {
   if (!value || typeof value !== 'object') return false;
-  const result = value as Partial<CustomerC3Result>;
+  const result = value as Partial<CustomerC4Result>;
   if (
     result.ok !== true
     || result.status !== 'SUCCEEDED'
@@ -82,12 +82,12 @@ function isExactC3(value: unknown): value is CustomerC3Result {
     || result.resources[0] !== RESOURCE
     || result.pageSize !== PAGE_SIZE
     || result.maxPages !== 1
-    || result.startPage !== C3.startPage
-    || result.previousRunId !== C3_PREVIOUS_RUN_ID
-    || result.allResourcesComplete !== false
-    || result.recordsSeen !== C3.expectedRows
-    || result.recordsStaged !== C3.expectedRows
-    || result.recordsInserted !== C3.expectedRows
+    || result.startPage !== C4.startPage
+    || result.previousRunId !== C4_PREVIOUS_RUN_ID
+    || result.allResourcesComplete !== true
+    || result.recordsSeen !== C4.expectedRows
+    || result.recordsStaged !== C4.expectedRows
+    || result.recordsInserted !== C4.expectedRows
     || result.recordsChanged !== 0
     || result.recordsUnchanged !== 0
     || result.recordsFailed !== 0
@@ -103,13 +103,13 @@ function isExactC3(value: unknown): value is CustomerC3Result {
   if (
     !page
     || page.resource !== RESOURCE
-    || page.pageNumber !== C3.startPage
+    || page.pageNumber !== C4.startPage
     || page.pageSize !== PAGE_SIZE
     || page.httpStatus !== 200
-    || page.responseSha256 !== C3_SHA
-    || page.recordsSeen !== C3.expectedRows
-    || page.recordsStaged !== C3.expectedRows
-    || page.recordsInserted !== C3.expectedRows
+    || page.responseSha256 !== C4_SHA
+    || page.recordsSeen !== C4.expectedRows
+    || page.recordsStaged !== C4.expectedRows
+    || page.recordsInserted !== C4.expectedRows
     || page.recordsChanged !== 0
     || page.recordsUnchanged !== 0
     || paginationNumber(page, 'NumberOfItems') !== TOTAL_ITEMS
@@ -118,11 +118,11 @@ function isExactC3(value: unknown): value is CustomerC3Result {
 
   const window = result.paginationWindows[0];
   return window.resource === RESOURCE
-    && window.startPage === C3.startPage
-    && window.lastPage === C3.startPage
+    && window.startPage === C4.startPage
+    && window.lastPage === C4.startPage
     && window.numberOfPages === TOTAL_PAGES
-    && window.windowComplete === C3.expectedWindowComplete
-    && window.nextPage === C3.expectedNextPage
+    && window.windowComplete === true
+    && window.nextPage === null
     && typeof window.highWatermark === 'string'
     && window.highWatermark.length > 0;
 }
@@ -137,9 +137,9 @@ async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
   return data;
 }
 
-export async function runAuthorizedCustomerC3(supabase: SupabaseClient): Promise<CustomerC3Result> {
-  if (!CUSTOMER_STAGING_PLAN.authorization.granted || CUSTOMER_STAGING_PLAN.authorization.currentExposedWindow !== 'C3') {
-    throw new Error('UNLEASHED_CUSTOMER_C3_NOT_AUTHORIZED');
+export async function runAuthorizedCustomerC4(supabase: SupabaseClient): Promise<CustomerC4Result> {
+  if (!CUSTOMER_STAGING_PLAN.authorization.granted || CUSTOMER_STAGING_PLAN.authorization.currentExposedWindow !== 'C4') {
+    throw new Error('UNLEASHED_CUSTOMER_C4_NOT_AUTHORIZED');
   }
 
   const result = await invoke(supabase, {
@@ -148,13 +148,13 @@ export async function runAuthorizedCustomerC3(supabase: SupabaseClient): Promise
     dryRun: false,
     pageSize: PAGE_SIZE,
     maxPages: 1,
-    startPage: C3.startPage,
-    previousRunId: C3_PREVIOUS_RUN_ID,
-    reason: `#338 authorized customer C3 only; continuation anchor ${C3_PREVIOUS_RUN_ID}; fresh dry evidence ${CUSTOMER_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
+    startPage: C4.startPage,
+    previousRunId: C4_PREVIOUS_RUN_ID,
+    reason: `#338 authorized customer C4 final window only; continuation anchor ${C4_PREVIOUS_RUN_ID}; fresh dry evidence ${CUSTOMER_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
   });
 
-  if (!isExactC3(result)) {
-    throw new Error('UNLEASHED_CUSTOMER_C3_RESULT_REJECTED');
+  if (!isExactC4(result)) {
+    throw new Error('UNLEASHED_CUSTOMER_C4_RESULT_REJECTED');
   }
   return result;
 }
