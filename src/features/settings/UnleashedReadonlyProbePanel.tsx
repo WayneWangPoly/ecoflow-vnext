@@ -12,8 +12,8 @@ import {
 } from '../team/unleashedRemainingMasterDrySurvey';
 import { PRODUCT_STAGING_PLAN } from '../team/unleashedProductStagingPlan';
 import {
-  runAuthorizedProductP1,
-  type ProductP1Result,
+  runAuthorizedProductP2,
+  type ProductP2Result,
 } from '../team/unleashedProductStaging';
 import './teamAccessSettings.css';
 
@@ -27,15 +27,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [productP1Running, setProductP1Running] = useState(false);
-  const [productP1Attempted, setProductP1Attempted] = useState(false);
-  const [productP1Result, setProductP1Result] = useState<ProductP1Result | null>(null);
+  const [productP2Running, setProductP2Running] = useState(false);
+  const [productP2Attempted, setProductP2Attempted] = useState(false);
+  const [productP2Result, setProductP2Result] = useState<ProductP2Result | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [productP1Error, setProductP1Error] = useState('');
+  const [productP2Error, setProductP2Error] = useState('');
   const productMutationAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || productP1Running;
+  const anyRunning = running || surveyRunning || productP2Running;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -65,18 +65,18 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runProductP1() {
-    if (anyRunning || productP1Result || productMutationAttemptedRef.current) return;
+  async function runProductP2() {
+    if (anyRunning || productP2Result || productMutationAttemptedRef.current) return;
     productMutationAttemptedRef.current = true;
-    setProductP1Attempted(true);
-    setProductP1Running(true);
-    setProductP1Error('');
+    setProductP2Attempted(true);
+    setProductP2Running(true);
+    setProductP2Error('');
     try {
-      setProductP1Result(await runAuthorizedProductP1(supabase));
+      setProductP2Result(await runAuthorizedProductP2(supabase));
     } catch (runError) {
-      setProductP1Error(runError instanceof Error ? runError.message : String(runError));
+      setProductP2Error(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setProductP1Running(false);
+      setProductP2Running(false);
     }
   }
 
@@ -96,8 +96,8 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Address acquisition</span><strong>closed · 184/184 staged</strong></div>
         <div><span>Customer acquisition</span><strong>closed · 623/623 staged</strong></div>
-        <div><span>Product acquisition</span><strong>authorized P1-P3 · 466 source rows</strong></div>
-        <div><span>Currently exposed</span><strong>P1 only · page 1 · 200 rows</strong></div>
+        <div><span>Product P1</span><strong>verified · 199 inserted + 1 unchanged</strong></div>
+        <div><span>Currently exposed</span><strong>P2 only · page 2 · 200 rows</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -109,26 +109,26 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runProductP1()} disabled={anyRunning || productP1Attempted || Boolean(productP1Result)}>
+        <button type="button" className="primary" onClick={() => void runProductP2()} disabled={anyRunning || productP2Attempted || Boolean(productP2Result)}>
           <Database aria-hidden="true" size={17} />
-          {productP1Running ? 'Executing product P1…' : productP1Result ? 'Product P1 completed' : productP1Attempted ? 'Product P1 attempt sent' : 'Execute authorized #338 product P1'}
+          {productP2Running ? 'Executing product P2…' : productP2Result ? 'Product P2 completed' : productP2Attempted ? 'Product P2 attempt sent' : 'Execute authorized #338 product P2'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Customer C1-C4 is closed at 623/623. Product P1-P3 is now separately authorized, but only P1 is exposed. P1 is fixed to products page 1, pageSize=200 and maxPages=1 and must match the locked page-1 SHA and 466/3 pagination. Production begins with exactly one historical targeted product snapshot, so P1 may consume zero or one unit of the one-overlap budget: inserted + changed + unchanged must equal 200, changed + unchanged may be only 0 or 1, and staged must equal inserted + changed. P2 remains hidden until Chat verifies production cursor, lease, DB delta and remaining overlap budget. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        Product P1 is verified in production at run 162e9838-bcb1-45b9-84c3-334bca8c202c: page 1 matched the locked SHA and 466/3 pagination, with 199 inserted and the one historical product classified unchanged. The one-overlap budget is therefore fully consumed. P2 is now the only exposed non-dry action and is fixed to products page 2, pageSize=200, maxPages=1 and previousRunId=162e9838-bcb1-45b9-84c3-334bca8c202c. P2 must be exactly 200 inserted, 0 changed, 0 unchanged and 0 failed, with the locked page-2 SHA and next_page=3. P3 remains hidden pending production verification. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
       </p>
 
-      {productP1Error ? <div className="error-message" role="alert">{productP1Error}</div> : null}
-      {productP1Result ? (
+      {productP2Error ? <div className="error-message" role="alert">{productP2Error}</div> : null}
+      {productP2Result ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>products P1</strong>
-                <small>{productP1Result.recordsInserted} inserted · {productP1Result.recordsChanged} changed · {productP1Result.recordsUnchanged} unchanged · run {productP1Result.runId.slice(0, 8)}</small>
+                <strong>products P2</strong>
+                <small>{productP2Result.recordsInserted} inserted · {productP2Result.recordsChanged} changed · {productP2Result.recordsUnchanged} unchanged · run {productP2Result.runId.slice(0, 8)}</small>
               </span>
-              <b className="pill pill-good">P1 COMPLETE</b>
+              <b className="pill pill-good">P2 COMPLETE</b>
             </div>
           </div>
         </div>
