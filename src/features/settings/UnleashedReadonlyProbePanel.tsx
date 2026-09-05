@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, RadioTower } from 'lucide-react';
 import {
@@ -10,11 +10,6 @@ import {
   runRemainingMasterDrySurvey,
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
-import { PRODUCT_STAGING_PLAN } from '../team/unleashedProductStagingPlan';
-import {
-  runAuthorizedProductP3,
-  type ProductP3Result,
-} from '../team/unleashedProductStaging';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -27,15 +22,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [surveyRunning, setSurveyRunning] = useState(false);
   const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
-  const [productP3Running, setProductP3Running] = useState(false);
-  const [productP3Attempted, setProductP3Attempted] = useState(false);
-  const [productP3Result, setProductP3Result] = useState<ProductP3Result | null>(null);
   const [error, setError] = useState('');
   const [surveyError, setSurveyError] = useState('');
-  const [productP3Error, setProductP3Error] = useState('');
-  const productMutationAttemptedRef = useRef(false);
 
-  const anyRunning = running || surveyRunning || productP3Running;
+  const anyRunning = running || surveyRunning;
 
   async function runProbe() {
     if (anyRunning) return;
@@ -65,21 +55,6 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runProductP3() {
-    if (anyRunning || productP3Result || productMutationAttemptedRef.current) return;
-    productMutationAttemptedRef.current = true;
-    setProductP3Attempted(true);
-    setProductP3Running(true);
-    setProductP3Error('');
-    try {
-      setProductP3Result(await runAuthorizedProductP3(supabase));
-    } catch (runError) {
-      setProductP3Error(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setProductP3Running(false);
-    }
-  }
-
   const customerCount = surveyResult ? itemCountForResource(surveyResult, 'customers') : null;
   const productCount = surveyResult ? itemCountForResource(surveyResult, 'products') : null;
 
@@ -96,8 +71,8 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Address acquisition</span><strong>closed · 184/184 staged</strong></div>
         <div><span>Customer acquisition</span><strong>closed · 623/623 staged</strong></div>
-        <div><span>Product P1 + P2</span><strong>verified · 400/466 staged</strong></div>
-        <div><span>Currently exposed</span><strong>P3 final only · page 3 · 66 rows</strong></div>
+        <div><span>Product acquisition</span><strong>closed · 466/466 staged</strong></div>
+        <div><span>Non-dry master gates</span><strong>customers / products / stock_on_hand · CLOSED_DRY_ONLY</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -109,30 +84,11 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runProductP3()} disabled={anyRunning || productP3Attempted || Boolean(productP3Result)}>
-          <Database aria-hidden="true" size={17} />
-          {productP3Running ? 'Executing product P3…' : productP3Result ? 'Product P3 completed' : productP3Attempted ? 'Product P3 attempt sent' : 'Execute authorized #338 product P3'}
-        </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Product P1 is verified at run 162e9838-bcb1-45b9-84c3-334bca8c202c with 199 inserted + 1 unchanged, consuming the only historical overlap. Product P2 is verified at run 4a531e9f-68ff-4c41-9d39-7eef57cdc0eb with exactly 200 inserted and no changed/unchanged rows; products now stand at 400/466 snapshots and identities and the cursor is RUNNING at next_page=3. P3 is the only exposed non-dry action and is fixed to products page 3, pageSize=200, maxPages=1 and previousRunId=4a531e9f-68ff-4c41-9d39-7eef57cdc0eb. It must be exactly 66 inserted, 0 changed, 0 unchanged and 0 failed, match the locked page-3 SHA, finish allResourcesComplete=true, window_complete=true and next_page=null. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
+        Customer staging is closed at 623/623. Product P1-P3 is also fully closed at 466/466: P1 run 162e9838-bcb1-45b9-84c3-334bca8c202c inserted 199 and consumed the one historical overlap as 1 unchanged; P2 run 4a531e9f-68ff-4c41-9d39-7eef57cdc0eb inserted 200; P3 final run 6121d235-4597-492a-a980-45754f917163 inserted 66, matched the locked page-3 SHA, completed the 466-record source window and returned the cursor to READY before closure. The consumed product authorization exposes no non-dry action. Production cursor gates are now DISABLED for customers, products and stock_on_hand, so DB-owned acquisition claims reject non-dry writes while dry GET evidence remains available. PLAN, COPY_IMAGES, Product Identity, inventory, opening balance and cutover remain blocked.
       </p>
-
-      {productP3Error ? <div className="error-message" role="alert">{productP3Error}</div> : null}
-      {productP3Result ? (
-        <div className="unleashed-acceptance-result" role="status">
-          <div className="unleashed-acceptance-checks">
-            <div>
-              <span>
-                <strong>products P3 final</strong>
-                <small>{productP3Result.recordsInserted} inserted · {productP3Result.recordsChanged} changed · {productP3Result.recordsUnchanged} unchanged · run {productP3Result.runId.slice(0, 8)}</small>
-              </span>
-              <b className="pill pill-good">P3 COMPLETE</b>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
       {surveyResult ? (
