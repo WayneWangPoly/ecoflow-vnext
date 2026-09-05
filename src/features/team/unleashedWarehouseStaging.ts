@@ -46,11 +46,7 @@ type ConnectorError = {
   details?: string;
 };
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 0;
-}
-
-function isWarehouseStagingResult(value: unknown): value is WarehouseStagingResult {
+function isWarehouseIdempotentReplayResult(value: unknown): value is WarehouseStagingResult {
   if (!value || typeof value !== 'object') return false;
   const result = value as Partial<WarehouseStagingResult>;
   return result.ok === true
@@ -65,13 +61,10 @@ function isWarehouseStagingResult(value: unknown): value is WarehouseStagingResu
     && result.previousRunId === null
     && result.allResourcesComplete === true
     && result.recordsSeen === 1
-    && isNonNegativeInteger(result.recordsStaged)
-    && result.recordsStaged <= 1
-    && isNonNegativeInteger(result.recordsInserted)
-    && isNonNegativeInteger(result.recordsChanged)
-    && isNonNegativeInteger(result.recordsUnchanged)
-    && result.recordsStaged === result.recordsInserted + result.recordsChanged
-    && result.recordsSeen === result.recordsInserted + result.recordsChanged + result.recordsUnchanged
+    && result.recordsStaged === 0
+    && result.recordsInserted === 0
+    && result.recordsChanged === 0
+    && result.recordsUnchanged === 1
     && result.recordsFailed === 0
     && Array.isArray(result.failedResources)
     && result.failedResources.length === 0
@@ -81,8 +74,10 @@ function isWarehouseStagingResult(value: unknown): value is WarehouseStagingResu
       && page.pageSize === 1
       && page.httpStatus === 200
       && page.recordsSeen === 1
-      && page.recordsStaged <= 1
-      && page.recordsStaged === page.recordsInserted + page.recordsChanged);
+      && page.recordsStaged === 0
+      && page.recordsInserted === 0
+      && page.recordsChanged === 0
+      && page.recordsUnchanged === 1);
 }
 
 export async function runWarehouseUnleashedStaging(
@@ -95,7 +90,7 @@ export async function runWarehouseUnleashedStaging(
       dryRun: false,
       pageSize: 1,
       maxPages: 1,
-      reason: `#338 Batch 1B-1 warehouses single-resource non-dry staging; ${new Date().toISOString()}`,
+      reason: `#338 Batch 1B-2 warehouses single-resource non-dry idempotent replay; ${new Date().toISOString()}`,
     },
   });
 
@@ -104,8 +99,8 @@ export async function runWarehouseUnleashedStaging(
   if (connectorError?.error) {
     throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
   }
-  if (!isWarehouseStagingResult(data)) {
-    throw new Error('UNLEASHED_WAREHOUSE_STAGING_RESULT_REJECTED');
+  if (!isWarehouseIdempotentReplayResult(data)) {
+    throw new Error('UNLEASHED_WAREHOUSE_IDEMPOTENT_REPLAY_REJECTED');
   }
   return data;
 }
