@@ -7,7 +7,7 @@ import {
   type UnleashedAcceptanceResult,
 } from '../team/unleashedConnectorAcceptance';
 import {
-  runRemainingUnleashedDryRunCensus,
+  runWarehouseUnleashedDryRunCensus,
   runUnleashedReadonlyProbe,
   type UnleashedDryRunCensusResult,
   type UnleashedProbeResult,
@@ -42,7 +42,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
   const [error, setError] = useState('');
   const [censusRunning, setCensusRunning] = useState(false);
-  const [censusResults, setCensusResults] = useState<UnleashedDryRunCensusResult[]>([]);
+  const [censusResults, setCensusResults] = useState<Array<UnleashedDryRunCensusResult | UnleashedProbeResult>>([]);
   const [censusError, setCensusError] = useState('');
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [acceptanceAcknowledged, setAcceptanceAcknowledged] = useState(false);
@@ -70,7 +70,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     setCensusResults([]);
     setCensusError('');
     try {
-      setCensusResults(await runRemainingUnleashedDryRunCensus(supabase));
+      setCensusResults([await runWarehouseUnleashedDryRunCensus(supabase)]);
     } catch (runError) {
       setCensusError(runError instanceof Error ? runError.message : String(runError));
     } finally {
@@ -117,7 +117,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
         </button>
         <button type="button" onClick={() => void runCensus()} disabled={running || censusRunning || acceptanceRunning}>
           <RadioTower aria-hidden="true" size={17} />
-          {censusRunning ? 'Running #338 census…' : 'Run remaining #338 dry-run census'}
+          {censusRunning ? 'Running warehouse census…' : 'Run final #338 warehouse dry-run'}
         </button>
         <button
           type="button"
