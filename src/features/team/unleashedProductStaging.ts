@@ -5,9 +5,9 @@ const RESOURCE = 'products' as const;
 const PAGE_SIZE = 200 as const;
 const TOTAL_ITEMS = 466;
 const TOTAL_PAGES = 3;
-const P2 = PRODUCT_STAGING_PLAN.expectedSequence[1];
-const P2_SHA = PRODUCT_STAGING_PLAN.freshSourceEvidence.pages[1].responseSha256;
-const P1_RUN_ID = PRODUCT_STAGING_PLAN.verifiedWindows.P1.runId;
+const P3 = PRODUCT_STAGING_PLAN.expectedSequence[2];
+const P3_SHA = PRODUCT_STAGING_PLAN.freshSourceEvidence.pages[2].responseSha256;
+const P2_RUN_ID = PRODUCT_STAGING_PLAN.verifiedWindows.P2.runId;
 
 type ConnectorError = { error?: string; details?: string };
 
@@ -38,7 +38,7 @@ type ProductWindow = {
   highWatermark: string | null;
 };
 
-export type ProductP2Result = {
+export type ProductP3Result = {
   ok: boolean;
   runId: string;
   requestedAt: string;
@@ -47,9 +47,9 @@ export type ProductP2Result = {
   resources: [typeof RESOURCE];
   pageSize: typeof PAGE_SIZE;
   maxPages: 1;
-  startPage: 2;
+  startPage: 3;
   previousRunId: string;
-  allResourcesComplete: false;
+  allResourcesComplete: true;
   paginationWindows: ProductWindow[];
   recordsSeen: number;
   recordsStaged: number;
@@ -70,9 +70,9 @@ function paginationNumber(page: ProductPage | undefined, key: 'NumberOfItems' | 
   return null;
 }
 
-function isExactP2(value: unknown): value is ProductP2Result {
+function isExactP3(value: unknown): value is ProductP3Result {
   if (!value || typeof value !== 'object') return false;
-  const result = value as Partial<ProductP2Result>;
+  const result = value as Partial<ProductP3Result>;
   if (
     result.ok !== true
     || result.status !== 'SUCCEEDED'
@@ -82,12 +82,12 @@ function isExactP2(value: unknown): value is ProductP2Result {
     || result.resources[0] !== RESOURCE
     || result.pageSize !== PAGE_SIZE
     || result.maxPages !== 1
-    || result.startPage !== P2.startPage
-    || result.previousRunId !== P1_RUN_ID
-    || result.allResourcesComplete !== false
-    || result.recordsSeen !== P2.expectedRowsSeen
-    || result.recordsStaged !== P2.expectedRowsSeen
-    || result.recordsInserted !== P2.expectedRowsSeen
+    || result.startPage !== P3.startPage
+    || result.previousRunId !== P2_RUN_ID
+    || result.allResourcesComplete !== true
+    || result.recordsSeen !== P3.expectedRowsSeen
+    || result.recordsStaged !== P3.expectedRowsSeen
+    || result.recordsInserted !== P3.expectedRowsSeen
     || result.recordsChanged !== 0
     || result.recordsUnchanged !== 0
     || result.recordsFailed !== 0
@@ -103,13 +103,13 @@ function isExactP2(value: unknown): value is ProductP2Result {
   if (
     !page
     || page.resource !== RESOURCE
-    || page.pageNumber !== P2.startPage
+    || page.pageNumber !== P3.startPage
     || page.pageSize !== PAGE_SIZE
     || page.httpStatus !== 200
-    || page.responseSha256 !== P2_SHA
-    || page.recordsSeen !== P2.expectedRowsSeen
-    || page.recordsStaged !== P2.expectedRowsSeen
-    || page.recordsInserted !== P2.expectedRowsSeen
+    || page.responseSha256 !== P3_SHA
+    || page.recordsSeen !== P3.expectedRowsSeen
+    || page.recordsStaged !== P3.expectedRowsSeen
+    || page.recordsInserted !== P3.expectedRowsSeen
     || page.recordsChanged !== 0
     || page.recordsUnchanged !== 0
     || paginationNumber(page, 'NumberOfItems') !== TOTAL_ITEMS
@@ -118,11 +118,11 @@ function isExactP2(value: unknown): value is ProductP2Result {
 
   const window = result.paginationWindows[0];
   return window.resource === RESOURCE
-    && window.startPage === P2.startPage
-    && window.lastPage === P2.startPage
+    && window.startPage === P3.startPage
+    && window.lastPage === P3.startPage
     && window.numberOfPages === TOTAL_PAGES
-    && window.windowComplete === P2.expectedWindowComplete
-    && window.nextPage === P2.expectedNextPage
+    && window.windowComplete === true
+    && window.nextPage === null
     && typeof window.highWatermark === 'string'
     && window.highWatermark.length > 0;
 }
@@ -137,12 +137,12 @@ async function invoke(supabase: SupabaseClient, body: Record<string, unknown>) {
   return data;
 }
 
-export async function runAuthorizedProductP2(supabase: SupabaseClient): Promise<ProductP2Result> {
-  if (!PRODUCT_STAGING_PLAN.authorization.granted || PRODUCT_STAGING_PLAN.authorization.currentExposedWindow !== 'P2') {
-    throw new Error('UNLEASHED_PRODUCT_P2_NOT_AUTHORIZED');
+export async function runAuthorizedProductP3(supabase: SupabaseClient): Promise<ProductP3Result> {
+  if (!PRODUCT_STAGING_PLAN.authorization.granted || PRODUCT_STAGING_PLAN.authorization.currentExposedWindow !== 'P3') {
+    throw new Error('UNLEASHED_PRODUCT_P3_NOT_AUTHORIZED');
   }
   if (PRODUCT_STAGING_PLAN.overlapBudget.remaining !== 0) {
-    throw new Error('UNLEASHED_PRODUCT_P2_OVERLAP_BUDGET_NOT_EXHAUSTED');
+    throw new Error('UNLEASHED_PRODUCT_P3_OVERLAP_BUDGET_NOT_EXHAUSTED');
   }
 
   const result = await invoke(supabase, {
@@ -151,13 +151,13 @@ export async function runAuthorizedProductP2(supabase: SupabaseClient): Promise<
     dryRun: false,
     pageSize: PAGE_SIZE,
     maxPages: 1,
-    startPage: P2.startPage,
-    previousRunId: P1_RUN_ID,
-    reason: `#338 authorized product P2 only; historical overlap already consumed in P1; fresh dry evidence ${PRODUCT_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
+    startPage: P3.startPage,
+    previousRunId: P2_RUN_ID,
+    reason: `#338 authorized final product P3 only; P1 consumed historical overlap and P2 verified pure insert; fresh dry evidence ${PRODUCT_STAGING_PLAN.freshSourceEvidence.dryRunId}; ${new Date().toISOString()}`,
   });
 
-  if (!isExactP2(result)) {
-    throw new Error('UNLEASHED_PRODUCT_P2_RESULT_REJECTED');
+  if (!isExactP3(result)) {
+    throw new Error('UNLEASHED_PRODUCT_P3_RESULT_REJECTED');
   }
   return result;
 }
