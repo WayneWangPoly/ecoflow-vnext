@@ -1,16 +1,18 @@
 // #338 customer staging groundwork only.
 // Intentionally non-executable: no Supabase client, function invocation, or browser mutation path.
-// Customer non-dry staging requires a fresh explicit authorization after a fresh dry preflight.
+// Customer non-dry staging requires a fresh explicit authorization.
 
 export const CUSTOMER_STAGING_PLAN = {
   resource: 'customers',
   mode: 'bounded_snapshot',
-  sourceBaseline: {
-    dryRunId: '90550288-1386-464a-9fc8-f860969e9e3b',
+  freshSourceEvidence: {
+    dryRunId: '833490c8-040b-4b9b-b895-d491efb5a256',
+    comparedBaselineDryRunId: '90550288-1386-464a-9fc8-f860969e9e3b',
     pageSize: 200,
     totalItems: 623,
     totalPages: 4,
     highWatermark: '2026-09-03T00:41:50.599Z',
+    exactMatchToBaseline: true,
     pages: [
       {
         pageNumber: 1,
@@ -34,26 +36,68 @@ export const CUSTOMER_STAGING_PLAN = {
       },
     ],
   },
-  freshPreflightRequired: true,
+  preflightSatisfied: true,
   nonDryAuthorized: false,
-  proposedWindow: {
+  executionShape: {
     pageSize: 200,
-    maxPages: 1,
-    maxRows: 200,
+    maxPagesPerRun: 1,
+    maxRowsPerRun: 200,
+    sameActorRequiredAcrossContinuationChain: true,
+    previousRunIdRequiredFromWindow2Onward: true,
+    stopOnAnyMismatch: true,
   },
   expectedSequence: [
-    { startPage: 1, maxPages: 1, maxRows: 200 },
-    { startPage: 2, maxPages: 1, maxRows: 200 },
-    { startPage: 3, maxPages: 1, maxRows: 200 },
-    { startPage: 4, maxPages: 1, maxRows: 23 },
+    {
+      window: 'C1',
+      startPage: 1,
+      maxPages: 1,
+      expectedRows: 200,
+      previousRunId: null,
+      expectedWindowComplete: false,
+      expectedNextPage: 2,
+    },
+    {
+      window: 'C2',
+      startPage: 2,
+      maxPages: 1,
+      expectedRows: 200,
+      previousRunId: 'FROM_C1_RUN_ID',
+      expectedWindowComplete: false,
+      expectedNextPage: 3,
+    },
+    {
+      window: 'C3',
+      startPage: 3,
+      maxPages: 1,
+      expectedRows: 200,
+      previousRunId: 'FROM_C2_RUN_ID',
+      expectedWindowComplete: false,
+      expectedNextPage: 4,
+    },
+    {
+      window: 'C4',
+      startPage: 4,
+      maxPages: 1,
+      expectedRows: 23,
+      previousRunId: 'FROM_C3_RUN_ID',
+      expectedWindowComplete: true,
+      expectedNextPage: null,
+    },
   ],
   acceptance: {
     httpStatus: 200,
+    totalRecordsSeen: 623,
+    totalRecordsStaged: 623,
+    totalRecordsInserted: 623,
     recordsFailed: 0,
     recordsChanged: 0,
-    requireExactFreshPreflightSha: true,
+    recordsUnchanged: 0,
+    requireExactFreshPreflightShaPerPage: true,
+    requireExactPageCountAndRowCountPerWindow: true,
     requireCursorAndLeaseVerificationAfterEachWindow: true,
     requireDatabaseByteEvidenceAfterEachWindow: true,
+    requireFinalSnapshotCount: 623,
+    requireFinalIdentityCount: 623,
   },
   forbiddenAuthorities: [
     'PLAN',
