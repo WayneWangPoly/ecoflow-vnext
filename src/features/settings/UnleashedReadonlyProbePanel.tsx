@@ -6,9 +6,10 @@ import {
   type UnleashedProbeResult,
 } from '../team/unleashedReadonlyProbe';
 import {
-  runCustomerDeliveryAddressContinuationPreflight,
-  type AddressContinuationPreflightResult,
-} from '../team/unleashedCustomerDeliveryAddressStaging';
+  itemCountForResource,
+  runRemainingMasterDrySurvey,
+  type RemainingMasterDrySurveyResult,
+} from '../team/unleashedRemainingMasterDrySurvey';
 import './teamAccessSettings.css';
 
 function formatTime(value?: string | null) {
@@ -25,13 +26,13 @@ function probeTone(result: UnleashedProbeResult | null) {
 export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseClient }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
-  const [preflightRunning, setPreflightRunning] = useState(false);
-  const [preflightResult, setPreflightResult] = useState<AddressContinuationPreflightResult | null>(null);
+  const [surveyRunning, setSurveyRunning] = useState(false);
+  const [surveyResult, setSurveyResult] = useState<RemainingMasterDrySurveyResult | null>(null);
   const [error, setError] = useState('');
-  const [preflightError, setPreflightError] = useState('');
+  const [surveyError, setSurveyError] = useState('');
 
   async function runProbe() {
-    if (running || preflightRunning) return;
+    if (running || surveyRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -44,24 +45,27 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runContinuationPreflight() {
-    if (running || preflightRunning) return;
-    setPreflightRunning(true);
-    setPreflightResult(null);
-    setPreflightError('');
+  async function runSurvey() {
+    if (running || surveyRunning) return;
+    setSurveyRunning(true);
+    setSurveyResult(null);
+    setSurveyError('');
     try {
-      setPreflightResult(await runCustomerDeliveryAddressContinuationPreflight(supabase));
+      setSurveyResult(await runRemainingMasterDrySurvey(supabase));
     } catch (runError) {
-      setPreflightError(runError instanceof Error ? runError.message : String(runError));
+      setSurveyError(runError instanceof Error ? runError.message : String(runError));
     } finally {
-      setPreflightRunning(false);
+      setSurveyRunning(false);
     }
   }
+
+  const customerCount = surveyResult ? itemCountForResource(surveyResult, 'customers') : null;
+  const productCount = surveyResult ? itemCountForResource(surveyResult, 'products') : null;
 
   return (
     <section className="panel unleashed-probe-panel">
       <div className="panel-head">
-        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 address continuation dry preflight</span></div>
+        <div><h2>Unleashed connection</h2><span>GET only upstream · #338 remaining master dry sizing survey</span></div>
         <b className={`pill pill-${probeTone(result)}`}>{running ? 'RUNNING' : result?.status ?? 'NOT TESTED'}</b>
       </div>
 
@@ -70,36 +74,43 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
 
       <div className="system-status-grid">
         <div><span>Last test</span><strong>{formatTime(result?.requestedAt)}</strong></div>
-        <div><span>Resource</span><strong>Customer delivery addresses only</strong></div>
-        <div><span>Dry preflight</span><strong>184 records · 4 pages · no staging</strong></div>
+        <div><span>Resources</span><strong>Customers + Products</strong></div>
+        <div><span>Dry bounds</span><strong>200/page · max 4 pages/resource</strong></div>
         <div><span>Non-dry</span><strong>Blocked</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || preflightRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || surveyRunning}>
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page dry test'}
         </button>
-        <button type="button" onClick={() => void runContinuationPreflight()} disabled={running || preflightRunning}>
+        <button type="button" onClick={() => void runSurvey()} disabled={running || surveyRunning}>
           <Database aria-hidden="true" size={17} />
-          {preflightRunning ? 'Reading all 4 address pages…' : 'Run #338 address continuation dry preflight'}
+          {surveyRunning ? 'Reading customers + products…' : 'Run #338 remaining master dry survey'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        Groundwork only after Batch 1B-5A closure. This action is dryRun=true and reads exactly customer_delivery_addresses at pageSize=50/maxPages=4. It is accepted only if the source is still exactly 184 records across 4 pages. No non-dry continuation action is exposed. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
+        Groundwork only. This action is dryRun=true and reads customers then products at pageSize=200/maxPages=4. It is accepted only if both resource windows complete within those bounds with zero staging and zero failures. No non-dry action is exposed. PLAN, COPY_IMAGES, Product Identity, inventory and cutover remain blocked.
       </p>
 
-      {preflightError ? <div className="error-message" role="alert">{preflightError}</div> : null}
-      {preflightResult ? (
+      {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
+      {surveyResult ? (
         <div className="unleashed-acceptance-result" role="status">
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>customer_delivery_addresses</strong>
-                <small>{preflightResult.recordsSeen} seen · 0 staged · page 3 SHA {preflightResult.pages[2]?.responseSha256.slice(0, 8)}… · page 4 SHA {preflightResult.pages[3]?.responseSha256.slice(0, 8)}… · run {preflightResult.runId.slice(0, 8)}</small>
+                <strong>customers</strong>
+                <small>{customerCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'customers')?.numberOfPages ?? 'n/a'} pages</small>
               </span>
-              <b className="pill pill-good">DRY PREFLIGHT PASS</b>
+              <b className="pill pill-good">DRY COMPLETE</b>
+            </div>
+            <div>
+              <span>
+                <strong>products</strong>
+                <small>{productCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'products')?.numberOfPages ?? 'n/a'} pages · run {surveyResult.runId.slice(0, 8)}</small>
+              </span>
+              <b className="pill pill-good">DRY COMPLETE</b>
             </div>
           </div>
         </div>
