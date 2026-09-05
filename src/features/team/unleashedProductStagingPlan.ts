@@ -37,10 +37,28 @@ export const PRODUCT_STAGING_PLAN = {
       sourceLastModifiedAt: '2026-06-01T03:52:11.875Z',
     },
   },
-  unresolvedBeforeAuthorization: {
-    exactExistingSampleOverlapWithFullPage1: true,
-    exactExpectedPage1InsertedChangedUnchangedSplit: true,
-    rule: 'Do not authorize product non-dry until the one historical sample is explicitly accounted for in the full-page acceptance contract. Do not assume 200 inserts on P1.',
+  existingSampleAccounting: {
+    initialOverlapCount: 1,
+    currentSingleRowDryEvidence: {
+      runId: 'ce84c647-299a-4fec-b1d3-f2f3689db6fb',
+      pageSize: 1,
+      recordsSeen: 1,
+      sourceTotalItems: 466,
+      pageHighWatermark: '2026-06-01T03:52:11.875Z',
+      note: 'The current first-row dry high-watermark matches the historical sample timestamp, but raw target identity is intentionally not returned by dry evidence.',
+    },
+    safeAcceptanceEnvelope: {
+      rule: 'Across P1-P3 exactly one source row may classify as changed or unchanged against the pre-existing snapshot; every other source row must classify as inserted. Never assume which page contains the overlap.',
+      perWindow: 'recordsInserted + recordsChanged + recordsUnchanged must equal exact rows seen; recordsChanged + recordsUnchanged must be 0 or 1 and must never exceed the one remaining historical overlap.',
+      chainTerminal: 'Across all three windows, sum(recordsChanged + recordsUnchanged) must equal 1, total source rows must equal 466, and final unique snapshots and identities must both equal 466.',
+      stopConditions: [
+        'more than one overlap is observed',
+        'final overlap count is zero',
+        'any page SHA or row count differs from fresh dry evidence',
+        'any failed row is reported',
+        'final snapshot or identity count is not 466',
+      ],
+    },
   },
   proposedSequence: [
     { window: 'P1', startPage: 1, maxPages: 1, expectedRowsSeen: 200, previousRunId: null, status: 'BLOCKED_NOT_AUTHORIZED' },
@@ -55,6 +73,7 @@ export const PRODUCT_STAGING_PLAN = {
     requireExactDryShaPerPage: true,
     requireCursorAndLeaseVerificationAfterEachWindow: true,
     requireDatabaseByteEvidenceAfterEachWindow: true,
+    requireHistoricalOverlapBudgetTracking: true,
   },
   forbiddenAuthorities: [
     'products non-dry until separately authorized',
