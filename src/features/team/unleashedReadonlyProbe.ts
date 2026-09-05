@@ -132,3 +132,34 @@ export async function runRemainingUnleashedDryRunCensus(
   }
   return results;
 }
+
+export async function runWarehouseUnleashedDryRunCensus(
+  supabase: SupabaseClient,
+): Promise<UnleashedProbeResult> {
+  const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+    body: {
+      mode: 'bounded_snapshot',
+      resources: ['warehouses'],
+      dryRun: true,
+      pageSize: 1,
+      maxPages: 1,
+      reason: `#338 Work Batch 1A final exact GET-only dry-run census: warehouses; ${new Date().toISOString()}`,
+    },
+  });
+
+  if (error) throw error;
+  const probeError = data as ProbeError | null;
+  if (probeError?.error) {
+    throw new Error(`${probeError.error}${probeError.details ? `: ${probeError.details}` : ''}`);
+  }
+  if (
+    !isProbeResult(data)
+    || data.ok !== true
+    || data.status !== 'SUCCEEDED'
+    || data.recordsFailed !== 0
+    || data.pages.length !== 1
+  ) {
+    throw new Error('UNLEASHED_WAREHOUSE_DRY_RUN_CENSUS_REJECTED');
+  }
+  return data;
+}
