@@ -1,6 +1,6 @@
-// #338 customer staging groundwork only.
-// Intentionally non-executable: no Supabase client, function invocation, or browser mutation path.
-// Customer non-dry staging requires a fresh explicit authorization.
+// #338 customer staging authorization contract.
+// Authorization scope: customers C1-C4 only, one window at a time with production verification between windows.
+// Products non-dry, PLAN, COPY_IMAGES, Product Identity, inventory/opening-balance authority and cutover remain forbidden.
 
 export const CUSTOMER_STAGING_PLAN = {
   resource: 'customers',
@@ -37,7 +37,12 @@ export const CUSTOMER_STAGING_PLAN = {
     ],
   },
   preflightSatisfied: true,
-  nonDryAuthorized: false,
+  authorization: {
+    granted: true,
+    scope: 'C1-C4',
+    executionPolicy: 'ONE_WINDOW_THEN_VERIFY',
+    currentExposedWindow: 'C1',
+  },
   executionShape: {
     pageSize: 200,
     maxPagesPerRun: 1,
@@ -100,6 +105,7 @@ export const CUSTOMER_STAGING_PLAN = {
     requireFinalIdentityCount: 623,
   },
   forbiddenAuthorities: [
+    'products non-dry',
     'PLAN',
     'COPY_IMAGES',
     'Product Identity',
