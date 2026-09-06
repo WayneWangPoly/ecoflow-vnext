@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Builder OS Eval Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eval_id",
+    "defined",
+    "wired",
+    "required",
+    "executed",
+    "result",
+    "evidence"
+  ],
+  "properties": {
+    "eval_id": {
+      "type": "string",
+      "pattern": "^EVAL-[A-Z0-9-]+$"
+    },
+    "defined": {
+      "type": "boolean"
+    },
+    "wired": {
+      "type": "boolean"
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "executed": {
+      "type": "boolean"
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+name: Builder OS validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'builder-os/**'
+      - '.github/workflows/builder-os-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'builder-os/**'
+      - '.github/workflows/builder-os-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Builder OS registries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Builder OS
+        run: node builder-os/tools/validate.mjs
