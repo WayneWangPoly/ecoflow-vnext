@@ -7,6 +7,7 @@ import {
   buildArchivedVersion,
   shouldArchivePreviousVersion,
 } from './ordermentum-master-version-policy.mjs';
+import { getOrdermentumAuthMode } from './ordermentum-auth.mjs';
 
 const args = parseArgs(process.argv);
 const supabase = optionalSupabase();
@@ -55,7 +56,7 @@ if (supabase) {
   const result = await supabase.from('ordermentum_master_sync_runs').insert({
     run_type: 'MASTER_DATA_SYNC', status: dryRun ? 'DRY_RUN' : 'RUNNING', supplier_id: supplierId,
     resources_requested: resources, dry_run: dryRun,
-    auth_mode: process.env.ORDERMENTUM_BEARER_TOKEN ? 'legacy-bearer-env' : 'legacy-username-password',
+    auth_mode: getOrdermentumAuthMode(),
   }).select('id').single();
   if (result.error) throw result.error; runId = result.data.id;
 }

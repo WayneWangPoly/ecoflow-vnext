@@ -1,0 +1,37 @@
+name: Ordermentum purchaser equivalence contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ordermentum-purchaser-equivalence.mjs'
+      - 'scripts/ordermentum-purchaser-equivalence.test.mjs'
+      - '.github/workflows/ordermentum-purchaser-equivalence-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  equivalence-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Syntax check offline comparator
+        run: |
+          node --check scripts/ordermentum-purchaser-equivalence.mjs
+          node --check scripts/ordermentum-purchaser-equivalence.test.mjs
+      - name: Run offline equivalence regression
+        run: node --test scripts/ordermentum-purchaser-equivalence.test.mjs
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Confirm comparator job has no provider credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ORDERMENTUM_API_KEY:-}"
+          echo 'Offline equivalence only; no provider request or production data action executed.'

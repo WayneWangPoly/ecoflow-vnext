@@ -1,0 +1,40 @@
+name: Ordermentum API-key probe contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ordermentum-api-key-probe.mjs'
+      - 'scripts/ordermentum-api-key-probe.test.mjs'
+      - 'scripts/ordermentum-auth.mjs'
+      - 'scripts/ordermentum-sync-common.mjs'
+      - 'scripts/ordermentum-api-origin-guard.mjs'
+      - '.github/workflows/ordermentum-api-key-probe-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Syntax check bounded probe
+        run: |
+          node --check scripts/ordermentum-api-key-probe.mjs
+          node --check scripts/ordermentum-api-key-probe.test.mjs
+      - name: Run credential-free probe regression
+        run: node --test scripts/ordermentum-api-key-probe.test.mjs
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Confirm no provider credential is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ORDERMENTUM_API_KEY:-}"
+          echo 'Credential-free contract only; no provider request executed.'
