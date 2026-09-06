@@ -1,0 +1,86 @@
+name: Ordermentum API origin guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ordermentum-api-origin-guard-check.yml'
+      - 'scripts/ordermentum-api-origin-guard.mjs'
+      - 'scripts/ordermentum-api-origin-guard*.test.mjs'
+      - 'scripts/ordermentum-full-sync-core.mjs'
+      - 'scripts/ordermentum-master-data-common.mjs'
+      - 'scripts/ordermentum-auth.mjs'
+      - 'scripts/ordermentum-sync-common.mjs'
+      - 'scripts/ordermentum-master-data-sync.mjs'
+      - 'scripts/ordermentum-invoice-detail-sync.mjs'
+      - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.mjs'
+      - 'scripts/ordermentum-sync-now-legacy.mjs'
+      - 'scripts/import-ordermentum-backfill-all.mjs'
+      - 'scripts/import-ordermentum-incremental.mjs'
+      - 'scripts/refresh-ordermentum-missing-invoices.mjs'
+      - '.github/workflows/ordermentum-cloud-sync.yml'
+      - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/ordermentum-targeted-store-sync.yml'
+  push:
+    branches:
+      - 'agent/platform/ordermentum-auth-001-*'
+    paths:
+      - '.github/workflows/ordermentum-api-origin-guard-check.yml'
+      - 'scripts/ordermentum-api-origin-guard.mjs'
+      - 'scripts/ordermentum-api-origin-guard*.test.mjs'
+      - 'scripts/ordermentum-full-sync-core.mjs'
+      - 'scripts/ordermentum-master-data-common.mjs'
+      - 'scripts/ordermentum-auth.mjs'
+      - 'scripts/ordermentum-sync-common.mjs'
+      - 'scripts/ordermentum-master-data-sync.mjs'
+      - 'scripts/ordermentum-invoice-detail-sync.mjs'
+      - 'scripts/ordermentum-cloud-sync.mjs'
+      - 'scripts/ordermentum-complete-mirror.mjs'
+      - 'scripts/ordermentum-targeted-store-sync.mjs'
+      - 'scripts/ordermentum-sync-now-legacy.mjs'
+      - 'scripts/import-ordermentum-backfill-all.mjs'
+      - 'scripts/import-ordermentum-incremental.mjs'
+      - 'scripts/refresh-ordermentum-missing-invoices.mjs'
+      - '.github/workflows/ordermentum-cloud-sync.yml'
+      - '.github/workflows/ordermentum-complete-mirror.yml'
+      - '.github/workflows/ordermentum-targeted-store-sync.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  transport-guard:
+    name: Credential-free transport contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Syntax check guarded Ordermentum modules
+        run: |
+          node --check scripts/ordermentum-api-origin-guard.mjs
+          node --check scripts/ordermentum-full-sync-core.mjs
+          node --check scripts/ordermentum-master-data-common.mjs
+          node --check scripts/ordermentum-auth.mjs
+          node --check scripts/ordermentum-sync-common.mjs
+          node --check scripts/ordermentum-master-data-sync.mjs
+          node --check scripts/ordermentum-invoice-detail-sync.mjs
+          node --check scripts/ordermentum-cloud-sync.mjs
+          node --check scripts/ordermentum-complete-mirror.mjs
+          node --check scripts/ordermentum-targeted-store-sync.mjs
+          node --check scripts/ordermentum-sync-now-legacy.mjs
+          node --check scripts/import-ordermentum-backfill-all.mjs
+          node --check scripts/import-ordermentum-incremental.mjs
+          node --check scripts/refresh-ordermentum-missing-invoices.mjs
+          node --check scripts/ordermentum-api-origin-guard.test.mjs
+          node --check scripts/ordermentum-api-origin-guard-edge.test.mjs
+          node --check scripts/ordermentum-api-origin-guard-operational.test.mjs
+      - name: Run credential-free transport regression
+        run: node --test scripts/ordermentum-api-origin-guard*.test.mjs

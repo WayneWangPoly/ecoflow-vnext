@@ -1,5 +1,13 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { getOrdermentumAuthMode, isOrdermentumApiKeyMode } from './ordermentum-auth.mjs';
+import {
+  assertNoCredentialedOrdermentumRedirect,
+  assertOrdermentumApiBaseUrl,
+  assertOrdermentumApiKeyRequestShape,
+  assertOrdermentumApiRequestUrl,
+  redactOrdermentumSecret,
+} from './ordermentum-api-origin-guard.mjs';
 
 export const DEFAULT_AUTH_BASE_URL = process.env.ORDERMENTUM_BASE_URL || process.env.ORDERMENTUM_AUTH_BASE_URL || 'https://app.ordermentum.com';
 export const DEFAULT_API_BASE_URL = process.env.ORDERMENTUM_API_BASE_URL || 'https://api.ordermentum.com';
@@ -20,9 +28,8 @@ export function optionalSupabase() {
 }
 
 export async function getLegacyBearerToken() {
-  // Backwards-compatible name: returns a bearer token for legacy mode.
-  // If ORDERMENTUM_API_KEY is present, callers still receive null and fetchOrdermentumJson will use x-api-key.
-  if (process.env.ORDERMENTUM_API_KEY?.trim()) return null;
+  // API-key activation is explicit. Merely installing the future secret must not cut over incumbent callers.
+  if (isOrdermentumApiKeyMode(getOrdermentumAuthMode())) return null;
   const existing = process.env.ORDERMENTUM_BEARER_TOKEN;
   if (existing && existing.trim()) return existing.trim();
   const username = requireEnv('ORDERMENTUM_USERNAME');
@@ -100,15 +107,35 @@ export function extractTimestamp(item, names) {
 }
 
 export function buildUrl(path, params = {}) {
-  const url = new URL(path, DEFAULT_API_BASE_URL.replace(/\/$/, '') + '/');
+  const apiKeyMode = isOrdermentumApiKeyMode(getOrdermentumAuthMode());
+  const baseUrl = apiKeyMode ? assertOrdermentumApiBaseUrl(DEFAULT_API_BASE_URL) : DEFAULT_API_BASE_URL.replace(/\/$/, '');
+  const url = new URL(path, baseUrl + '/');
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
-  return url.toString();
+  return apiKeyMode ? assertOrdermentumApiRequestUrl(url.toString()) : url.toString();
+}
+
+function redactFailedPayload(payload, apiKey) {
+  if (!apiKey) return payload;
+  const serialized = JSON.stringify(payload ?? null);
+  const redacted = redactOrdermentumSecret(serialized, apiKey);
+  try { return JSON.parse(redacted); } catch { return { rawText: redacted }; }
 }
 
 export async function fetchOrdermentumJson(token, path, params = {}, options = {}) {
+  const apiKeyMode = isOrdermentumApiKeyMode(getOrdermentumAuthMode());
+  const apiKey = apiKeyMode ? requireEnv('ORDERMENTUM_API_KEY').trim() : '';
   const url = buildUrl(path.replace(/^\//, ''), params);
+  if (apiKeyMode) {
+    assertOrdermentumApiKeyRequestShape({
+      apiKey,
+      requestUrl: url,
+      body: options.body,
+      callerHeaders: options.headers || {},
+    });
+  }
+
   const timeoutMs = Number(process.env.ORDERMENTUM_FETCH_TIMEOUT_MS || 60000);
   const retries = Number(process.env.ORDERMENTUM_FETCH_RETRIES || 2);
   let lastError;
@@ -119,19 +146,27 @@ export async function fetchOrdermentumJson(token, path, params = {}, options = {
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers: {
-          ...(process.env.ORDERMENTUM_API_KEY?.trim()
-            ? { 'x-api-key': process.env.ORDERMENTUM_API_KEY.trim() }
+          ...(apiKeyMode
+            ? { 'x-api-key': apiKey }
             : { authorization: `Bearer ${token}` }),
           accept: 'application/json',
           ...(options.headers || {}),
         },
+        ...(apiKeyMode ? { redirect: 'manual' } : {}),
         signal: controller.signal,
       });
+      if (apiKeyMode) assertNoCredentialedOrdermentumRedirect(response, url);
       const data = await safeJson(response);
       clearTimeout(timer);
-      return { ok: response.ok, status: response.status, data, url };
+      return {
+        ok: response.ok,
+        status: response.status,
+        data: apiKeyMode && !response.ok ? redactFailedPayload(data, apiKey) : data,
+        url,
+      };
     } catch (error) {
       clearTimeout(timer);
+      if (error?.code?.startsWith?.('ORDERMENTUM_')) throw error;
       lastError = error;
       if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
     }
