@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const migration = read('supabase/migrations/20260831235500_unleashed_master_data_bridge.sql');
+const manualCandidateMigration = read('supabase/migrations/20260908093000_identity_unlock_batch1_manual_warehouse_candidate.sql');
 const edge = read('supabase/functions/trigger-unleashed-master-migration/index.ts');
 const core = read('supabase/functions/trigger-unleashed-master-migration/core.ts');
 const deploy = read('.github/workflows/deploy-supabase-migrations.yml');
@@ -11,6 +12,7 @@ const bridgePackageMigrations = readdirSync(new URL('../supabase/migrations', im
     '20260831235500_unleashed_master_data_bridge.sql',
     '20260901153000_unleashed_master_data_bridge_review_fixes.sql',
   ].includes(name));
+const identityAuthoritySql = migration + manualCandidateMigration + edge;
 
 const checks = [];
 const check = (name, pass, evidence) => checks.push({ name, pass: Boolean(pass), evidence });
@@ -53,14 +55,54 @@ check(
 );
 check(
   'commercial and physical SKU separation',
-  !/insert\s+into\s+public\.ecoflow_physical_skus/i.test(migration + edge)
-    && !/update\s+public\.ecoflow_physical_skus/i.test(migration + edge),
-  'no Physical SKU mutation path',
+  !/insert\s+into\s+public\.ecoflow_physical_skus/i.test(identityAuthoritySql)
+    && !/update\s+public\.ecoflow_physical_skus/i.test(identityAuthoritySql),
+  'no Physical SKU mutation path in base bridge or Identity Unlock Batch 1A',
 );
 check(
   'inventory authority excluded',
-  !/(insert\s+into|update|delete\s+from)\s+public\.(?:inventory_|ecoflow_inventory)/i.test(migration + edge),
-  'no inventory table mutation',
+  !/(insert\s+into|update|delete\s+from)\s+public\.(?:inventory_|ecoflow_inventory)/i.test(identityAuthoritySql),
+  'no inventory table mutation in base bridge or Identity Unlock Batch 1A',
+);
+check(
+  'manual warehouse candidate is literally bounded',
+  /source_external_code\)\)='ADL1'/.test(manualCandidateMigration)
+    && /canonical_code\)\)='MAIN'/.test(manualCandidateMigration)
+    && /p_source_external_code[\s\S]*<> 'ADL1'/.test(manualCandidateMigration)
+    && /p_target_warehouse_code[\s\S]*<> 'MAIN'/.test(manualCandidateMigration)
+    && /mapping_status <> 'UNMATCHED'/.test(manualCandidateMigration)
+    && /source_duplicate_count <> 1/.test(manualCandidateMigration),
+  'only the frozen ADL1 -> MAIN, single-source, currently UNMATCHED warehouse mapping can receive a candidate',
+);
+check(
+  'manual warehouse candidate is candidate-only',
+  /OWNER_ADMIN_MANUAL_WAREHOUSE/.test(manualCandidateMigration)
+    && /canonical_object_type[\s\S]*'WAREHOUSE'/.test(manualCandidateMigration)
+    && !/set[\s\S]{0,200}mapping_status\s*=\s*'MATCHED'/i.test(manualCandidateMigration)
+    && !/insert\s+into\s+public\.external_product_mappings/i.test(manualCandidateMigration),
+  'Batch 1A materialises review evidence without promoting the master mapping or Commercial SKU mappings',
+);
+check(
+  'manual candidate source drift fails closed',
+  /m\.source_payload_sha256=a\.source_payload_sha256/.test(manualCandidateMigration)
+    && /SOURCE_SNAPSHOT_CHANGED/.test(manualCandidateMigration),
+  'candidate only re-materialises while the authorised source payload hash remains current',
+);
+check(
+  'manual candidate command is owner-admin and server-side only',
+  /v_role not in \('OWNER','ADMIN'\)/.test(manualCandidateMigration)
+    && /revoke all on function public\.ecoflow_add_unleashed_manual_warehouse_candidate/.test(manualCandidateMigration)
+    && /grant execute on function public\.ecoflow_add_unleashed_manual_warehouse_candidate[\s\S]*to service_role/.test(manualCandidateMigration)
+    && /enable row level security/.test(manualCandidateMigration)
+    && /revoke all on table public\.ecoflow_unleashed_manual_mapping_candidates[\s\S]*service_role/.test(manualCandidateMigration),
+  'direct table/browser mutation is blocked and the command re-validates an active Owner/Admin actor',
+);
+check(
+  'PLAN cannot bypass manual candidate refresh',
+  /rename to ecoflow_plan_unleashed_master_mappings_core/.test(manualCandidateMigration)
+    && /ecoflow_refresh_unleashed_manual_mapping_candidates/.test(manualCandidateMigration)
+    && /revoke all on function public\.ecoflow_plan_unleashed_master_mappings_core[\s\S]*service_role/.test(manualCandidateMigration),
+  'service callers only receive the wrapper that re-materialises still-valid manual candidates after deterministic PLAN',
 );
 check(
   'Unleashed API not called',
@@ -104,14 +146,17 @@ check(
 check(
   'idempotent command evidence',
   (migration.match(/COMMAND_REPLAY_PAYLOAD_MISMATCH/g) ?? []).length >= 2
-    && /command_payload_sha256/.test(migration),
-  'mapping, authorization and copy commands are payload-bound',
+    && /command_payload_sha256/.test(migration)
+    && /COMMAND_REPLAY_PAYLOAD_MISMATCH/.test(manualCandidateMigration)
+    && /command_payload_sha256/.test(manualCandidateMigration),
+  'mapping, authorization, copy and manual-candidate commands are payload-bound',
 );
 check(
   'commands are actor-bound',
   /'actorUserId',v_actor/.test(migration)
     && /'requestedBy',p_requested_by/.test(migration)
-    && /actorUserId: userData\.user\.id/.test(edge),
+    && /actorUserId: userData\.user\.id/.test(edge)
+    && /'requestedBy',p_requested_by/.test(manualCandidateMigration),
   'a different Owner/Admin cannot replay another actor command',
 );
 check(
@@ -157,7 +202,8 @@ check(
 );
 check(
   'security definers use an empty search path',
-  (migration.match(/security definer\nset search_path = ''/g) ?? []).length >= 3,
+  (migration.match(/security definer\nset search_path = ''/g) ?? []).length >= 3
+    && (manualCandidateMigration.match(/security definer\nset search_path = ''/g) ?? []).length >= 3,
   'privileged functions schema-qualify objects and do not trust public search_path',
 );
 check(
