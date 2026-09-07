@@ -1,21 +1,21 @@
-# UNLEASHED-338 image copy window 37
+# UNLEASHED-338 image copy window 38
 
-Status: production-verified PASS.
+Status: preview-only exposure after production-verified W37.
 
-## Production result
+## Production predecessor gate
+
+W38 is permitted only when the browser can read the exact W37 predecessor:
 
 - command: `f6e21021-7249-4aff-80bd-0164e4fd9604`
 - run: `778cefff-eba6-4b49-8c59-95aebc2cb3ea`
 - status: `SUCCEEDED`
 - planned/copied/reused/failed: `10 / 10 / 0 / 0`
 - bytes copied: `1919184`
-- requested limit: `10`
-- requested by: `be8f153a-cf92-4d9d-bf5c-1ff7f707ad0b`
 - authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
 
 Production verification established 360 private Storage objects / 90734750 bytes, 75 PLANNED, 32 terminal BLOCKED, zero active claims and no copied-object integrity defects.
 
-## Current authorization
+## Current authorization gate
 
 - authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
 - revision: `2`
@@ -25,4 +25,11 @@ Production verification established 360 private Storage objects / 90734750 bytes
 - rights scope unchanged
 - expiry: none
 
-W38 may be exposed only from this verified predecessor. `main` remains untouched; inventory/opening balance and cutover remain out of scope.
+## W38 bound
+
+- command: `1a4ae8ae-43c3-4b28-85bb-b939e88a8519`
+- maximum planned assets: `10`
+- action: `COPY_IMAGES`
+- no W39 is exposed until W38 production verification
+- `main` is not modified
+- inventory/opening balance and cutover remain out of scope
