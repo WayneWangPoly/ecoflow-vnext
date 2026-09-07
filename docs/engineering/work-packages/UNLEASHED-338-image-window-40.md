@@ -1,35 +1,23 @@
 # UNLEASHED-338 image copy window 40
 
-Status: preview-only exposure after production-verified W39.
+Status: production-verified PASS.
 
-## Production predecessor gate
-
-W40 is permitted only when the browser can read the exact W39 predecessor:
-
-- command: `1a8ccae0-2a30-414b-8319-14a653672a4c`
-- run: `d9626d26-f450-488e-9e03-02c51ba12923`
-- status: `SUCCEEDED`
-- planned/copied/reused/failed: `10 / 10 / 0 / 0`
-- bytes copied: `1925849`
-- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
-
-Production verification established 380 private Storage objects / 94063608 bytes, 55 PLANNED, 32 terminal BLOCKED, zero active claims and no copied-object integrity defects.
-
-## Current authorization gate
-
-- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
-- revision: `2`
-- status: `APPROVED`
-- aggregate storage budget: `134217728` bytes (128 MiB)
-- max object bytes: `2097152` (2 MiB)
-- rights scope unchanged
-- expiry: none
-
-## W40 bound
+## Production result
 
 - command: `7b63da46-53b9-4964-b225-23c3d412f532`
-- maximum planned assets: `10`
-- action: `COPY_IMAGES`
-- no W41 is exposed until W40 production verification
-- `main` is not modified
-- inventory/opening balance and cutover remain out of scope
+- run: `d96299d0-f76d-4bd1-8312-e641f4422c06`
+- status: `SUCCEEDED`
+- planned/copied/reused/failed: `10 / 10 / 0 / 0`
+- bytes copied: `778475`
+- requested limit: `10`
+- requested by: `be8f153a-cf92-4d9d-bf5c-1ff7f707ad0b`
+- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
+- copied rows / distinct hashes: `10 / 10`
+- missing Storage objects: `0`
+- size mismatches: `0`
+- object-path/hash mismatches: `0`
+- active claims: `0`
+
+After W40 production contains 390 private Storage objects / 94842083 bytes, 390 COPIED, 45 PLANNED and 32 terminal BLOCKED assets. Authorization revision 2 remains current and APPROVED at 134217728 bytes aggregate / 2097152 bytes per object with unchanged rights scope.
+
+W41 may be exposed only from this verified predecessor. `main` remains untouched; inventory/opening balance and cutover remain out of scope.
