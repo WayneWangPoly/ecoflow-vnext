@@ -130,13 +130,13 @@ async function recordAudit(adminClient: ReturnType<typeof createClient>, values:
 }
 
 async function ensureAssetBucket(adminClient: ReturnType<typeof createClient>) {
-  const { error: createError } = await adminClient.storage.createBucket(ASSET_BUCKET, ASSET_BUCKET_OPTIONS);
-  if (!createError) return;
-  if (!/already exists|duplicate|resource exists/i.test(createError.message)) {
-    throw new Error(`ASSET_BUCKET_CREATE_FAILED:${createError.message}`);
+  const { data: existingBucket, error: readError } = await adminClient.storage.getBucket(ASSET_BUCKET);
+  if (existingBucket && !readError) return;
+  if (readError && !/not found|does not exist|404/i.test(readError.message)) {
+    throw new Error(`ASSET_BUCKET_READ_FAILED:${readError.message}`);
   }
-  const { error: updateError } = await adminClient.storage.updateBucket(ASSET_BUCKET, ASSET_BUCKET_OPTIONS);
-  if (updateError) throw new Error(`ASSET_BUCKET_UPDATE_FAILED:${updateError.message}`);
+  const { error: createError } = await adminClient.storage.createBucket(ASSET_BUCKET, ASSET_BUCKET_OPTIONS);
+  if (createError) throw new Error(`ASSET_BUCKET_CREATE_FAILED:${createError.message}`);
 }
 
 async function planAssets(
@@ -255,8 +255,6 @@ async function planAssets(
     for (const asset of assets) {
       const existingAsset = existingByKey.get(`${asset.identity_id}:${asset.source_locator_sha256}`);
       if (!existingAsset) continue;
-      // COPIED provenance describes the exact source snapshot used for the
-      // immutable object and must never be rewritten by a later PLAN.
       if (existingAsset.asset_status === 'COPIED') continue;
       const refresh: Record<string, unknown> = {
         source_snapshot_id: asset.source_snapshot_id,
@@ -575,10 +573,6 @@ Deno.serve(async (req) => {
               physicalObjects.set(objectPath, image.contentLength);
               logicalCopyOutcome = 'COPIED';
             } else {
-              // A duplicate can be an orphan left by a worker that uploaded
-              // successfully and died before recording provenance. Reconcile
-              // that physical object into this run's aggregate budget before
-              // processing another asset.
               copiedBytes += image.contentLength;
               physicalObjects.set(objectPath, image.contentLength);
               logicalCopyOutcome = 'REUSED';
