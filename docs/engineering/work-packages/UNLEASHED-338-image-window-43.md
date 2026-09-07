@@ -1,35 +1,30 @@
 # UNLEASHED-338 image copy window 43
 
-Status: preview-only exposure after production-verified W42.
+Status: production-verified.
 
-## Production predecessor gate
-
-W43 is permitted only when the browser can read the exact W42 predecessor:
-
-- command: `a105b23f-ca63-476e-ad91-689db436f0ec`
-- run: `f3257832-a582-427d-a483-528aace6137a`
-- status: `SUCCEEDED`
-- planned/copied/reused/failed: `10 / 10 / 0 / 0`
-- bytes copied: `2010492`
-- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
-
-Production verification established 410 private Storage objects / 99107648 bytes, 25 PLANNED, 32 terminal BLOCKED, zero active claims and no copied-object integrity defects.
-
-## Current authorization gate
-
-- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
-- revision: `2`
-- status: `APPROVED`
-- aggregate storage budget: `134217728` bytes (128 MiB)
-- max object bytes: `2097152` (2 MiB)
-- rights scope unchanged
-- expiry: none
-
-## W43 bound
+## Production result
 
 - command: `e3483b9e-ae17-46bd-bd63-781754568c5a`
-- maximum planned assets: `10`
-- action: `COPY_IMAGES`
-- no W44 is exposed until W43 production verification
-- `main` is not modified
-- inventory/opening balance and cutover remain out of scope
+- run: `69425c64-1e68-4e5a-baa8-e0f850c430ad`
+- status: `SUCCEEDED`
+- planned/copied/reused/failed: `10 / 9 / 1 / 0`
+- bytes copied: `1462866`
+- requested limit: `10`
+- requested by: `be8f153a-cf92-4d9d-bf5c-1ff7f707ad0b`
+- authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
+
+## Production integrity
+
+- copied/reused asset rows associated with run: `10`
+- asset content bytes represented by those rows: `1570009`
+- new bytes written by run: `1462866`
+- missing Storage objects: `0`
+- Storage size mismatches: `0`
+- object-path/hash mismatches: `0`
+- active claims: `0`
+
+Cumulative production state after W43: 419 private Storage objects / 100570514 bytes, 420 COPIED, 15 PLANNED, 32 terminal BLOCKED and zero active claims. One asset reused an already-present governed object, so 10 assets completed while Storage object count increased by 9.
+
+Authorization revision 2 remains current and APPROVED with 134217728-byte aggregate budget, 2097152-byte per-object limit, unchanged rights scope and no expiry.
+
+W44 may be exposed only by a separate bounded continuation commit that hard-gates this exact W43 result. `main` remains untouched; inventory/opening balance and cutover remain out of scope.
