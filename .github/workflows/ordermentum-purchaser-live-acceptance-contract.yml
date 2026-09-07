@@ -1,0 +1,27 @@
+name: Ordermentum live acceptance runner contract
+on:
+  pull_request:
+    paths:
+      - 'scripts/ordermentum-purchaser-live-acceptance*'
+      - 'scripts/ordermentum-api-key-probe.mjs'
+      - 'scripts/ordermentum-sync-common.mjs'
+      - 'scripts/ordermentum-auth.mjs'
+      - 'scripts/ordermentum-purchaser-equivalence.mjs'
+      - '.github/workflows/ordermentum-purchaser-live-acceptance*'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Credential-free bounded runner regression
+        run: node --test scripts/ordermentum-purchaser-live-acceptance.test.mjs
+      - name: Diff hygiene
+        run: git diff --check
