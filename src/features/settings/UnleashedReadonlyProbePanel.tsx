@@ -11,9 +11,9 @@ import {
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
 import {
-  runAuthorizedImageCopyWindow30,
+  runAuthorizedImageCopyWindow31,
   type AuthorizedImageCopyWindowResult,
-} from '../team/unleashedImageCopyWindow30';
+} from '../team/unleashedImageCopyWindow31';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -33,7 +33,6 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [surveyError, setSurveyError] = useState('');
   const [copyError, setCopyError] = useState('');
   const copyAttemptedRef = useRef(false);
-
   const anyRunning = running || surveyRunning || copyRunning;
 
   async function runProbe() {
@@ -50,10 +49,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     catch (runError) { setSurveyError(runError instanceof Error ? runError.message : String(runError)); }
     finally { setSurveyRunning(false); }
   }
-  async function runCopyWindow30() {
+  async function runCopyWindow31() {
     if (anyRunning || copyAttemptedRef.current || copyResult) return;
     copyAttemptedRef.current = true; setCopyAttempted(true); setCopyRunning(true); setCopyError('');
-    try { setCopyResult(await runAuthorizedImageCopyWindow30(supabase)); }
+    try { setCopyResult(await runAuthorizedImageCopyWindow31(supabase)); }
     catch (runError) { setCopyError(runError instanceof Error ? runError.message : String(runError)); }
     finally { setCopyRunning(false); }
   }
@@ -70,16 +69,16 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
         <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
         <div><span>Governed PLAN</span><strong>complete · 1300 mappings · 440 image locators · 27 missing</strong></div>
         <div><span>Image authorization</span><strong>APPROVED · revision 2 · 128 MiB total · 2 MiB/object</strong></div>
-        <div><span>Currently exposed</span><strong>COPY_IMAGES window 30 only · max 10 assets</strong></div>
+        <div><span>Currently exposed</span><strong>COPY_IMAGES window 31 only · max 10 assets</strong></div>
       </div>
       <div className="system-sync-actions unleashed-probe-actions">
         <button type="button" onClick={() => void runProbe()} disabled={anyRunning}><RadioTower aria-hidden="true" size={17} />{running ? 'Testing…' : 'Run one-page dry test'}</button>
         <button type="button" onClick={() => void runSurvey()} disabled={anyRunning}><Database aria-hidden="true" size={17} />{surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}</button>
-        <button type="button" className="primary" onClick={() => void runCopyWindow30()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}><Database aria-hidden="true" size={17} />{copyRunning ? 'Copying bounded image window 30…' : copyResult ? 'Image window 30 completed' : copyAttempted ? 'Image window 30 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 30'}</button>
+        <button type="button" className="primary" onClick={() => void runCopyWindow31()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}><Database aria-hidden="true" size={17} />{copyRunning ? 'Copying bounded image window 31…' : copyResult ? 'Image window 31 completed' : copyAttempted ? 'Image window 31 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 31'}</button>
       </div>
-      <p className="unleashed-acceptance-note">W29 was production-adjudicated as 5 copied / 5 failed / 1318029 bytes; all five failures were retryable aggregate-budget exhaustion and copied-object integrity remained clean. The operator explicitly authorized revision 2 with a 128 MiB aggregate budget while preserving the 2 MiB per-object cap, rights scope, private bucket and all other controls. Production currently has 280 private objects / 67038829 bytes, 150 PLANNED, 5 retryable FAILED, 32 terminal BLOCKED and zero active claims. This thirtieth window is capped at 10 eligible PLANNED/FAILED assets and uses one fixed command id. No continuation window is exposed until production verification.</p>
+      <p className="unleashed-acceptance-note">W30 was production-verified as 10 copied / 0 failed / 4447008 bytes with clean Storage/provenance integrity. Production currently has 290 private objects / 71485837 bytes, 145 PLANNED, 32 terminal BLOCKED and zero active claims. Authorization revision 2 remains current at 128 MiB aggregate and 2 MiB per object with unchanged rights scope. This thirty-first window is capped at 10 eligible assets and uses one fixed command id. No continuation window is exposed until production verification.</p>
       {copyError ? <div className="error-message" role="alert">{copyError}</div> : null}
-      {copyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>#338 COPY_IMAGES window 30</strong><small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small></span><b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b></div></div></div> : null}
+      {copyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>#338 COPY_IMAGES window 31</strong><small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small></span><b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b></div></div></div> : null}
       {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
       {surveyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>customers</strong><small>{customerCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'customers')?.numberOfPages ?? 'n/a'} pages</small></span><b className="pill pill-good">DRY COMPLETE</b></div><div><span><strong>products</strong><small>{productCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'products')?.numberOfPages ?? 'n/a'} pages · run {surveyResult.runId.slice(0, 8)}</small></span><b className="pill pill-good">DRY COMPLETE</b></div></div></div> : null}
     </section>

@@ -1,36 +1,22 @@
 # UNLEASHED-338 image copy window 30
 
-Status: preview-only exposure after W29 adjudication and explicit authorization revision 2.
+Status: production verified.
 
-## Production predecessor gate
-
-W30 is permitted only when the browser can read the exact W29 predecessor:
-
-- command: `4d731c72-ba5b-4292-8407-ae0f641a0391`
-- run: `2d8151ec-7e4a-4831-9377-802e905542cb`
-- status: `PARTIAL`
-- planned/copied/reused/failed: `10 / 5 / 0 / 5`
-- bytes copied: `1318029`
-- run authorization: `9719f6ff-f1bf-4b3d-ae45-02bfca8a2f9c`
-
-W29 production verification established 280 private Storage objects / 67,038,829 bytes, 150 PLANNED, 5 retryable FAILED budget-exceeded rows, 32 terminal BLOCKED, zero active claims, and no copied-object integrity defects.
-
-## Current authorization gate
-
-- current authorization: `15612d15-f97e-462e-a24f-49889b4668c2`
-- revision: `2`
-- status: `APPROVED`
-- aggregate storage budget: `134217728` bytes (128 MiB)
-- max object bytes: `2097152` (2 MiB)
-- rights scope unchanged from revision 1
-- expiry: none
-
-## W30 bound
+## Production result
 
 - command: `702f771d-d57a-4270-8831-c4757ed8a181`
-- maximum planned assets: `10`
-- action: `COPY_IMAGES`
-- retryable FAILED rows are eligible under the existing COPY_IMAGES selector
-- no W31 is exposed until W30 production verification
-- `main` is not modified
-- inventory/opening balance and cutover remain out of scope
+- run: `82b41005-fbe8-4bac-80b4-85ce34d775cb`
+- status: `SUCCEEDED`
+- planned/copied/reused/failed: `10 / 10 / 0 / 0`
+- bytes copied: `4447008`
+- requested by: `be8f153a-cf92-4d9d-bf5c-1ff7f707ad0b`
+- authorization: `15612d15-f97e-462e-a24f-49889b4668c2` revision 2
+- copied rows: 10
+- missing Storage objects: 0
+- Storage size mismatches: 0
+- object-path/hash mismatches: 0
+- active claims: 0
+
+After W30 production verification: 290 COPIED, 145 PLANNED, 32 BLOCKED; private Storage 290 objects / 71485837 bytes. Aggregate authorization remains 128 MiB and per-object cap remains 2 MiB.
+
+W31 may be exposed only with an exact predecessor gate for this verified run. `main` is not modified.
