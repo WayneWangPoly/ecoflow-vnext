@@ -11,9 +11,9 @@ import {
   type RemainingMasterDrySurveyResult,
 } from '../team/unleashedRemainingMasterDrySurvey';
 import {
-  runAuthorizedImageCopyWindow25,
+  runAuthorizedImageCopyWindow26,
   type AuthorizedImageCopyWindowResult,
-} from '../team/unleashedImageCopyWindow25';
+} from '../team/unleashedImageCopyWindow26';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -64,14 +64,14 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     }
   }
 
-  async function runCopyWindow25() {
+  async function runCopyWindow26() {
     if (anyRunning || copyAttemptedRef.current || copyResult) return;
     copyAttemptedRef.current = true;
     setCopyAttempted(true);
     setCopyRunning(true);
     setCopyError('');
     try {
-      setCopyResult(await runAuthorizedImageCopyWindow25(supabase));
+      setCopyResult(await runAuthorizedImageCopyWindow26(supabase));
     } catch (runError) {
       setCopyError(runError instanceof Error ? runError.message : String(runError));
     } finally {
@@ -96,7 +96,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
         <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
         <div><span>Governed PLAN</span><strong>complete · 1300 mappings · 440 image locators · 27 missing</strong></div>
         <div><span>Image authorization</span><strong>APPROVED · revision 1 · 64 MiB total · 2 MiB/object</strong></div>
-        <div><span>Currently exposed</span><strong>COPY_IMAGES window 25 only · max 10 assets</strong></div>
+        <div><span>Currently exposed</span><strong>COPY_IMAGES window 26 only · max 10 assets</strong></div>
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
@@ -108,14 +108,14 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <Database aria-hidden="true" size={17} />
           {surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}
         </button>
-        <button type="button" className="primary" onClick={() => void runCopyWindow25()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}>
+        <button type="button" className="primary" onClick={() => void runCopyWindow26()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}>
           <Database aria-hidden="true" size={17} />
-          {copyRunning ? 'Copying bounded image window 25…' : copyResult ? 'Image window 25 completed' : copyAttempted ? 'Image window 25 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 25'}
+          {copyRunning ? 'Copying bounded image window 26…' : copyResult ? 'Image window 26 completed' : copyAttempted ? 'Image window 26 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 26'}
         </button>
       </div>
 
       <p className="unleashed-acceptance-note">
-        The production image authorization is current and APPROVED at revision 1. W24 was production-verified as 10 copied / 0 failed / 847062 bytes. Production Storage currently contains 236 private objects / 58116194 bytes, 31 assets are terminal BLOCKED, 200 remain PLANNED, and no asset claims remain. This twenty-fifth window is capped at 10 planned assets and uses one fixed command id so a browser retry cannot create a second logical run. The Edge Function re-checks rights, source snapshot hash, HTTPS host, MIME/content signature, the 2 MiB per-object limit and the 64 MiB aggregate budget before committing provenance. No continuation window is exposed until production verification. Product Identity, inventory/opening balance and cutover remain dependency-gated.
+        The production image authorization is current and APPROVED at revision 1. W25 was production-verified as 10 copied / 0 failed / 789720 bytes. Production Storage currently contains 246 private objects / 58905914 bytes, 31 assets are terminal BLOCKED, 190 remain PLANNED, and no asset claims remain. This twenty-sixth window is capped at 10 planned assets and uses one fixed command id so a browser retry cannot create a second logical run. The Edge Function re-checks rights, source snapshot hash, HTTPS host, MIME/content signature, the 2 MiB per-object limit and the 64 MiB aggregate budget before committing provenance. No continuation window is exposed until production verification. Product Identity, inventory/opening balance and cutover remain dependency-gated.
       </p>
 
       {copyError ? <div className="error-message" role="alert">{copyError}</div> : null}
@@ -124,7 +124,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <div className="unleashed-acceptance-checks">
             <div>
               <span>
-                <strong>#338 COPY_IMAGES window 25</strong>
+                <strong>#338 COPY_IMAGES window 26</strong>
                 <small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small>
               </span>
               <b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b>
