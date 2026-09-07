@@ -1,0 +1,59 @@
+name: Ordermentum legacy-only purchaser diagnostic
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Reviewed main SHA (40 lowercase hex characters)'
+        required: true
+        type: string
+      purchaser_id:
+        description: 'One approved purchaser UUID (visible dispatch metadata)'
+        required: true
+        type: string
+      confirmation:
+        description: 'One legacy auth POST and one legacy GET; zero current GET and business writes'
+        required: true
+        type: choice
+        options:
+          - HOLD
+          - ONE_LEGACY_GET_ONLY
+permissions:
+  contents: read
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.confirmation == 'ONE_LEGACY_GET_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check reviewed SHA and current main before provider credentials
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$current_main" = "$EXPECTED_SHA"
+      - name: One bounded legacy read and historical current hash comparison
+        env:
+          ORDERMENTUM_ACCEPTANCE_SHA: ${{ inputs.expected_sha }}
+          ORDERMENTUM_ACCEPTANCE_CONFIRM: ${{ inputs.confirmation }}
+          ORDERMENTUM_PROBE_PURCHASER_ID: ${{ inputs.purchaser_id }}
+          ORDERMENTUM_BASE_URL: ${{ secrets.ORDERMENTUM_BASE_URL }}
+          ORDERMENTUM_API_BASE_URL: ${{ secrets.ORDERMENTUM_API_BASE_URL }}
+          ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+          ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+        run: node scripts/ordermentum-purchaser-legacy-diagnostic.mjs
