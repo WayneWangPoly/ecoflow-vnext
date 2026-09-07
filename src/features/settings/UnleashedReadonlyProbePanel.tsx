@@ -1,9 +1,19 @@
 import { useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, RadioTower } from 'lucide-react';
-import { runUnleashedReadonlyProbe, type UnleashedProbeResult } from '../team/unleashedReadonlyProbe';
-import { itemCountForResource, runRemainingMasterDrySurvey, type RemainingMasterDrySurveyResult } from '../team/unleashedRemainingMasterDrySurvey';
-import { runAuthorizedImageCopyWindow29, type AuthorizedImageCopyWindowResult } from '../team/unleashedImageCopyWindow29';
+import {
+  runUnleashedReadonlyProbe,
+  type UnleashedProbeResult,
+} from '../team/unleashedReadonlyProbe';
+import {
+  itemCountForResource,
+  runRemainingMasterDrySurvey,
+  type RemainingMasterDrySurveyResult,
+} from '../team/unleashedRemainingMasterDrySurvey';
+import {
+  runAuthorizedImageCopyWindow30,
+  type AuthorizedImageCopyWindowResult,
+} from '../team/unleashedImageCopyWindow30';
 import './teamAccessSettings.css';
 
 function probeTone(result: UnleashedProbeResult | null) {
@@ -23,24 +33,27 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [surveyError, setSurveyError] = useState('');
   const [copyError, setCopyError] = useState('');
   const copyAttemptedRef = useRef(false);
+
   const anyRunning = running || surveyRunning || copyRunning;
 
   async function runProbe() {
-    if (anyRunning) return; setRunning(true); setResult(null); setError('');
+    if (anyRunning) return;
+    setRunning(true); setResult(null); setError('');
     try { setResult(await runUnleashedReadonlyProbe(supabase)); }
     catch (probeError) { setError(probeError instanceof Error ? probeError.message : String(probeError)); }
     finally { setRunning(false); }
   }
   async function runSurvey() {
-    if (anyRunning) return; setSurveyRunning(true); setSurveyResult(null); setSurveyError('');
+    if (anyRunning) return;
+    setSurveyRunning(true); setSurveyResult(null); setSurveyError('');
     try { setSurveyResult(await runRemainingMasterDrySurvey(supabase)); }
     catch (runError) { setSurveyError(runError instanceof Error ? runError.message : String(runError)); }
     finally { setSurveyRunning(false); }
   }
-  async function runCopyWindow29() {
+  async function runCopyWindow30() {
     if (anyRunning || copyAttemptedRef.current || copyResult) return;
     copyAttemptedRef.current = true; setCopyAttempted(true); setCopyRunning(true); setCopyError('');
-    try { setCopyResult(await runAuthorizedImageCopyWindow29(supabase)); }
+    try { setCopyResult(await runAuthorizedImageCopyWindow30(supabase)); }
     catch (runError) { setCopyError(runError instanceof Error ? runError.message : String(runError)); }
     finally { setCopyRunning(false); }
   }
@@ -56,17 +69,17 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       <div className="system-status-grid">
         <div><span>Raw master acquisition</span><strong>closed · addresses 184 · customers 623 · products 466</strong></div>
         <div><span>Governed PLAN</span><strong>complete · 1300 mappings · 440 image locators · 27 missing</strong></div>
-        <div><span>Image authorization</span><strong>APPROVED · revision 1 · 64 MiB total · 2 MiB/object</strong></div>
-        <div><span>Currently exposed</span><strong>COPY_IMAGES window 29 only · max 10 assets</strong></div>
+        <div><span>Image authorization</span><strong>APPROVED · revision 2 · 128 MiB total · 2 MiB/object</strong></div>
+        <div><span>Currently exposed</span><strong>COPY_IMAGES window 30 only · max 10 assets</strong></div>
       </div>
       <div className="system-sync-actions unleashed-probe-actions">
         <button type="button" onClick={() => void runProbe()} disabled={anyRunning}><RadioTower aria-hidden="true" size={17} />{running ? 'Testing…' : 'Run one-page dry test'}</button>
         <button type="button" onClick={() => void runSurvey()} disabled={anyRunning}><Database aria-hidden="true" size={17} />{surveyRunning ? 'Reading customers + products…' : 'Run fresh #338 customer/product dry preflight'}</button>
-        <button type="button" className="primary" onClick={() => void runCopyWindow29()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}><Database aria-hidden="true" size={17} />{copyRunning ? 'Copying bounded image window 29…' : copyResult ? 'Image window 29 completed' : copyAttempted ? 'Image window 29 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 29'}</button>
+        <button type="button" className="primary" onClick={() => void runCopyWindow30()} disabled={anyRunning || copyAttempted || Boolean(copyResult)}><Database aria-hidden="true" size={17} />{copyRunning ? 'Copying bounded image window 30…' : copyResult ? 'Image window 30 completed' : copyAttempted ? 'Image window 30 attempt sent' : 'Execute authorized #338 COPY_IMAGES window 30'}</button>
       </div>
-      <p className="unleashed-acceptance-note">The production image authorization is current and APPROVED at revision 1. W28 was production-verified as 10 copied / 0 failed / 1247163 bytes. Production Storage currently contains 275 private objects / 65720800 bytes, 32 assets are terminal BLOCKED, 160 remain PLANNED, and no asset claims remain. This twenty-ninth window is capped at 10 planned assets and uses one fixed command id so a browser retry cannot create a second logical run. The Edge Function re-checks rights, source snapshot hash, HTTPS host, MIME/content signature, the 2 MiB per-object limit and the 64 MiB aggregate budget before committing provenance. No continuation window is exposed until production verification. Product Identity, inventory/opening balance and cutover remain dependency-gated.</p>
+      <p className="unleashed-acceptance-note">W29 was production-adjudicated as 5 copied / 5 failed / 1318029 bytes; all five failures were retryable aggregate-budget exhaustion and copied-object integrity remained clean. The operator explicitly authorized revision 2 with a 128 MiB aggregate budget while preserving the 2 MiB per-object cap, rights scope, private bucket and all other controls. Production currently has 280 private objects / 67038829 bytes, 150 PLANNED, 5 retryable FAILED, 32 terminal BLOCKED and zero active claims. This thirtieth window is capped at 10 eligible PLANNED/FAILED assets and uses one fixed command id. No continuation window is exposed until production verification.</p>
       {copyError ? <div className="error-message" role="alert">{copyError}</div> : null}
-      {copyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>#338 COPY_IMAGES window 29</strong><small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small></span><b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b></div></div></div> : null}
+      {copyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>#338 COPY_IMAGES window 30</strong><small>{copyResult.assetsPlanned} planned · {copyResult.assetsCopied} copied · {copyResult.assetsReused} reused · {copyResult.assetsFailed} failed · {copyResult.bytesCopied} bytes</small></span><b className={`pill ${copyResult.status === 'SUCCEEDED' ? 'pill-good' : 'pill-warning'}`}>{copyResult.status}</b></div></div></div> : null}
       {surveyError ? <div className="error-message" role="alert">{surveyError}</div> : null}
       {surveyResult ? <div className="unleashed-acceptance-result" role="status"><div className="unleashed-acceptance-checks"><div><span><strong>customers</strong><small>{customerCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'customers')?.numberOfPages ?? 'n/a'} pages</small></span><b className="pill pill-good">DRY COMPLETE</b></div><div><span><strong>products</strong><small>{productCount ?? 'n/a'} source records · {surveyResult.paginationWindows.find((window) => window.resource === 'products')?.numberOfPages ?? 'n/a'} pages · run {surveyResult.runId.slice(0, 8)}</small></span><b className="pill pill-good">DRY COMPLETE</b></div></div></div> : null}
     </section>
