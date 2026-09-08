@@ -2,15 +2,24 @@ import { useState } from 'react';
 import type { Role } from '@/domain/types';
 import { reconcileBarcodeSurveyObservation, type BarcodeSurveyReconcileResult } from '@/data/repositories/barcodeSurveyReconciliation';
 import {
+  readCurrentProductIdentityBatch,
   startBoundedProductIdentityBatch,
+  submitProductIdentityBatch,
   type BoundedProductIdentityBatchCommandResult,
+  type ProductIdentityBatch,
+  type ProductIdentityBatchCommandResult,
 } from '@/data/repositories/productIdentity';
 import {
   BPB8_DRAFT_CANARY_DEFAULTS,
+  BPB8_P2_SUBMIT_DEFAULTS,
+  assertBoundedSubmitAcknowledgement,
+  assertBoundedSubmitPreflight,
   buildBoundedReconcileInput,
   buildBoundedStartInput,
+  buildBoundedSubmitInput,
   type BoundedReconcileDraft,
   type BoundedStartDraft,
+  type BoundedSubmitDraft,
 } from './boundedProductIdentityCarrierContract';
 
 type Props = {
@@ -18,14 +27,17 @@ type Props = {
   onChanged: () => void;
 };
 
-type BusyCommand = 'START' | 'RECONCILE' | null;
+type BusyCommand = 'START' | 'RECONCILE' | 'SUBMIT' | null;
 
 export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Props) {
   const authorized = role === 'owner' || role === 'admin';
   const [startDraft, setStartDraft] = useState<BoundedStartDraft>(() => ({ ...BPB8_DRAFT_CANARY_DEFAULTS.start }));
   const [reconcileDraft, setReconcileDraft] = useState<BoundedReconcileDraft>(() => ({ ...BPB8_DRAFT_CANARY_DEFAULTS.reconcile }));
+  const [submitDraft, setSubmitDraft] = useState<BoundedSubmitDraft>(() => ({ ...BPB8_P2_SUBMIT_DEFAULTS }));
   const [startResult, setStartResult] = useState<BoundedProductIdentityBatchCommandResult | null>(null);
   const [reconcileResult, setReconcileResult] = useState<BarcodeSurveyReconcileResult | null>(null);
+  const [submitPreflight, setSubmitPreflight] = useState<ProductIdentityBatch | null>(null);
+  const [submitResult, setSubmitResult] = useState<ProductIdentityBatchCommandResult | null>(null);
   const [busy, setBusy] = useState<BusyCommand>(null);
   const [message, setMessage] = useState('');
 
@@ -37,6 +49,10 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
 
   function patchReconcile<K extends keyof BoundedReconcileDraft>(key: K, value: BoundedReconcileDraft[K]) {
     setReconcileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function patchSubmit<K extends keyof BoundedSubmitDraft>(key: K, value: BoundedSubmitDraft[K]) {
+    setSubmitDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function startBoundedBatch() {
@@ -88,6 +104,29 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
     }
   }
 
+  async function submitBoundedBatch() {
+    setBusy('SUBMIT');
+    setMessage('');
+    setSubmitPreflight(null);
+    setSubmitResult(null);
+    try {
+      const input = buildBoundedSubmitInput(submitDraft);
+      const currentBatch = await readCurrentProductIdentityBatch();
+      assertBoundedSubmitPreflight(currentBatch, input);
+      setSubmitPreflight(currentBatch);
+
+      const result = await submitProductIdentityBatch(input);
+      assertBoundedSubmitAcknowledgement(result, input);
+      setSubmitResult(result);
+      setMessage(`Bounded SUBMIT ${result.commandStatus}. Batch is SUBMITTED revision ${result.revision}; stop before publish.`);
+      onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const startReady = startResult?.batchStatus === 'DRAFT'
     && startResult.scopedSkuCount === 1
     && ['APPLIED', 'REPLAYED'].includes(startResult.commandStatus);
@@ -97,7 +136,7 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
       <header className="survey-reconciliation-header">
         <div>
           <span>OWNER / ADMIN · EXPLICIT BOUNDED COMMAND</span>
-          <h2>Start one scoped batch, then reconcile one DRAFT</h2>
+          <h2>Run one frozen Product Identity canary command</h2>
           <p>Every scope and command identifier below is operator supplied. The server remains the role, replay and Product Identity authority.</p>
         </div>
       </header>
@@ -160,6 +199,36 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
               <div><dt>Status</dt><dd>{reconcileResult.reconciliationStatus}</dd></div>
               <div><dt>Command</dt><dd>{reconcileResult.commandStatus}</dd></div>
               <div><dt>Reconciled</dt><dd>{reconcileResult.reconciledAt}</dd></div>
+            </dl>
+          ) : null}
+        </fieldset>
+
+        <fieldset className="survey-reconciliation-form" disabled={busy !== null || submitResult !== null}>
+          <legend>3 · Explicit P2 SUBMIT</legend>
+          <p className="survey-reconciliation-note">This action first reads the current server batch and stops unless the exact BPB8 batch is DRAFT revision 1 with canSubmit=true.</p>
+          <label><span>Batch ID</span><input value={submitDraft.batchId} onChange={(event) => patchSubmit('batchId', event.target.value)} /></label>
+          <label><span>Expected revision · BPB8 P2 requires 1</span><input inputMode="numeric" value={submitDraft.expectedRevision} onChange={(event) => patchSubmit('expectedRevision', event.target.value)} /></label>
+          <label><span>SUBMIT command ID</span><input value={submitDraft.commandId} onChange={(event) => patchSubmit('commandId', event.target.value)} /></label>
+          <label className="survey-reconciliation-note"><span>Submit note</span><textarea value={submitDraft.note} onChange={(event) => patchSubmit('note', event.target.value)} /></label>
+          <button type="button" className="survey-reconciliation-primary" onClick={() => void submitBoundedBatch()}>
+            {busy === 'SUBMIT' ? 'Reading gate and submitting…' : 'Read gate, then submit P2'}
+          </button>
+
+          {submitPreflight ? (
+            <dl className="survey-reconciliation-evidence survey-reconciliation-note">
+              <div><dt>Read batch</dt><dd>{submitPreflight.batchId}</dd></div>
+              <div><dt>Read status</dt><dd>{submitPreflight.batchStatus}</dd></div>
+              <div><dt>Read revision</dt><dd>{submitPreflight.revision}</dd></div>
+              <div><dt>Can submit</dt><dd>{String(submitPreflight.canSubmit)}</dd></div>
+            </dl>
+          ) : null}
+
+          {submitResult ? (
+            <dl className="survey-reconciliation-evidence survey-reconciliation-note">
+              <div><dt>Batch ID</dt><dd>{submitResult.batchId}</dd></div>
+              <div><dt>Status</dt><dd>{submitResult.batchStatus}</dd></div>
+              <div><dt>Revision</dt><dd>{submitResult.revision}</dd></div>
+              <div><dt>Command</dt><dd>{submitResult.commandStatus}</dd></div>
             </dl>
           ) : null}
         </fieldset>

@@ -20,6 +20,34 @@ export type BoundedReconcileDraft = {
   note: string;
 };
 
+export type BoundedSubmitDraft = {
+  batchId: string;
+  expectedRevision: string;
+  commandId: string;
+  note: string;
+};
+
+export type BoundedSubmitInput = {
+  batchId: string;
+  expectedRevision: number;
+  commandId: string;
+  note: string;
+};
+
+type BoundedSubmitPreflight = {
+  batchId: string;
+  batchStatus: string;
+  revision: number;
+  canSubmit: boolean;
+} | null;
+
+type BoundedSubmitAcknowledgement = {
+  batchId: string;
+  batchStatus: string;
+  revision: number;
+  commandStatus: string;
+};
+
 export const BPB8_DRAFT_CANARY_DEFAULTS = {
   start: {
     batchName: '#338 BPB8 Physical Identity production canary',
@@ -42,6 +70,13 @@ export const BPB8_DRAFT_CANARY_DEFAULTS = {
     note: '#338 BPB8 production Physical Identity canary; Owner/Admin confirmed payload; carton operational base unit = 1; no inventory authority granted.',
   },
 } as const satisfies { start: BoundedStartDraft; reconcile: BoundedReconcileDraft };
+
+export const BPB8_P2_SUBMIT_DEFAULTS = {
+  batchId: '448f401e-0701-4e9f-8426-5dfed67b9f78',
+  expectedRevision: '1',
+  commandId: '6df22bb2-506e-4be1-a752-c1e2323f431d',
+  note: '#338 BPB8 P2 production submit-only canary; P1 DRAFT payload independently verified; no publish or inventory authority granted.',
+} as const satisfies BoundedSubmitDraft;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -97,4 +132,71 @@ export function buildBoundedReconcileInput(draft: BoundedReconcileDraft, batchId
     isPreferred: draft.isPreferred,
     note: draft.note.trim() || undefined,
   };
+}
+
+export function buildBoundedSubmitInput(draft: BoundedSubmitDraft): BoundedSubmitInput {
+  const batchId = requiredUuid(draft.batchId, 'Batch ID');
+  const commandId = requiredUuid(draft.commandId, 'SUBMIT command ID');
+  const note = requiredText(draft.note, 'Submit note');
+  const expectedRevision = Number(draft.expectedRevision);
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    throw new Error('Expected revision must be a safe non-negative whole number.');
+  }
+  if (expectedRevision !== 1) {
+    throw new Error('This BPB8 P2 carrier is fenced to expected revision 1.');
+  }
+  if (batchId !== BPB8_P2_SUBMIT_DEFAULTS.batchId) {
+    throw new Error('This BPB8 P2 carrier is fenced to the BPB8 P1 batch ID.');
+  }
+  if (commandId !== BPB8_P2_SUBMIT_DEFAULTS.commandId) {
+    throw new Error('This BPB8 P2 carrier requires the frozen P2 command ID.');
+  }
+  if (note !== BPB8_P2_SUBMIT_DEFAULTS.note) {
+    throw new Error('This BPB8 P2 carrier requires the frozen P2 submit note.');
+  }
+
+  return {
+    batchId,
+    expectedRevision,
+    commandId,
+    note,
+  };
+}
+
+export function assertBoundedSubmitPreflight(
+  currentBatch: BoundedSubmitPreflight,
+  input: BoundedSubmitInput,
+) {
+  if (!currentBatch) {
+    throw new Error('Pre-submit read returned no current batch; SUBMIT was not called.');
+  }
+  if (currentBatch.batchId !== input.batchId) {
+    throw new Error('Pre-submit batch ID mismatch; SUBMIT was not called.');
+  }
+  if (currentBatch.batchStatus !== 'DRAFT') {
+    throw new Error('Pre-submit batch must be DRAFT; SUBMIT was not called.');
+  }
+  if (currentBatch.revision !== input.expectedRevision) {
+    throw new Error('Pre-submit revision mismatch; SUBMIT was not called.');
+  }
+  if (!currentBatch.canSubmit) {
+    throw new Error('Pre-submit authority returned canSubmit=false; SUBMIT was not called.');
+  }
+}
+
+export function assertBoundedSubmitAcknowledgement(
+  result: BoundedSubmitAcknowledgement,
+  input: BoundedSubmitInput,
+) {
+  const expectedResultRevision = input.expectedRevision + 1;
+  if (
+    result.batchId !== input.batchId
+    || result.batchStatus !== 'SUBMITTED'
+    || result.revision !== expectedResultRevision
+    || !['APPLIED', 'REPLAYED'].includes(result.commandStatus)
+  ) {
+    throw new Error(
+      `Bounded SUBMIT returned an unexpected acknowledgement: ${result.batchId}/${result.batchStatus}/rev ${result.revision}/${result.commandStatus}.`,
+    );
+  }
 }

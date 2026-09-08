@@ -1,8 +1,36 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: BOUNDED EXECUTION CARRIER IN REVIEW. Production START/RECONCILE remains HOLD.
+Status: P2 EXPLICIT SUBMIT CARRIER IN REVIEW. Production SUBMIT remains HOLD.
 
-## Bounded Owner/Admin execution carrier
+## P2 authenticated explicit SUBMIT carrier
+
+This follow-up starts from production `main`
+`532789fc71e319daff9ad7a58196b9eb4c95a5e9`, the P1 production PASS recorded
+in [#338 comment 5582721390](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5582721390),
+and the Chief Engineer review in
+[#338 comment 5582759072](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5582759072).
+
+The existing Owner/Admin bounded carrier gains one independent P2 section. It
+accepts the explicit BPB8 P1 batch ID, expected revision, frozen SUBMIT command
+ID and note. Before any write, it calls the incumbent authenticated current-batch
+read and fails closed unless the returned batch ID matches exactly, status is
+`DRAFT`, revision is `1`, and `canSubmit=true`. Only then does it call the
+existing `submitProductIdentityBatch`, which maps to
+`ecoflow_submit_product_identity_batch` with the four operator-supplied values.
+The server's revision, replay and Owner/Admin checks remain authoritative.
+
+The acknowledgement must contain the same batch ID, `SUBMITTED`, revision `2`,
+and `APPLIED` or `REPLAYED`; every other result is surfaced as a stop condition.
+The carrier contains no command-ID generator, generic-submit fallback, publish
+call, reserved PUBLISH command ID, raw DML, service-role path, inventory, SOH or
+location-quantity authority. The existing generic Product Identity submit flow
+is unchanged.
+
+This implementation task does not execute production SUBMIT and does not merge.
+No migration is required; trusted production-schema shadow is N/A. Rollback is
+the code-only revert of this bounded UI/contract change.
+
+## P1 bounded Owner/Admin execution carrier (completed)
 
 This follow-up is based on production `main`
 `be57699fe554fa73c0da1a2aa0ebf3c2e6cf63d6` and durable checkpoint
@@ -29,10 +57,9 @@ role authorization, eligibility, replay and Product Identity writes remain
 enforced by the incumbent RPCs; an absent or invalid session fails at that server
 boundary. The carrier stops after RECONCILE creates DRAFT state.
 
-No migration is required. Trusted production-schema shadow: N/A. Do not add a
-no-op migration. Production execution remains separately gated after merge and
-fresh Chief Engineer review; this work package does not authorize or consume the
-reserved SUBMIT/PUBLISH command IDs.
+No migration was required. Trusted production-schema shadow: N/A. P1 later
+completed through DRAFT under its separate production authorization and did not
+consume the reserved SUBMIT/PUBLISH command IDs.
 
 ## Objective and baseline
 
