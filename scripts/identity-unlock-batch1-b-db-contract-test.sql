@@ -211,7 +211,8 @@ begin
 end $$;
 
 -- Promote only the canary. This creates Commercial identity/mapping provenance,
--- but no units, Physical SKU/barcode, or inventory authority.
+-- but no units, Physical SKU/barcode, or inventory authority. The exact current
+-- mapping revision is captured at execution time rather than assuming revision 0.
 do $$
 declare
   v_canary public.ecoflow_unleashed_master_mappings%rowtype;
@@ -225,18 +226,18 @@ declare
   v_inventory bigint;
 begin
   select * into v_canary from public.ecoflow_unleashed_master_mappings where source_external_code='CCSA8-90';
-  if v_canary.mapping_status<>'UNMATCHED' or v_canary.revision<>0 then
-    raise exception 'canary baseline unexpectedly changed: %/%',v_canary.mapping_status,v_canary.revision;
+  if v_canary.mapping_status<>'UNMATCHED' then
+    raise exception 'canary baseline unexpectedly changed status: %/%',v_canary.mapping_status,v_canary.revision;
   end if;
 
   v_result := public.ecoflow_promote_bounded_commercial_sku(
     '92000000-0000-4000-8000-000000000007','10000000-0000-4000-8000-000000000001',
-    'CCSA8-90',v_canary.id,0,v_canary.source_payload_sha256,
+    'CCSA8-90',v_canary.id,v_canary.revision,v_canary.source_payload_sha256,
     'Batch 1B canary commercial identity only'
   );
   v_replay := public.ecoflow_promote_bounded_commercial_sku(
     '92000000-0000-4000-8000-000000000007','10000000-0000-4000-8000-000000000001',
-    'CCSA8-90',v_canary.id,0,v_canary.source_payload_sha256,
+    'CCSA8-90',v_canary.id,v_canary.revision,v_canary.source_payload_sha256,
     'Batch 1B canary commercial identity only'
   );
   if v_result is distinct from v_replay then raise exception 'promotion replay mismatch'; end if;
@@ -261,17 +262,20 @@ begin
   end if;
 end $$;
 
--- A changed replay payload is rejected.
+-- A changed replay payload is rejected while preserving the original current
+-- revision used by the successful command.
 do $$
 declare
   v_canary public.ecoflow_unleashed_master_mappings%rowtype;
+  v_command public.ecoflow_bounded_commercial_sku_promotion_commands%rowtype;
   v_failed boolean := false;
 begin
   select * into v_canary from public.ecoflow_unleashed_master_mappings where source_external_code='CCSA8-90';
+  select * into v_command from public.ecoflow_bounded_commercial_sku_promotion_commands where command_id='92000000-0000-4000-8000-000000000007';
   begin
     perform public.ecoflow_promote_bounded_commercial_sku(
       '92000000-0000-4000-8000-000000000007','10000000-0000-4000-8000-000000000001',
-      'CCSA8-90',v_canary.id,0,v_canary.source_payload_sha256,'Changed replay payload'
+      'CCSA8-90',v_canary.id,v_command.expected_revision,v_canary.source_payload_sha256,'Changed replay payload'
     );
   exception when others then
     if position('COMMAND_REPLAY_PAYLOAD_MISMATCH' in sqlerrm)>0 then v_failed:=true; else raise; end if;
