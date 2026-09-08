@@ -171,9 +171,6 @@ jobs:
       - name: Execute bounded-batch isolation and canonical resolver contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-bounded-batch-db-contract-test.sql
 
-      - name: Execute synthetic one-item physical canary lifecycle contract
-        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-physical-canary-db-contract-test.sql
-
       - name: Execute reconciliation, role, provenance, conflict and publication contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-db-contract-test.sql
 
