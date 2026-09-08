@@ -1,18 +1,27 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import {
+  BPB8_DRAFT_CANARY_DEFAULTS,
+  buildBoundedReconcileInput,
+  buildBoundedStartInput,
+} from '../src/features/productIdentity/boundedProductIdentityCarrierContract.ts';
 
 const migrationPath = 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql';
 const repositoryPath = 'src/data/repositories/barcodeSurveyReconciliation.ts';
 const panelPath = 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx';
 const wrapperPath = 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx';
+const boundedCarrierPath = 'src/features/productIdentity/BoundedProductIdentityExecutionCarrier.tsx';
+const productIdentityRepositoryPath = 'src/data/repositories/productIdentity.ts';
 const routePath = 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx';
 
-const [migration, repository, panel, wrapper, route] = await Promise.all([
+const [migration, repository, panel, wrapper, boundedCarrier, productIdentityRepository, route] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(panelPath, 'utf8'),
   readFile(wrapperPath, 'utf8'),
+  readFile(boundedCarrierPath, 'utf8'),
+  readFile(productIdentityRepositoryPath, 'utf8'),
   readFile(routePath, 'utf8'),
 ]);
 
@@ -119,4 +128,68 @@ test('reconciliation panel is composed with existing Product Identity workspace 
   const mounts = route.match(/<ProductIdentityCommissioningWithSurvey/g) || [];
   assert.equal(mounts.length, 2, 'standalone Warehouse Product Identity and office Product Identity route must use the same guarded composition');
   assert.doesNotMatch(route, /<ProductIdentityCommissioningWorkspace/);
+});
+
+test('bounded carrier preserves the exact one-SKU START invocation without queue expansion', () => {
+  const input = buildBoundedStartInput(BPB8_DRAFT_CANARY_DEFAULTS.start);
+  assert.deepEqual(input, {
+    batchName: '#338 BPB8 Physical Identity production canary',
+    commercialSkuIds: ['ec67ca0a-67b5-437f-96a8-81e6268faa44'],
+    commandId: 'bb388464-bc36-4546-a875-16ec0e890e66',
+  });
+
+  assert.match(productIdentityRepository, /ecoflow_start_bounded_product_identity_batch/);
+  assert.match(productIdentityRepository, /p_batch_name:\s*input\.batchName/);
+  assert.match(productIdentityRepository, /p_commercial_sku_ids:\s*input\.commercialSkuIds/);
+  assert.match(productIdentityRepository, /p_command_id:\s*input\.commandId/);
+  assert.match(productIdentityRepository, /scopedSkuCount:\s*safeInteger\(row\.scoped_sku_count\)/);
+  assert.match(productIdentityRepository, /const client = input \?\? supabase/);
+  assert.match(productIdentityRepository, /activeClient\(client\)\.rpc\(name, args\)/);
+  assert.match(repository, /const client = input \?\? supabase/);
+  assert.match(repository, /activeClient\(client\)\.rpc\(name, args\)/);
+  assert.match(boundedCarrier, /startBoundedProductIdentityBatch\(input\)/);
+  assert.doesNotMatch(boundedCarrier, /readBarcodeSurveyReconciliationQueue/);
+  assert.doesNotMatch(boundedCarrier, /createProductIdentityCommandId/);
+  assert.doesNotMatch(boundedCarrier, /startProductIdentityBatch\(/);
+});
+
+test('bounded carrier maps the frozen BPB8 DRAFT reconciliation payload to the actual START batch', () => {
+  const input = buildBoundedReconcileInput(
+    BPB8_DRAFT_CANARY_DEFAULTS.reconcile,
+    'aaaaaaaa-0000-4000-8000-000000000001',
+  );
+  assert.deepEqual(input, {
+    surveyObservationId: '5a5a63e4-2b52-43e0-b96b-6129415585ee',
+    batchId: 'aaaaaaaa-0000-4000-8000-000000000001',
+    commandId: '2514d56b-4b60-4db1-acba-4ea0ec88d568',
+    physicalSkuCode: 'BPB8',
+    physicalName: '8oz Kraft Soup Bowl 250ml',
+    brand: undefined,
+    supplierName: undefined,
+    familyCode: 'BPB8',
+    familyName: '8oz Kraft Soup Bowl 250ml',
+    packageLevel: 'CARTON',
+    unitsInBaseUnit: 1,
+    substitutionPolicy: 'PROHIBITED',
+    isPreferred: true,
+    note: '#338 BPB8 production Physical Identity canary; Owner/Admin confirmed payload; carton operational base unit = 1; no inventory authority granted.',
+  });
+  assert.match(
+    boundedCarrier,
+    /buildBoundedReconcileInput\(reconcileDraft,\s*startResult\.batchId\)/,
+  );
+  assert.match(boundedCarrier, /reconcileBarcodeSurveyObservation\(input\)/);
+  assert.doesNotMatch(boundedCarrier, /1000pcs/i);
+});
+
+test('bounded carrier is Owner/Admin-only and has no fallback, submit, publish or quantity authority', () => {
+  assert.match(boundedCarrier, /role === 'owner' \|\| role === 'admin'/);
+  assert.match(boundedCarrier, /if \(!authorized\) return null/);
+  assert.match(boundedCarrier, /scopedSkuCount !== 1/);
+  assert.match(boundedCarrier, /\['APPLIED', 'REPLAYED'\]\.includes\(startResult\.commandStatus\)/);
+  assert.doesNotMatch(boundedCarrier, /submitProductIdentityBatch|publishProductIdentityBatch/);
+  assert.doesNotMatch(boundedCarrier, /6df22bb2-506e-4be1-a752-c1e2323f431d|973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.doesNotMatch(boundedCarrier, /\.from\s*\(/);
+  assert.doesNotMatch(boundedCarrier, /service[_-]?role|auth\.uid|access[_-]?token/i);
+  assert.match(wrapper, /<BoundedProductIdentityExecutionCarrier/);
 });
