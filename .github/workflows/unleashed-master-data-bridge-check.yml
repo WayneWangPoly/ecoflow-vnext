@@ -73,6 +73,11 @@ jobs:
       - name: Run independent-review regression contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql
       - name: Run Identity Unlock Batch 1A contract
-        run: psql -v ON_ERROR_STOP=1 -f scripts/identity-unlock-batch1-a-db-contract-test.sql
+        run: |
+          # The preceding canonical-drift regression intentionally renames the
+          # shared MAIN warehouse fixture. Restore only that known test fixture
+          # so Batch 1A validates its own ADL1 -> MAIN contract in isolation.
+          psql -v ON_ERROR_STOP=1 -c "update public.warehouses set warehouse_code='MAIN' where id='40000000-0000-4000-8000-000000000001';"
+          psql -v ON_ERROR_STOP=1 -f scripts/identity-unlock-batch1-a-db-contract-test.sql
       - name: Run bounded authority audit
         run: node scripts/audit-unleashed-master-data-bridge.mjs
