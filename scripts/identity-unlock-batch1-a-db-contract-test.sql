@@ -245,8 +245,83 @@ begin
   end if;
 end $$;
 
--- Source payload drift invalidates the manual candidate automatically. No fuzzy
--- or display-name inference is permitted to preserve it.
+-- Existing governed REVIEW must be able to consume the candidate. Batch 1A
+-- deliberately does not invent a second review path: the new authority ends at
+-- candidate creation and the incumbent Owner/Admin review command makes MATCHED.
+do $$
+declare
+  v_mapping public.ecoflow_unleashed_master_mappings%rowtype;
+  v_candidate uuid;
+  v_main uuid;
+  v_result jsonb;
+begin
+  select * into v_mapping
+  from public.ecoflow_unleashed_master_mappings m
+  where m.entity_type='WAREHOUSE' and m.source_external_code='ADL1';
+  select c.id into v_candidate
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping.id
+    and c.match_method='OWNER_ADMIN_MANUAL_WAREHOUSE'
+    and c.is_current;
+  select w.id into v_main from public.warehouses w where w.warehouse_code='MAIN';
+
+  perform set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',false);
+  v_result := public.ecoflow_review_unleashed_master_mapping(
+    v_mapping.id,'82000000-0000-4000-8000-000000000001',1,
+    'MATCHED',v_candidate,'Owner accepts bounded ADL1 to MAIN warehouse mapping'
+  );
+
+  select * into v_mapping
+  from public.ecoflow_unleashed_master_mappings m where m.id=v_mapping.id;
+  if (v_result->>'revision')::bigint<>2
+     or v_mapping.revision<>2
+     or v_mapping.mapping_status<>'MATCHED'
+     or v_mapping.canonical_object_type<>'WAREHOUSE'
+     or v_mapping.canonical_object_id<>v_main
+     or v_mapping.canonical_code<>'MAIN'
+     or v_mapping.match_method<>'OWNER_ADMIN_MANUAL_WAREHOUSE'
+     or v_mapping.decision_source<>'REVIEW'
+     or v_mapping.reviewed_by<>'10000000-0000-4000-8000-000000000001'::uuid then
+    raise exception 'existing review command did not accept manual candidate: %/%',v_result,v_mapping;
+  end if;
+end $$;
+
+-- A normal PLAN with the same source payload must preserve the accepted REVIEW
+-- and re-materialise the still-authorised candidate after the deterministic core
+-- has marked its own candidate rows stale.
+select public.ecoflow_plan_unleashed_master_mappings(
+  '10000000-0000-4000-8000-000000000001','Batch 1A reviewed replay plan'
+);
+
+do $$
+declare
+  v_mapping public.ecoflow_unleashed_master_mappings%rowtype;
+  v_current bigint;
+  v_main uuid;
+begin
+  select * into v_mapping
+  from public.ecoflow_unleashed_master_mappings m
+  where m.entity_type='WAREHOUSE' and m.source_external_code='ADL1';
+  select count(*) into v_current
+  from public.ecoflow_unleashed_master_candidates c
+  where c.mapping_id=v_mapping.id
+    and c.match_method='OWNER_ADMIN_MANUAL_WAREHOUSE'
+    and c.is_current;
+  select w.id into v_main from public.warehouses w where w.warehouse_code='MAIN';
+
+  if v_mapping.revision<>2
+     or v_mapping.mapping_status<>'MATCHED'
+     or v_mapping.canonical_object_id<>v_main
+     or v_mapping.canonical_code<>'MAIN'
+     or v_mapping.match_method<>'OWNER_ADMIN_MANUAL_WAREHOUSE'
+     or v_mapping.decision_source<>'REVIEW'
+     or v_current<>1 then
+    raise exception 'PLAN failed to preserve accepted manual review: %/%',v_mapping,v_current;
+  end if;
+end $$;
+
+-- Source payload drift invalidates both the accepted REVIEW and the manual
+-- candidate automatically. No fuzzy or display-name inference may preserve it.
 do $$
 declare
   v_mapping public.ecoflow_unleashed_master_mappings%rowtype;
@@ -274,11 +349,12 @@ begin
     and c.match_method='OWNER_ADMIN_MANUAL_WAREHOUSE'
     and c.is_current;
 
-  if v_mapping.revision<>2
+  if v_mapping.revision<>3
      or v_mapping.mapping_status<>'UNMATCHED'
+     or v_mapping.canonical_object_id is not null
+     or v_mapping.decision_source<>'AUTO'
      or v_current<>0 then
-    raise exception 'source drift did not invalidate manual candidate: %/%/%',
-      v_mapping.revision,v_mapping.mapping_status,v_current;
+    raise exception 'source drift did not revoke manual authority: %/%',v_mapping,v_current;
   end if;
 end $$;
 
