@@ -11,6 +11,7 @@ on:
       - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
       - 'scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql'
       - 'scripts/identity-unlock-batch1-a-db-contract-test.sql'
+      - 'scripts/identity-unlock-batch1-a-security-db-contract-test.sql'
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
@@ -28,6 +29,7 @@ on:
       - 'scripts/unleashed-master-data-bridge-db-contract-test.sql'
       - 'scripts/unleashed-master-data-bridge-review-fixes-db-contract-test.sql'
       - 'scripts/identity-unlock-batch1-a-db-contract-test.sql'
+      - 'scripts/identity-unlock-batch1-a-security-db-contract-test.sql'
       - 'scripts/audit-unleashed-master-data-bridge.mjs'
       - 'supabase/functions/trigger-unleashed-master-migration/**'
       - 'supabase/migrations/20260831235500_unleashed_master_data_bridge.sql'
@@ -79,5 +81,7 @@ jobs:
           # so Batch 1A validates its own ADL1 -> MAIN contract in isolation.
           psql -v ON_ERROR_STOP=1 -c "update public.warehouses set warehouse_code='MAIN' where id='40000000-0000-4000-8000-000000000001';"
           psql -v ON_ERROR_STOP=1 -f scripts/identity-unlock-batch1-a-db-contract-test.sql
+      - name: Run Identity Unlock Batch 1A security regression
+        run: psql -v ON_ERROR_STOP=1 -f scripts/identity-unlock-batch1-a-security-db-contract-test.sql
       - name: Run bounded authority audit
         run: node scripts/audit-unleashed-master-data-bridge.mjs
