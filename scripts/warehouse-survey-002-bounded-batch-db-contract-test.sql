@@ -169,3 +169,7 @@ end
 $$;
 
 reset app.test_role;
+
+-- #338 combined canary fixture: bounded scope + Survey evidence + first preferred
+-- Commercial-family link + revision-fenced submit/publish.
+\i scripts/warehouse-survey-002-bpb8-canary-db-contract-test.sql
