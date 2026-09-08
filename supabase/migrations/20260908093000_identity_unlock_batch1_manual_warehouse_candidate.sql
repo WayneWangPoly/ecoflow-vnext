@@ -210,7 +210,7 @@ begin
   where p.user_id=p_requested_by
     and p.is_active
     and p.team_status='ACTIVE';
-  if coalesce(v_role,'') not in ('OWNER','ADMIN') then
+  if v_role is null or v_role not in ('OWNER','ADMIN') then
     raise exception 'MANUAL_WAREHOUSE_CANDIDATE_FORBIDDEN';
   end if;
 
