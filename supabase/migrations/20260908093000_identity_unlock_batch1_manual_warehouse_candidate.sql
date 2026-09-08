@@ -210,12 +210,13 @@ begin
   where p.user_id=p_requested_by
     and p.is_active
     and p.team_status='ACTIVE';
-  if v_role not in ('OWNER','ADMIN') then
+  if coalesce(v_role,'') not in ('OWNER','ADMIN') then
     raise exception 'MANUAL_WAREHOUSE_CANDIDATE_FORBIDDEN';
   end if;
 
-  if p_command_id is null or p_mapping_id is null or p_expected_revision is null
-     or p_expected_revision < 0
+  if p_command_id is null or p_requested_by is null or p_mapping_id is null
+     or p_expected_revision is null or p_expected_revision < 0
+     or p_expected_source_payload_sha256 is null
      or p_expected_source_payload_sha256 !~ '^[0-9a-f]{64}$'
      or upper(btrim(coalesce(p_source_external_code,''))) <> 'ADL1'
      or upper(btrim(coalesce(p_target_warehouse_code,''))) <> 'MAIN'
