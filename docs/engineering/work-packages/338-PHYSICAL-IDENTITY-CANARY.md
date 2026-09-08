@@ -14,8 +14,8 @@ Branch: `agent/product-identity/338-physical-canary`.
 
 - Implementation: Domain contract/evidence audit; independent Verification required.
 - Chief Engineer review and explicit production authorization remain pending.
-- In scope: this document and its read-only SQL companion only.
-- No application, migration, RPC, workflow or business behaviour change.
+- In scope: this evidence package plus a synthetic PostgreSQL contract over the incumbent authority only.
+- No application, migration, RPC, workflow or production business-behaviour change.
 - Do not repeat #338 images, #359, CCSA8-90 or Commercial promotions.
 - CCSB6-80 stays conflict and outside the batch.
 - #339B, SOH/opening balance, inventory/location authority and cutover stay HOLD.
@@ -58,6 +58,14 @@ authority. Survey notes are null. Product names are catalog context, not
 physical conversion evidence. Preserve raw GS1-looking strings; do not silently
 normalize them in this package.
 
+A production read of the already-published `R-360Y` golden path makes the
+conversion boundary concrete: its Commercial description says `1000pcs`, while
+its canonical Product Identity package is `CARTON` with `units_in_base_unit=1`.
+That precedent does not define BPB8; it proves catalog piece counts cannot be
+copied into `units_in_base_unit`. The BPB8 package level and units-per-package /
+base-unit conversion value must be explicitly confirmed under the incumbent
+Product Identity semantics.
+
 ## Proposed minimum canary: BPB8 only
 
 - Commercial SKU: `ec67ca0a-67b5-437f-96a8-81e6268faa44`.
@@ -71,12 +79,13 @@ normalize them in this package.
 - Reason: one carton barcode, no sleeve publication or barcode normalization
   needed. The other 20 remain outside the proposed batch.
 
-Missing before executable preparation: verified physical name/brand/supplier,
-explicit Physical SKU and family code/name, package level/base-unit meaning,
-physically verified units per carton, and an explicit Commercial-family policy
-decision. The name's `1000pcs` is not accepted as measured quantity evidence.
-No command IDs or executable mutation payload are generated while these inputs
-are unknown.
+Missing before production executable preparation: explicit Physical SKU code and
+physical name, family code/name, package level, units-per-package/base-unit
+conversion value, substitution policy and the first preferred Commercial-family
+link decision. Brand and supplier are nullable under the incumbent RPC and may
+remain unknown. The catalog string's `1000pcs` is not accepted as conversion or
+measurement authority. No production command IDs or mutation payload are
+generated while these required inputs are unknown.
 
 ## Existing server contract and material limitation
 
@@ -118,23 +127,21 @@ Offline or uncertain outcomes do not count as success.
 - [x] Base SHA verified against fetched main.
 - [x] Read-only physical observation inventory for 21 codes.
 - [x] Single proposed candidate; no production mutation.
-- [ ] Missing physical facts and link/policy scope resolved.
-- [ ] Exact-head applicable CI completed; record SHA and run URLs.
-- [ ] Independent Verification and Chief Engineer contract approval.
-- [ ] Executable fixture covers capture/submit/publish, actor denial, replay,
-  scope rejection, conflicts, revision checks and unchanged inventory sentinel.
-- [ ] Trusted production-schema shadow executed if an actual migration is needed.
+- [x] Synthetic executable fixture covers bounded capture/submit/publish, first-link denial, replay immutability, revision checks and unchanged inventory sentinel.
+- [ ] Required production BPB8 physical facts and link/policy scope explicitly resolved.
+- [ ] Fresh exact-head applicable CI completed after the final evidence/contract edit; record SHA and run IDs.
+- [ ] Fresh independent Verification and Chief Engineer contract approval on that same exact head.
+- [ ] Trusted production-schema shadow executed only if an actual migration becomes necessary.
 - [ ] Explicit production authorization of exact fields and command IDs.
 
-The current trusted workflow returns NOT_APPLICABLE for a zero-migration PR;
-that is not a production-schema shadow execution or canary PASS. Do not add a
-no-op migration merely to produce a green badge. Full runtime/shadow readiness
-remains unfulfilled until the evidence and contract decision above are resolved.
+A trusted schema workflow may correctly return NOT_APPLICABLE for this
+zero-migration PR; that is not a production-schema shadow execution or canary
+PASS. Do not add a no-op migration merely to produce a green badge.
 
 ## Rollback and recovery
 
-This package has no database mutation to reverse; close/revert the documentation
-PR if rejected. Before future production start, re-run read-only checks and
-bind exact observation/source fingerprint, Commercial mapping, actor, payload,
-scope and command IDs. If drift or conflict appears, stop. Never delete survey
-history, override conflicts, or broaden the other 20 items during recovery.
+This package has no database mutation to reverse; close/revert the package if
+rejected. Before future production start, re-run read-only checks and bind exact
+observation/source fingerprint, Commercial mapping, actor, payload, scope and
+command IDs. If drift or conflict appears, stop. Never delete survey history,
+override conflicts, or broaden the other 20 items during recovery.
