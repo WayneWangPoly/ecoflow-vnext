@@ -14,26 +14,44 @@ import {
   buildBoundedStartInput,
   buildBoundedSubmitInput,
 } from '../src/features/productIdentity/boundedProductIdentityCarrierContract.ts';
+import {
+  BATCH2_PRODUCT_IDENTITY_DEFAULTS,
+  assertBatch2DraftProgress,
+  assertBatch2PublishAcknowledgement,
+  assertBatch2PublishPreflight,
+  assertBatch2ReconcileAcknowledgement,
+  assertBatch2StartAcknowledgement,
+  assertBatch2SubmitAcknowledgement,
+  assertBatch2SubmitPreflight,
+  buildBatch2PublishInput,
+  buildBatch2ReconcileInput,
+  buildBatch2StartInput,
+  buildBatch2SubmitInput,
+} from '../src/features/productIdentity/batch2ProductIdentityCarrierContract.ts';
 
 const migrationPath = 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql';
 const repositoryPath = 'src/data/repositories/barcodeSurveyReconciliation.ts';
 const panelPath = 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx';
 const wrapperPath = 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx';
 const boundedCarrierPath = 'src/features/productIdentity/BoundedProductIdentityExecutionCarrier.tsx';
+const batch2CarrierPath = 'src/features/productIdentity/Batch2ProductIdentityExecutionCarrier.tsx';
 const productIdentityRepositoryPath = 'src/data/repositories/productIdentity.ts';
 const productIdentityWorkspacePath = 'src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx';
 const routePath = 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx';
 
-const [migration, repository, panel, wrapper, boundedCarrier, productIdentityRepository, productIdentityWorkspace, route] = await Promise.all([
+const [migration, repository, panel, wrapper, boundedCarrier, batch2Carrier, productIdentityRepository, productIdentityWorkspace, route] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(panelPath, 'utf8'),
   readFile(wrapperPath, 'utf8'),
   readFile(boundedCarrierPath, 'utf8'),
+  readFile(batch2CarrierPath, 'utf8'),
   readFile(productIdentityRepositoryPath, 'utf8'),
   readFile(productIdentityWorkspacePath, 'utf8'),
   readFile(routePath, 'utf8'),
 ]);
+
+const BATCH2_TEST_BATCH_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 
 test('reconciliation is a draft-only provenance bridge, not a second barcode authority', () => {
   assert.match(migration, /Product Identity DRAFT commissioning data/i);
@@ -377,4 +395,230 @@ test('bounded P3 publish reads first, calls only the incumbent publish repositor
   assert.doesNotMatch(publishPath, /\.from\s*\(|service[_-]?role|auth\.uid|access[_-]?token|inventory|SOH|location/i);
   assert.match(productIdentityWorkspace, /createProductIdentityCommandId/);
   assert.match(productIdentityWorkspace, /publishProductIdentityBatch/);
+});
+
+test('Batch 2 START is hard-fenced to the frozen ordered two-SKU scope and command', () => {
+  const input = buildBatch2StartInput(BATCH2_PRODUCT_IDENTITY_DEFAULTS.start);
+  assert.deepEqual(input, {
+    batchName: '#338 Physical Identity Batch 2 low-complexity production canary',
+    commercialSkuIds: [
+      '16be45a8-a98d-4b15-af2e-1846817e8d98',
+      '7cb8c724-35cb-4132-9437-db4c15e13fde',
+    ],
+    commandId: 'b34fa49b-f374-4237-8479-d9af37890de8',
+  });
+  for (const commercialSkuIdsText of [
+    '16be45a8-a98d-4b15-af2e-1846817e8d98',
+    '16be45a8-a98d-4b15-af2e-1846817e8d98\n7cb8c724-35cb-4132-9437-db4c15e13fde\naaaaaaaa-0000-4000-8000-000000000002',
+    '7cb8c724-35cb-4132-9437-db4c15e13fde\n16be45a8-a98d-4b15-af2e-1846817e8d98',
+  ]) {
+    assert.throws(
+      () => buildBatch2StartInput({ ...BATCH2_PRODUCT_IDENTITY_DEFAULTS.start, commercialSkuIdsText }),
+      /frozen ordered two-SKU scope/i,
+    );
+  }
+  assert.throws(
+    () => buildBatch2StartInput({ ...BATCH2_PRODUCT_IDENTITY_DEFAULTS.start, commandId: 'aaaaaaaa-0000-4000-8000-000000000002' }),
+    /frozen START command ID/i,
+  );
+});
+
+test('Batch 2 START acknowledgement requires DRAFT revision 0, scope 2 and idempotent command status', () => {
+  const input = buildBatch2StartInput(BATCH2_PRODUCT_IDENTITY_DEFAULTS.start);
+  const accepted = {
+    batchId: BATCH2_TEST_BATCH_ID,
+    batchName: input.batchName,
+    batchStatus: 'DRAFT',
+    revision: 0,
+    commandStatus: 'APPLIED',
+    scopedSkuCount: 2,
+  };
+  assert.doesNotThrow(() => assertBatch2StartAcknowledgement(accepted, input));
+  assert.doesNotThrow(() => assertBatch2StartAcknowledgement({ ...accepted, commandStatus: 'REPLAYED' }, input));
+  for (const invalid of [
+    { batchStatus: 'SUBMITTED' }, { revision: 1 }, { commandStatus: 'EXISTING' },
+    { scopedSkuCount: 1 }, { batchName: 'different' },
+  ]) {
+    assert.throws(() => assertBatch2StartAcknowledgement({ ...accepted, ...invalid }, input), /unexpected acknowledgement/i);
+  }
+});
+
+test('Batch 2 reconciliation builders preserve both frozen CARTON x 1 payloads and nullable fields', () => {
+  const expected = [
+    {
+      key: 'FL115PLABOX',
+      surveyObservationId: 'f1b087f0-d964-45cf-acb1-6818ab2b418f',
+      commandId: '2353d72f-fd48-434e-a4c0-47f8d0d146ee',
+      physicalSkuCode: 'FL115PLABOX',
+      physicalName: 'PLA Flat Lid 12/16/24oz Soup Bowl',
+      familyCode: 'FL115PLABOX',
+      familyName: 'PLA Flat Lid 12/16/24oz Soup Bowl',
+      barcode: '19348045010188',
+      note: '#338 Batch 2 FL115PLABOX Physical Identity; Owner/Admin confirmed CARTON × 1; no separate sleeve barcode; no inventory authority granted.',
+    },
+    {
+      key: 'SB24/32/40LBOX',
+      surveyObservationId: '617ad6e4-0860-4189-88e1-781c2d15d6cf',
+      commandId: '9d94e547-b6da-4dc4-8829-5046258838da',
+      physicalSkuCode: 'SB24/32/40LBOX',
+      physicalName: 'RPET Lid Fits 24–40oz Sugarcane Food Bowl',
+      familyCode: 'SB24/32/40LBOX',
+      familyName: 'RPET Lid Fits 24–40oz Sugarcane Food Bowl',
+      barcode: '19348045022914',
+      note: '#338 Batch 2 SB24/32/40LBOX Physical Identity; Owner/Admin confirmed CARTON × 1; no separate sleeve barcode; no inventory authority granted.',
+    },
+  ];
+
+  for (const item of expected) {
+    const draft = BATCH2_PRODUCT_IDENTITY_DEFAULTS.reconciliations[item.key];
+    const input = buildBatch2ReconcileInput(item.key, draft, BATCH2_TEST_BATCH_ID);
+    assert.deepEqual(input, {
+      surveyObservationId: item.surveyObservationId,
+      batchId: BATCH2_TEST_BATCH_ID,
+      commandId: item.commandId,
+      physicalSkuCode: item.physicalSkuCode,
+      physicalName: item.physicalName,
+      brand: undefined,
+      supplierName: undefined,
+      familyCode: item.familyCode,
+      familyName: item.familyName,
+      packageLevel: 'CARTON',
+      unitsInBaseUnit: 1,
+      substitutionPolicy: 'PROHIBITED',
+      isPreferred: true,
+      note: item.note,
+    });
+    assert.throws(
+      () => buildBatch2ReconcileInput(item.key, { ...draft, unitsInBaseUnit: item.key === 'FL115PLABOX' ? '50' : '125' }, BATCH2_TEST_BATCH_ID),
+      /CARTON x 1/i,
+    );
+    assert.throws(
+      () => buildBatch2ReconcileInput(item.key, { ...draft, commandId: 'aaaaaaaa-0000-4000-8000-000000000002' }, BATCH2_TEST_BATCH_ID),
+      /frozen reconciliation payload/i,
+    );
+  }
+});
+
+test('Batch 2 reconciliation acknowledgements and DRAFT progression fail closed', () => {
+  const startInput = buildBatch2StartInput(BATCH2_PRODUCT_IDENTITY_DEFAULTS.start);
+  const startResult = {
+    batchId: BATCH2_TEST_BATCH_ID,
+    batchName: startInput.batchName,
+    batchStatus: 'DRAFT',
+    revision: 0,
+    commandStatus: 'APPLIED',
+    scopedSkuCount: 2,
+  };
+  const flInput = buildBatch2ReconcileInput('FL115PLABOX', BATCH2_PRODUCT_IDENTITY_DEFAULTS.reconciliations.FL115PLABOX, BATCH2_TEST_BATCH_ID);
+  const sbInput = buildBatch2ReconcileInput('SB24/32/40LBOX', BATCH2_PRODUCT_IDENTITY_DEFAULTS.reconciliations['SB24/32/40LBOX'], BATCH2_TEST_BATCH_ID);
+  const flResult = { reconciliationStatus: 'DRAFTED', commercialSkuId: startInput.commercialSkuIds[0], barcode: '19348045010188', commandStatus: 'APPLIED' };
+  const sbResult = { reconciliationStatus: 'DRAFTED', commercialSkuId: startInput.commercialSkuIds[1], barcode: '19348045022914', commandStatus: 'REPLAYED' };
+  assert.doesNotThrow(() => assertBatch2ReconcileAcknowledgement('FL115PLABOX', flResult, flInput));
+  assert.doesNotThrow(() => assertBatch2ReconcileAcknowledgement('SB24/32/40LBOX', sbResult, sbInput));
+  assert.throws(
+    () => assertBatch2ReconcileAcknowledgement('FL115PLABOX', { ...flResult, barcode: '50' }, flInput),
+    /unexpected acknowledgement/i,
+  );
+  assert.doesNotThrow(() => assertBatch2DraftProgress({
+    currentBatch: { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'DRAFT', revision: 1, openTasks: 1, draftReadyTasks: 1, conflictTasks: 0 },
+    startResult,
+    reconciliationResults: { FL115PLABOX: flResult },
+    expectedRevision: 1,
+  }));
+  assert.doesNotThrow(() => assertBatch2DraftProgress({
+    currentBatch: { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'DRAFT', revision: 2, openTasks: 0, draftReadyTasks: 2, conflictTasks: 0 },
+    startResult,
+    reconciliationResults: { FL115PLABOX: flResult, 'SB24/32/40LBOX': sbResult },
+    expectedRevision: 2,
+  }));
+  assert.throws(() => assertBatch2DraftProgress({
+    currentBatch: { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'DRAFT', revision: 2, openTasks: 0, draftReadyTasks: 2, conflictTasks: 0 },
+    startResult,
+    reconciliationResults: { FL115PLABOX: flResult },
+    expectedRevision: 2,
+  }), /both exact reconciliations/i);
+  assert.throws(() => assertBatch2DraftProgress({
+    currentBatch: { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'DRAFT', revision: 2, openTasks: 1, draftReadyTasks: 1, conflictTasks: 0 },
+    startResult,
+    reconciliationResults: { FL115PLABOX: flResult, 'SB24/32/40LBOX': sbResult },
+    expectedRevision: 2,
+  }), /task state does not prove 2 exact reconciliation/i);
+});
+
+test('Batch 2 SUBMIT is fenced to the actual START batch at revision 2 and acknowledges revision 3', () => {
+  const input = buildBatch2SubmitInput(BATCH2_PRODUCT_IDENTITY_DEFAULTS.submit, BATCH2_TEST_BATCH_ID);
+  assert.deepEqual(input, {
+    batchId: BATCH2_TEST_BATCH_ID,
+    expectedRevision: 2,
+    commandId: 'bc5538d2-73e0-4aaf-987f-4b53fd8aa75d',
+    note: '#338 Batch 2 production submit; two DRAFT Physical Identity payloads independently verified; no inventory authority granted.',
+  });
+  const preflight = { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'DRAFT', revision: 2, canSubmit: true };
+  assert.doesNotThrow(() => assertBatch2SubmitPreflight(preflight, input));
+  assert.throws(() => assertBatch2SubmitPreflight({ ...preflight, revision: 1 }, input), /revision mismatch/i);
+  for (const commandStatus of ['APPLIED', 'REPLAYED']) {
+    assert.doesNotThrow(() => assertBatch2SubmitAcknowledgement({ batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'SUBMITTED', revision: 3, commandStatus }, input));
+  }
+  assert.throws(
+    () => buildBatch2SubmitInput({ ...BATCH2_PRODUCT_IDENTITY_DEFAULTS.submit, commandId: 'aaaaaaaa-0000-4000-8000-000000000002' }, BATCH2_TEST_BATCH_ID),
+    /frozen SUBMIT command ID/i,
+  );
+});
+
+test('Batch 2 PUBLISH requires revision 3 and exact 2/2/2/2 revision 4 acknowledgement', () => {
+  const input = buildBatch2PublishInput(BATCH2_PRODUCT_IDENTITY_DEFAULTS.publish, BATCH2_TEST_BATCH_ID);
+  const preflight = { batchId: BATCH2_TEST_BATCH_ID, batchStatus: 'SUBMITTED', revision: 3, canPublish: true };
+  assert.doesNotThrow(() => assertBatch2PublishPreflight(preflight, input));
+  assert.throws(() => assertBatch2PublishPreflight({ ...preflight, canPublish: false }, input), /canPublish=false/i);
+  const accepted = {
+    batchId: BATCH2_TEST_BATCH_ID,
+    batchStatus: 'PUBLISHED',
+    revision: 4,
+    commandStatus: 'APPLIED',
+    publishedFamilies: 2,
+    publishedPhysicalSkus: 2,
+    publishedBarcodes: 2,
+    publishedLinks: 2,
+    publishedAt: '2026-09-09T00:00:00Z',
+  };
+  assert.doesNotThrow(() => assertBatch2PublishAcknowledgement(accepted, input));
+  assert.doesNotThrow(() => assertBatch2PublishAcknowledgement({ ...accepted, commandStatus: 'REPLAYED' }, input));
+  for (const invalid of [
+    { revision: 3 }, { publishedFamilies: 1 }, { publishedPhysicalSkus: 1 },
+    { publishedBarcodes: 1 }, { publishedLinks: 1 }, { publishedAt: null },
+  ]) {
+    assert.throws(() => assertBatch2PublishAcknowledgement({ ...accepted, ...invalid }, input), /unexpected acknowledgement/i);
+  }
+});
+
+test('Batch 2 carrier uses only explicit authenticated incumbent calls in strict lifecycle order', () => {
+  assert.match(batch2Carrier, /role === 'owner' \|\| role === 'admin'/);
+  assert.match(batch2Carrier, /if \(!authorized\) return null/);
+  assert.match(wrapper, /<Batch2ProductIdentityExecutionCarrier/);
+  assert.match(batch2Carrier, /startBoundedProductIdentityBatch\(input\)/);
+  assert.equal((batch2Carrier.match(/reconcileBarcodeSurveyObservation\(input\)/g) || []).length, 2);
+  assert.equal((batch2Carrier.match(/await readCurrentProductIdentityBatch\(\)/g) || []).length, 4);
+  for (const marker of [
+    "async function startBatch2()", "async function reconcileFl()", "async function reconcileSb()",
+    "async function submitBatch2()", "async function publishBatch2()",
+  ]) assert.match(batch2Carrier, new RegExp(marker.replace(/[()]/g, '\\$&')));
+  assert.doesNotMatch(batch2Carrier, /createProductIdentityCommandId|startProductIdentityBatch\(|readBarcodeSurveyReconciliationQueue|reopenProductIdentityBatch/);
+  assert.doesNotMatch(batch2Carrier, /\.from\s*\(|service[_-]?role|auth\.uid|access[_-]?token/i);
+  assert.doesNotMatch(batch2Carrier, /inventory|SOH|opening balance|stocktake|receiving|pick|cutover|#339B/i);
+  assert.doesNotMatch(batch2Carrier, /50pcs|125pcs/i);
+});
+
+test('Batch 2 carrier keeps actions independent and preserves BPB8 and generic workspace behavior', () => {
+  const flPath = batch2Carrier.slice(batch2Carrier.indexOf('async function reconcileFl()'), batch2Carrier.indexOf('async function reconcileSb()'));
+  const sbPath = batch2Carrier.slice(batch2Carrier.indexOf('async function reconcileSb()'), batch2Carrier.indexOf('async function submitBatch2()'));
+  const submitPath = batch2Carrier.slice(batch2Carrier.indexOf('async function submitBatch2()'), batch2Carrier.indexOf('async function publishBatch2()'));
+  const publishPath = batch2Carrier.slice(batch2Carrier.indexOf('async function publishBatch2()'), batch2Carrier.indexOf('const startReady'));
+  assert.doesNotMatch(flPath, /reconcileSb|submitProductIdentityBatch|publishProductIdentityBatch/);
+  assert.doesNotMatch(sbPath, /submitProductIdentityBatch|publishProductIdentityBatch/);
+  assert.doesNotMatch(submitPath, /publishProductIdentityBatch|reconcileBarcodeSurveyObservation/);
+  assert.doesNotMatch(publishPath, /submitProductIdentityBatch|reconcileBarcodeSurveyObservation/);
+  assert.match(boundedCarrier, /BPB8_DRAFT_CANARY_DEFAULTS/);
+  assert.match(boundedCarrier, /scopedSkuCount !== 1/);
+  assert.match(productIdentityWorkspace, /createProductIdentityCommandId/);
+  assert.match(productIdentityWorkspace, /startProductIdentityBatch/);
 });

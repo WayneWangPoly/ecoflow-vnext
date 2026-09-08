@@ -1,6 +1,42 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: P3 EXPLICIT PUBLISH CARRIER IN REVIEW. Production PUBLISH remains HOLD.
+Status: BATCH 2 EXPLICIT TWO-SKU CARRIER IN REVIEW. Production execution remains HOLD.
+
+## Batch 2 authenticated explicit two-SKU carrier
+
+This follow-up starts from production `main`
+`28b7db0f58c883b42c6d995f145820a3b4e426b7` and the frozen Batch 2 evidence in
+[#338 comment 5587798073](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5587798073).
+It adds an independent Owner/Admin carrier for exactly two Commercial SKUs:
+`FL115PLABOX` (`16be45a8-a98d-4b15-af2e-1846817e8d98`) followed by
+`SB24/32/40LBOX` (`7cb8c724-35cb-4132-9437-db4c15e13fde`). The frozen START
+name, ordered scope and command ID are required exactly; no queue read or command
+ID generator can expand or replace them.
+
+Each reconciliation is a separate operator action bound to the actual START
+batch ID. The contract requires the exact survey observation, command ID,
+barcode acknowledgement, Physical/family code and name, nullable brand and
+supplier, `CARTON x 1`, `PROHIBITED`, preferred link and audit note. The first
+server read must prove the same batch at DRAFT revision 1 after FL115PLABOX. The
+second must prove DRAFT revision 2, while the retained START and reconciliation
+acknowledgements prove scope 2 and both exact identities. Catalog strings
+`50pcs` and `125pcs` are not conversion evidence and are never mapped to units.
+
+SUBMIT remains a separate explicit action. It reads the authenticated current
+batch first and stops unless the actual START batch is DRAFT revision 2 with
+`canSubmit=true`, then uses only the frozen SUBMIT command and note. PUBLISH is
+likewise separate and requires a fresh read of the same batch at SUBMITTED
+revision 3 with `canPublish=true`. The publish acknowledgement is accepted only
+at PUBLISHED revision 4 with exactly 2 families, 2 Physical SKUs, 2 barcodes, 2
+Commercial-family links, and a non-null publication timestamp.
+
+The carrier reuses only the incumbent authenticated repositories and server
+authority. It adds no RPC, migration, schema, Edge Function, raw DML, service
+role, generic or reopen fallback, inventory/SOH/location mutation, or automatic
+continuation. The existing BPB8 carrier and generic commissioning workspace are
+unchanged. This engineering task does not execute START, RECONCILE, SUBMIT or
+PUBLISH and does not merge. No migration is required; trusted production-schema
+shadow is N/A. Rollback is a code-only revert of this independent carrier.
 
 ## P3 authenticated explicit PUBLISH carrier
 
