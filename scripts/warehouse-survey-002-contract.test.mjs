@@ -3,8 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   BPB8_DRAFT_CANARY_DEFAULTS,
+  BPB8_P2_SUBMIT_DEFAULTS,
+  assertBoundedSubmitAcknowledgement,
+  assertBoundedSubmitPreflight,
   buildBoundedReconcileInput,
   buildBoundedStartInput,
+  buildBoundedSubmitInput,
 } from '../src/features/productIdentity/boundedProductIdentityCarrierContract.ts';
 
 const migrationPath = 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql';
@@ -12,16 +16,20 @@ const repositoryPath = 'src/data/repositories/barcodeSurveyReconciliation.ts';
 const panelPath = 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx';
 const wrapperPath = 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx';
 const boundedCarrierPath = 'src/features/productIdentity/BoundedProductIdentityExecutionCarrier.tsx';
+const boundedContractPath = 'src/features/productIdentity/boundedProductIdentityCarrierContract.ts';
 const productIdentityRepositoryPath = 'src/data/repositories/productIdentity.ts';
+const productIdentityWorkspacePath = 'src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx';
 const routePath = 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx';
 
-const [migration, repository, panel, wrapper, boundedCarrier, productIdentityRepository, route] = await Promise.all([
+const [migration, repository, panel, wrapper, boundedCarrier, boundedContract, productIdentityRepository, productIdentityWorkspace, route] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(panelPath, 'utf8'),
   readFile(wrapperPath, 'utf8'),
   readFile(boundedCarrierPath, 'utf8'),
+  readFile(boundedContractPath, 'utf8'),
   readFile(productIdentityRepositoryPath, 'utf8'),
+  readFile(productIdentityWorkspacePath, 'utf8'),
   readFile(routePath, 'utf8'),
 ]);
 
@@ -182,14 +190,112 @@ test('bounded carrier maps the frozen BPB8 DRAFT reconciliation payload to the a
   assert.doesNotMatch(boundedCarrier, /1000pcs/i);
 });
 
-test('bounded carrier is Owner/Admin-only and has no fallback, submit, publish or quantity authority', () => {
+test('bounded carrier is Owner/Admin-only and has no generic fallback, publish or quantity authority', () => {
   assert.match(boundedCarrier, /role === 'owner' \|\| role === 'admin'/);
   assert.match(boundedCarrier, /if \(!authorized\) return null/);
   assert.match(boundedCarrier, /scopedSkuCount !== 1/);
   assert.match(boundedCarrier, /\['APPLIED', 'REPLAYED'\]\.includes\(startResult\.commandStatus\)/);
-  assert.doesNotMatch(boundedCarrier, /submitProductIdentityBatch|publishProductIdentityBatch/);
-  assert.doesNotMatch(boundedCarrier, /6df22bb2-506e-4be1-a752-c1e2323f431d|973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.doesNotMatch(boundedCarrier, /startProductIdentityBatch\(|publishProductIdentityBatch/);
+  assert.doesNotMatch(boundedCarrier, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
   assert.doesNotMatch(boundedCarrier, /\.from\s*\(/);
   assert.doesNotMatch(boundedCarrier, /service[_-]?role|auth\.uid|access[_-]?token/i);
   assert.match(wrapper, /<BoundedProductIdentityExecutionCarrier/);
+});
+
+test('bounded P2 submit preserves the exact frozen operator inputs', () => {
+  const input = buildBoundedSubmitInput(BPB8_P2_SUBMIT_DEFAULTS);
+  assert.deepEqual(input, {
+    batchId: '448f401e-0701-4e9f-8426-5dfed67b9f78',
+    expectedRevision: 1,
+    commandId: '6df22bb2-506e-4be1-a752-c1e2323f431d',
+    note: '#338 BPB8 P2 production submit-only canary; P1 DRAFT payload independently verified; no publish or inventory authority granted.',
+  });
+
+  assert.throws(
+    () => buildBoundedSubmitInput({ ...BPB8_P2_SUBMIT_DEFAULTS, expectedRevision: '2' }),
+    /fenced to expected revision 1/i,
+  );
+  assert.throws(
+    () => buildBoundedSubmitInput({ ...BPB8_P2_SUBMIT_DEFAULTS, expectedRevision: '1.5' }),
+    /safe non-negative whole number/i,
+  );
+  assert.throws(
+    () => buildBoundedSubmitInput({ ...BPB8_P2_SUBMIT_DEFAULTS, batchId: 'aaaaaaaa-0000-4000-8000-000000000001' }),
+    /fenced to the BPB8 P1 batch/i,
+  );
+  assert.throws(
+    () => buildBoundedSubmitInput({ ...BPB8_P2_SUBMIT_DEFAULTS, commandId: 'aaaaaaaa-0000-4000-8000-000000000002' }),
+    /frozen P2 command ID/i,
+  );
+  assert.throws(
+    () => buildBoundedSubmitInput({ ...BPB8_P2_SUBMIT_DEFAULTS, note: 'changed note' }),
+    /frozen P2 submit note/i,
+  );
+});
+
+test('bounded P2 submit fails closed unless the authenticated read gate matches DRAFT revision 1 and canSubmit', () => {
+  const input = buildBoundedSubmitInput(BPB8_P2_SUBMIT_DEFAULTS);
+  const readyBatch = {
+    batchId: input.batchId,
+    batchStatus: 'DRAFT',
+    revision: 1,
+    canSubmit: true,
+  };
+  assert.doesNotThrow(() => assertBoundedSubmitPreflight(readyBatch, input));
+
+  assert.throws(() => assertBoundedSubmitPreflight(null, input), /returned no current batch/i);
+  assert.throws(
+    () => assertBoundedSubmitPreflight({ ...readyBatch, batchId: 'aaaaaaaa-0000-4000-8000-000000000001' }, input),
+    /batch ID mismatch/i,
+  );
+  assert.throws(() => assertBoundedSubmitPreflight({ ...readyBatch, batchStatus: 'SUBMITTED' }, input), /must be DRAFT/i);
+  assert.throws(() => assertBoundedSubmitPreflight({ ...readyBatch, revision: 2 }, input), /revision mismatch/i);
+  assert.throws(() => assertBoundedSubmitPreflight({ ...readyBatch, canSubmit: false }, input), /canSubmit=false/i);
+});
+
+test('bounded P2 submit accepts only the exact SUBMITTED revision 2 acknowledgement', () => {
+  const input = buildBoundedSubmitInput(BPB8_P2_SUBMIT_DEFAULTS);
+  for (const commandStatus of ['APPLIED', 'REPLAYED']) {
+    assert.doesNotThrow(() => assertBoundedSubmitAcknowledgement({
+      batchId: input.batchId,
+      batchStatus: 'SUBMITTED',
+      revision: 2,
+      commandStatus,
+    }, input));
+  }
+  assert.throws(() => assertBoundedSubmitAcknowledgement({
+    batchId: input.batchId,
+    batchStatus: 'DRAFT',
+    revision: 1,
+    commandStatus: 'APPLIED',
+  }, input), /unexpected acknowledgement/i);
+  assert.throws(() => assertBoundedSubmitAcknowledgement({
+    batchId: input.batchId,
+    batchStatus: 'SUBMITTED',
+    revision: 2,
+    commandStatus: 'CONFLICT',
+  }, input), /unexpected acknowledgement/i);
+});
+
+test('bounded P2 submit reads first, calls the authenticated repository exactly, and cannot publish', () => {
+  assert.match(boundedCarrier, /await readCurrentProductIdentityBatch\(\)/);
+  assert.match(boundedCarrier, /assertBoundedSubmitPreflight\(currentBatch,\s*input\)/);
+  assert.match(boundedCarrier, /await submitProductIdentityBatch\(input\)/);
+  assert.match(boundedCarrier, /assertBoundedSubmitAcknowledgement\(result,\s*input\)/);
+  const readIndex = boundedCarrier.indexOf('await readCurrentProductIdentityBatch()');
+  const gateIndex = boundedCarrier.indexOf('assertBoundedSubmitPreflight(currentBatch, input)');
+  const submitIndex = boundedCarrier.indexOf('await submitProductIdentityBatch(input)');
+  assert.ok(readIndex >= 0 && gateIndex > readIndex && submitIndex > gateIndex);
+  assert.match(productIdentityRepository, /ecoflow_submit_product_identity_batch/);
+  assert.match(productIdentityRepository, /p_batch_id:\s*input\.batchId/);
+  assert.match(productIdentityRepository, /p_expected_revision:\s*input\.expectedRevision/);
+  assert.match(productIdentityRepository, /p_command_id:\s*input\.commandId/);
+  assert.match(productIdentityRepository, /p_note:\s*input\.note \|\| null/);
+  assert.match(productIdentityRepository, /const client = input \?\? supabase/);
+  assert.doesNotMatch(boundedCarrier, /createProductIdentityCommandId/);
+  assert.doesNotMatch(boundedCarrier, /publishProductIdentityBatch|ecoflow_publish_product_identity_batch/);
+  assert.doesNotMatch(boundedCarrier, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.doesNotMatch(boundedContract, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.match(productIdentityWorkspace, /createProductIdentityCommandId/);
+  assert.match(productIdentityWorkspace, /submitProductIdentityBatch/);
 });
