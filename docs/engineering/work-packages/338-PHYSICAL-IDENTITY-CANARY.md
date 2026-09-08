@@ -1,6 +1,38 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: EVIDENCE HOLD. No production start, reconcile, submit or publish authorized.
+Status: BOUNDED EXECUTION CARRIER IN REVIEW. Production START/RECONCILE remains HOLD.
+
+## Bounded Owner/Admin execution carrier
+
+This follow-up is based on production `main`
+`be57699fe554fa73c0da1a2aa0ebf3c2e6cf63d6` and durable checkpoint
+[#338 comment 5581533864](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5581533864).
+It adds one independent Owner/Admin UI action that uses the existing authenticated
+Supabase client and incumbent server authority. It does not change the generic
+`Start commissioning` behavior.
+
+The carrier accepts an operator-supplied batch name, exactly one explicit
+Commercial SKU UUID and an operator-supplied START command ID. It calls only
+`ecoflow_start_bounded_product_identity_batch`, displays the returned batch ID,
+status, revision, command status and scoped count, and unlocks reconciliation
+only for a one-SKU DRAFT acknowledged as `APPLIED` or `REPLAYED`.
+
+Reconciliation accepts the frozen BPB8 payload and calls only
+`ecoflow_reconcile_barcode_survey_observation_v1` through the same authenticated
+client. The actual bounded START response supplies `batch_id`. Blank brand and
+supplier fields map to the incumbent nullable arguments. There is no queue read,
+command-ID generation, generic START fallback, raw DML, service-role substitution,
+submit, publish, inventory, SOH or location-quantity call in this carrier.
+
+The UI role gate hides the action from non-Owner/Admin sessions. Authentication,
+role authorization, eligibility, replay and Product Identity writes remain
+enforced by the incumbent RPCs; an absent or invalid session fails at that server
+boundary. The carrier stops after RECONCILE creates DRAFT state.
+
+No migration is required. Trusted production-schema shadow: N/A. Do not add a
+no-op migration. Production execution remains separately gated after merge and
+fresh Chief Engineer review; this work package does not authorize or consume the
+reserved SUBMIT/PUBLISH command IDs.
 
 ## Objective and baseline
 
@@ -8,14 +40,16 @@ Prepare one explicit Product Identity canary after Identity Unlock Batch 1B,
 without inferring physical identity from Commercial promotion.
 Baseline: `fdb29a9d5295e069d865b7fe62ccb793c8884a0e`, PR #386,
 [#338 checkpoint 5578030418](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5578030418).
-Branch: `agent/product-identity/338-physical-canary`.
+Evidence branch: `agent/product-identity/338-physical-canary`.
+Carrier branch: `agent/product-identity/338-bounded-execution-carrier`.
 
 ## Owner, scope and boundaries
 
 - Implementation: Domain contract/evidence audit; independent Verification required.
 - Chief Engineer review and explicit production authorization remain pending.
-- In scope: this evidence package plus a synthetic PostgreSQL contract over the incumbent authority only.
-- No application, migration, RPC, workflow or production business-behaviour change.
+- In scope: the evidence package, existing synthetic PostgreSQL contract and the
+  authenticated bounded START/RECONCILE UI carrier described above.
+- No migration, RPC, schema, workflow or incumbent authority change.
 - Do not repeat #338 images, #359, CCSA8-90 or Commercial promotions.
 - CCSB6-80 stays conflict and outside the batch.
 - #339B, SOH/opening balance, inventory/location authority and cutover stay HOLD.
@@ -128,7 +162,7 @@ Offline or uncertain outcomes do not count as success.
 - [x] Read-only physical observation inventory for 21 codes.
 - [x] Single proposed candidate; no production mutation.
 - [x] Synthetic executable fixture covers bounded capture/submit/publish, first-link denial, replay immutability, revision checks and unchanged inventory sentinel.
-- [ ] Required production BPB8 physical facts and link/policy scope explicitly resolved.
+- [x] Required BPB8 DRAFT payload, preferred link and substitution policy explicitly frozen.
 - [ ] Fresh exact-head applicable CI completed after the final evidence/contract edit; record SHA and run IDs.
 - [ ] Fresh independent Verification and Chief Engineer contract approval on that same exact head.
 - [ ] Trusted production-schema shadow executed only if an actual migration becomes necessary.

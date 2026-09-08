@@ -84,6 +84,12 @@ export type ProductIdentityBatchCommandResult = {
   commandStatus: 'APPLIED' | 'REPLAYED' | 'EXISTING' | 'CONFLICT';
 };
 
+export type BoundedProductIdentityBatchCommandResult = ProductIdentityBatchCommandResult & {
+  batchName: string;
+  scopedSkuCount: number;
+  createdAt: string;
+};
+
 export type ProductIdentityPublishResult = ProductIdentityBatchCommandResult & {
   publishedFamilies: number;
   publishedPhysicalSkus: number;
@@ -165,6 +171,29 @@ export async function startProductIdentityBatch(name: string, commandId: string,
     batchStatus: String(row.batch_status) as ProductIdentityBatch['batchStatus'],
     revision: safeInteger(row.revision),
     commandStatus: String(row.command_status) as ProductIdentityBatchCommandResult['commandStatus'],
+  };
+}
+
+export async function startBoundedProductIdentityBatch(input: {
+  batchName: string;
+  commercialSkuIds: string[];
+  commandId: string;
+}, client?: SupabaseClient | null): Promise<BoundedProductIdentityBatchCommandResult> {
+  const rows = await rpc<Array<Record<string, unknown>>>('ecoflow_start_bounded_product_identity_batch', {
+    p_batch_name: input.batchName,
+    p_commercial_sku_ids: input.commercialSkuIds,
+    p_command_id: input.commandId,
+  }, client) ?? [];
+  const row = rows[0];
+  if (!row) throw new Error('Bounded Product Identity batch start returned no result.');
+  return {
+    batchId: String(row.batch_id),
+    batchName: String(row.batch_name || ''),
+    batchStatus: String(row.batch_status) as ProductIdentityBatch['batchStatus'],
+    revision: safeInteger(row.revision),
+    commandStatus: String(row.command_status) as ProductIdentityBatchCommandResult['commandStatus'],
+    scopedSkuCount: safeInteger(row.scoped_sku_count),
+    createdAt: String(row.created_at || ''),
   };
 }
 

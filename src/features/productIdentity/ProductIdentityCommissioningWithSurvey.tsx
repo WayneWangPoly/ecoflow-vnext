@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Role } from '@/domain/types';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { BarcodeSurveyReconciliationPanel } from './BarcodeSurveyReconciliationPanel';
+import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
 
 type Props = {
@@ -14,12 +15,17 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
 
   return (
     <>
+      <BoundedProductIdentityExecutionCarrier
+        role={props.role}
+        onChanged={() => setCommissioningRevision((value) => value + 1)}
+      />
       <BarcodeSurveyReconciliationPanel
+        key={`survey-${commissioningRevision}`}
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
       <ProductIdentityCommissioningWorkspace
-        key={commissioningRevision}
+        key={`commissioning-${commissioningRevision}`}
         role={props.role}
         profile={props.profile}
       />
