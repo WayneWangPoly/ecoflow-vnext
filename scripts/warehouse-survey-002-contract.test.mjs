@@ -4,8 +4,12 @@ import test from 'node:test';
 import {
   BPB8_DRAFT_CANARY_DEFAULTS,
   BPB8_P2_SUBMIT_DEFAULTS,
+  BPB8_P3_PUBLISH_DEFAULTS,
+  assertBoundedPublishAcknowledgement,
+  assertBoundedPublishPreflight,
   assertBoundedSubmitAcknowledgement,
   assertBoundedSubmitPreflight,
+  buildBoundedPublishInput,
   buildBoundedReconcileInput,
   buildBoundedStartInput,
   buildBoundedSubmitInput,
@@ -16,18 +20,16 @@ const repositoryPath = 'src/data/repositories/barcodeSurveyReconciliation.ts';
 const panelPath = 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx';
 const wrapperPath = 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx';
 const boundedCarrierPath = 'src/features/productIdentity/BoundedProductIdentityExecutionCarrier.tsx';
-const boundedContractPath = 'src/features/productIdentity/boundedProductIdentityCarrierContract.ts';
 const productIdentityRepositoryPath = 'src/data/repositories/productIdentity.ts';
 const productIdentityWorkspacePath = 'src/features/productIdentity/ProductIdentityCommissioningWorkspace.tsx';
 const routePath = 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx';
 
-const [migration, repository, panel, wrapper, boundedCarrier, boundedContract, productIdentityRepository, productIdentityWorkspace, route] = await Promise.all([
+const [migration, repository, panel, wrapper, boundedCarrier, productIdentityRepository, productIdentityWorkspace, route] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(repositoryPath, 'utf8'),
   readFile(panelPath, 'utf8'),
   readFile(wrapperPath, 'utf8'),
   readFile(boundedCarrierPath, 'utf8'),
-  readFile(boundedContractPath, 'utf8'),
   readFile(productIdentityRepositoryPath, 'utf8'),
   readFile(productIdentityWorkspacePath, 'utf8'),
   readFile(routePath, 'utf8'),
@@ -190,13 +192,12 @@ test('bounded carrier maps the frozen BPB8 DRAFT reconciliation payload to the a
   assert.doesNotMatch(boundedCarrier, /1000pcs/i);
 });
 
-test('bounded carrier is Owner/Admin-only and has no generic fallback, publish or quantity authority', () => {
+test('bounded carrier is Owner/Admin-only and has no generic fallback or quantity authority', () => {
   assert.match(boundedCarrier, /role === 'owner' \|\| role === 'admin'/);
   assert.match(boundedCarrier, /if \(!authorized\) return null/);
   assert.match(boundedCarrier, /scopedSkuCount !== 1/);
   assert.match(boundedCarrier, /\['APPLIED', 'REPLAYED'\]\.includes\(startResult\.commandStatus\)/);
-  assert.doesNotMatch(boundedCarrier, /startProductIdentityBatch\(|publishProductIdentityBatch/);
-  assert.doesNotMatch(boundedCarrier, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.doesNotMatch(boundedCarrier, /startProductIdentityBatch\(/);
   assert.doesNotMatch(boundedCarrier, /\.from\s*\(/);
   assert.doesNotMatch(boundedCarrier, /service[_-]?role|auth\.uid|access[_-]?token/i);
   assert.match(wrapper, /<BoundedProductIdentityExecutionCarrier/);
@@ -277,14 +278,18 @@ test('bounded P2 submit accepts only the exact SUBMITTED revision 2 acknowledgem
   }, input), /unexpected acknowledgement/i);
 });
 
-test('bounded P2 submit reads first, calls the authenticated repository exactly, and cannot publish', () => {
-  assert.match(boundedCarrier, /await readCurrentProductIdentityBatch\(\)/);
-  assert.match(boundedCarrier, /assertBoundedSubmitPreflight\(currentBatch,\s*input\)/);
-  assert.match(boundedCarrier, /await submitProductIdentityBatch\(input\)/);
-  assert.match(boundedCarrier, /assertBoundedSubmitAcknowledgement\(result,\s*input\)/);
-  const readIndex = boundedCarrier.indexOf('await readCurrentProductIdentityBatch()');
-  const gateIndex = boundedCarrier.indexOf('assertBoundedSubmitPreflight(currentBatch, input)');
-  const submitIndex = boundedCarrier.indexOf('await submitProductIdentityBatch(input)');
+test('bounded P2 submit reads first, calls the authenticated repository exactly, and has no publish fallback', () => {
+  const submitPath = boundedCarrier.slice(
+    boundedCarrier.indexOf('async function submitBoundedBatch()'),
+    boundedCarrier.indexOf('async function publishBoundedBatch()'),
+  );
+  assert.match(submitPath, /await readCurrentProductIdentityBatch\(\)/);
+  assert.match(submitPath, /assertBoundedSubmitPreflight\(currentBatch,\s*input\)/);
+  assert.match(submitPath, /await submitProductIdentityBatch\(input\)/);
+  assert.match(submitPath, /assertBoundedSubmitAcknowledgement\(result,\s*input\)/);
+  const readIndex = submitPath.indexOf('await readCurrentProductIdentityBatch()');
+  const gateIndex = submitPath.indexOf('assertBoundedSubmitPreflight(currentBatch, input)');
+  const submitIndex = submitPath.indexOf('await submitProductIdentityBatch(input)');
   assert.ok(readIndex >= 0 && gateIndex > readIndex && submitIndex > gateIndex);
   assert.match(productIdentityRepository, /ecoflow_submit_product_identity_batch/);
   assert.match(productIdentityRepository, /p_batch_id:\s*input\.batchId/);
@@ -292,10 +297,84 @@ test('bounded P2 submit reads first, calls the authenticated repository exactly,
   assert.match(productIdentityRepository, /p_command_id:\s*input\.commandId/);
   assert.match(productIdentityRepository, /p_note:\s*input\.note \|\| null/);
   assert.match(productIdentityRepository, /const client = input \?\? supabase/);
-  assert.doesNotMatch(boundedCarrier, /createProductIdentityCommandId/);
-  assert.doesNotMatch(boundedCarrier, /publishProductIdentityBatch|ecoflow_publish_product_identity_batch/);
-  assert.doesNotMatch(boundedCarrier, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
-  assert.doesNotMatch(boundedContract, /973b7007-4fd5-44f6-bd43-f64aa848e299/);
+  assert.doesNotMatch(submitPath, /createProductIdentityCommandId|publishProductIdentityBatch|reopenProductIdentityBatch/);
   assert.match(productIdentityWorkspace, /createProductIdentityCommandId/);
   assert.match(productIdentityWorkspace, /submitProductIdentityBatch/);
+});
+
+test('bounded P3 publish preserves the exact frozen operator inputs', () => {
+  const input = buildBoundedPublishInput(BPB8_P3_PUBLISH_DEFAULTS);
+  assert.deepEqual(input, {
+    batchId: '448f401e-0701-4e9f-8426-5dfed67b9f78',
+    expectedRevision: 2,
+    commandId: '973b7007-4fd5-44f6-bd43-f64aa848e299',
+    note: '#338 BPB8 P3 production publish canary; P1 DRAFT and P2 SUBMIT independently verified; no inventory authority granted.',
+  });
+
+  assert.throws(() => buildBoundedPublishInput({ ...BPB8_P3_PUBLISH_DEFAULTS, batchId: 'aaaaaaaa-0000-4000-8000-000000000001' }), /fenced to the BPB8 batch/i);
+  assert.throws(() => buildBoundedPublishInput({ ...BPB8_P3_PUBLISH_DEFAULTS, expectedRevision: '3' }), /fenced to expected revision 2/i);
+  assert.throws(() => buildBoundedPublishInput({ ...BPB8_P3_PUBLISH_DEFAULTS, expectedRevision: '2.5' }), /safe non-negative whole number/i);
+  assert.throws(() => buildBoundedPublishInput({ ...BPB8_P3_PUBLISH_DEFAULTS, commandId: 'aaaaaaaa-0000-4000-8000-000000000002' }), /frozen P3 command ID/i);
+  assert.throws(() => buildBoundedPublishInput({ ...BPB8_P3_PUBLISH_DEFAULTS, note: 'changed note' }), /frozen P3 publish note/i);
+});
+
+test('bounded P3 publish fails closed unless the authenticated read gate matches SUBMITTED revision 2 and canPublish', () => {
+  const input = buildBoundedPublishInput(BPB8_P3_PUBLISH_DEFAULTS);
+  const readyBatch = { batchId: input.batchId, batchStatus: 'SUBMITTED', revision: 2, canPublish: true };
+  assert.doesNotThrow(() => assertBoundedPublishPreflight(readyBatch, input));
+  assert.throws(() => assertBoundedPublishPreflight(null, input), /returned no current batch/i);
+  assert.throws(() => assertBoundedPublishPreflight({ ...readyBatch, batchId: 'aaaaaaaa-0000-4000-8000-000000000001' }, input), /batch ID mismatch/i);
+  assert.throws(() => assertBoundedPublishPreflight({ ...readyBatch, batchStatus: 'DRAFT' }, input), /must be SUBMITTED/i);
+  assert.throws(() => assertBoundedPublishPreflight({ ...readyBatch, revision: 1 }, input), /revision mismatch/i);
+  assert.throws(() => assertBoundedPublishPreflight({ ...readyBatch, canPublish: false }, input), /canPublish=false/i);
+});
+
+test('bounded P3 publish accepts only the complete PUBLISHED revision 3 acknowledgement', () => {
+  const input = buildBoundedPublishInput(BPB8_P3_PUBLISH_DEFAULTS);
+  const accepted = {
+    batchId: input.batchId,
+    batchStatus: 'PUBLISHED',
+    revision: 3,
+    commandStatus: 'APPLIED',
+    publishedFamilies: 1,
+    publishedPhysicalSkus: 1,
+    publishedBarcodes: 1,
+    publishedLinks: 1,
+    publishedAt: '2026-09-08T00:00:00Z',
+  };
+  assert.doesNotThrow(() => assertBoundedPublishAcknowledgement(accepted, input));
+  assert.doesNotThrow(() => assertBoundedPublishAcknowledgement({ ...accepted, commandStatus: 'REPLAYED' }, input));
+  for (const invalid of [
+    { batchStatus: 'SUBMITTED' },
+    { revision: 2 },
+    { commandStatus: 'CONFLICT' },
+    { publishedFamilies: 0 },
+    { publishedPhysicalSkus: 0 },
+    { publishedBarcodes: 0 },
+    { publishedLinks: 0 },
+    { publishedAt: null },
+  ]) {
+    assert.throws(() => assertBoundedPublishAcknowledgement({ ...accepted, ...invalid }, input), /unexpected acknowledgement/i);
+  }
+});
+
+test('bounded P3 publish reads first, calls only the incumbent publish repository, and has no fallback authority', () => {
+  const publishPath = boundedCarrier.slice(
+    boundedCarrier.indexOf('async function publishBoundedBatch()'),
+    boundedCarrier.indexOf('const startReady'),
+  );
+  const readIndex = publishPath.indexOf('await readCurrentProductIdentityBatch()');
+  const gateIndex = publishPath.indexOf('assertBoundedPublishPreflight(currentBatch, input)');
+  const publishIndex = publishPath.indexOf('await publishProductIdentityBatch(input)');
+  const ackIndex = publishPath.indexOf('assertBoundedPublishAcknowledgement(result, input)');
+  assert.ok(readIndex >= 0 && gateIndex > readIndex && publishIndex > gateIndex && ackIndex > publishIndex);
+  assert.match(productIdentityRepository, /ecoflow_publish_product_identity_batch/);
+  assert.match(productIdentityRepository, /p_batch_id:\s*input\.batchId/);
+  assert.match(productIdentityRepository, /p_expected_revision:\s*input\.expectedRevision/);
+  assert.match(productIdentityRepository, /p_command_id:\s*input\.commandId/);
+  assert.match(productIdentityRepository, /p_note:\s*input\.note \|\| null/);
+  assert.doesNotMatch(publishPath, /createProductIdentityCommandId|startBoundedProductIdentityBatch|reconcileBarcodeSurveyObservation|submitProductIdentityBatch|reopenProductIdentityBatch/);
+  assert.doesNotMatch(publishPath, /\.from\s*\(|service[_-]?role|auth\.uid|access[_-]?token|inventory|SOH|location/i);
+  assert.match(productIdentityWorkspace, /createProductIdentityCommandId/);
+  assert.match(productIdentityWorkspace, /publishProductIdentityBatch/);
 });

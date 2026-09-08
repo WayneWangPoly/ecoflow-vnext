@@ -2,22 +2,29 @@ import { useState } from 'react';
 import type { Role } from '@/domain/types';
 import { reconcileBarcodeSurveyObservation, type BarcodeSurveyReconcileResult } from '@/data/repositories/barcodeSurveyReconciliation';
 import {
+  publishProductIdentityBatch,
   readCurrentProductIdentityBatch,
   startBoundedProductIdentityBatch,
   submitProductIdentityBatch,
   type BoundedProductIdentityBatchCommandResult,
   type ProductIdentityBatch,
   type ProductIdentityBatchCommandResult,
+  type ProductIdentityPublishResult,
 } from '@/data/repositories/productIdentity';
 import {
   BPB8_DRAFT_CANARY_DEFAULTS,
   BPB8_P2_SUBMIT_DEFAULTS,
+  BPB8_P3_PUBLISH_DEFAULTS,
+  assertBoundedPublishAcknowledgement,
+  assertBoundedPublishPreflight,
   assertBoundedSubmitAcknowledgement,
   assertBoundedSubmitPreflight,
+  buildBoundedPublishInput,
   buildBoundedReconcileInput,
   buildBoundedStartInput,
   buildBoundedSubmitInput,
   type BoundedReconcileDraft,
+  type BoundedPublishDraft,
   type BoundedStartDraft,
   type BoundedSubmitDraft,
 } from './boundedProductIdentityCarrierContract';
@@ -27,17 +34,20 @@ type Props = {
   onChanged: () => void;
 };
 
-type BusyCommand = 'START' | 'RECONCILE' | 'SUBMIT' | null;
+type BusyCommand = 'START' | 'RECONCILE' | 'SUBMIT' | 'PUBLISH' | null;
 
 export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Props) {
   const authorized = role === 'owner' || role === 'admin';
   const [startDraft, setStartDraft] = useState<BoundedStartDraft>(() => ({ ...BPB8_DRAFT_CANARY_DEFAULTS.start }));
   const [reconcileDraft, setReconcileDraft] = useState<BoundedReconcileDraft>(() => ({ ...BPB8_DRAFT_CANARY_DEFAULTS.reconcile }));
   const [submitDraft, setSubmitDraft] = useState<BoundedSubmitDraft>(() => ({ ...BPB8_P2_SUBMIT_DEFAULTS }));
+  const [publishDraft, setPublishDraft] = useState<BoundedPublishDraft>(() => ({ ...BPB8_P3_PUBLISH_DEFAULTS }));
   const [startResult, setStartResult] = useState<BoundedProductIdentityBatchCommandResult | null>(null);
   const [reconcileResult, setReconcileResult] = useState<BarcodeSurveyReconcileResult | null>(null);
   const [submitPreflight, setSubmitPreflight] = useState<ProductIdentityBatch | null>(null);
   const [submitResult, setSubmitResult] = useState<ProductIdentityBatchCommandResult | null>(null);
+  const [publishPreflight, setPublishPreflight] = useState<ProductIdentityBatch | null>(null);
+  const [publishResult, setPublishResult] = useState<ProductIdentityPublishResult | null>(null);
   const [busy, setBusy] = useState<BusyCommand>(null);
   const [message, setMessage] = useState('');
 
@@ -53,6 +63,10 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
 
   function patchSubmit<K extends keyof BoundedSubmitDraft>(key: K, value: BoundedSubmitDraft[K]) {
     setSubmitDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function patchPublish<K extends keyof BoundedPublishDraft>(key: K, value: BoundedPublishDraft[K]) {
+    setPublishDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function startBoundedBatch() {
@@ -119,6 +133,29 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
       assertBoundedSubmitAcknowledgement(result, input);
       setSubmitResult(result);
       setMessage(`Bounded SUBMIT ${result.commandStatus}. Batch is SUBMITTED revision ${result.revision}; stop before publish.`);
+      onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function publishBoundedBatch() {
+    setBusy('PUBLISH');
+    setMessage('');
+    setPublishPreflight(null);
+    setPublishResult(null);
+    try {
+      const input = buildBoundedPublishInput(publishDraft);
+      const currentBatch = await readCurrentProductIdentityBatch();
+      assertBoundedPublishPreflight(currentBatch, input);
+      setPublishPreflight(currentBatch);
+
+      const result = await publishProductIdentityBatch(input);
+      assertBoundedPublishAcknowledgement(result, input);
+      setPublishResult(result);
+      setMessage(`Bounded PUBLISH ${result.commandStatus}. Batch is PUBLISHED revision ${result.revision}; stop.`);
       onChanged();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -229,6 +266,41 @@ export function BoundedProductIdentityExecutionCarrier({ role, onChanged }: Prop
               <div><dt>Status</dt><dd>{submitResult.batchStatus}</dd></div>
               <div><dt>Revision</dt><dd>{submitResult.revision}</dd></div>
               <div><dt>Command</dt><dd>{submitResult.commandStatus}</dd></div>
+            </dl>
+          ) : null}
+        </fieldset>
+
+        <fieldset className="survey-reconciliation-form" disabled={busy !== null || publishResult !== null}>
+          <legend>4 · Explicit P3 PUBLISH</legend>
+          <p className="survey-reconciliation-note">This action first reads the current server batch and stops unless the exact BPB8 batch is SUBMITTED revision 2 with canPublish=true.</p>
+          <label><span>Batch ID</span><input value={publishDraft.batchId} onChange={(event) => patchPublish('batchId', event.target.value)} /></label>
+          <label><span>Expected revision · BPB8 P3 requires 2</span><input inputMode="numeric" value={publishDraft.expectedRevision} onChange={(event) => patchPublish('expectedRevision', event.target.value)} /></label>
+          <label><span>PUBLISH command ID</span><input value={publishDraft.commandId} onChange={(event) => patchPublish('commandId', event.target.value)} /></label>
+          <label className="survey-reconciliation-note"><span>Publish note</span><textarea value={publishDraft.note} onChange={(event) => patchPublish('note', event.target.value)} /></label>
+          <button type="button" className="survey-reconciliation-primary" onClick={() => void publishBoundedBatch()}>
+            {busy === 'PUBLISH' ? 'Reading gate and publishing…' : 'Read gate, then publish P3'}
+          </button>
+
+          {publishPreflight ? (
+            <dl className="survey-reconciliation-evidence survey-reconciliation-note">
+              <div><dt>Read batch</dt><dd>{publishPreflight.batchId}</dd></div>
+              <div><dt>Read status</dt><dd>{publishPreflight.batchStatus}</dd></div>
+              <div><dt>Read revision</dt><dd>{publishPreflight.revision}</dd></div>
+              <div><dt>Can publish</dt><dd>{String(publishPreflight.canPublish)}</dd></div>
+            </dl>
+          ) : null}
+
+          {publishResult ? (
+            <dl className="survey-reconciliation-evidence survey-reconciliation-note">
+              <div><dt>Batch ID</dt><dd>{publishResult.batchId}</dd></div>
+              <div><dt>Status</dt><dd>{publishResult.batchStatus}</dd></div>
+              <div><dt>Revision</dt><dd>{publishResult.revision}</dd></div>
+              <div><dt>Command</dt><dd>{publishResult.commandStatus}</dd></div>
+              <div><dt>Families</dt><dd>{publishResult.publishedFamilies}</dd></div>
+              <div><dt>Physical SKUs</dt><dd>{publishResult.publishedPhysicalSkus}</dd></div>
+              <div><dt>Barcodes</dt><dd>{publishResult.publishedBarcodes}</dd></div>
+              <div><dt>Links</dt><dd>{publishResult.publishedLinks}</dd></div>
+              <div><dt>Published</dt><dd>{publishResult.publishedAt}</dd></div>
             </dl>
           ) : null}
         </fieldset>

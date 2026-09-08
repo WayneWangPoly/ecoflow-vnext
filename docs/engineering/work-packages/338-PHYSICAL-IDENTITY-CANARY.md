@@ -1,6 +1,30 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: P2 EXPLICIT SUBMIT CARRIER IN REVIEW. Production SUBMIT remains HOLD.
+Status: P3 EXPLICIT PUBLISH CARRIER IN REVIEW. Production PUBLISH remains HOLD.
+
+## P3 authenticated explicit PUBLISH carrier
+
+This follow-up starts from production `main`
+`a2f05e06207837a9241aacf4302727beee7432e8` after the BPB8 P2 SUBMIT canary
+reached `SUBMITTED` revision `2`. The existing Owner/Admin bounded carrier gains
+one independent P3 section hard-fenced to the BPB8 batch, expected revision `2`,
+reserved PUBLISH command ID and reviewed publish note.
+
+Before any write, the section calls the incumbent authenticated current-batch
+read and fails closed unless the exact batch is `SUBMITTED` revision `2` with
+`canPublish=true`. Only then does it call the existing
+`publishProductIdentityBatch`, which maps the four frozen inputs to
+`ecoflow_publish_product_identity_batch`. The acknowledgement must return the
+same batch, `PUBLISHED` revision `3`, `APPLIED` or `REPLAYED`, exactly one
+published family, Physical SKU, barcode and Commercial-family link, plus a
+non-null publication timestamp.
+
+The P3 path contains no command-ID generator, generic-publish fallback, reopen,
+START, RECONCILE or SUBMIT fallback, raw DML, service-role path, inventory, SOH
+or location authority. P1, P2 and the generic workspace keep their existing
+semantics. This implementation task does not merge or execute production
+PUBLISH. No migration is required; trusted production-schema shadow is N/A.
+Rollback is the code-only revert of this bounded UI/contract change.
 
 ## P2 authenticated explicit SUBMIT carrier
 
@@ -26,9 +50,9 @@ call, reserved PUBLISH command ID, raw DML, service-role path, inventory, SOH or
 location-quantity authority. The existing generic Product Identity submit flow
 is unchanged.
 
-This implementation task does not execute production SUBMIT and does not merge.
-No migration is required; trusted production-schema shadow is N/A. Rollback is
-the code-only revert of this bounded UI/contract change.
+The P2 implementation task did not merge or execute production SUBMIT. P2 later
+completed under its separate production authorization. No migration was
+required; trusted production-schema shadow was N/A.
 
 ## P1 bounded Owner/Admin execution carrier (completed)
 
