@@ -371,7 +371,7 @@ begin
       c.invoice_total,c.total_due,c.line_count,'IMPORTED',c.account_release_status,
       c.warehouse_gate_status,now(),c.last_synced_at
     from candidates c
-    on conflict(raw_order_id) do update set
+    on conflict on constraint ecoflow_ordermentum_internal_orders_raw_order_id_key do update set
       external_order_id=excluded.external_order_id,
       external_order_number=excluded.external_order_number,
       invoice_number=excluded.invoice_number,
@@ -477,7 +477,7 @@ begin
       ls.subtotal,ls.gst,ls.tax,ls.total,ls.barcode_status,ls.warehouse_barcode,
       ls.line_type
     from line_source ls
-    returning internal_order_id
+    returning public.ecoflow_ordermentum_internal_order_lines.internal_order_id
   )
   select
     u.raw_order_id,u.order_number::text,u.invoice_number::text,
