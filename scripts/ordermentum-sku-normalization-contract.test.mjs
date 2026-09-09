@@ -33,6 +33,7 @@ test('release gate, barcode workbench and internalisation use the same comparato
   assert.doesNotMatch(migration, /bc\.external_sku_code\s*=\s*l\.external_sku_code/i);
   assert.match(migration, /on conflict on constraint ecoflow_ordermentum_internal_orders_raw_order_id_key/i);
   assert.match(migration, /returning public\.ecoflow_ordermentum_internal_order_lines\.internal_order_id/i);
+  assert.equal((migration.match(/m\.is_active=true/g) || []).length, 4);
 });
 
 test('migration preserves raw evidence and contains no production data rewrite', () => {

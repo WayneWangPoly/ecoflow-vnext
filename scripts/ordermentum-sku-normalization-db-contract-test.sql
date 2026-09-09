@@ -8,7 +8,9 @@ insert into public.skus(id,sku_code) values
   ('10000000-0000-4000-8000-000000000005','BAR-COLLIDE'),
   ('10000000-0000-4000-8000-000000000006','RAW-COLLIDE'),
   ('10000000-0000-4000-8000-000000000007','BCB-F-XS'),
-  ('10000000-0000-4000-8000-000000000008','BCB-F-L');
+  ('10000000-0000-4000-8000-000000000008','BCB-F-L'),
+  ('10000000-0000-4000-8000-000000000009','INACTIVE-ONLY'),
+  ('10000000-0000-4000-8000-000000000010','ACTIVE-MIX');
 
 insert into public.external_product_mappings(provider,external_product_code,internal_sku_id) values
   ('ORDERMENTUM','EXACT','10000000-0000-4000-8000-000000000001'),
@@ -19,7 +21,12 @@ insert into public.external_product_mappings(provider,external_product_code,inte
   ('ORDERMENTUM','BAR-COLLIDE','10000000-0000-4000-8000-000000000005'),
   ('ORDERMENTUM','RAW-COLLIDE','10000000-0000-4000-8000-000000000006'),
   ('ORDERMENTUM','BCB-F-XS','10000000-0000-4000-8000-000000000007'),
-  ('ORDERMENTUM','BCB-F-L','10000000-0000-4000-8000-000000000008');
+  ('ORDERMENTUM','BCB-F-L','10000000-0000-4000-8000-000000000008'),
+  ('ORDERMENTUM','ACTIVE-MIX','10000000-0000-4000-8000-000000000010');
+
+insert into public.external_product_mappings(provider,external_product_code,internal_sku_id,is_active) values
+  ('ORDERMENTUM','INACTIVE-ONLY','10000000-0000-4000-8000-000000000009',false),
+  ('ORDERMENTUM',' active-mix ','10000000-0000-4000-8000-000000000009',false);
 
 insert into public.ecoflow_sku_barcode_confirmations(provider,external_sku_code,sku_id,warehouse_barcode,status) values
   ('ORDERMENTUM','EXACT','10000000-0000-4000-8000-000000000001','11111111','CONFIRMED'),
@@ -29,7 +36,8 @@ insert into public.ecoflow_sku_barcode_confirmations(provider,external_sku_code,
   ('ORDERMENTUM',' bar-collide ','10000000-0000-4000-8000-000000000005','55555555','CONFIRMED'),
   ('ORDERMENTUM','RAW-COLLIDE','10000000-0000-4000-8000-000000000006','66666666','CONFIRMED'),
   ('ORDERMENTUM','BCB-F-XS','10000000-0000-4000-8000-000000000007','77777777','CONFIRMED'),
-  ('ORDERMENTUM','BCB-F-L','10000000-0000-4000-8000-000000000008','88888888','CONFIRMED');
+  ('ORDERMENTUM','BCB-F-L','10000000-0000-4000-8000-000000000008','88888888','CONFIRMED'),
+  ('ORDERMENTUM','ACTIVE-MIX','10000000-0000-4000-8000-000000000010','99999999','CONFIRMED');
 
 insert into public.test_ordermentum_inbox(raw_order_id,external_order_id,external_order_number,order_number,invoice_number,payment_status,invoice_payment_status) values
   ('20000000-0000-4000-8000-000000000001','E1','E1','O-EXACT','I-EXACT','Paid','Paid'),
@@ -40,7 +48,9 @@ insert into public.test_ordermentum_inbox(raw_order_id,external_order_id,externa
   ('20000000-0000-4000-8000-000000000006','E6','E6','O-RAW-A','I-RAW-A','Paid','Paid'),
   ('20000000-0000-4000-8000-000000000007','E7','E7','O-RAW-B','I-RAW-B','Paid','Paid'),
   ('20000000-0000-4000-8000-000000000008','E8','E8','O-SPACE-XS','I-SPACE-XS','Paid','Paid'),
-  ('20000000-0000-4000-8000-000000000009','E9','E9','O-WAVE2-L','I-WAVE2-L','Paid','Paid');
+  ('20000000-0000-4000-8000-000000000009','E9','E9','O-WAVE2-L','I-WAVE2-L','Paid','Paid'),
+  ('20000000-0000-4000-8000-000000000010','E10','E10','O-INACTIVE-ONLY','I-INACTIVE-ONLY','Paid','Paid'),
+  ('20000000-0000-4000-8000-000000000011','E11','E11','O-ACTIVE-INACTIVE','I-ACTIVE-INACTIVE','Paid','Paid');
 
 insert into public.test_ordermentum_lines(source_line_id,order_number,invoice_number,external_sku_code,external_product_name) values
   ('L1','O-EXACT','I-EXACT','EXACT','Exact unchanged'),
@@ -51,7 +61,9 @@ insert into public.test_ordermentum_lines(source_line_id,order_number,invoice_nu
   ('L6','O-RAW-A','I-RAW-A','RAW-COLLIDE','Raw collision A'),
   ('L7','O-RAW-B','I-RAW-B',' raw-collide ','Raw collision B'),
   ('L8','O-SPACE-XS','I-SPACE-XS',' BCB-F-XS','Leading space XS'),
-  ('L9','O-WAVE2-L','I-WAVE2-L',' BCB-F-L','Wave 2 leading space');
+  ('L9','O-WAVE2-L','I-WAVE2-L',' BCB-F-L','Wave 2 leading space'),
+  ('L10','O-INACTIVE-ONLY','I-INACTIVE-ONLY','INACTIVE-ONLY','Inactive mapping only'),
+  ('L11','O-ACTIVE-INACTIVE','I-ACTIVE-INACTIVE',' active-mix ','Active mapping with inactive canonical variant');
 
 do $$
 declare v record;
@@ -81,6 +93,21 @@ begin
     where order_number in ('O-SPACE-XS','O-WAVE2-L')
       and (internalisation_status<>'READY_TO_INTERNALISE' or unmapped_line_count<>0 or barcode_blocked_line_count<>0)
   ) then raise exception 'bounded leading-space regression failed'; end if;
+
+  select * into v from public.v_ecoflow_ordermentum_release_gate_v3 where order_number='O-INACTIVE-ONLY';
+  if v.internalisation_status<>'BLOCKED_MAPPING' or v.unmapped_line_count<>1 then
+    raise exception 'inactive-only mapping incorrectly resolved';
+  end if;
+
+  select * into v from public.v_ecoflow_ordermentum_release_gate_v3 where order_number='O-ACTIVE-INACTIVE';
+  if v.internalisation_status<>'READY_TO_INTERNALISE' or v.unmapped_line_count<>0 or v.barcode_blocked_line_count<>0 then
+    raise exception 'inactive canonical variant blocked the active mapping';
+  end if;
+
+  if exists(
+    select 1 from public.v_ecoflow_ordermentum_sku_normalization_collisions
+    where source_namespace='EXTERNAL_PRODUCT_MAPPING' and normalized_code='ACTIVE-MIX'
+  ) then raise exception 'inactive mapping created a false normalized collision'; end if;
 
   select * into v from public.v_ecoflow_ordermentum_release_gate_v3 where order_number='O-MAP-COLLIDE';
   if v.internalisation_status<>'BLOCKED_MAPPING' or v.unmapped_line_count<>1 then
@@ -131,8 +158,14 @@ begin
 
   if exists(
     select 1 from public.ecoflow_ordermentum_internal_orders
-    where order_number in ('O-MAP-COLLIDE','O-RAW-A','O-RAW-B')
-  ) then raise exception 'mapping-collided order was internalised'; end if;
+    where order_number in ('O-MAP-COLLIDE','O-RAW-A','O-RAW-B','O-INACTIVE-ONLY')
+  ) then raise exception 'mapping-collided or inactive-only order was internalised'; end if;
+
+  if not exists(
+    select 1 from public.ecoflow_ordermentum_internal_order_lines
+    where external_sku_code=' active-mix '
+      and internal_sku_id='10000000-0000-4000-8000-000000000010'::uuid
+  ) then raise exception 'active mapping did not survive inactive canonical variant'; end if;
 end $$;
 
 select 'ORDERMENTUM_SKU_NORMALIZATION_DB_CONTRACT_PASS' as result;

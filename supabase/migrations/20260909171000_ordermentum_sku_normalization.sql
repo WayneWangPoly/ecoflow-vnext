@@ -29,6 +29,7 @@ with source_rows(source_namespace,normalized_code,raw_code,authority_target) as 
     m.internal_sku_id::text
   from public.external_product_mappings m
   where m.provider='ORDERMENTUM'
+    and m.is_active=true
 
   union all
 
@@ -87,6 +88,7 @@ mapping_groups as (
     count(distinct m.internal_sku_id)::bigint as target_count
   from public.external_product_mappings m
   where m.provider='ORDERMENTUM'
+    and m.is_active=true
     and public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code) is not null
   group by public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code)
 ),
@@ -208,6 +210,7 @@ with mapping_groups as (
     count(distinct m.internal_sku_id)::bigint as target_count
   from public.external_product_mappings m
   where m.provider='ORDERMENTUM'
+    and m.is_active=true
     and public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code) is not null
   group by public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code)
 ),
@@ -408,6 +411,7 @@ begin
       count(distinct m.internal_sku_id)::bigint as target_count
     from public.external_product_mappings m
     where m.provider='ORDERMENTUM'
+    and m.is_active=true
       and public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code) is not null
     group by public.ecoflow_canonical_ordermentum_sku_code(m.external_product_code)
   ),
