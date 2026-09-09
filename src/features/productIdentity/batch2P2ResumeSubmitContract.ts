@@ -307,5 +307,14 @@ export function assertBatch2P2SubmitAcknowledgement(result: Batch2P2SubmitAcknow
     || result.batchStatus !== 'SUBMITTED'
     || result.revision !== 3
     || !['APPLIED', 'REPLAYED'].includes(result.commandStatus)
-  ) hold('SUBMIT acknowledgement must be the exact Batch 2 SUBMITTED rev3 APPLIED/REPLAYED result');
+  ) throw new Error('Batch 2 P2 SUBMIT acknowledgement is not the exact SUBMITTED rev3 APPLIED/REPLAYED result.');
+}
+
+export function formatBatch2P2ResumeFailure(error: unknown, commandCrossedBoundary: boolean) {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (commandCrossedBoundary) {
+    return `HOLD — SUBMIT may have been called. Do not retry or use a new command ID; read-only server verification is required. Detail: ${detail}`;
+  }
+  if (detail.startsWith('HOLD —')) return detail;
+  return `HOLD — ${detail}; SUBMIT was not called.`;
 }

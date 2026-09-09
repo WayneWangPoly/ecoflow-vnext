@@ -31,6 +31,14 @@ acknowledgement must be the same batch at `SUBMITTED` revision `3` with
 `APPLIED` or `REPLAYED`. The carrier then stops and states that publication
 requires a separate execution.
 
+Read or gate failures are explicit HOLD states and state that SUBMIT was not
+called. Immediately before entering the incumbent command, the carrier records
+a terminal attempted state. A transport failure or invalid acknowledgement
+after that boundary states that SUBMIT may have been called, prohibits retry or
+a replacement command ID, requires read-only server verification, and keeps the
+action disabled. This prevents an uncertain server result from being presented
+as a safe pre-command failure.
+
 There is no START or reconciliation import/call, command-ID generator, reopen,
 generic fallback, publication authority, direct table write, service role/JWT
 path, RPC/migration/schema/Edge Function addition, or inventory/SOH/location/

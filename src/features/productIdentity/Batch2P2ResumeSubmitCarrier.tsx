@@ -12,6 +12,7 @@ import {
   assertBatch2P2ResumeEvidence,
   assertBatch2P2SubmitAcknowledgement,
   buildBatch2P2SubmitInput,
+  formatBatch2P2ResumeFailure,
   type Batch2P2ResumeEvidence,
 } from './batch2P2ResumeSubmitContract';
 
@@ -23,6 +24,7 @@ type Props = {
 export function Batch2P2ResumeSubmitCarrier({ role, onChanged }: Props) {
   const authorized = role === 'owner' || role === 'admin';
   const [busy, setBusy] = useState(false);
+  const [commandAttempted, setCommandAttempted] = useState(false);
   const [preflight, setPreflight] = useState<ProductIdentityBatch | null>(null);
   const [evidence, setEvidence] = useState<Batch2P2ResumeEvidence | null>(null);
   const [result, setResult] = useState<ProductIdentityBatchCommandResult | null>(null);
@@ -31,6 +33,7 @@ export function Batch2P2ResumeSubmitCarrier({ role, onChanged }: Props) {
   if (!authorized) return null;
 
   async function resumeAndSubmitBatch2P2() {
+    let commandCrossedBoundary = false;
     setBusy(true);
     setPreflight(null);
     setEvidence(null);
@@ -43,13 +46,15 @@ export function Batch2P2ResumeSubmitCarrier({ role, onChanged }: Props) {
       setEvidence(serverEvidence);
 
       const input = buildBatch2P2SubmitInput();
+      commandCrossedBoundary = true;
+      setCommandAttempted(true);
       const acknowledgement = await submitProductIdentityBatch(input);
       assertBatch2P2SubmitAcknowledgement(acknowledgement);
       setResult(acknowledgement);
       setMessage('SUBMITTED rev3 — STOP. PUBLISH requires separate execution.');
       onChanged();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(formatBatch2P2ResumeFailure(error, commandCrossedBoundary));
     } finally {
       setBusy(false);
     }
@@ -66,7 +71,7 @@ export function Batch2P2ResumeSubmitCarrier({ role, onChanged }: Props) {
       </header>
 
       <div className="survey-reconciliation-layout">
-        <fieldset className="survey-reconciliation-form" disabled={busy || result !== null}>
+        <fieldset className="survey-reconciliation-form" disabled={busy || commandAttempted || result !== null}>
           <legend>Exact server gate · one frozen SUBMIT</legend>
           <dl className="survey-reconciliation-evidence survey-reconciliation-note">
             <div><dt>Batch ID</dt><dd>{BATCH2_P2_RESUME_TARGET.batchId}</dd></div>

@@ -7,6 +7,7 @@ import {
   assertBatch2P2ResumeEvidence,
   assertBatch2P2SubmitAcknowledgement,
   buildBatch2P2SubmitInput,
+  formatBatch2P2ResumeFailure,
 } from '../src/features/productIdentity/batch2P2ResumeSubmitContract.ts';
 
 const carrierPath = 'src/features/productIdentity/Batch2P2ResumeSubmitCarrier.tsx';
@@ -278,7 +279,37 @@ test('SUBMIT input and acknowledgement are frozen to one revisioned command', ()
   for (const invalid of [
     { batchId: 'changed' }, { batchStatus: 'DRAFT' }, { revision: 2 },
     { commandStatus: 'EXISTING' }, { commandStatus: 'CONFLICT' },
-  ]) assert.throws(() => assertBatch2P2SubmitAcknowledgement({ batchId: BATCH2_P2_RESUME_TARGET.batchId, batchStatus: 'SUBMITTED', revision: 3, commandStatus: 'APPLIED', ...invalid }), /HOLD/);
+  ]) assert.throws(() => assertBatch2P2SubmitAcknowledgement({ batchId: BATCH2_P2_RESUME_TARGET.batchId, batchStatus: 'SUBMITTED', revision: 3, commandStatus: 'APPLIED', ...invalid }), /acknowledgement/i);
+});
+
+test('pre-command read failures and post-command uncertainty have truthful terminal messages', () => {
+  for (const failure of [new Error('current batch read failed'), new Error('evidence read failed')]) {
+    const message = formatBatch2P2ResumeFailure(failure, false);
+    assert.match(message, /^HOLD —/);
+    assert.match(message, /SUBMIT was not called\.$/);
+    assert.doesNotMatch(message, /may have been called/);
+  }
+
+  const transport = formatBatch2P2ResumeFailure(new Error('network response unavailable'), true);
+  assert.match(transport, /^HOLD — SUBMIT may have been called\./);
+  assert.match(transport, /Do not retry/);
+  assert.match(transport, /read-only server verification is required/i);
+  assert.doesNotMatch(transport, /SUBMIT was not called/);
+
+  let invalidAcknowledgement;
+  try {
+    assertBatch2P2SubmitAcknowledgement({
+      batchId: BATCH2_P2_RESUME_TARGET.batchId,
+      batchStatus: 'SUBMITTED',
+      revision: 2,
+      commandStatus: 'APPLIED',
+    });
+  } catch (error) {
+    invalidAcknowledgement = formatBatch2P2ResumeFailure(error, true);
+  }
+  assert.match(invalidAcknowledgement, /^HOLD — SUBMIT may have been called\./);
+  assert.match(invalidAcknowledgement, /acknowledgement/i);
+  assert.match(invalidAcknowledgement, /Do not retry/);
 });
 
 test('fresh-session carrier reads canonical server evidence before the one incumbent SUBMIT call', () => {
@@ -290,8 +321,12 @@ test('fresh-session carrier reads canonical server evidence before the one incum
   const currentRead = carrier.indexOf('await readCurrentProductIdentityBatch()');
   const evidenceRead = carrier.indexOf('await readBatch2P2ResumeEvidence()');
   const assertion = carrier.indexOf('assertBatch2P2ResumeEvidence(currentBatch, serverEvidence)');
+  const attempted = carrier.indexOf('setCommandAttempted(true)');
   const submit = carrier.indexOf('await submitProductIdentityBatch(input)');
-  assert.ok(currentRead >= 0 && currentRead < evidenceRead && evidenceRead < assertion && assertion < submit);
+  assert.ok(currentRead >= 0 && currentRead < evidenceRead && evidenceRead < assertion && assertion < attempted && attempted < submit);
+  assert.match(carrier, /const \[commandAttempted, setCommandAttempted\] = useState\(false\)/);
+  assert.match(carrier, /disabled=\{busy \|\| commandAttempted \|\| result !== null\}/);
+  assert.match(carrier, /formatBatch2P2ResumeFailure\(error, commandCrossedBoundary\)/);
   assert.match(carrier, /SUBMITTED rev3 — STOP\. PUBLISH requires separate execution\./);
   assert.doesNotMatch(carrier, /<(?:input|textarea|select)\b/);
   assert.doesNotMatch(carrier, /publishProductIdentityBatch|startBoundedProductIdentityBatch|startProductIdentityBatch|reconcileBarcodeSurveyObservation|createProductIdentityCommandId|reopenProductIdentityBatch/);
