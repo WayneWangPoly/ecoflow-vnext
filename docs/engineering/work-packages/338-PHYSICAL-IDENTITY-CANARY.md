@@ -1,6 +1,45 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: BATCH 2 EXPLICIT TWO-SKU CARRIER IN REVIEW. Production execution remains HOLD.
+Status: BATCH 2 P2 FRESH-SESSION RESUME / SUBMIT CARRIER IN REVIEW. Production execution remains HOLD.
+
+## Batch 2 P2 fresh-session resume / SUBMIT carrier
+
+This bounded repair starts from canonical `main`
+`47ae33a29a6786c03937c7af4e9d138bdbdb344b`, production Batch 2
+`97fd2036-d0ff-492d-8ae7-1c9c0e09e526` at `DRAFT` revision `2`, the no-write
+HOLD checkpoint in
+[#338 comment 5596588638](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5596588638),
+and the frozen Chief Engineer contract in
+[#338 comment 5596684303](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5596684303).
+
+The independent Owner/Admin carrier works after a refresh or re-login and does
+not recreate client-side P1 results. Its single action first calls the incumbent
+authenticated current-batch read, then hydrates the exact batch, scope,
+reconciliation, observation, family, Physical SKU, package, barcode and
+Commercial-family link rows using RLS-governed `select` queries. The contract
+requires the frozen batch/name/start command, `DRAFT` revision `2`, task counts
+`0/2/0`, `canSubmit=true`, the exact two-SKU scope, both frozen reconciliation
+and survey command mappings, both complete `CARTON x 1` DRAFT payloads, null
+brand/supplier, `PROHIBITED`, preferred Physical links, and null submit/publish
+fields. Missing, additional or mismatched evidence stops before the command.
+
+Only after the complete server gate passes does the carrier build the immutable
+SUBMIT input: batch `97fd2036-d0ff-492d-8ae7-1c9c0e09e526`, expected revision
+`2`, command `bc5538d2-73e0-4aaf-987f-4b53fd8aa75d`, and the frozen #338 note.
+The incumbent `submitProductIdentityBatch` remains the sole write call and its
+acknowledgement must be the same batch at `SUBMITTED` revision `3` with
+`APPLIED` or `REPLAYED`. The carrier then stops and states that publication
+requires a separate execution.
+
+There is no START or reconciliation import/call, command-ID generator, reopen,
+generic fallback, publication authority, direct table write, service role/JWT
+path, RPC/migration/schema/Edge Function addition, or inventory/SOH/location/
+cutover authority. The existing Batch 2 lifecycle carrier, BPB8 carrier and
+generic Product Identity workspace remain byte-identical to the baseline.
+Trusted production-schema shadow is N/A because no migration changes. This
+engineering package does not execute a production command and does not merge.
+Rollback is a code-only revert of the independent carrier, SELECT repository,
+contract tests, mount and documentation.
 
 ## Batch 2 authenticated explicit two-SKU carrier
 
