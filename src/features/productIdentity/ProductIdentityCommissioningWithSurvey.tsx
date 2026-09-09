@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Role } from '@/domain/types';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { BarcodeSurveyReconciliationPanel } from './BarcodeSurveyReconciliationPanel';
+import { Batch2P2ResumeSubmitCarrier } from './Batch2P2ResumeSubmitCarrier';
 import { Batch2ProductIdentityExecutionCarrier } from './Batch2ProductIdentityExecutionCarrier';
 import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
@@ -21,6 +22,10 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
       <Batch2ProductIdentityExecutionCarrier
+        role={props.role}
+        onChanged={() => setCommissioningRevision((value) => value + 1)}
+      />
+      <Batch2P2ResumeSubmitCarrier
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
