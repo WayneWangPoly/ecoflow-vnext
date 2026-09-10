@@ -6,7 +6,7 @@ const sql = readFileSync(
 );
 const checks = [];
 const check = (name, pass, evidence) => checks.push({ name, pass: Boolean(pass), evidence });
-const hash = '79d719a1fcc422afefdabac4f5b6d7d52ae0b4cc3e8939120edb229160803a';
+const hash = '79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a';
 const frozenRows = sql.match(/^  \('[^\n]+','(?:CANARY|EXPANSION)',false,'[0-9a-f-]+'::uuid,\d+,'[0-9a-f]{64}','[^\n]+','[0-9a-f]{64}'\)[,]?$/gm) ?? [];
 
 check('exact SELECT-only cohort is frozen', frozenRows.length === 164
