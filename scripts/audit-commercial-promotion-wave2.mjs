@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const sql = readFileSync(
@@ -8,12 +9,21 @@ const checks = [];
 const check = (name, pass, evidence) => checks.push({ name, pass: Boolean(pass), evidence });
 const hash = '79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a';
 const frozenRows = sql.match(/^  \('[^\n]+','(?:CANARY|EXPANSION)',false,'[0-9a-f-]+'::uuid,\d+,'[0-9a-f]{64}','[^\n]+','[0-9a-f]{64}'\)[,]?$/gm) ?? [];
+const frozenRowPattern = /^  \('([^']+)','(?:CANARY|EXPANSION)',false,'([0-9a-f-]+)'::uuid,(\d+),'([0-9a-f]{64})','([^']+)','[0-9a-f]{64}'\)[,]?$/;
+const frozenEvidence = frozenRows.map((row) => {
+  const match = row.match(frozenRowPattern);
+  return match ? `${match[1]}|${match[2]}|${match[3]}|${match[4]}|${match[5]}` : null;
+}).filter(Boolean).sort();
+const computedHash = createHash('sha256').update(frozenEvidence.join('\n')).digest('hex');
 
 check('exact SELECT-only cohort is frozen', frozenRows.length === 164
+  && frozenEvidence.length === 164
   && (sql.match(/'CANARY',false/g) ?? []).length === 1
   && (sql.match(/'EXPANSION',false/g) ?? []).length === 163
   && sql.includes("'140010','CANARY',false")
-  && sql.includes(hash), '164 rows, one deterministic disabled canary, 163 disabled expansion rows and exact cohort hash');
+  && sql.includes(hash)
+  && computedHash === hash,
+  `164 rows, one deterministic disabled canary, 163 disabled expansion rows and exact cohort hash; computed=${computedHash}`);
 
 check('hold set is excluded and independently blocked',
   !frozenRows.some((row) => /CCSB6-80|CCSKBM16-90/.test(row))
