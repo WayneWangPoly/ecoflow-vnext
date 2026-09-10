@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "source_baseline_sha": "ce6358ceeadb143c4cd5eaad4d7f234112160c7d",
+  "contract_pr": 383,
+  "execution_state": "ENGINEERING_FROZEN_LIVE_HOLD",
+  "window_semantics": "inclusive_gte_lte",
+  "approved_origins": {
+    "current": "https://api.ordermentum.com",
+    "legacy_auth": "https://app.ordermentum.com",
+    "legacy_api": "https://api.ordermentum.com"
+  },
+  "supplier_binding": {
+    "algorithm": "sha256",
+    "raw_value_env": "ORDERMENTUM_SUPPLIER_ID",
+    "reviewed_hash_env": "ORDERMENTUM_C_SHADOW_SUPPLIER_SHA256"
+  },
+  "excluded_target_sha256": "95ddce452fa5d6afece19d6d78858bf545d901a53b9a75fd250033bf08cae0fb",
+  "prior_high_watermark_reference": "ordermentum_api_sync_state/ORDERMENTUM.high_watermark_updated_at (read-only evidence only)",
+  "overlap_minutes": 15,
+  "windows": [
+    {
+      "id": "W0",
+      "from": "2026-09-07T04:00:00.000Z",
+      "to": "2026-09-07T10:00:00.000Z"
+    },
+    {
+      "id": "W1",
+      "from": "2026-09-08T04:00:00.000Z",
+      "to": "2026-09-08T10:00:00.000Z"
+    }
+  ],
+  "resources": [
+    {
+      "name": "orders",
+      "list_path": "/v2/orders",
+      "supplier_filter": true,
+      "window_filter": true,
+      "detail_path": null
+    },
+    {
+      "name": "products",
+      "list_path": "/v2/products",
+      "supplier_filter": true,
+      "window_filter": false,
+      "detail_path": "/v1/products/{id}"
+    },
+    {
+      "name": "variants",
+      "list_path": "/v1/variants",
+      "supplier_filter": true,
+      "window_filter": false,
+      "detail_path": null
+    },
+    {
+      "name": "purchasers",
+      "list_path": "/v1/purchasers",
+      "supplier_filter": true,
+      "window_filter": false,
+      "detail_path": "/v1/purchasers/{id}"
+    },
+    {
+      "name": "price_groups",
+      "list_path": "/v1/price-groups",
+      "supplier_filter": false,
+      "window_filter": false,
+      "detail_path": null
+    },
+    {
+      "name": "invoices",
+      "list_path": "/v2/invoices",
+      "supplier_filter": true,
+      "window_filter": true,
+      "detail_path": "/v1/invoices/{id}"
+    },
+    {
+      "name": "stock_locations",
+      "list_path": "/v1/stock-locations",
+      "supplier_filter": true,
+      "window_filter": false,
+      "detail_path": null
+    },
+    {
+      "name": "leads",
+      "list_path": "/v1/leads",
+      "supplier_filter": true,
+      "window_filter": false,
+      "detail_path": null
+    }
+  ],
+  "query": {
+    "page_parameter": "pageNo",
+    "page_size_parameter": "pageSize",
+    "supplier_parameter": "supplierId",
+    "window_from_parameter": "updatedAt[gte]",
+    "window_to_parameter": "updatedAt[lte]"
+  },
+  "limits": {
+    "page_size": 10,
+    "max_pages_per_resource_per_auth": 2,
+    "max_detail_targets_per_type": 1,
+    "max_gets_per_window": 38,
+    "max_legacy_auth_posts_per_window": 1,
+    "max_rows_per_window": 326,
+    "max_response_bytes": 1048576,
+    "max_decoded_bytes_per_window": 16777216,
+    "request_timeout_ms": 20000,
+    "window_timeout_ms": 600000,
+    "retries": 0,
+    "redirects": 0,
+    "writes": 0
+  },
+  "transform_contract": {
+    "orders": "scripts/ordermentum-full-sync-core.mjs#extractOrderIdentity + scripts/ordermentum-sync-common.mjs#extractOrderDates/extractOrderStatus",
+    "master_identity": "scripts/ordermentum-master-data-common.mjs#extractExternalId (strict sentinel guard in C)",
+    "purchaser_projection": "scripts/ordermentum-targeted-store-sync-core.mjs#projectPurchaserToStoreRow",
+    "invoice_detail_evidence": "scripts/ordermentum-shadow-adapter.mjs#canonicalProjection using ordermentum-master-data-common.mjs#hashPayload/extractTimestamp",
+    "canonical_json": "scripts/ordermentum-api-key-probe.mjs#hashCanonicalPayload",
+    "version": "359-c-v2"
+  }
+}
