@@ -1,6 +1,52 @@
 # Work package: #338 Physical Identity canary evidence and contract
 
-Status: BATCH 2 P2 FRESH-SESSION RESUME / SUBMIT CARRIER IN REVIEW. Production execution remains HOLD.
+Status: BATCH 2 P3 FRESH-SESSION RESUME / PUBLISH CARRIER IN REVIEW. Production execution remains HOLD.
+
+## Batch 2 P3 fresh-session resume / PUBLISH carrier
+
+This bounded carrier starts from protected `main`
+`f780170182872077a67a986f5cea21f58cb39c0e`, production Batch 2
+`97fd2036-d0ff-492d-8ae7-1c9c0e09e526` at `SUBMITTED` revision `3`, and the
+frozen implementation checkpoints in
+[#338 comment 5604460056](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5604460056)
+and
+[#338 comment 5603624895](https://github.com/WayneWangPoly/ecoflow-vnext/issues/338#issuecomment-5603624895).
+
+Objective: provide one Owner/Admin-only fresh-session action that rehydrates
+the exact server authority and can cross only the frozen Batch 2 PUBLISH
+boundary. The carrier has no dependency on P1/P2 React state and never retries
+the completed SUBMIT command.
+
+In scope: one independent P3 contract, one authenticated SELECT-only evidence
+repository, one React carrier, contract tests, the minimal commissioning wrapper
+mount, this work package and workflow path/test coverage. The preflight requires
+the exact submitted batch and START/SUBMIT command IDs, exact two-row scope,
+reconciliations, observations and DRAFT canonical graph, the publication audit,
+two DRAFT_READY tasks, and zero rows across the five frozen quantity sentinels.
+Only then may it build the immutable PUBLISH input for command
+`82041faf-fdfa-4d2f-882c-d2c1c33ecd7a` at expected revision `3`.
+
+Accepted command acknowledgement is the same batch at `PUBLISHED` revision `4`,
+`APPLIED` or `REPLAYED`, exactly `2/2/2/2` published families, Physical SKUs,
+barcodes and links, and a non-null publication timestamp. A SELECT-only
+postflight must then prove the frozen command, PUBLISHED/ACTIVE graph, resolved
+tasks, publication audit and unchanged zero quantity sentinels. Any failure
+after the command boundary is terminal: PUBLISH may have been called, no retry
+or replacement ID is allowed, and read-only server verification is required.
+
+Out of scope: changing the incumbent P1/P2/BPB8 or generic lifecycle contracts;
+START, RECONCILE, SUBMIT, reopen or command-ID generation; migration, schema,
+RPC or Edge Function changes; service-role/JWT paths; inventory, SOH, warehouse
+location, opening-balance or cutover authority; merge, deployment or production
+PUBLISH. No migration is required and trusted production-schema shadow is N/A.
+
+Acceptance evidence: exact contract regressions for every frozen row set,
+pre-existing publication fields, non-zero quantity sentinels, immutable input,
+strict acknowledgement, post-boundary no-retry wording, SELECT-only repository,
+single incumbent PUBLISH call and byte-identical legacy carriers. Rollback is a
+code-only revert of the independent P3 files, mount, workflow coverage and this
+documentation. Planned merge order is contract/repository/carrier/tests/docs;
+Independent Verification and Chief Engineer approval are required before merge.
 
 ## Batch 2 P2 fresh-session resume / SUBMIT carrier
 
