@@ -91,7 +91,8 @@ test('Connector execution is bounded and dry-run by default', () => {
   assert.match(edgeFunction, /const dryRun = body\.dryRun !== false/);
   assert.match(edgeFunction, /pageSize = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.pageSize/);
   assert.match(edgeFunction, /maxPages = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.maxPages/);
-  assert.match(edgeFunction, /startPage = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.startPage/);
+  assert.match(edgeFunction, /startPage = mode === 'probe' \|\| target[\s\S]*normalizeInteger\(body\.startPage/);
+  assert.match(edgeFunction, /START_PAGE_NOT_ALLOWED_FOR_PROBE_OR_TARGET/);
 });
 
 test('Targeted reads accept only deterministic product, stock, sales-order, and purchase-order selectors', () => {

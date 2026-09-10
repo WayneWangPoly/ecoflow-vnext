@@ -330,7 +330,7 @@ Engineering scope only. The connector accepts one additive multi-row target:
 
 - Cardinality is explicit: all incumbent product/order/product+warehouse targets remain `ONE`; warehouse-only StockOnHand is `MANY`.
 - `MANY` is accepted only in `bounded_snapshot` mode, with no `modifiedSince` and exactly one resource.
-- It retains the incumbent page bounds (page size at most 200, at most 5 pages) instead of singleton `1x1` behavior.
+- It retains the incumbent page bounds (page size at most 200, at most 5 pages) instead of singleton `1x1` behavior; every targeted window starts at page 1, so an incomplete five-page window cannot be continued under a different warehouse target.
 - Every returned row must match the requested WarehouseCode; mixed-warehouse payloads fail with `UNLEASHED_TARGET_SCOPE_MISMATCH`.
 - Query signing uses the existing serialized query, including only the validated `warehouseCode` plus bounded pagination fields.
 - Existing GET-only origin, redirect, retry, lease, staging, source-identity and completion gates are unchanged.

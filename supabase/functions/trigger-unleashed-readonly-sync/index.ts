@@ -602,12 +602,12 @@ Deno.serve(async (req) => {
     maxPages = mode === 'probe' || target?.cardinality === 'ONE'
       ? 1
       : normalizeInteger(body.maxPages, DEFAULT_MAX_PAGES, 1, HARD_MAX_PAGES, 'INVALID_MAX_PAGES');
-    startPage = mode === 'probe' || target?.cardinality === 'ONE'
+    startPage = mode === 'probe' || target
       ? 1
       : normalizeInteger(body.startPage, 1, 1, 1_000_000, 'INVALID_START_PAGE');
     previousRunId = normalizePreviousRunId(body.previousRunId);
-    if ((mode === 'probe' || target?.cardinality === 'ONE') && body.startPage !== undefined && body.startPage !== 1) {
-      throw new Error('START_PAGE_NOT_ALLOWED_FOR_PROBE_OR_SINGLETON_TARGET');
+    if ((mode === 'probe' || target) && body.startPage !== undefined && body.startPage !== 1) {
+      throw new Error('START_PAGE_NOT_ALLOWED_FOR_PROBE_OR_TARGET');
     }
     if (startPage === 1 && previousRunId) throw new Error('PREVIOUS_RUN_REQUIRES_CONTINUATION');
     if (startPage > 1) {
