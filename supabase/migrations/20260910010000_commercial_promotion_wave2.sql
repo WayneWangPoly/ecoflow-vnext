@@ -220,7 +220,7 @@ begin
            concat_ws('|',external_product_code,unleashed_mapping_id::text,
              expected_mapping_revision::text,expected_source_payload_sha256,
              expected_source_external_key),
-           E'\n' order by external_product_code collate "C"
+           chr(10) order by external_product_code collate "C"
          ),'sha256'),'hex')
   into v_count,v_canary,v_hash
   from public.ecoflow_commercial_wave2_candidates;
