@@ -14,6 +14,8 @@ on:
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
       - 'supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql'
       - 'supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql'
+      - 'supabase/migrations/20260910002000_unleashed_warehouse_stock_scope_fencing.sql'
+      - 'scripts/unleashed-warehouse-stock-scope-db-contract-test.sql'
   push:
     branches:
       - 'agent/platform/unleashed-migration-002d-*'
@@ -78,5 +80,9 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
           psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260902041500_unleashed_snapshot_acquisition_fencing.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260910002000_unleashed_warehouse_stock_scope_fencing.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260910002000_unleashed_warehouse_stock_scope_fencing.sql
       - name: Run acquisition fencing DB contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-snapshot-acquisition-fencing-db-contract-test.sql
+      - name: Run warehouse StockOnHand scope DB contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/unleashed-warehouse-stock-scope-db-contract-test.sql
