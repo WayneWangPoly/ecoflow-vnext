@@ -11,7 +11,7 @@ A SELECT-only production census on 2026-09-10 reproduced the issue checkpoint ex
 - each Unleashed mapping is PRODUCT / UNMATCHED with source_duplicate_count 1;
 - each row is bound to its exact mapping UUID, revision, source external key and source payload SHA-256;
 - sorted cohort SHA-256: `79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a`;
-- hash line format: `code|mapping_id|revision|source_payload_sha256|source_external_key`, joined with LF in normalized-code order;
+- hash line format: `code|mapping_id|revision|source_payload_sha256|source_external_key`, joined with LF in normalized-code bytewise order (`COLLATE "C"` in PostgreSQL);
 - `BCB-F-L` is included through `upper(btrim(...))` normalization;
 - conflict `CCSB6-80`, history-only `CCSKBM16-90`, and the 119 Unleashed-only rows are excluded.
 
