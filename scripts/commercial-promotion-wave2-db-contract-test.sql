@@ -50,7 +50,7 @@ declare v_count bigint; v_hash text;
 begin
   select count(*),encode(extensions.digest(string_agg(concat_ws('|',
     external_product_code,unleashed_mapping_id::text,expected_mapping_revision::text,
-    expected_source_payload_sha256,expected_source_external_key),E'\n' order by external_product_code),'sha256'),'hex')
+    expected_source_payload_sha256,expected_source_external_key),E'\n' order by external_product_code collate "C"),'sha256'),'hex')
   into v_count,v_hash from public.ecoflow_commercial_wave2_candidates;
   if v_count<>164 or v_hash<>'79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a'
      or (select count(*) from public.ecoflow_commercial_wave2_candidates where enabled)<>0
