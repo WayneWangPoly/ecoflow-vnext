@@ -114,9 +114,9 @@ begin
   end;
   delete from public.unleashed_snapshot_acquisition_leases where run_id=v_bad_query;
 end;
-$;
+$$;
 
-do $
+do $$
 declare
   v_actor uuid := '11111111-1111-4111-8111-111111111111';
   v_page1 uuid := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4';
@@ -182,7 +182,7 @@ begin
     raise exception 'UNLEASHED_WAREHOUSE_TARGET_ABORT_PUBLISHED_GLOBAL_CURSOR';
   end if;
 end;
-$;
+$$;
 
 select 'UNLEASHED_WAREHOUSE_STOCK_SCOPE_DB_CONTRACT_PASS' as result;
 

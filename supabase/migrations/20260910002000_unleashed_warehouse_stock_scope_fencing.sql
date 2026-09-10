@@ -221,7 +221,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_lease public.unleashed_snapshot_acquisition_leases%rowtype;
   v_run public.unleashed_sync_runs%rowtype;
@@ -257,21 +257,7 @@ begin
      or v_run.page_size not between 1 and 200 or v_run.max_pages not between 1 and 5
      or jsonb_typeof(v_target)<>'object'
      or (select count(*) from jsonb_object_keys(v_target))<>1
-     or v_warehouse_code !~ '^[A-Za-z0-9][A-Za-z0-9 ._/#-]{0,99}
-  from public,anon,authenticated;
-revoke all on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)
-  from public,anon,authenticated;
-revoke all on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
-  from public,anon,authenticated;
-grant execute on function public.ecoflow_claim_unleashed_warehouse_snapshot_acquisition(uuid,text,integer,uuid)
-  to service_role;
-grant execute on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)
-  to service_role;
-grant execute on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
-  to service_role;
-
-commit;
- then
+     or v_warehouse_code !~ '^[A-Za-z0-9][A-Za-z0-9 ._/#-]{0,99}$' then
     raise exception 'UNLEASHED_WAREHOUSE_TARGET_ABORT_INVALID';
   end if;
 
@@ -308,7 +294,7 @@ commit;
     'validatedPages',v_batch_count,'failedPage',v_last_failed_page
   );
 end;
-$;
+$$;
 
 revoke all on function public.ecoflow_claim_unleashed_warehouse_snapshot_acquisition(uuid,text,integer,uuid)
   from public,anon,authenticated;
@@ -317,6 +303,11 @@ revoke all on function public.ecoflow_release_unleashed_warehouse_snapshot_acqui
 grant execute on function public.ecoflow_claim_unleashed_warehouse_snapshot_acquisition(uuid,text,integer,uuid)
   to service_role;
 grant execute on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)
+  to service_role;
+
+revoke all on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
+  from public,anon,authenticated;
+grant execute on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
   to service_role;
 
 commit;
