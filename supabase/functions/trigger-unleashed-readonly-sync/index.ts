@@ -757,8 +757,11 @@ Deno.serve(async (req) => {
     let acquisitionLeaseToken: string | null = null;
 
     if (!dryRun) {
+      const claimRpc = target?.cardinality === 'MANY'
+        ? 'ecoflow_claim_unleashed_warehouse_snapshot_acquisition'
+        : 'ecoflow_claim_unleashed_snapshot_acquisition';
       const { data: claimData, error: claimError } = await adminClient.rpc(
-        'ecoflow_claim_unleashed_snapshot_acquisition',
+        claimRpc,
         {
           p_run_id: run.id,
           p_resource: resource,
@@ -1075,9 +1078,27 @@ Deno.serve(async (req) => {
     if (!dryRun && acquisitionLeaseToken) {
       if (target) {
         if (!resourceFailed || resourceFailureEvidenceReady) {
+          const releaseRpc = target.cardinality === 'MANY'
+            ? 'ecoflow_release_unleashed_warehouse_snapshot_acquisition'
+            : 'ecoflow_release_unleashed_targeted_snapshot_acquisition';
+          const releaseArgs = target.cardinality === 'MANY'
+            ? {
+                p_lease_token: acquisitionLeaseToken,
+                p_run_id: run.id,
+                p_resource: resource,
+                p_window: {
+                  start_page: windowEvidence.startPage,
+                  last_page: windowEvidence.lastPage,
+                  number_of_pages: windowEvidence.numberOfPages,
+                  window_complete: windowEvidence.windowComplete,
+                  next_page: windowEvidence.nextPage,
+                  previous_run_id: previousRunId,
+                },
+              }
+            : { p_lease_token: acquisitionLeaseToken, p_run_id: run.id, p_resource: resource };
           const { error: releaseError } = await adminClient.rpc(
-            'ecoflow_release_unleashed_targeted_snapshot_acquisition',
-            { p_lease_token: acquisitionLeaseToken, p_run_id: run.id, p_resource: resource },
+            releaseRpc,
+            releaseArgs,
           );
           if (releaseError) {
             recordsFailed += resourceFailed ? 0 : 1;

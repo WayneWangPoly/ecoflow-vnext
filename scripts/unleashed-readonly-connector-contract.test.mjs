@@ -108,6 +108,9 @@ test('Targeted reads accept only deterministic product, stock, sales-order, and 
   assert.match(edgeFunction, /UNLEASHED_TARGET_AMBIGUOUS/);
   assert.match(edgeFunction, /cardinality: 'MANY'/);
   assert.match(edgeFunction, /WAREHOUSE_TARGET_REQUIRES_BOUNDED_SNAPSHOT/);
+  assert.match(edgeFunction, /ecoflow_claim_unleashed_warehouse_snapshot_acquisition/);
+  assert.match(edgeFunction, /ecoflow_release_unleashed_warehouse_snapshot_acquisition/);
+  assert.match(edgeFunction, /p_window: \{/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_SCOPE_MISMATCH/);
   assert.match(edgeFunction, /query: \{ warehouseCode \}/);
   assert.match(edgeFunction, /query: \{ productId: guid \}/);
