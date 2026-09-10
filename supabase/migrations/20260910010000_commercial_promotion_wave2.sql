@@ -1,6 +1,6 @@
 -- #338 Commercial Promotion Wave 2 engineering carrier
 -- Frozen by SELECT-only census on 2026-09-10. Deployment creates no enabled phase.
--- Exact cohort hash recipe: SHA-256 over sorted lines
+-- Exact cohort hash recipe: SHA-256 over bytewise code-sorted lines (COLLATE "C")
 -- code|mapping_id|revision|source_payload_sha256|source_external_key.
 -- Production unlock and promotion require separate explicit authorization.
 
@@ -220,7 +220,7 @@ begin
            concat_ws('|',external_product_code,unleashed_mapping_id::text,
              expected_mapping_revision::text,expected_source_payload_sha256,
              expected_source_external_key),
-           E'\n' order by external_product_code
+           E'\n' order by external_product_code collate "C"
          ),'sha256'),'hex')
   into v_count,v_canary,v_hash
   from public.ecoflow_commercial_wave2_candidates;
