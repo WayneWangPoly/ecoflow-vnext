@@ -37,7 +37,7 @@ check('exact SELECT-only cohort is frozen', frozenRows.length === 164
   && (sql.match(/'EXPANSION',false/g) ?? []).length === 163
   && sql.includes("'140010','CANARY',false")
   && sql.includes(hash)
-  && /E'\\n' order by external_product_code collate "C"/.test(sql)
+  && /chr\(10\) order by external_product_code collate "C"/.test(sql)
   && computedHash === hash,
   `164 rows, one deterministic disabled canary, 163 disabled expansion rows, bytewise SQL ordering and exact cohort hash; computed=${computedHash}`);
 
