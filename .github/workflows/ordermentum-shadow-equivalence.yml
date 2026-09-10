@@ -1,0 +1,77 @@
+name: Ordermentum bounded shadow equivalence
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Externally reviewed exact main SHA'
+        required: true
+        type: string
+      manifest_sha256:
+        description: 'Externally reviewed canonical manifest SHA-256'
+        required: true
+        type: string
+      window:
+        description: 'One frozen historical window'
+        required: true
+        type: choice
+        options: [HOLD, W0, W1]
+      confirmation:
+        description: 'Read-only paired shadow; no writes/retries/redirects'
+        required: true
+        type: choice
+        options: [HOLD, READ_ONLY_SHADOW_NO_WRITES]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordermentum-cloud-sync
+  cancel-in-progress: false
+
+jobs:
+  shadow:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.window != 'HOLD' && inputs.confirmation == 'READ_ONLY_SHADOW_NO_WRITES'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Verify exact main and frozen manifest before provider credentials
+        id: preflight
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$current_main" = "$EXPECTED_SHA"
+          actual_manifest=$(node --input-type=module -e "import {loadManifest,validateManifest} from './scripts/ordermentum-shadow-manifest.mjs'; process.stdout.write(validateManifest(loadManifest()).digest)")
+          test "$actual_manifest" = "$MANIFEST_SHA256"
+          echo "current_main=$current_main" >> "$GITHUB_OUTPUT"
+      - name: Execute one separately authorized bounded read-only window
+        env:
+          ORDERMENTUM_C_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ORDERMENTUM_C_CURRENT_MAIN_SHA: ${{ steps.preflight.outputs.current_main }}
+          ORDERMENTUM_C_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          ORDERMENTUM_C_WINDOW: ${{ inputs.window }}
+          ORDERMENTUM_C_CONFIRM: ${{ inputs.confirmation }}
+          ORDERMENTUM_C_SHADOW_SUPPLIER_SHA256: ${{ secrets.ORDERMENTUM_C_SHADOW_SUPPLIER_SHA256 }}
+          ORDERMENTUM_SUPPLIER_ID: ${{ secrets.ORDERMENTUM_SUPPLIER_ID }}
+          ORDERMENTUM_API_KEY: ${{ secrets.ORDERMENTUM_API_KEY }}
+          ORDERMENTUM_USERNAME: ${{ secrets.ORDERMENTUM_USERNAME }}
+          ORDERMENTUM_PASSWORD: ${{ secrets.ORDERMENTUM_PASSWORD }}
+        run: node scripts/ordermentum-shadow-runner.mjs

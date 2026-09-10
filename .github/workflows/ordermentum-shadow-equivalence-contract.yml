@@ -1,0 +1,47 @@
+name: Ordermentum shadow equivalence contract
+
+on:
+  pull_request:
+    paths:
+      - 'docs/engineering/evidence/ordermentum-359-c-*'
+      - 'scripts/ordermentum-shadow-*'
+      - 'scripts/audit-ordermentum-359-c-callers.mjs'
+      - 'docs/engineering/ORDERMENTUM-359-C-SHADOW-EXECUTION.md'
+      - 'docs/engineering/work-packages/359-C-fresh-main-shadow-equivalence.md'
+      - '.github/workflows/ordermentum-shadow-equivalence*'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Syntax and offline contract fixtures
+        run: |
+          node --check scripts/ordermentum-shadow-manifest.mjs
+          node --check scripts/ordermentum-shadow-adapter.mjs
+          node --check scripts/ordermentum-shadow-runner.mjs
+          node --test scripts/ordermentum-shadow-manifest.test.mjs scripts/ordermentum-shadow-adapter.test.mjs scripts/ordermentum-shadow-runner.test.mjs
+      - name: Exact caller inventory and diff hygiene
+        run: |
+          node scripts/audit-ordermentum-359-c-callers.mjs
+          git diff --check
+      - name: Credential-free gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${ORDERMENTUM_API_KEY:-}"
+          test -z "${ORDERMENTUM_USERNAME:-}"
+          test -z "${ORDERMENTUM_PASSWORD:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          echo 'Offline #359-C gate only; no provider traffic or production mutation.'
