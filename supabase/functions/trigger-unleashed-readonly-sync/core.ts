@@ -36,6 +36,7 @@ export type TargetableResource = 'products' | 'stock_on_hand' | 'sales_orders_op
 
 export type NormalizedTarget = {
   resource: TargetableResource;
+  cardinality: 'ONE' | 'MANY';
   pathIdentifier: string | null;
   query: Record<string, string>;
   exactMatches: Array<{ keys: string[]; value: string }>;
@@ -144,6 +145,7 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
       const guid = normalizeTargetIdentifier('guid', value.guid);
       return {
         resource,
+        cardinality: 'ONE',
         pathIdentifier: null,
         query: { productId: guid },
         exactMatches: [{ keys: ['Guid', 'guid', 'ProductGuid'], value: guid }],
@@ -153,6 +155,7 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
     const productCode = normalizeTargetIdentifier('productCode', value.productCode);
     return {
       resource,
+      cardinality: 'ONE',
       pathIdentifier: null,
       query: { productCode },
       exactMatches: [{ keys: ['ProductCode'], value: productCode }],
@@ -161,8 +164,20 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
   }
 
   if (resource === 'stock_on_hand') {
+    const warehouseOnly = suppliedFields.length === 1 && suppliedFields[0] === 'warehouseCode';
+    if (warehouseOnly) {
+      const warehouseCode = normalizeTargetIdentifier('warehouseCode', value.warehouseCode);
+      return {
+        resource,
+        cardinality: 'MANY',
+        pathIdentifier: null,
+        query: { warehouseCode },
+        exactMatches: [{ keys: ['WarehouseCode'], value: warehouseCode }],
+        audit: { warehouseCode },
+      };
+    }
     if (!suppliedFields.includes('productId') || suppliedFields.some((field) => !['productId', 'warehouseCode'].includes(field))) {
-      throw new Error('STOCK_TARGET_REQUIRES_PRODUCT_ID');
+      throw new Error('STOCK_TARGET_REQUIRES_PRODUCT_ID_OR_WAREHOUSE_CODE');
     }
     const productId = normalizeTargetIdentifier('productId', value.productId);
     const warehouseCode = value.warehouseCode === undefined
@@ -170,6 +185,7 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
       : normalizeTargetIdentifier('warehouseCode', value.warehouseCode);
     return {
       resource,
+      cardinality: 'ONE',
       pathIdentifier: null,
       query: warehouseCode ? { productId, warehouseCode } : { productId },
       exactMatches: [
@@ -188,6 +204,7 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
       const guid = normalizeTargetIdentifier('guid', value.guid);
       return {
         resource,
+        cardinality: 'ONE',
         pathIdentifier: guid,
         query: {},
         exactMatches: [{ keys: ['Guid', 'guid'], value: guid }],
@@ -197,6 +214,7 @@ export function normalizeTarget(resources: string[], value: unknown): Normalized
     const orderNumber = normalizeTargetIdentifier('orderNumber', value.orderNumber);
     return {
       resource,
+      cardinality: 'ONE',
       pathIdentifier: null,
       query: { orderNumber },
       exactMatches: [{ keys: ['OrderNumber', 'PurchaseOrderNumber'], value: orderNumber }],
@@ -224,6 +242,10 @@ export function selectTargetItems(items: Record<string, unknown>[], target: Norm
     const value = readString(item, match.keys);
     return value !== null && valuesMatch(value, match.value);
   }));
+  if (target.cardinality === 'MANY') {
+    if (matches.length !== items.length) throw new Error('UNLEASHED_TARGET_SCOPE_MISMATCH');
+    return matches;
+  }
   if (!matches.length) throw new Error('UNLEASHED_TARGET_NOT_FOUND');
   if (matches.length > 1) throw new Error('UNLEASHED_TARGET_AMBIGUOUS');
   return matches;

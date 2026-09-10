@@ -89,8 +89,9 @@ test('Connector execution is bounded and dry-run by default', () => {
   assert.match(edgeFunction, /const HARD_MAX_PAGE_SIZE = 200/);
   assert.match(edgeFunction, /const HARD_MAX_PAGES = 5/);
   assert.match(edgeFunction, /const dryRun = body\.dryRun !== false/);
-  assert.match(edgeFunction, /pageSize = mode === 'probe' \|\| target[\s\S]*normalizeInteger\(body\.pageSize/);
-  assert.match(edgeFunction, /maxPages = mode === 'probe' \|\| target[\s\S]*normalizeInteger\(body\.maxPages/);
+  assert.match(edgeFunction, /pageSize = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.pageSize/);
+  assert.match(edgeFunction, /maxPages = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.maxPages/);
+  assert.match(edgeFunction, /startPage = mode === 'probe' \|\| target\?\.cardinality === 'ONE'[\s\S]*normalizeInteger\(body\.startPage/);
 });
 
 test('Targeted reads accept only deterministic product, stock, sales-order, and purchase-order selectors', () => {
@@ -104,6 +105,10 @@ test('Targeted reads accept only deterministic product, stock, sales-order, and 
   assert.match(edgeFunction, /TARGET_WITH_MODIFIED_SINCE_UNSUPPORTED/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_NOT_FOUND/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_AMBIGUOUS/);
+  assert.match(edgeFunction, /cardinality: 'MANY'/);
+  assert.match(edgeFunction, /WAREHOUSE_TARGET_REQUIRES_BOUNDED_SNAPSHOT/);
+  assert.match(edgeFunction, /UNLEASHED_TARGET_SCOPE_MISMATCH/);
+  assert.match(edgeFunction, /query: \{ warehouseCode \}/);
   assert.match(edgeFunction, /query: \{ productId: guid \}/);
   assert.match(edgeFunction, /serializeUnleashedQuery\(query\)/);
   assert.match(edgeFunction, /replaceAll\('%2C', ','\)/);

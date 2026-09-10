@@ -18,20 +18,38 @@ const unleashedPageUrl = 'https://api.unleashedsoftware.com/Products/1?pageSize=
 test('target normalization produces only approved exact request shapes', () => {
   assert.deepEqual(normalizeTarget(['products'], { guid: productGuid.toUpperCase() }), {
     resource: 'products',
+    cardinality: 'ONE',
     pathIdentifier: null,
     query: { productId: productGuid },
     exactMatches: [{ keys: ['Guid', 'guid', 'ProductGuid'], value: productGuid }],
     audit: { guid: productGuid },
   });
-  assert.deepEqual(normalizeTarget(['stock_on_hand'], { productId: productGuid, warehouseCode: 'MAIN' })?.query, {
-    productId: productGuid,
-    warehouseCode: 'MAIN',
+  assert.deepEqual(normalizeTarget(['stock_on_hand'], { productId: productGuid, warehouseCode: 'MAIN' }), {
+    resource: 'stock_on_hand',
+    cardinality: 'ONE',
+    pathIdentifier: null,
+    query: { productId: productGuid, warehouseCode: 'MAIN' },
+    exactMatches: [
+      { keys: ['ProductGuid', 'ProductId', 'Guid'], value: productGuid },
+      { keys: ['WarehouseCode'], value: 'MAIN' },
+    ],
+    audit: { productId: productGuid, warehouseCode: 'MAIN' },
+  });
+  assert.deepEqual(normalizeTarget(['stock_on_hand'], { warehouseCode: 'ADL1' }), {
+    resource: 'stock_on_hand',
+    cardinality: 'MANY',
+    pathIdentifier: null,
+    query: { warehouseCode: 'ADL1' },
+    exactMatches: [{ keys: ['WarehouseCode'], value: 'ADL1' }],
+    audit: { warehouseCode: 'ADL1' },
   });
   assert.deepEqual(normalizeTarget(['sales_orders_open'], { orderNumber: 'SO-1001' })?.query, {
     orderNumber: 'SO-1001',
   });
   assert.throws(() => normalizeTarget(['products', 'stock_on_hand'], { guid: productGuid }), /TARGET_REQUIRES_ONE_RESOURCE/);
   assert.throws(() => normalizeTarget(['products'], { endpoint: 'Anything' }), /INVALID_TARGET_FIELDS/);
+  assert.throws(() => normalizeTarget(['stock_on_hand'], { warehouseCode: 'ADL1', productCode: 'NOPE' }), /STOCK_TARGET_REQUIRES_PRODUCT_ID_OR_WAREHOUSE_CODE/);
+  assert.throws(() => normalizeTarget(['products'], { warehouseCode: 'ADL1' }), /PRODUCT_TARGET_REQUIRES_GUID_OR_CODE/);
   assert.throws(() => normalizeTarget(['warehouses'], { guid: productGuid }), /TARGET_NOT_SUPPORTED_FOR_RESOURCE/);
 });
 
@@ -51,6 +69,26 @@ test('target selection rejects missing and ambiguous API responses', () => {
   assert.deepEqual(selectTargetItems([{ ProductCode: 'sku-10' }, { ProductCode: 'SKU-11' }], target), [{ ProductCode: 'sku-10' }]);
   assert.throws(() => selectTargetItems([{ ProductCode: 'SKU-11' }], target), /UNLEASHED_TARGET_NOT_FOUND/);
   assert.throws(() => selectTargetItems([{ ProductCode: 'SKU-10' }, { ProductCode: 'sku-10' }], target), /UNLEASHED_TARGET_AMBIGUOUS/);
+});
+
+test('warehouse-only StockOnHand target accepts every exact row and rejects scope drift', () => {
+  const target = normalizeTarget(['stock_on_hand'], { warehouseCode: 'ADL1' });
+  const rows = [
+    { ProductGuid: productGuid, ProductCode: 'SKU-1', WarehouseCode: 'ADL1' },
+    { ProductGuid: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff', ProductCode: 'SKU-2', WarehouseCode: 'adl1' },
+  ];
+  assert.deepEqual(selectTargetItems(rows, target), rows);
+  assert.deepEqual(selectTargetItems([], target), []);
+  assert.throws(
+    () => selectTargetItems([...rows, { ProductGuid: productGuid, WarehouseCode: 'OTHER' }], target),
+    /UNLEASHED_TARGET_SCOPE_MISMATCH/,
+  );
+});
+
+test('stock singleton target still rejects more than one exact response', () => {
+  const target = normalizeTarget(['stock_on_hand'], { productId: productGuid, warehouseCode: 'ADL1' });
+  const row = { ProductGuid: productGuid, WarehouseCode: 'ADL1' };
+  assert.throws(() => selectTargetItems([row, { ...row }], target), /UNLEASHED_TARGET_AMBIGUOUS/);
 });
 
 test('payload classification separates inserts, changes, and unchanged replay', () => {
