@@ -12,9 +12,24 @@ const frozenRows = sql.match(/^  \('[^\n]+','(?:CANARY|EXPANSION)',false,'[0-9a-
 const frozenRowPattern = /^  \('([^']+)','(?:CANARY|EXPANSION)',false,'([0-9a-f-]+)'::uuid,(\d+),'([0-9a-f]{64})','([^']+)','[0-9a-f]{64}'\)[,]?$/;
 const frozenEvidence = frozenRows.map((row) => {
   const match = row.match(frozenRowPattern);
-  return match ? `${match[1]}|${match[2]}|${match[3]}|${match[4]}|${match[5]}` : null;
-}).filter(Boolean).sort();
-const computedHash = createHash('sha256').update(frozenEvidence.join('\n')).digest('hex');
+  return match ? {
+    code: match[1],
+    mappingId: match[2],
+    revision: match[3],
+    sourceSha: match[4],
+    sourceKey: match[5],
+  } : null;
+}).filter(Boolean).sort((a, b) => a.code.localeCompare(b.code, 'en', { sensitivity: 'variant' }));
+const digest = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex');
+const computedHash = digest(frozenEvidence.map((row) => `${row.code}|${row.mappingId}|${row.revision}|${row.sourceSha}|${row.sourceKey}`));
+const componentHashes = {
+  code: digest(frozenEvidence.map((row) => row.code)),
+  mapping: digest(frozenEvidence.map((row) => `${row.code}|${row.mappingId}`)),
+  revision: digest(frozenEvidence.map((row) => `${row.code}|${row.revision}`)),
+  sourceSha: digest(frozenEvidence.map((row) => `${row.code}|${row.sourceSha}`)),
+  sourceKey: digest(frozenEvidence.map((row) => `${row.code}|${row.sourceKey}`)),
+};
+console.log(`COMMERCIAL_WAVE2_COMPONENT_HASHES ${JSON.stringify(componentHashes)}`);
 
 check('exact SELECT-only cohort is frozen', frozenRows.length === 164
   && frozenEvidence.length === 164
