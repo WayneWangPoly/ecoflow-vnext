@@ -19,7 +19,7 @@ const frozenEvidence = frozenRows.map((row) => {
     sourceSha: match[4],
     sourceKey: match[5],
   } : null;
-}).filter(Boolean).sort((a, b) => a.code.localeCompare(b.code, 'en', { sensitivity: 'variant' }));
+}).filter(Boolean).sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 const digest = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex');
 const computedHash = digest(frozenEvidence.map((row) => `${row.code}|${row.mappingId}|${row.revision}|${row.sourceSha}|${row.sourceKey}`));
 const componentHashes = {
