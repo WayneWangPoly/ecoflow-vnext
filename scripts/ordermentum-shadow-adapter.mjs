@@ -158,7 +158,10 @@ export async function readResponseTextBounded(response, maxBytes) {
         const chunkBytes = value?.byteLength || 0;
         if (bytes + chunkBytes > maxBytes) {
           try { await reader.cancel(); } catch {}
-          hold('Response byte cap exceeded.', 'ORDERMENTUM_C_RESPONSE_CAP');
+          const error = new Error('Response byte cap exceeded.');
+          error.code = 'ORDERMENTUM_C_RESPONSE_CAP';
+          error.decoded_bytes = bytes;
+          throw error;
         }
         bytes += chunkBytes;
         text += decoder.decode(value, { stream: true });
@@ -173,7 +176,12 @@ export async function readResponseTextBounded(response, maxBytes) {
 
   const text = await response.text();
   const bytes = Buffer.byteLength(text, 'utf8');
-  if (bytes > maxBytes) hold('Response byte cap exceeded.', 'ORDERMENTUM_C_RESPONSE_CAP');
+  if (bytes > maxBytes) {
+    const error = new Error('Response byte cap exceeded.');
+    error.code = 'ORDERMENTUM_C_RESPONSE_CAP';
+    error.decoded_bytes = maxBytes;
+    throw error;
+  }
   return { text, bytes };
 }
 
@@ -187,8 +195,14 @@ export async function boundedJsonFetch({ url, headers, timeoutMs, maxBytes, fetc
   assertNoCredentialedOrdermentumRedirect(response, requestUrl);
   if (!response.ok) { const error = new Error('Provider request rejected.'); error.status = response.status; throw error; }
   const { text, bytes } = await readResponseTextBounded(response, maxBytes);
-  try { return { payload: text ? JSON.parse(text) : null, bytes, started_at: startedAt, completed_at: new Date().toISOString() }; }
-  catch { hold('Provider response was not JSON.', 'ORDERMENTUM_C_PARSE_HOLD'); }
+  try {
+    return { payload: text ? JSON.parse(text) : null, bytes, started_at: startedAt, completed_at: new Date().toISOString() };
+  } catch {
+    const error = new Error('Provider response was not JSON.');
+    error.code = 'ORDERMENTUM_C_PARSE_HOLD';
+    error.decoded_bytes = bytes;
+    throw error;
+  }
 }
 
 async function fetchPair({ manifest, counts, reserveRows, deadlineEpochMs, url, currentApiKey, legacyBearer, fetchImpl }) {
@@ -200,7 +214,10 @@ async function fetchPair({ manifest, counts, reserveRows, deadlineEpochMs, url, 
     boundedJsonFetch({ url, headers: { accept: 'application/json', 'x-api-key': currentApiKey }, timeoutMs, maxBytes, fetchImpl }),
     boundedJsonFetch({ url, headers: { accept: 'application/json', authorization: `Bearer ${legacyBearer}` }, timeoutMs, maxBytes, fetchImpl }),
   ]);
-  for (const item of settled) if (item.status === 'fulfilled') counts.decoded_bytes += item.value.bytes;
+  for (const item of settled) {
+    if (item.status === 'fulfilled') counts.decoded_bytes += item.value.bytes;
+    else if (Number.isSafeInteger(item.reason?.decoded_bytes) && item.reason.decoded_bytes > 0) counts.decoded_bytes += item.reason.decoded_bytes;
+  }
   const rejected = settled.find((item) => item.status === 'rejected');
   if (rejected) throw withProgress(rejected.reason, counts);
   return settled.map((item) => item.value);

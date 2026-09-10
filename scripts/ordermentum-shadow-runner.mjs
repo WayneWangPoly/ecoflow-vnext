@@ -53,9 +53,9 @@ export async function runShadow({ env = process.env, fetchImpl = fetch } = {}) {
     const result = await executeWindow({ manifest, windowId: env.ORDERMENTUM_C_WINDOW, supplierId, currentApiKey, legacyBearer: auth.bearer, fetchImpl, initialCounts: progress, deadlineEpochMs });
     return { evidence: 'ordermentum-359-c-shadow-equivalence', status: 'PASS', stage: 'complete', candidate_sha: env.GITHUB_SHA, manifest_sha256: validated.digest, started_at: startedAt, completed_at: new Date().toISOString(), legacy_auth_posts: result.request_counts.legacy_auth_posts, ...result, legacy_retirement: 'HOLD', scheduled_caller_switch: 'HOLD' };
   } catch (error) {
-    if (Number.isSafeInteger(error?.decoded_bytes) && error.decoded_bytes > 0) progress.decoded_bytes += error.decoded_bytes;
-    const requestCounts = error?.progress ? { ...error.progress } : { ...progress };
-    if (Number.isSafeInteger(error?.decoded_bytes) && error.decoded_bytes > 0 && error?.progress) requestCounts.decoded_bytes += error.decoded_bytes;
+    const hasProgress = Boolean(error?.progress);
+    const requestCounts = hasProgress ? { ...error.progress } : { ...progress };
+    if (!hasProgress && Number.isSafeInteger(error?.decoded_bytes) && error.decoded_bytes > 0) requestCounts.decoded_bytes += error.decoded_bytes;
     return { evidence: 'ordermentum-359-c-shadow-equivalence', status: 'HOLD', stage, failure_category: classifyFailure(error), started_at: startedAt, completed_at: new Date().toISOString(), request_counts: requestCounts, business_writes: 0, legacy_retirement: 'HOLD', scheduled_caller_switch: 'HOLD' };
   }
 }

@@ -7,6 +7,7 @@ const UUIDS = {
   orders: '10000000-0000-4000-8000-000000000001', products: '20000000-0000-4000-8000-000000000001', variants: '30000000-0000-4000-8000-000000000001', purchasers: '40000000-0000-4000-8000-000000000001', price_groups: '50000000-0000-4000-8000-000000000001', invoices: '60000000-0000-4000-8000-000000000001', stock_locations: '70000000-0000-4000-8000-000000000001', leads: '80000000-0000-4000-8000-000000000001',
 };
 const response = (payload, status = 200, headers = {}) => ({ ok: status >= 200 && status < 300, status, redirected: false, headers: { get: (name) => headers[name.toLowerCase()] || null }, text: async () => JSON.stringify(payload) });
+const invalidJsonResponse = (text = 'bad') => ({ ok: true, status: 200, redirected: false, headers: { get: () => null }, text: async () => text });
 
 test('request plan preserves incumbent inclusive upper bound and price groups omit invented supplier filter', () => {
   const manifest = validateManifest(loadManifest()).manifest; const window = manifest.windows[0];
@@ -49,6 +50,21 @@ test('detail selection excludes the already-probed B1 target', () => {
 test('bounded transport blocks redirects and byte overflow', async () => {
   await assert.rejects(() => boundedJsonFetch({ url: 'https://api.ordermentum.com/v1/purchasers', headers: {}, timeoutMs: 10, maxBytes: 10, fetchImpl: async () => response({}, 302) }), /redirect/i);
   await assert.rejects(() => boundedJsonFetch({ url: 'https://api.ordermentum.com/v1/purchasers', headers: {}, timeoutMs: 10, maxBytes: 2, fetchImpl: async () => response({ big: true }) }), /cap/i);
+});
+
+test('malformed paired JSON preserves bytes already consumed before HOLD', async () => {
+  const manifest = validateManifest(loadManifest()).manifest;
+  let calls = 0;
+  let error;
+  try {
+    await executeWindow({ manifest, windowId: 'W0', supplierId: 'supplier-a', currentApiKey: 'current-key', legacyBearer: 'legacy-token', fetchImpl: async () => { calls += 1; return invalidJsonResponse('bad'); } });
+  } catch (caught) { error = caught; }
+  assert.match(error?.message || '', /not JSON/);
+  assert.equal(calls, 2);
+  assert.equal(error.progress.current_get, 1);
+  assert.equal(error.progress.legacy_get, 1);
+  assert.equal(error.progress.decoded_bytes, 6);
+  assert.equal(error.progress.rows, 0);
 });
 
 test('pagination cap and provider interruption preserve attempted-request evidence without retry', async () => {
