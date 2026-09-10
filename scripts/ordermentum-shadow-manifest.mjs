@@ -6,6 +6,14 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const REQUIRED_RESOURCES = ['orders', 'products', 'variants', 'purchasers', 'price_groups', 'invoices', 'stock_locations', 'leads'];
 const PATHS = ['/v2/orders', '/v2/products', '/v1/variants', '/v1/purchasers', '/v1/price-groups', '/v2/invoices', '/v1/stock-locations', '/v1/leads'];
+const TRANSFORM_CONTRACT = {
+  orders: 'scripts/ordermentum-full-sync-core.mjs#extractOrderIdentity + scripts/ordermentum-sync-common.mjs#extractOrderDates/extractOrderStatus',
+  master_identity: 'scripts/ordermentum-master-data-common.mjs#extractExternalId (strict sentinel guard in C)',
+  purchaser_projection: 'scripts/ordermentum-targeted-store-sync-core.mjs#projectPurchaserToStoreRow',
+  invoice_detail_evidence: 'scripts/ordermentum-shadow-adapter.mjs#canonicalProjection using ordermentum-master-data-common.mjs#hashPayload/extractTimestamp',
+  canonical_json: 'scripts/ordermentum-api-key-probe.mjs#hashCanonicalPayload',
+  version: '359-c-v2',
+};
 
 function blocked(message, code = 'ORDERMENTUM_C_MANIFEST_BLOCKED') {
   const error = new Error(message);
@@ -38,6 +46,7 @@ export function validateManifest(manifest) {
   if (!COMMIT_SHA.test(manifest.source_baseline_sha || '')) blocked('Source baseline SHA is missing or invalid.');
   if (manifest.contract_pr !== 383) blocked('The reviewed #383 contract must remain bound.');
   if (manifest.execution_state !== 'ENGINEERING_FROZEN_LIVE_HOLD') blocked('Live HOLD marker is required.');
+  if (manifest.window_semantics !== 'inclusive_gte_lte') blocked('Window boundary semantics changed.');
   const origins = manifest.approved_origins || {};
   if (origins.current !== 'https://api.ordermentum.com' || origins.legacy_api !== 'https://api.ordermentum.com' || origins.legacy_auth !== 'https://app.ordermentum.com') blocked('Approved origins changed.');
   if (manifest.supplier_binding?.algorithm !== 'sha256' || manifest.supplier_binding?.raw_value_env !== 'ORDERMENTUM_SUPPLIER_ID' || manifest.supplier_binding?.reviewed_hash_env !== 'ORDERMENTUM_C_SHADOW_SUPPLIER_SHA256') blocked('Supplier hash binding is incomplete.');
@@ -58,6 +67,7 @@ export function validateManifest(manifest) {
   const expected = { page_size: 10, max_pages_per_resource_per_auth: 2, max_detail_targets_per_type: 1, max_gets_per_window: 38, max_legacy_auth_posts_per_window: 1, max_rows_per_window: 326, max_response_bytes: 1048576, max_decoded_bytes_per_window: 16777216, request_timeout_ms: 20000, window_timeout_ms: 600000, retries: 0, redirects: 0, writes: 0 };
   for (const [key, value] of Object.entries(expected)) if (limits[key] !== value) blocked(`Frozen limit changed: ${key}.`);
   if (manifest.query?.page_parameter !== 'pageNo' || manifest.query?.page_size_parameter !== 'pageSize' || manifest.query?.supplier_parameter !== 'supplierId' || manifest.query?.window_from_parameter !== 'updatedAt[gte]' || manifest.query?.window_to_parameter !== 'updatedAt[lte]') blocked('Query contract changed.');
+  if (canonicalJson(manifest.transform_contract || {}) !== canonicalJson(TRANSFORM_CONTRACT)) blocked('Transform contract changed.');
   return { manifest, digest: manifestDigest(manifest) };
 }
 
