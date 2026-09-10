@@ -212,6 +212,104 @@ begin
 end;
 $$;
 
+create or replace function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(
+  p_lease_token uuid,
+  p_run_id uuid,
+  p_resource text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_lease public.unleashed_snapshot_acquisition_leases%rowtype;
+  v_run public.unleashed_sync_runs%rowtype;
+  v_target jsonb;
+  v_warehouse_code text;
+  v_batch_count integer;
+  v_distinct_pages integer;
+  v_min_page integer;
+  v_max_page integer;
+  v_bad_batches integer;
+  v_failed_batches integer;
+  v_last_failed_page integer;
+begin
+  select * into v_lease
+  from public.unleashed_snapshot_acquisition_leases l
+  where l.resource=p_resource
+  for update;
+  if not found or v_lease.run_id<>p_run_id or v_lease.lease_token<>p_lease_token
+     or v_lease.expires_at<=clock_timestamp() or v_lease.start_page<>1
+     or v_lease.previous_run_id is not null then
+    raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST';
+  end if;
+
+  select * into v_run
+  from public.unleashed_sync_runs r
+  where r.id=p_run_id
+  for update;
+  v_target := v_run.metadata->'target';
+  v_warehouse_code := btrim(coalesce(v_target->>'warehouseCode',''));
+  if not found or p_resource<>'stock_on_hand' or v_run.status<>'RUNNING' or v_run.dry_run
+     or v_run.run_type<>'BOUNDED_SNAPSHOT'
+     or v_run.resource_set<>array['stock_on_hand']::text[]
+     or v_run.page_size not between 1 and 200 or v_run.max_pages not between 1 and 5
+     or jsonb_typeof(v_target)<>'object'
+     or (select count(*) from jsonb_object_keys(v_target))<>1
+     or v_warehouse_code !~ '^[A-Za-z0-9][A-Za-z0-9 ._/#-]{0,99}
+  from public,anon,authenticated;
+revoke all on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)
+  from public,anon,authenticated;
+revoke all on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
+  from public,anon,authenticated;
+grant execute on function public.ecoflow_claim_unleashed_warehouse_snapshot_acquisition(uuid,text,integer,uuid)
+  to service_role;
+grant execute on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)
+  to service_role;
+grant execute on function public.ecoflow_abort_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text)
+  to service_role;
+
+commit;
+ then
+    raise exception 'UNLEASHED_WAREHOUSE_TARGET_ABORT_INVALID';
+  end if;
+
+  select
+    count(*),count(distinct b.page_number),min(b.page_number),max(b.page_number),
+    count(*) filter (
+      where b.status not in ('SUCCEEDED','FAILED')
+         or b.page_size<>v_run.page_size
+         or b.endpoint_path<>('/StockOnHand/' || b.page_number::text)
+         or upper(btrim(coalesce(b.query_params->>'warehouseCode','')))<>upper(v_warehouse_code)
+         or b.query_params->>'pageSize'<>v_run.page_size::text
+         or b.query_params ? 'productId'
+         or (b.query_params - 'warehouseCode' - 'pageSize')<>'{}'::jsonb
+    ),
+    count(*) filter (where b.status='FAILED'),
+    max(b.page_number) filter (where b.status='FAILED')
+  into v_batch_count,v_distinct_pages,v_min_page,v_max_page,v_bad_batches,v_failed_batches,v_last_failed_page
+  from public.unleashed_sync_batches b
+  where b.run_id=p_run_id and b.resource=p_resource;
+
+  if v_batch_count<1 or v_batch_count>v_run.max_pages
+     or v_distinct_pages<>v_batch_count or v_min_page<>1 or v_max_page<>v_batch_count
+     or v_bad_batches<>0 or v_failed_batches<>1 or v_last_failed_page<>v_max_page then
+    raise exception 'UNLEASHED_WAREHOUSE_TARGET_ABORT_BATCH_MISMATCH';
+  end if;
+
+  delete from public.unleashed_snapshot_acquisition_leases
+  where resource=p_resource and run_id=p_run_id and lease_token=p_lease_token;
+  if not found then raise exception 'UNLEASHED_ACQUISITION_LEASE_LOST'; end if;
+
+  return jsonb_build_object(
+    'resource',p_resource,'runId',p_run_id,'warehouseCode',v_warehouse_code,
+    'targeted',true,'cardinality','MANY','aborted',true,
+    'validatedPages',v_batch_count,'failedPage',v_last_failed_page
+  );
+end;
+$;
+
 revoke all on function public.ecoflow_claim_unleashed_warehouse_snapshot_acquisition(uuid,text,integer,uuid)
   from public,anon,authenticated;
 revoke all on function public.ecoflow_release_unleashed_warehouse_snapshot_acquisition(uuid,uuid,text,jsonb)

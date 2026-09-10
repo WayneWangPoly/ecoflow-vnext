@@ -333,7 +333,7 @@ Engineering scope only. The connector accepts one additive multi-row target:
 - It retains the incumbent page bounds (page size at most 200, at most 5 pages) instead of singleton `1x1` behavior; every targeted window starts at page 1, so an incomplete five-page window cannot be continued under a different warehouse target.
 - Every returned row must match the requested WarehouseCode; mixed-warehouse payloads fail with `UNLEASHED_TARGET_SCOPE_MISMATCH`.
 - Query signing uses the existing serialized query, including only the validated `warehouseCode` plus bounded pagination fields.
-- Existing GET-only origin, redirect, retry, staging and per-row source-identity gates are unchanged. A warehouse-scope-specific database claim/release pair reuses the incumbent lease and page-commit tables, binds all page query evidence to the exact warehouse target, and never publishes the global resource cursor.
+- Existing GET-only origin, redirect, retry, staging and per-row source-identity gates are unchanged. Warehouse-scope-specific database claim/release/abort RPCs reuse the incumbent lease and page-commit tables, bind all success or failure page query evidence to the exact warehouse target, and never publish the global resource cursor. After a durably recorded failed page, abort releases the lease without replacing the original provider/scope error.
 - The expected first live shape, under separate authorization after merge/deploy, is ADL1, page 1, page size 200, max 5, with no incremental boundary.
 
 This carrier performs no provider request, deployment, inventory-reference STAGE, stocktake, movement, SOH/opening-balance write, or inventory authority change.

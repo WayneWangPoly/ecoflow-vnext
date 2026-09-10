@@ -110,6 +110,8 @@ test('Targeted reads accept only deterministic product, stock, sales-order, and 
   assert.match(edgeFunction, /WAREHOUSE_TARGET_REQUIRES_BOUNDED_SNAPSHOT/);
   assert.match(edgeFunction, /ecoflow_claim_unleashed_warehouse_snapshot_acquisition/);
   assert.match(edgeFunction, /ecoflow_release_unleashed_warehouse_snapshot_acquisition/);
+  assert.match(edgeFunction, /ecoflow_abort_unleashed_warehouse_snapshot_acquisition/);
+  assert.match(edgeFunction, /const warehouseFailure = target\.cardinality === 'MANY' && resourceFailed/);
   assert.match(edgeFunction, /p_window: \{/);
   assert.match(edgeFunction, /UNLEASHED_TARGET_SCOPE_MISMATCH/);
   assert.match(edgeFunction, /query: \{ warehouseCode \}/);
