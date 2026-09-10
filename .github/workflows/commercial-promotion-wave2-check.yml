@@ -1,0 +1,60 @@
+name: Commercial Promotion Wave 2 contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-PROMOTION-WAVE2.md'
+      - 'scripts/audit-commercial-promotion-wave2.mjs'
+      - 'scripts/commercial-promotion-wave2-db-contract-test.sql'
+      - 'supabase/migrations/20260910010000_commercial_promotion_wave2.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-commercial-wave2'
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-PROMOTION-WAVE2.md'
+      - 'scripts/audit-commercial-promotion-wave2.mjs'
+      - 'scripts/commercial-promotion-wave2-db-contract-test.sql'
+      - 'supabase/migrations/20260910010000_commercial_promotion_wave2.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Frozen cohort and phase fencing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Audit static authority boundary
+        run: node scripts/audit-commercial-promotion-wave2.mjs
+      - name: Exercise database cohort and phase contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-db-contract-test.sql
+      - name: Reject whitespace errors
+        run: git diff --check HEAD^ HEAD
