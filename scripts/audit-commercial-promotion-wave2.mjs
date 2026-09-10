@@ -37,8 +37,9 @@ check('exact SELECT-only cohort is frozen', frozenRows.length === 164
   && (sql.match(/'EXPANSION',false/g) ?? []).length === 163
   && sql.includes("'140010','CANARY',false")
   && sql.includes(hash)
+  && /E'\\n' order by external_product_code collate "C"/.test(sql)
   && computedHash === hash,
-  `164 rows, one deterministic disabled canary, 163 disabled expansion rows and exact cohort hash; computed=${computedHash}`);
+  `164 rows, one deterministic disabled canary, 163 disabled expansion rows, bytewise SQL ordering and exact cohort hash; computed=${computedHash}`);
 
 check('hold set is excluded and independently blocked',
   !frozenRows.some((row) => /CCSB6-80|CCSKBM16-90/.test(row))
