@@ -7,12 +7,16 @@ on:
       - '.github/workflows/warehouse-survey-002-reconciliation-check.yml'
       - 'scripts/warehouse-survey-002-*'
       - 'scripts/batch2-p2-resume-submit-contract.test.mjs'
+      - 'scripts/batch2-p3-resume-publish-contract.test.mjs'
       - 'src/data/repositories/barcodeSurveyReconciliation.ts'
       - 'src/data/repositories/batch2P2ResumeEvidence.ts'
+      - 'src/data/repositories/batch2P3ResumeEvidence.ts'
       - 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx'
       - 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx'
       - 'src/features/productIdentity/Batch2P2ResumeSubmitCarrier.tsx'
       - 'src/features/productIdentity/batch2P2ResumeSubmitContract.ts'
+      - 'src/features/productIdentity/Batch2P3ResumePublishCarrier.tsx'
+      - 'src/features/productIdentity/batch2P3ResumePublishContract.ts'
       - 'src/features/productIdentity/barcodeSurveyReconciliation.css'
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
@@ -67,6 +71,9 @@ jobs:
 
       - name: Batch 2 P2 fresh-session resume contract
         run: node --experimental-strip-types --test scripts/batch2-p2-resume-submit-contract.test.mjs
+
+      - name: Batch 2 P3 fresh-session resume contract
+        run: node --experimental-strip-types --test scripts/batch2-p3-resume-publish-contract.test.mjs
 
       - name: Static bounded-batch repair contract and audit
         run: npm run audit:warehouse-survey-002-bounded-batch

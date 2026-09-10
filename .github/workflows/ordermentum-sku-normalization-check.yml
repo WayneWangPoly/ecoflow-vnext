@@ -1,0 +1,72 @@
+name: Ordermentum SKU normalization check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ordermentum-sku-normalization-check.yml'
+      - 'docs/engineering/work-packages/341-ORDERMENTUM-SKU-NORMALIZATION.md'
+      - 'scripts/ordermentum-sku-normalization-*'
+      - 'supabase/migrations/20260909171000_ordermentum_sku_normalization.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  normalization:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Static normalization contract
+        run: node --test scripts/ordermentum-sku-normalization-contract.test.mjs
+
+      - name: Prepare production-shaped normalization fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/ordermentum-sku-normalization-fixture.sql
+
+      - name: Apply forward normalization migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260909171000_ordermentum_sku_normalization.sql
+
+      - name: Execute normalization database contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/ordermentum-sku-normalization-db-contract-test.sql
+
+      - name: TypeScript
+        run: node ./node_modules/typescript/bin/tsc -b --pretty false
+
+      - name: Production build
+        run: node ./node_modules/vite/bin/vite.js build
