@@ -1,0 +1,65 @@
+name: Commercial Promotion Wave 2 PLAN readiness
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-plan-readiness-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-WAVE2-PLAN-READINESS.md'
+      - 'scripts/commercial-promotion-wave2-plan-readiness-contract.test.mjs'
+      - 'scripts/commercial-promotion-wave2-plan-readiness-db-contract-test.sql'
+      - 'src/data/repositories/commercialWave2Plan.ts'
+      - 'src/features/productIdentity/CommercialWave2PlanCarrier.tsx'
+      - 'src/features/productIdentity/commercialWave2PlanContract.ts'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx'
+      - 'supabase/functions/trigger-unleashed-master-migration/index.ts'
+      - 'supabase/migrations/20260913000000_commercial_wave2_plan_readiness.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-plan-readiness'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact cohort and P0-P4 fencing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Audit edge syntax
+        run: node scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Exercise static carrier contract
+        run: node --test scripts/commercial-promotion-wave2-plan-readiness-contract.test.mjs
+      - name: Exercise PostgreSQL 17 command contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-plan-readiness-db-contract-test.sql
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Reject whitespace errors
+        run: git diff --check HEAD^ HEAD
