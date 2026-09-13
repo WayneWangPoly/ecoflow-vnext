@@ -15,9 +15,9 @@ export const COMMERCIAL_WAVE2_P3_TARGET = {
   auditEvent: 'COMMERCIAL_WAVE2_SKU_PROMOTED',
   auditActorRole: 'ADMIN',
   auditId: '03dbe0fc-7188-4e70-a1fd-a33fb5524ba8',
-  allowedProviderWorkflow: 'ordermentum-cloud-sync.yml',
-  allowedProviderWorkflowRunId: '34767646363',
-  allowedProviderOperationalRunId: '0bc9be6e-bc67-4e20-8e5c-c843451eb326',
+  providerContractVersion: 'P3A_R3_INCUMBENT_LEGACY_CLASS',
+  allowedProviderClass: 'SUCCEEDED_BACKFILL_LEGACY_BEARER',
+  legacyProviderOrigin: 'https://app.ordermentum.com',
 } as const;
 
 export type CommercialWave2P3VerificationReport = {
@@ -93,17 +93,18 @@ export type CommercialWave2P3VerificationReport = {
     sinceP2B: Record<string, number>;
   };
   providerSentinel: {
-    status: 'NO_PROVIDER_ACTIVITY' | 'ATTRIBUTED_INCUMBENT_LEGACY_SYNC' | 'UNATTRIBUTED_PROVIDER_ACTIVITY';
+    status: 'NO_PROVIDER_ACTIVITY' | 'ATTRIBUTED_INCUMBENT_LEGACY_ACTIVITY' | 'UNATTRIBUTED_PROVIDER_ACTIVITY';
+    contractVersion: string;
     p3aEmittedProviderTraffic: number;
-    allowedWorkflow: string;
-    allowedWorkflowRunId: string;
-    allowedOperationalRunId: string;
+    allowedClass: string;
+    legacyOrigin: string;
     authMode: string;
     syncRuns: number;
     rawApiEvents: number;
     syncStateRows: number;
     unattributedSyncRuns: number;
     unattributedRawApiEvents: number;
+    unattributedSyncStateRows: number;
     currentApiShadowExecuted: boolean;
     legacyRetired: boolean;
   };
@@ -222,16 +223,17 @@ export function assertCommercialWave2P3VerificationReport(value: CommercialWave2
     expect(count, 0, `${label} since P2B`);
   }
 
-  if (!['NO_PROVIDER_ACTIVITY', 'ATTRIBUTED_INCUMBENT_LEGACY_SYNC'].includes(value.providerSentinel.status)) {
+  if (!['NO_PROVIDER_ACTIVITY', 'ATTRIBUTED_INCUMBENT_LEGACY_ACTIVITY'].includes(value.providerSentinel.status)) {
     hold('provider activity is not attributable');
   }
+  expect(value.providerSentinel.contractVersion, t.providerContractVersion, 'provider sentinel contract');
   expect(value.providerSentinel.p3aEmittedProviderTraffic, 0, 'P3A provider traffic');
-  expect(value.providerSentinel.allowedWorkflow, t.allowedProviderWorkflow, 'allowed provider workflow');
-  expect(value.providerSentinel.allowedWorkflowRunId, t.allowedProviderWorkflowRunId, 'allowed provider workflow run');
-  expect(value.providerSentinel.allowedOperationalRunId, t.allowedProviderOperationalRunId, 'allowed operational run');
+  expect(value.providerSentinel.allowedClass, t.allowedProviderClass, 'allowed provider class');
+  expect(value.providerSentinel.legacyOrigin, t.legacyProviderOrigin, 'legacy provider origin');
   expect(value.providerSentinel.authMode, 'legacy-bearer', 'allowed provider auth mode');
   expect(value.providerSentinel.unattributedSyncRuns, 0, 'unattributed provider runs');
   expect(value.providerSentinel.unattributedRawApiEvents, 0, 'unattributed provider events');
+  expect(value.providerSentinel.unattributedSyncStateRows, 0, 'unattributed provider sync-state rows');
   expect(value.providerSentinel.currentApiShadowExecuted, false, '#359-C shadow execution');
   expect(value.providerSentinel.legacyRetired, false, 'legacy retirement');
   expect(value.noProductionBusinessMutation, true, 'P3 mutation boundary');
