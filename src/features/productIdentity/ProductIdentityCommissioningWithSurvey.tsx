@@ -8,6 +8,7 @@ import { Batch2ProductIdentityExecutionCarrier } from './Batch2ProductIdentityEx
 import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
 import { CommercialWave2CanaryPromotionCarrier } from './CommercialWave2CanaryPromotionCarrier';
 import { CommercialWave2CanaryVerificationCarrier } from './CommercialWave2CanaryVerificationCarrier';
+import { CommercialWave2P4ReadinessCarrier } from './CommercialWave2P4ReadinessCarrier';
 import { CommercialWave2PlanCarrier } from './CommercialWave2PlanCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
 
@@ -46,6 +47,7 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
       <CommercialWave2CanaryVerificationCarrier role={props.role} />
+      <CommercialWave2P4ReadinessCarrier role={props.role} />
       <BarcodeSurveyReconciliationPanel
         key={`survey-${commissioningRevision}`}
         role={props.role}
