@@ -14,7 +14,7 @@ const dynamicIdsThatMustNotBeAuthority = [
   '34778148992',
 ];
 
-test('R3 exposes a new caller-authenticated read-only RPC and keeps the R2 reader intact', () => {
+test('R3 exposes a caller-authenticated read-only RPC and keeps the R2 reader intact', () => {
   assert.match(migration, /ecoflow_read_commercial_wave2_p3_verification_v2\(\)/);
   assert.match(migration, /v_report := public\.ecoflow_read_commercial_wave2_p3_verification\(\)/);
   assert.match(migration, /stable\s+security definer\s+set search_path = ''/i);
@@ -22,7 +22,9 @@ test('R3 exposes a new caller-authenticated read-only RPC and keeps the R2 reade
   assert.match(migration, /not in \('OWNER', 'ADMIN'\)/);
   assert.match(migration, /grant execute on function public\.ecoflow_read_commercial_wave2_p3_verification_v2\(\)\s+to authenticated/i);
   assert.match(migration, /revoke all on function public\.ecoflow_read_commercial_wave2_p3_verification_v2\(\)\s+from public, anon, service_role/i);
-  assert.match(repository, /ecoflow_read_commercial_wave2_p3_verification_v2/);
+  // A later bounded repair may advance the active reader version while preserving
+  // the reviewed R3 v2 function and caller-authenticated/no-service-role boundary.
+  assert.match(repository, /ecoflow_read_commercial_wave2_p3_verification_v(?:2|3)/);
   assert.doesNotMatch(repository, /service[_-]?role|SUPABASE_SERVICE_ROLE_KEY|access[_-]?token|jwt/i);
 });
 
