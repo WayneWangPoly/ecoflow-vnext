@@ -1,0 +1,76 @@
+name: Commercial Promotion Wave 2 P3A-R4 master sync sentinel
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-check.yml'
+      - 'scripts/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-contract.test.mjs'
+      - 'scripts/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-db-contract-test.sql'
+      - 'src/data/repositories/commercialWave2CanaryVerification.ts'
+      - 'supabase/migrations/20260913225500_commercial_wave2_p3a_r4_master_sync_sentinel.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-p3a-r4-master-sync-sentinel'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head P3A-R4 master sync sentinel contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      EXACT_BASE_SHA: 936b2d408c8ccaa83d9f20dc75f52a6e20c41326
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind exact branch head to P3A-R3 production base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Exercise R4 static master-attribution contract
+        run: node --test scripts/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-contract.test.mjs
+      - name: Exercise PostgreSQL 17 R4 healthy-master and fail-closed contract including incumbent R3 DB regression
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-db-contract-test.sql
+      # Do not rerun the R3 static caller assertion here: that test intentionally
+      # requires the repository to call v2, while R4's bounded change is precisely
+      # the reviewed switch to v3. The R4 DB contract above includes the complete
+      # R3 authenticated provider fixture before applying v3.
+      - name: Keep incumbent P3A-R2 static authority contract green
+        run: node --test scripts/commercial-promotion-wave2-p3a-auth-read-contract.test.mjs
+      - name: Keep incumbent P2B static contract green
+        run: node --test scripts/commercial-promotion-wave2-p2b-canary-promotion-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD

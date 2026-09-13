@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import type { CommercialWave2P3VerificationReport } from '@/features/productIdentity/commercialWave2CanaryVerificationContract';
 
-const P3_READ_RPC = 'ecoflow_read_commercial_wave2_p3_verification_v2' as const;
+const P3_READ_RPC = 'ecoflow_read_commercial_wave2_p3_verification_v3' as const;
 
 function activeClient() {
   if (!supabase) throw new Error('Supabase is not configured.');
