@@ -1,0 +1,85 @@
+name: Commercial Promotion Wave 2 P2B edge deploy
+
+on:
+  workflow_run:
+    workflows: ['Deploy Supabase migrations']
+    types: [completed]
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ecoflow-p2b-edge-production-deploy
+  cancel-in-progress: false
+
+env:
+  SUPABASE_CLI_VERSION: 2.107.0
+  SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Checkout exact migrated main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+      - name: Decide whether this commit carries the P2B Edge function
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            changed="$(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)"
+          else
+            changed="$(git ls-tree -r --name-only HEAD)"
+          fi
+          if echo "$changed" | grep -qx 'supabase/functions/commercial-wave2-p2b-canary-promotion/index.ts'; then
+            echo 'deploy=yes' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=no' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require deployment credential
+        if: steps.changed.outputs.deploy == 'yes'
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: test -n "$SUPABASE_ACCESS_TOKEN"
+      - name: Install Supabase CLI
+        if: steps.changed.outputs.deploy == 'yes'
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+      - name: Deploy JWT-protected P2B Edge function
+        if: steps.changed.outputs.deploy == 'yes'
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          supabase functions deploy commercial-wave2-p2b-canary-promotion --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Publish exact-SHA P2B edge deployment status
+        if: always() && steps.changed.outputs.deploy == 'yes'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='P2B JWT Edge carrier deployed after successful database migration'
+          else
+            state=failure
+            description='P2B Edge carrier deployment failed; do not execute P2B'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context='P2B edge deployment' \
+            -f description="$description" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
