@@ -20,7 +20,8 @@ const corsHeaders = {
 };
 
 type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES' | 'GET_ASSET_URL'
-  | 'WAVE2_PLAN_PREFLIGHT' | 'WAVE2_PLAN';
+  | 'WAVE2_PLAN_PREFLIGHT' | 'WAVE2_PLAN'
+  | 'WAVE2_CANARY_UNLOCK_PREFLIGHT' | 'WAVE2_CANARY_UNLOCK';
 
 type RequestBody = {
   mode?: Mode;
@@ -39,6 +40,12 @@ type RequestBody = {
   expectedCandidateCount?: number;
   expectedCandidateSetSha256?: string;
   expectedCanaryExternalProductCode?: string;
+  expectedPlanCommandId?: string;
+  expectedUnlockCommandId?: string;
+  expectedCanaryMappingId?: string;
+  expectedCanaryMappingRevision?: number;
+  expectedCanarySourcePayloadSha256?: string;
+  expectedCanarySourceExternalKey?: string;
 };
 
 type Profile = {
@@ -82,6 +89,17 @@ const ASSET_BUCKET_OPTIONS = {
   fileSizeLimit: 10 * 1024 * 1024,
 };
 const ASSET_SIGNED_URL_TTL_SECONDS = 60;
+const COMMERCIAL_WAVE2_P2A = {
+  planCommandId: '18dc00fd-ffe5-4d96-9e91-830d2686ff8e',
+  unlockCommandId: '61b13a7c-18d1-48f0-b317-96d23607ddfb',
+  candidateCount: 164,
+  candidateSetSha256: '79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a',
+  canaryExternalProductCode: '140010',
+  canaryMappingId: '3001d0f1-6c1b-4b15-98a0-91443ca6b525',
+  canaryMappingRevision: 0,
+  canarySourcePayloadSha256: '016caa5717762af1c76f1216ddb34d4a50be6079371e868c11c123634ebcedf8',
+  canarySourceExternalKey: 'guid:e80b9e1d-f33d-4ebf-b76d-dfdd9beb1a7b',
+} as const;
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -418,6 +436,74 @@ Deno.serve(async (req) => {
       return json(200, { mode: 'WAVE2_PLAN', plan: data });
     }
 
+    if (body.mode === 'WAVE2_CANARY_UNLOCK_PREFLIGHT') {
+      const expectedPlanCommandId = uuid(body.expectedPlanCommandId, 'INVALID_EXPECTED_PLAN_COMMAND_ID');
+      const expectedUnlockCommandId = uuid(body.expectedUnlockCommandId, 'INVALID_EXPECTED_UNLOCK_COMMAND_ID');
+      const expectedCandidateCount = positiveSafeInteger(body.expectedCandidateCount, 'INVALID_EXPECTED_CANDIDATE_COUNT', 1000);
+      const expectedCandidateSetSha256 = exactSha(body.expectedCandidateSetSha256, 'INVALID_EXPECTED_CANDIDATE_HASH', 64);
+      const expectedCanaryExternalProductCode = typeof body.expectedCanaryExternalProductCode === 'string'
+        ? body.expectedCanaryExternalProductCode.trim().toUpperCase()
+        : '';
+      const expectedCanaryMappingId = uuid(body.expectedCanaryMappingId, 'INVALID_EXPECTED_CANARY_MAPPING_ID');
+      const expectedCanaryMappingRevision = Number.isSafeInteger(body.expectedCanaryMappingRevision)
+        && (body.expectedCanaryMappingRevision as number) >= 0
+        ? body.expectedCanaryMappingRevision as number
+        : (() => { throw new Error('INVALID_EXPECTED_CANARY_MAPPING_REVISION'); })();
+      const expectedCanarySourcePayloadSha256 = exactSha(
+        body.expectedCanarySourcePayloadSha256,
+        'INVALID_EXPECTED_CANARY_SOURCE_PAYLOAD_HASH',
+        64,
+      );
+      const expectedCanarySourceExternalKey = typeof body.expectedCanarySourceExternalKey === 'string'
+        ? body.expectedCanarySourceExternalKey.trim()
+        : '';
+      if (!expectedCanaryExternalProductCode || !expectedCanarySourceExternalKey) {
+        throw new Error('INVALID_EXPECTED_CANARY_EVIDENCE');
+      }
+      if (expectedPlanCommandId !== COMMERCIAL_WAVE2_P2A.planCommandId
+          || expectedUnlockCommandId !== COMMERCIAL_WAVE2_P2A.unlockCommandId
+          || expectedCandidateCount !== COMMERCIAL_WAVE2_P2A.candidateCount
+          || expectedCandidateSetSha256 !== COMMERCIAL_WAVE2_P2A.candidateSetSha256
+          || expectedCanaryExternalProductCode !== COMMERCIAL_WAVE2_P2A.canaryExternalProductCode
+          || expectedCanaryMappingId !== COMMERCIAL_WAVE2_P2A.canaryMappingId
+          || expectedCanaryMappingRevision !== COMMERCIAL_WAVE2_P2A.canaryMappingRevision
+          || expectedCanarySourcePayloadSha256 !== COMMERCIAL_WAVE2_P2A.canarySourcePayloadSha256
+          || expectedCanarySourceExternalKey !== COMMERCIAL_WAVE2_P2A.canarySourceExternalKey) {
+        throw new Error('COMMERCIAL_WAVE2_P2A_FROZEN_EVIDENCE_MISMATCH');
+      }
+      const { data, error } = await adminClient.rpc('ecoflow_read_commercial_wave2_canary_unlock_preflight', {
+        p_requested_by: userData.user.id,
+        p_expected_plan_command_id: expectedPlanCommandId,
+        p_expected_unlock_command_id: expectedUnlockCommandId,
+        p_expected_candidate_count: expectedCandidateCount,
+        p_expected_candidate_set_sha256: expectedCandidateSetSha256,
+        p_expected_canary_external_product_code: expectedCanaryExternalProductCode,
+        p_expected_canary_mapping_id: expectedCanaryMappingId,
+        p_expected_canary_mapping_revision: expectedCanaryMappingRevision,
+        p_expected_canary_source_payload_sha256: expectedCanarySourcePayloadSha256,
+        p_expected_canary_source_external_key: expectedCanarySourceExternalKey,
+      });
+      if (error) throw new Error(`COMMERCIAL_WAVE2_P2A_PREFLIGHT_FAILED:${error.message}`);
+      return json(200, { mode: 'WAVE2_CANARY_UNLOCK_PREFLIGHT', preflight: data });
+    }
+
+    if (body.mode === 'WAVE2_CANARY_UNLOCK') {
+      const commandId = uuid(body.commandId, 'INVALID_COMMAND_ID');
+      const expectedCandidateSetSha256 = exactSha(body.expectedCandidateSetSha256, 'INVALID_EXPECTED_CANDIDATE_HASH', 64);
+      if (commandId !== COMMERCIAL_WAVE2_P2A.unlockCommandId
+          || expectedCandidateSetSha256 !== COMMERCIAL_WAVE2_P2A.candidateSetSha256) {
+        throw new Error('COMMERCIAL_WAVE2_P2A_FROZEN_EVIDENCE_MISMATCH');
+      }
+      const { data, error } = await adminClient.rpc('ecoflow_execute_commercial_wave2_canary_unlock', {
+        p_command_id: commandId,
+        p_requested_by: userData.user.id,
+        p_expected_candidate_set_sha256: expectedCandidateSetSha256,
+        p_reason: reason(body.reason),
+      });
+      if (error) throw new Error(`COMMERCIAL_WAVE2_P2A_UNLOCK_FAILED:${error.message}`);
+      return json(200, { mode: 'WAVE2_CANARY_UNLOCK', unlock: data });
+    }
+
     if (body.mode === 'PLAN') {
       const planReason = reason(body.reason);
       await ensureAssetBucket(adminClient);
@@ -731,7 +817,7 @@ Deno.serve(async (req) => {
     throw new Error('INVALID_MIGRATION_MODE');
   } catch (error) {
     const code = errorCode(error);
-    if (body.mode !== 'WAVE2_PLAN_PREFLIGHT') {
+    if (body.mode !== 'WAVE2_PLAN_PREFLIGHT' && body.mode !== 'WAVE2_CANARY_UNLOCK_PREFLIGHT') {
       await recordAudit(adminClient, {
         actor_user_id: userData.user.id,
         actor_email: actor.email,

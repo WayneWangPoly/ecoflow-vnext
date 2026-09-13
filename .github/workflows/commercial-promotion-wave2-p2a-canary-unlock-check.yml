@@ -1,0 +1,75 @@
+name: Commercial Promotion Wave 2 P2A canary unlock
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-p2a-canary-unlock-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-WAVE2-P2A-CANARY-UNLOCK.md'
+      - 'scripts/commercial-promotion-wave2-p2a-canary-unlock-contract.test.mjs'
+      - 'scripts/commercial-promotion-wave2-p2a-canary-unlock-db-contract-test.sql'
+      - 'scripts/commercial-promotion-wave2-plan-readiness-contract.test.mjs'
+      - 'src/data/repositories/commercialWave2CanaryUnlock.ts'
+      - 'src/features/productIdentity/CommercialWave2PlanCarrier.tsx'
+      - 'src/features/productIdentity/commercialWave2CanaryUnlockContract.ts'
+      - 'supabase/functions/trigger-unleashed-master-migration/index.ts'
+      - 'supabase/migrations/20260913010000_commercial_wave2_p2a_canary_unlock_carrier.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-p2a-canary-unlock'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head P2A auth, replay and separation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      EXACT_BASE_SHA: 46a59b10e1846d9cd35c0bae83e93f81f5344218
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind exact branch head to canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Exercise static P2A separation contract
+        run: node --test scripts/commercial-promotion-wave2-p2a-canary-unlock-contract.test.mjs
+      - name: Keep P0/P1 static contracts green
+        run: node --test scripts/commercial-promotion-wave2-plan-readiness-contract.test.mjs
+      - name: Exercise PostgreSQL 17 replay and concurrent unlock contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p2a-canary-unlock-db-contract-test.sql
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD
