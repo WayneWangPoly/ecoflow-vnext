@@ -1,0 +1,77 @@
+{
+  "name": "AI Builder OS",
+  "version": "0.1.0",
+  "status": "CODIFIED_PROJECT_VERIFIED",
+  "codification_date": "2026-08-09",
+  "source_project": "EcoFlow-vNext",
+  "purpose": "Portable methodology, production crew contracts, standards and eval system for building AI-enabled operational systems without carrying customer-specific data or business secrets.",
+  "scope_boundary": {
+    "portable": [
+      "methodology",
+      "standards",
+      "pattern families",
+      "agent role contracts",
+      "eval registry",
+      "generic schemas",
+      "completion model",
+      "project extraction method"
+    ],
+    "project_specific": [
+      "customer/store/SKU data",
+      "credentials and secrets",
+      "transaction history",
+      "proprietary customer rules",
+      "field layouts",
+      "provider payloads",
+      "EcoFlow-only business decisions"
+    ]
+  },
+  "maturity_model": {
+    "PROJECT_VERIFIED": "Supported by observed project failure/evidence plus later corrective pattern or enforced contract.",
+    "CROSS_PROJECT_PENDING": "Portable hypothesis with strong project evidence but awaiting independent validation outside EcoFlow.",
+    "CROSS_PROJECT_VERIFIED": "Requires additional independent project/domain evidence or external authoritative standard plus reproduced eval.",
+    "CANDIDATE": "Plausible lesson without sufficient incident/evidence chain; must not be promoted silently."
+  },
+  "registries": {
+    "evidence": "registries/evidence.json",
+    "patterns": "registries/patterns.json",
+    "standards": "registries/standards.json",
+    "evals": "registries/evals.json",
+    "agent_crew": "registries/agent-crew.json",
+    "completion": "registries/completion.json"
+  },
+  "schemas": {
+    "command_envelope": "schemas/command-envelope.schema.json",
+    "work_package": "schemas/work-package.schema.json",
+    "eval_result": "schemas/eval-result.schema.json",
+    "evidence_record": "schemas/evidence-record.schema.json"
+  },
+  "playbooks": [
+    "playbooks/BUILD-LIFECYCLE.md",
+    "playbooks/ARCHAEOLOGY-TO-STANDARD.md",
+    "playbooks/CROSS-PROJECT-VALIDATION.md"
+  ],
+  "templates": [
+    "templates/PROJECT-ADAPTER.md",
+    "templates/WORK-PACKAGE.md"
+  ],
+  "counts": {
+    "evidence": 60,
+    "pattern_families": 18,
+    "standards": 20,
+    "evals": 38,
+    "crew_roles": 8
+  },
+  "phase_status": {
+    "archaeology": "COMPLETE",
+    "codification": "COMPLETE",
+    "cross_project_validation": "NOT_STARTED",
+    "generic_kernel_extraction": "BLOCKED_PENDING_CROSS_PROJECT_VALIDATION"
+  },
+  "non_goals": [
+    "Do not turn EcoFlow-specific rules into universal standards.",
+    "Do not extract a generic runtime/kernel merely because code can be reused.",
+    "Do not treat an AI agent's self-report as completion evidence.",
+    "Do not replace deterministic business state with model memory."
+  ]
+}
