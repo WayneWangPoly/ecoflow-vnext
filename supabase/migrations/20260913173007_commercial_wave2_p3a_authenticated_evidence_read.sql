@@ -251,7 +251,7 @@ begin
     'nonCanaryPromotions', (
       select count(*) from public.ecoflow_commercial_wave2_promotions where external_product_code <> '140010'
     ),
-    'secondPromotionCount', pg_catalog.greatest(
+    'secondPromotionCount', greatest(
       (select count(*) from public.ecoflow_commercial_wave2_promotions) - 1,
       0::bigint
     )
