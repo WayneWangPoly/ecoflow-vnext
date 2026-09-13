@@ -1,0 +1,59 @@
+name: Commercial Promotion Wave 2 P3 verification-only
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-p3-verification-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-WAVE2-P3-VERIFICATION.md'
+      - 'scripts/commercial-promotion-wave2-p3-verification-contract.test.mjs'
+      - 'src/data/repositories/commercialWave2CanaryVerification.ts'
+      - 'src/features/productIdentity/CommercialWave2CanaryVerificationCarrier.tsx'
+      - 'src/features/productIdentity/commercialWave2CanaryVerificationContract.ts'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx'
+      - 'supabase/functions/commercial-wave2-p3-verification/index.ts'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-p3-verification'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head P3 authenticated read and no-mutation contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXACT_BASE_SHA: f57870c93b75acd041804ef17fd076d66d51341c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind exact branch head to protected P2B completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Exercise P3 no-mutation and frozen-lineage contract
+        run: node --test scripts/commercial-promotion-wave2-p3-verification-contract.test.mjs
+      - name: Type-check the P3 Edge read carrier
+        run: deno check supabase/functions/commercial-wave2-p3-verification/index.ts
+      - name: Keep P2B contract green
+        run: node --test scripts/commercial-promotion-wave2-p2b-canary-promotion-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD
