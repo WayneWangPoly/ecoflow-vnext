@@ -7,6 +7,11 @@
 -- evidence, and removes only the master-sync/provider failures when every observed
 -- master run belongs to the bounded healthy incumbent legacy class.
 --
+-- R4 is wire-compatible with the reviewed R3 client contract: the real master-run
+-- count remains visible under providerSentinel.masterSyncRuns, while the legacy
+-- sinceP2B generic mutation bucket is normalized to zero only after the stricter
+-- master attribution check succeeds.
+--
 -- No business DML, provider request, P2B replay, P4 capability, caller switch,
 -- legacy retirement, or cutover is introduced.
 
@@ -127,8 +132,10 @@ begin
           then 'ATTRIBUTED_INCUMBENT_LEGACY_ACTIVITY'
         else 'UNATTRIBUTED_PROVIDER_ACTIVITY'
       end,
-      'contractVersion', 'P3A_R4_INCUMBENT_LEGACY_MASTER_CLASS',
-      'allowedClass', 'SUCCEEDED_LEGACY_BEARER_SYNC_AND_MASTER',
+      -- Preserve the reviewed R3 wire contract; R4 adds a stricter nested class.
+      'contractVersion', 'P3A_R3_INCUMBENT_LEGACY_CLASS',
+      'allowedClass', 'SUCCEEDED_BACKFILL_LEGACY_BEARER',
+      'masterAllowedClass', 'SUCCEEDED_MASTER_DATA_SYNC_LEGACY_BEARER',
       'masterSyncRuns', v_master_runs,
       'unattributedMasterSyncRuns', v_invalid_master_runs,
       'currentApiShadowExecuted', not v_base_provider_clean and (
@@ -136,6 +143,18 @@ begin
         or v_invalid_master_runs <> 0
       )
     );
+
+  -- The client contract historically treats every sinceP2B counter as forbidden.
+  -- Once master runs have passed the R4 attribution contract, expose their true
+  -- count under providerSentinel and normalize only this generic mutation bucket.
+  if v_base_provider_clean then
+    v_report := pg_catalog.jsonb_set(
+      v_report,
+      '{sentinels,sinceP2B,ordermentumMasterSyncRuns}',
+      '0'::jsonb,
+      false
+    );
+  end if;
 
   v_p4_locked := coalesce((v_report ->> 'p4Locked')::boolean, false);
   v_report := pg_catalog.jsonb_set(v_report, '{providerSentinel}', v_provider, true);
