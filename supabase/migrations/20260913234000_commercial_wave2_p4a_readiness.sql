@@ -1,15 +1,9 @@
 -- ECOFLOW-R3-P4A: caller-authenticated, read-only Wave-2 expansion readiness.
---
 -- P3 is complete, but the incumbent EXPANSION unlock gate was written against a
--- test-only canary source-mapping mutation. Production P2B correctly created a
--- Commercial SKU + active ORDERMENTUM external mapping while leaving the frozen
--- Unleashed source mapping UNMATCHED at revision 0. Therefore P4A MUST NOT invoke
--- or expose the incumbent mutation authority. It only proves the exact 163-row
--- expansion cohort is still eligible and records that P4B must replace/revoke the
--- stale legacy unlock path before any production expansion can be authorized.
---
--- No candidate enablement, promotion, provider request, inventory/Physical/image
--- mutation, caller switch, retirement, cutover or P4 execution capability is added.
+-- test-only CANARY source-mapping mutation. Production P2B created the Commercial
+-- SKU + active ORDERMENTUM mapping while leaving the frozen Unleashed source
+-- mapping UNMATCHED at revision 0. P4A therefore proves readiness only and does
+-- not invoke or expose the incumbent mutation authority.
 
 begin;
 
@@ -68,12 +62,9 @@ begin
     raise exception using errcode = '42501', message = 'COMMERCIAL_WAVE2_P4A_AUTHENTICATION_REQUIRED';
   end if;
 
-  select p.app_role
-    into v_actor_role
+  select p.app_role into v_actor_role
   from public.app_user_profiles p
-  where p.user_id = v_actor
-    and p.is_active
-    and p.team_status = 'ACTIVE';
+  where p.user_id = v_actor and p.is_active and p.team_status = 'ACTIVE';
 
   if v_actor_role is null
      or v_actor_role not in ('OWNER', 'ADMIN')
@@ -81,8 +72,6 @@ begin
     raise exception using errcode = '42501', message = 'COMMERCIAL_WAVE2_P4A_ACTIVE_OWNER_ADMIN_REQUIRED';
   end if;
 
-  -- P3 remains the canonical authority for canary identity, lineage, negative
-  -- space and provider attribution. P4A adds no alternate path around it.
   v_p3 := public.ecoflow_read_commercial_wave2_p3_verification_v3();
   if v_p3 ->> 'verdict' <> 'PASS' then
     v_failures := v_failures || pg_catalog.jsonb_build_array('p3.verdict');
@@ -91,18 +80,15 @@ begin
     v_failures := v_failures || pg_catalog.jsonb_build_array('p3.p4Locked');
   end if;
 
-  select
-    count(*),
-    count(*) filter (where promotion_phase = 'CANARY'),
-    count(*) filter (where promotion_phase = 'EXPANSION'),
-    count(*) filter (where promotion_phase = 'CANARY' and enabled),
-    count(*) filter (where promotion_phase = 'EXPANSION' and enabled),
-    count(distinct candidate_set_sha256),
-    min(candidate_set_sha256)
-  into
-    v_candidate_count, v_canary_count, v_expansion_count,
-    v_enabled_canary, v_enabled_expansion,
-    v_stored_hash_count, v_stored_hash
+  select count(*),
+         count(*) filter (where promotion_phase = 'CANARY'),
+         count(*) filter (where promotion_phase = 'EXPANSION'),
+         count(*) filter (where promotion_phase = 'CANARY' and enabled),
+         count(*) filter (where promotion_phase = 'EXPANSION' and enabled),
+         count(distinct candidate_set_sha256),
+         min(candidate_set_sha256)
+    into v_candidate_count, v_canary_count, v_expansion_count,
+         v_enabled_canary, v_enabled_expansion, v_stored_hash_count, v_stored_hash
   from public.ecoflow_commercial_wave2_candidates;
 
   select encode(extensions.digest(pg_catalog.string_agg(pg_catalog.concat_ws('|',
@@ -129,13 +115,11 @@ begin
     where external_product_code = v_canary.external_product_code;
   end if;
 
-  select count(*)
-  into v_expansion_unlocks
+  select count(*) into v_expansion_unlocks
   from public.ecoflow_commercial_wave2_phase_unlocks
   where promotion_phase = 'EXPANSION';
 
-  select count(*)
-  into v_non_canary_promotions
+  select count(*) into v_non_canary_promotions
   from public.ecoflow_commercial_wave2_promotions
   where external_product_code <> '140010';
 
@@ -153,8 +137,7 @@ begin
         and upper(btrim(coalesce(rs.payload ->> 'ProductCode', ''))) = a.external_product_code
         and not public.ecoflow_unleashed_json_boolean(rs.payload -> 'Obsolete')
         and lower(coalesce(rs.payload ->> 'Status', '')) not in ('obsolete', 'inactive', 'retired')
-        and (select count(*)
-             from public.v_ecoflow_ordermentum_listed_skus l
+        and (select count(*) from public.v_ecoflow_ordermentum_listed_skus l
              where upper(btrim(coalesce(l.external_sku_code, ''))) = a.external_product_code
                and l.is_visible_on_ordermentum) = 1
         and not exists (
@@ -175,11 +158,10 @@ begin
      and rs.payload_sha256 = a.expected_source_payload_sha256
     where a.promotion_phase = 'EXPANSION'
   )
-  select
-    count(*) filter (where eligible),
-    coalesce(pg_catalog.jsonb_agg(external_product_code order by external_product_code)
-      filter (where not eligible), '[]'::jsonb)
-  into v_eligible_expansion, v_ineligible_codes
+  select count(*) filter (where eligible),
+         coalesce(pg_catalog.jsonb_agg(external_product_code order by external_product_code)
+           filter (where not eligible), '[]'::jsonb)
+    into v_eligible_expansion, v_ineligible_codes
   from evaluation;
 
   v_legacy_service_role_execute := pg_catalog.has_function_privilege(
@@ -213,21 +195,18 @@ begin
   if v_expansion_unlocks <> 0 then v_failures := v_failures || pg_catalog.jsonb_build_array('lineage.expansionUnlocks'); end if;
   if v_non_canary_promotions <> 0 then v_failures := v_failures || pg_catalog.jsonb_build_array('lineage.nonCanaryPromotions'); end if;
 
-  if v_canary.id is null
+  if v_canary.external_product_code is null
      or v_canary.external_product_code <> '140010'
      or v_source.id is null
-     or v_source.id <> '3001d0f1-6c1b-4b15-98a0-91443ca6b525'::uuid
-     or v_source.mapping_status <> 'UNMATCHED'
-     or v_source.revision <> 0
-     or v_source.source_payload_sha256 <> '016caa5717762af1c76f1216ddb34d4a50be6079371e868c11c123634ebcedf8'
-     or v_promotion.commercial_sku_id <> '4710bb98-2706-42e5-866b-8788e36e1acc'::uuid
-     or v_promotion.external_mapping_id <> '1995b15c-7ee7-466b-ba3e-daba596d71a3'::uuid then
+     or v_source.id is distinct from '3001d0f1-6c1b-4b15-98a0-91443ca6b525'::uuid
+     or v_source.mapping_status is distinct from 'UNMATCHED'
+     or v_source.revision is distinct from 0
+     or v_source.source_payload_sha256 is distinct from '016caa5717762af1c76f1216ddb34d4a50be6079371e868c11c123634ebcedf8'
+     or v_promotion.commercial_sku_id is distinct from '4710bb98-2706-42e5-866b-8788e36e1acc'::uuid
+     or v_promotion.external_mapping_id is distinct from '1995b15c-7ee7-466b-ba3e-daba596d71a3'::uuid then
     v_failures := v_failures || pg_catalog.jsonb_build_array('canary.postP2BState');
   end if;
 
-  -- If this becomes true, the dormant service-role legacy mutation path has
-  -- unexpectedly become executable against current canary state. That is a HOLD,
-  -- not permission to use it.
   if v_legacy_compatible then
     v_failures := v_failures || pg_catalog.jsonb_build_array('legacyExpansionUnlock.unexpectedlyCompatible');
   end if;
