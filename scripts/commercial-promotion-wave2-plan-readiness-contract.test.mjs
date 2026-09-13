@@ -94,20 +94,17 @@ test('incumbent P2 and P4 authorities stay separate and retain their gates', () 
   assert.match(incumbent, /v_eligible<>163/);
 });
 
-test('browser carrier requires P0 before one P1 attempt and locks P2-P4', () => {
+test('browser carrier preserves P0/P1 as read-only history after PLAN completion', () => {
   assert.match(carrier, /role === 'owner' \|\| role === 'admin'/);
   assert.match(carrier, /if \(!authorized\) return null/);
-  assert.equal((carrier.match(/readCommercialWave2PlanPreflight\(\)/g) ?? []).length, 1);
-  assert.equal((carrier.match(/planCommercialWave2\(\)/g) ?? []).length, 1);
-  assert.ok(carrier.indexOf('assertCommercialWave2PlanPreflight(preflight)') < carrier.indexOf('setPlanAttempted(true)'));
-  assert.ok(carrier.indexOf('setPlanAttempted(true)') < carrier.indexOf('await planCommercialWave2()'));
-  for (const stage of ['P0 · SELECT-only preflight', 'P1 · PLAN', 'P2 · CANARY UNLOCK / PROMOTION', 'P3 · CANARY SELECT-only verification', 'P4 · 163-candidate expansion']) {
+  assert.doesNotMatch(carrier, /readCommercialWave2PlanPreflight\(|planCommercialWave2\(/);
+  for (const stage of ['P0 · SELECT-only preflight · COMPLETE', 'P1 · PLAN · COMPLETE', 'P2A · CANARY UNLOCK', 'P2B · CANARY PROMOTION · LOCKED', 'P3 · CANARY SELECT-only verification · LOCKED', 'P4 · 163-candidate expansion · LOCKED']) {
     assert.match(carrier, new RegExp(stage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.match(carrier, /disabled aria-label="P2/);
-  assert.match(carrier, /disabled aria-label="P3/);
-  assert.match(carrier, /disabled aria-label="P4/);
-  assert.doesNotMatch(carrier, /unlockCommercial|promoteCommercial|expandCommercial/);
+  assert.match(carrier, /disabled aria-label="P0 complete read-only"/);
+  assert.match(carrier, /disabled aria-label="P1 complete read-only"/);
+  assert.match(carrier, /disabled aria-label="P2B promotion locked"/);
+  assert.doesNotMatch(carrier, /promoteCommercial|expandCommercial/);
   assert.doesNotMatch(repository, /service[_-]?role|access[_-]?token|jwt/i);
   assert.match(wrapper, /<CommercialWave2PlanCarrier/);
 });
