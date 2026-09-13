@@ -57,7 +57,7 @@ test('P4A explicitly discovers the stale legacy expansion authority without invo
 
 test('P4A exposes no production expansion mutation control', () => {
   assert.match(contract, /productionExpansionAuthorized: boolean/);
-  assert.match(contract, /expect\(value\.authority\.productionExpansionAuthorized, false/);
+  assert.match(contract, /'production expansion authorization', value\.authority\.productionExpansionAuthorized/);
   assert.match(carrier, /P4B · EXPANSION EXECUTION · LOCKED/);
   assert.match(carrier, /Run authenticated P4A readiness-only/);
   assert.doesNotMatch(repository + carrier, /unlockCommercialWave2Expansion|promoteCommercialWave2|ecoflow_unlock_commercial_wave2_expansion/);
