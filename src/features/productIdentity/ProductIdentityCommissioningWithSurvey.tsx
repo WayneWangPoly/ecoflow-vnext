@@ -6,6 +6,7 @@ import { Batch2P2ResumeSubmitCarrier } from './Batch2P2ResumeSubmitCarrier';
 import { Batch2P3ResumePublishCarrier } from './Batch2P3ResumePublishCarrier';
 import { Batch2ProductIdentityExecutionCarrier } from './Batch2ProductIdentityExecutionCarrier';
 import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
+import { CommercialWave2PlanCarrier } from './CommercialWave2PlanCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
 
 type Props = {
@@ -31,6 +32,10 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
       <Batch2P3ResumePublishCarrier
+        role={props.role}
+        onChanged={() => setCommissioningRevision((value) => value + 1)}
+      />
+      <CommercialWave2PlanCarrier
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />

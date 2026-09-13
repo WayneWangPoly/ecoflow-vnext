@@ -19,7 +19,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES' | 'GET_ASSET_URL';
+type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES' | 'GET_ASSET_URL'
+  | 'WAVE2_PLAN_PREFLIGHT' | 'WAVE2_PLAN';
 
 type RequestBody = {
   mode?: Mode;
@@ -34,6 +35,10 @@ type RequestBody = {
   expiresAt?: string | null;
   limit?: number;
   assetId?: string;
+  expectedProtectedMainSha?: string;
+  expectedCandidateCount?: number;
+  expectedCandidateSetSha256?: string;
+  expectedCanaryExternalProductCode?: string;
 };
 
 type Profile = {
@@ -108,6 +113,11 @@ function optionalIsoDate(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) throw new Error('INVALID_ASSET_AUTHORIZATION_EXPIRY');
   return new Date(value).toISOString();
+}
+
+function exactSha(value: unknown, code: string, length: 40 | 64) {
+  if (typeof value !== 'string' || !new RegExp(`^[0-9a-f]{${length}}$`).test(value)) throw new Error(code);
+  return value;
 }
 
 async function recordAudit(adminClient: ReturnType<typeof createClient>, values: Record<string, unknown>) {
@@ -366,6 +376,47 @@ Deno.serve(async (req) => {
     }
 
     if (!['OWNER', 'ADMIN'].includes(actor.app_role)) return json(403, { error: 'OWNER_ADMIN_REQUIRED' });
+
+    if (body.mode === 'WAVE2_PLAN_PREFLIGHT') {
+      const expectedProtectedMainSha = exactSha(body.expectedProtectedMainSha, 'INVALID_EXPECTED_MAIN_SHA', 40);
+      const expectedCandidateCount = positiveSafeInteger(body.expectedCandidateCount, 'INVALID_EXPECTED_CANDIDATE_COUNT', 1000);
+      const expectedCandidateSetSha256 = exactSha(body.expectedCandidateSetSha256, 'INVALID_EXPECTED_CANDIDATE_HASH', 64);
+      const expectedCanaryExternalProductCode = typeof body.expectedCanaryExternalProductCode === 'string'
+        ? body.expectedCanaryExternalProductCode.trim().toUpperCase()
+        : '';
+      if (!expectedCanaryExternalProductCode) throw new Error('INVALID_EXPECTED_CANARY');
+      const { data, error } = await adminClient.rpc('ecoflow_read_commercial_wave2_plan_preflight', {
+        p_requested_by: userData.user.id,
+        p_expected_protected_main_sha: expectedProtectedMainSha,
+        p_expected_candidate_count: expectedCandidateCount,
+        p_expected_candidate_set_sha256: expectedCandidateSetSha256,
+        p_expected_canary_external_product_code: expectedCanaryExternalProductCode,
+      });
+      if (error) throw new Error(`COMMERCIAL_WAVE2_PLAN_PREFLIGHT_FAILED:${error.message}`);
+      return json(200, { mode: 'WAVE2_PLAN_PREFLIGHT', preflight: data });
+    }
+
+    if (body.mode === 'WAVE2_PLAN') {
+      const commandId = uuid(body.commandId, 'INVALID_COMMAND_ID');
+      const expectedProtectedMainSha = exactSha(body.expectedProtectedMainSha, 'INVALID_EXPECTED_MAIN_SHA', 40);
+      const expectedCandidateCount = positiveSafeInteger(body.expectedCandidateCount, 'INVALID_EXPECTED_CANDIDATE_COUNT', 1000);
+      const expectedCandidateSetSha256 = exactSha(body.expectedCandidateSetSha256, 'INVALID_EXPECTED_CANDIDATE_HASH', 64);
+      const expectedCanaryExternalProductCode = typeof body.expectedCanaryExternalProductCode === 'string'
+        ? body.expectedCanaryExternalProductCode.trim().toUpperCase()
+        : '';
+      if (!expectedCanaryExternalProductCode) throw new Error('INVALID_EXPECTED_CANARY');
+      const { data, error } = await adminClient.rpc('ecoflow_plan_commercial_wave2', {
+        p_command_id: commandId,
+        p_requested_by: userData.user.id,
+        p_expected_protected_main_sha: expectedProtectedMainSha,
+        p_expected_candidate_count: expectedCandidateCount,
+        p_expected_candidate_set_sha256: expectedCandidateSetSha256,
+        p_expected_canary_external_product_code: expectedCanaryExternalProductCode,
+        p_reason: reason(body.reason),
+      });
+      if (error) throw new Error(`COMMERCIAL_WAVE2_PLAN_FAILED:${error.message}`);
+      return json(200, { mode: 'WAVE2_PLAN', plan: data });
+    }
 
     if (body.mode === 'PLAN') {
       const planReason = reason(body.reason);
@@ -680,15 +731,17 @@ Deno.serve(async (req) => {
     throw new Error('INVALID_MIGRATION_MODE');
   } catch (error) {
     const code = errorCode(error);
-    await recordAudit(adminClient, {
-      actor_user_id: userData.user.id,
-      actor_email: actor.email,
-      actor_role: actor.app_role,
-      action: 'UNLEASHED_MASTER_MIGRATION_REJECTED',
-      target_type: 'unleashed_master_migration',
-      target_id: body.commandId ?? userData.user.id,
-      after_data: { mode: body.mode ?? null, error_code: code },
-    }).catch(() => undefined);
+    if (body.mode !== 'WAVE2_PLAN_PREFLIGHT') {
+      await recordAudit(adminClient, {
+        actor_user_id: userData.user.id,
+        actor_email: actor.email,
+        actor_role: actor.app_role,
+        action: 'UNLEASHED_MASTER_MIGRATION_REJECTED',
+        target_type: 'unleashed_master_migration',
+        target_id: body.commandId ?? userData.user.id,
+        after_data: { mode: body.mode ?? null, error_code: code },
+      }).catch(() => undefined);
+    }
     const status = code.endsWith('FORBIDDEN') || code === 'ASSET_RIGHTS_NOT_APPROVED'
       ? 403
       : code === 'ASSET_NOT_AVAILABLE'
