@@ -2,8 +2,8 @@
 -- P3 is complete, but the incumbent EXPANSION unlock gate was written against a
 -- test-only CANARY source-mapping mutation. Production P2B created the Commercial
 -- SKU + active ORDERMENTUM mapping while leaving the frozen Unleashed source
--- mapping UNMATCHED at revision 0. P4A therefore proves readiness only and does
--- not invoke or expose the incumbent mutation authority.
+-- mapping UNMATCHED at revision 0. P4A proves readiness only and does not invoke
+-- or expose production expansion authority.
 
 begin;
 
@@ -97,8 +97,8 @@ begin
       expected_mapping_revision::text,
       expected_source_payload_sha256,
       expected_source_external_key
-    ), E'\n' order by external_product_code collate "C"), 'sha256'), 'hex')
-  into v_candidate_hash
+    ), pg_catalog.chr(10) order by external_product_code collate "C"), 'sha256'), 'hex')
+    into v_candidate_hash
   from public.ecoflow_commercial_wave2_candidates;
 
   select * into v_canary
