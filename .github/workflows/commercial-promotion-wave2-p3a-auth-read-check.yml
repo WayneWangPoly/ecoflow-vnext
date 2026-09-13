@@ -1,0 +1,74 @@
+name: Commercial Promotion Wave 2 P3A authenticated read
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-p3a-auth-read-check.yml'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-WAVE2-P3A-AUTHENTICATED-EVIDENCE-READ.md'
+      - 'scripts/commercial-promotion-wave2-p3a-auth-read-contract.test.mjs'
+      - 'scripts/commercial-promotion-wave2-p3a-auth-read-db-contract-test.sql'
+      - 'src/data/repositories/commercialWave2CanaryVerification.ts'
+      - 'src/features/productIdentity/CommercialWave2CanaryVerificationCarrier.tsx'
+      - 'src/features/productIdentity/commercialWave2CanaryVerificationContract.ts'
+      - 'src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx'
+      - 'supabase/migrations/20260913173007_commercial_wave2_p3a_authenticated_evidence_read.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-p3a-auth-read-authority'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head P3A auth and no-mutation contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      EXACT_BASE_SHA: f57870c93b75acd041804ef17fd076d66d51341c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind exact branch head to canonical production base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Exercise P3A static authority and no-service-role contract
+        run: node --test scripts/commercial-promotion-wave2-p3a-auth-read-contract.test.mjs
+      - name: Exercise PostgreSQL 17 clean replay, auth denial, and repeat-apply contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p3a-auth-read-db-contract-test.sql
+      - name: Keep incumbent P2B static contract green
+        run: node --test scripts/commercial-promotion-wave2-p2b-canary-promotion-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD
