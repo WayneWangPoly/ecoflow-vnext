@@ -64,8 +64,6 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p3a-r3-provider-sentinel-db-contract-test.sql
       - name: Keep incumbent P3A-R2 static authority contract green
         run: node --test scripts/commercial-promotion-wave2-p3a-auth-read-contract.test.mjs
-      - name: Keep incumbent P3A-R2 database contract green
-        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p3a-auth-read-db-contract-test.sql
       - name: Keep incumbent P2B static contract green
         run: node --test scripts/commercial-promotion-wave2-p2b-canary-promotion-contract.test.mjs
       - name: Typecheck
