@@ -253,7 +253,7 @@ begin
     ),
     'secondPromotionCount', pg_catalog.greatest(
       (select count(*) from public.ecoflow_commercial_wave2_promotions) - 1,
-      0
+      0::bigint
     )
   )
   into v_negative_space;
