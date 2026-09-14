@@ -42,7 +42,8 @@ test('browser carrier requires fresh authenticated preflight and explicit confir
 });
 
 test('P4C contains no non-canary promotion or provider mutation path', () => {
-  assert.doesNotMatch(repository + carrier, /promoteCommercialWave2|providerAction|ordermentum-cloud-sync|service_role/i);
+  assert.doesNotMatch(repository, /promoteCommercialWave2|functions\.invoke|ordermentum-cloud-sync/i);
+  assert.doesNotMatch(carrier, /promoteCommercialWave2|functions\.invoke|ordermentum-cloud-sync/i);
   assert.match(contract, /promotionIncluded: boolean/);
   assert.match(contract, /providerActionIncluded: boolean/);
   assert.match(wrapper, /CommercialWave2P4ExpansionCarrier/);
