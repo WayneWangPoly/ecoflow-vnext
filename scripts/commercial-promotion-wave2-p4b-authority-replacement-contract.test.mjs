@@ -7,6 +7,7 @@ const migration = fs.readFileSync(migrationPath, 'utf8');
 const docs = fs.readFileSync('docs/engineering/work-packages/338-COMMERCIAL-WAVE2-P4B-AUTHORITY-REPLACEMENT.md', 'utf8');
 
 const v2Body = migration.match(/create or replace function public\.ecoflow_unlock_commercial_wave2_expansion_v2\([\s\S]*?\$function\$;\n/iu)?.[0] ?? '';
+const finalEnablement = v2Body.slice(v2Body.indexOf('update public.ecoflow_commercial_wave2_candidates a'));
 
 test('P4B revokes the stale service-role expansion authority', () => {
   assert.match(migration, /revoke all on function public\.ecoflow_unlock_commercial_wave2_expansion\(uuid,uuid,text,bigint,text,text\)[\s\S]*from public, anon, authenticated, service_role/i);
@@ -36,8 +37,22 @@ test('P4B replacement reuses P4A and revalidates the exact 163-row cohort under 
   assert.match(v2Body, /is_visible_on_ordermentum/);
   assert.match(v2Body, /not exists \([\s\S]*external_product_mappings/);
   assert.match(v2Body, /not exists \([\s\S]*from public\.skus/);
-  assert.match(v2Body, /update public\.ecoflow_commercial_wave2_candidates[\s\S]*set enabled = true/);
+  assert.match(v2Body, /update public\.ecoflow_commercial_wave2_candidates a[\s\S]*set enabled = true/);
   assert.match(v2Body, /v_updated <> 163/);
+});
+
+test('P4B final enablement repeats the complete eligibility predicate under a fresh statement snapshot', () => {
+  assert.ok(finalEnablement.length > 0, 'final P4B enablement statement not found');
+  for (const marker of [
+    "candidate_set_sha256 = p_expected_candidate_set_sha256",
+    "m.mapping_status = 'UNMATCHED'",
+    'm.source_duplicate_count = 1',
+    "rs.resource = 'products'",
+    'rs.payload_sha256 = a.expected_source_payload_sha256',
+    'is_visible_on_ordermentum',
+    'public.external_product_mappings',
+    'public.skus',
+  ]) assert.match(finalEnablement, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('P4B freezes the real P2B/P3 CANARY state rather than the stale MATCHED assumption', () => {
