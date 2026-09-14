@@ -28,6 +28,8 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 1;
 const HARD_MAX_PAGE_SIZE = 200;
 const HARD_MAX_PAGES = 5;
+const R5_002_REQUEST_KEY = 'ECOFLOW-R5-002';
+const R5_002_REASON = 'ECOFLOW-R5-002 production ADL1 warehouse-scoped StockOnHand acquisition';
 
 const modifiedSincePattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z?)?$/;
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -201,6 +203,7 @@ type IdentityRow = {
 };
 
 type RequestBody = {
+  requestKey?: string | null;
   mode?: SyncMode;
   resources?: unknown;
   reason?: string | null;
@@ -316,6 +319,66 @@ function normalizePreviousRunId(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || !runIdPattern.test(value.trim())) throw new Error('INVALID_PREVIOUS_RUN_ID');
   return value.trim().toLowerCase();
+}
+
+function normalizeRequestKey(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  if (value !== R5_002_REQUEST_KEY) throw new Error('UNSUPPORTED_REQUEST_KEY');
+  return value;
+}
+
+function assertReservedRequestShape(input: {
+  requestKey: string | null;
+  body: RequestBody;
+  mode: SyncMode;
+  resources: ResourceName[];
+  modifiedSince: string | null;
+  pageSize: number;
+  maxPages: number;
+  startPage: number;
+  previousRunId: string | null;
+  target: NormalizedTarget | null;
+  dryRun: boolean;
+}) {
+  if (!input.requestKey) return;
+  const allowedKeys = [
+    'requestKey',
+    'mode',
+    'resources',
+    'reason',
+    'dryRun',
+    'pageSize',
+    'maxPages',
+    'target',
+  ];
+  const bodyKeys = Object.keys(input.body).sort();
+  const targetKeys = isRecord(input.body.target) ? Object.keys(input.body.target) : [];
+  const exactShape = bodyKeys.length === allowedKeys.length
+    && allowedKeys.every((key) => bodyKeys.includes(key))
+    && input.body.mode === 'bounded_snapshot'
+    && Array.isArray(input.body.resources)
+    && input.body.resources.length === 1
+    && input.body.resources[0] === 'stock_on_hand'
+    && input.body.reason === R5_002_REASON
+    && input.body.dryRun === false
+    && input.body.pageSize === 200
+    && input.body.maxPages === 5
+    && isRecord(input.body.target)
+    && targetKeys.length === 1
+    && targetKeys[0] === 'warehouseCode'
+    && input.body.target.warehouseCode === 'ADL1'
+    && input.mode === 'bounded_snapshot'
+    && input.resources.length === 1
+    && input.resources[0] === 'stock_on_hand'
+    && input.modifiedSince === null
+    && input.pageSize === 200
+    && input.maxPages === 5
+    && input.startPage === 1
+    && input.previousRunId === null
+    && input.dryRun === false
+    && input.target?.cardinality === 'MANY'
+    && input.target.audit.warehouseCode === 'ADL1';
+  if (!exactShape) throw new Error('R5_002_REQUEST_SHAPE_MISMATCH');
 }
 
 function normalizeBaseUrl(raw: string) {
@@ -584,8 +647,10 @@ Deno.serve(async (req) => {
   let startPage: number;
   let previousRunId: string | null;
   let target: NormalizedTarget | null;
+  let requestKey: string | null;
   const dryRun = body.dryRun !== false;
   try {
+    requestKey = normalizeRequestKey(body.requestKey);
     if (body.target !== undefined && Array.isArray(body.resources) && body.resources.length !== 1) {
       throw new Error('TARGET_REQUIRES_ONE_RESOURCE');
     }
@@ -616,6 +681,19 @@ Deno.serve(async (req) => {
       if (modifiedSince) throw new Error('CONTINUATION_WITH_MODIFIED_SINCE_UNSUPPORTED');
       if (!previousRunId) throw new Error('CONTINUATION_PREVIOUS_RUN_REQUIRED');
     }
+    assertReservedRequestShape({
+      requestKey,
+      body,
+      mode,
+      resources,
+      modifiedSince,
+      pageSize,
+      maxPages,
+      startPage,
+      previousRunId,
+      target,
+      dryRun,
+    });
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'INVALID_REQUEST' });
   }
@@ -689,6 +767,7 @@ Deno.serve(async (req) => {
         source: 'unleashed_api',
         allowed_methods: ['GET'],
         credentials_location: 'supabase_edge_function_secrets',
+        ...(requestKey ? { request_key: requestKey } : {}),
         target: target?.audit ?? null,
         pagination_window: { start_page: startPage, max_pages: maxPages, previous_run_id: previousRunId },
       },
@@ -696,6 +775,9 @@ Deno.serve(async (req) => {
     .select('id,requested_at')
     .single();
 
+  if (runError?.code === '23505' && requestKey) {
+    return json(409, { error: 'UNLEASHED_REQUEST_KEY_REPLAY_BLOCKED', requestKey });
+  }
   if (runError || !run) return json(500, { error: 'UNLEASHED_SYNC_RUN_CREATE_FAILED', details: runError?.message });
 
   if (!unleashedApiId || !unleashedApiKey) {
@@ -713,6 +795,7 @@ Deno.serve(async (req) => {
       target_type: 'unleashed_sync_run',
       target_id: run.id,
       after_data: {
+        requestKey,
         mode,
         dryRun,
         resources,
@@ -726,7 +809,7 @@ Deno.serve(async (req) => {
       },
       user_agent: req.headers.get('user-agent'),
     });
-    return json(500, { error: 'MISSING_UNLEASHED_API_SECRETS', runId: run.id });
+    return json(500, { error: 'MISSING_UNLEASHED_API_SECRETS', runId: run.id, requestKey });
   }
 
   const pageResults: PageResult[] = [];
@@ -1170,6 +1253,7 @@ Deno.serve(async (req) => {
       source: 'unleashed_api',
       allowed_methods: ['GET'],
       credentials_location: 'supabase_edge_function_secrets',
+      ...(requestKey ? { request_key: requestKey } : {}),
       target: target?.audit ?? null,
       records_inserted: recordsInserted,
       records_changed: recordsChanged,
@@ -1198,6 +1282,7 @@ Deno.serve(async (req) => {
     target_type: 'unleashed_sync_run',
     target_id: run.id,
     after_data: {
+      requestKey,
       mode,
       dryRun,
       resources,
@@ -1224,6 +1309,7 @@ Deno.serve(async (req) => {
   return json(finalStatus === 'FAILED' ? 502 : 200, {
     ok: finalStatus !== 'FAILED',
     runId: run.id,
+    requestKey,
     requestedAt: run.requested_at,
     status: finalStatus,
     dryRun,
