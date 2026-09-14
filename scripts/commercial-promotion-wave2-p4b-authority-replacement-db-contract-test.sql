@@ -73,9 +73,16 @@ end $$;
 reset role;
 
 -- Simulate a future P4C activation only inside a rollback-only transaction.
--- This proves caller authentication, exactly-once replay, bounded 163-row
--- enablement, and no promotion/provider/identity side effects.
+-- Private-ledger verification is deliberately done as postgres after RESET ROLE;
+-- authenticated must not gain SELECT on those ledgers.
 begin;
+create temporary table p4b_side_effect_baseline on commit drop as
+select
+  (select count(*) from public.skus) as sku_count,
+  (select count(*) from public.external_product_mappings) as external_mapping_count,
+  (select count(*) from public.ecoflow_commercial_wave2_promotions) as promotion_count,
+  (select count(*) from public.app_security_audit_events) as audit_count;
+
 grant execute on function public.ecoflow_unlock_commercial_wave2_expansion_v2(uuid,text,text) to authenticated;
 
 -- Inactive ADMIN must fail even after the temporary activation grant.
@@ -99,7 +106,8 @@ begin
 end $$;
 reset role;
 
--- Active ADMIN performs exactly one bounded EXPANSION unlock.
+-- Active ADMIN performs exactly one bounded EXPANSION unlock. This session only
+-- sees RPC return values; it does not receive SELECT authority on private tables.
 set role authenticated;
 select pg_catalog.set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 do $$
@@ -123,15 +131,6 @@ begin
     raise exception 'P4B first execution result mismatch: %', r;
   end if;
 
-  if (select count(*) from public.ecoflow_commercial_wave2_candidates where promotion_phase='EXPANSION' and enabled) <> 163
-     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks where promotion_phase='EXPANSION') <> 1
-     or (select count(*) from public.ecoflow_commercial_wave2_unlock_commands where promotion_phase='EXPANSION') <> 1
-     or (select count(*) from public.ecoflow_commercial_wave2_promotions where external_product_code <> '140010') <> 0
-     or (select count(*) from public.skus) <> 1
-     or (select count(*) from public.external_product_mappings) <> 1 then
-    raise exception 'P4B bounded mutation footprint mismatch';
-  end if;
-
   replay := public.ecoflow_unlock_commercial_wave2_expansion_v2(
     '94000000-0000-4000-8000-000000000003'::uuid,
     '79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a',
@@ -139,8 +138,7 @@ begin
   );
 
   if not (replay ->> 'replayed')::boolean
-     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks where promotion_phase='EXPANSION') <> 1
-     or (select count(*) from public.ecoflow_commercial_wave2_unlock_commands where promotion_phase='EXPANSION') <> 1 then
+     or (replay ->> 'unlockedCandidateCount')::bigint <> 163 then
     raise exception 'P4B replay was not exactly-once: %', replay;
   end if;
 
@@ -159,6 +157,25 @@ begin
   end;
 end $$;
 reset role;
+
+-- Verify the bounded mutation as the fixture owner, without widening application
+-- role table privileges. Existing Product Identity/promotion rows must not change.
+do $$
+declare b record;
+begin
+  select * into b from p4b_side_effect_baseline;
+
+  if (select count(*) from public.ecoflow_commercial_wave2_candidates where promotion_phase='EXPANSION' and enabled) <> 163
+     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks where promotion_phase='EXPANSION') <> 1
+     or (select count(*) from public.ecoflow_commercial_wave2_unlock_commands where promotion_phase='EXPANSION') <> 1
+     or (select count(*) from public.ecoflow_commercial_wave2_promotions) <> b.promotion_count
+     or (select count(*) from public.skus) <> b.sku_count
+     or (select count(*) from public.external_product_mappings) <> b.external_mapping_count
+     or (select count(*) from public.app_security_audit_events) <> b.audit_count + 1
+     or (select count(*) from public.app_security_audit_events where action='COMMERCIAL_WAVE2_EXPANSION_UNLOCKED_V2') <> 1 then
+    raise exception 'P4B bounded mutation footprint mismatch';
+  end if;
+end $$;
 rollback;
 
 -- Expansion revision drift must fail before any candidate enablement when the
@@ -191,13 +208,17 @@ begin
         raise;
       end if;
   end;
+end $$;
+reset role;
 
+do $$
+begin
   if (select count(*) from public.ecoflow_commercial_wave2_candidates where promotion_phase='EXPANSION' and enabled) <> 0
-     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks where promotion_phase='EXPANSION') <> 0 then
+     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks where promotion_phase='EXPANSION') <> 0
+     or (select count(*) from public.ecoflow_commercial_wave2_unlock_commands where promotion_phase='EXPANSION') <> 0 then
     raise exception 'P4B drift path mutated expansion state';
   end if;
 end $$;
-reset role;
 rollback;
 
 select 'COMMERCIAL_PROMOTION_WAVE2_P4B_AUTHORITY_REPLACEMENT_DB_CONTRACT_PASS' as result;
