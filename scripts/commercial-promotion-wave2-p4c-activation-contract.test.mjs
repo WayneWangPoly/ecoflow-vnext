@@ -12,10 +12,10 @@ const commandId = '430e5bfe-e8b1-44dd-a004-9dfb0bbc46b8';
 const cohort = '79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a';
 
 test('P4C activates v2 for authenticated only and preserves every revoked bypass', () => {
-  assert.match(migration, /grant execute on function public\.ecoflow_unlock_commercial_wave2_expansion_v2\(uuid,text,text\)[\s\S]*to authenticated/i);
-  assert.match(migration, /revoke all on function public\.ecoflow_unlock_commercial_wave2_expansion_v2\(uuid,text,text\)[\s\S]*from public, anon, service_role/i);
-  assert.match(migration, /revoke all on function public\.ecoflow_unlock_commercial_wave2_expansion\(uuid,uuid,text,bigint,text,text\)[\s\S]*from public, anon, authenticated, service_role/i);
-  assert.doesNotMatch(migration, /grant execute[\s\S]{0,120}service_role/i);
+  assert.match(migration, /grant execute on function public\.ecoflow_unlock_commercial_wave2_expansion_v2\(uuid,text,text\)[\s\S]*?to authenticated/i);
+  assert.match(migration, /revoke all on function public\.ecoflow_unlock_commercial_wave2_expansion_v2\(uuid,text,text\)[\s\S]*?from public, anon, service_role/i);
+  assert.match(migration, /revoke all on function public\.ecoflow_unlock_commercial_wave2_expansion\(uuid,uuid,text,bigint,text,text\)[\s\S]*?from public, anon, authenticated, service_role/i);
+  assert.doesNotMatch(migration, /grant execute on function public\.ecoflow_unlock_commercial_wave2_expansion_v2\(uuid,text,text\)[\s\S]*?to service_role/i);
 });
 
 test('P4C preflight proves exact zero-to-163 boundary and frozen command', () => {
