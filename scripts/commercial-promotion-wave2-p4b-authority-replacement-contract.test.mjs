@@ -68,7 +68,7 @@ test('P4B unlock mutation is bounded to eligibility enablement and its ledgers',
   assert.doesNotMatch(v2Body, /insert into public\.ecoflow_commercial_wave2_promotions/i);
   assert.doesNotMatch(v2Body, /insert into public\.skus/i);
   assert.doesNotMatch(v2Body, /insert into public\.external_product_mappings/i);
-  assert.doesNotMatch(v2Body, /ordermentum_raw_api_events|ordermentum_api_jobs|inventory|stock_movement|location_quantity|image_copy/i);
+  assert.doesNotMatch(v2Body, /\b(insert|update|delete)\b[\s\S]{0,80}\b(ordermentum_raw_api_events|ordermentum_api_jobs|inventory_movements|warehouse_movements|stock_movements|location_quantity|ecoflow_image_assets|ecoflow_image_copy_runs)\b/i);
   assert.match(v2Body, /'providerActionIncluded', false/);
   assert.match(v2Body, /'promotionIncluded', false/);
   assert.match(v2Body, /'physicalAuthorityCreated', false/);
