@@ -232,6 +232,10 @@ begin
   end loop;
 end $$;
 
+-- The final proof inspects test-owned temp baselines as postgres, not as the
+-- authenticated application role. This is only a harness boundary reset.
+reset role;
+
 -- Final programme gate is COMPLETE and all business footprints are exact.
 do $$
 declare r jsonb; b record;
@@ -273,6 +277,5 @@ begin
     raise exception 'P4E mutated Unleashed source mapping authority';
   end if;
 end $$;
-reset role;
 
 select 'COMMERCIAL_PROMOTION_WAVE2_P4E_BATCH_PROMOTION_DB_CONTRACT_PASS' as result;
