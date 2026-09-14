@@ -265,6 +265,48 @@ export function classifyPayloadRows<T extends PayloadHashRow>(existing: PayloadH
   return { inserted, changed, unchanged };
 }
 
+export const POSTGREST_CLASSIFICATION_IN_FILTER_BUDGET = 1_500;
+export const POSTGREST_CLASSIFICATION_MAX_KEYS = 200;
+
+function encodedInFilterKeyCost(value: string) {
+  return encodeURIComponent(value).length;
+}
+
+export function partitionExternalKeysForInFilter(
+  values: string[],
+  encodedBudget = POSTGREST_CLASSIFICATION_IN_FILTER_BUDGET,
+) {
+  if (!Number.isInteger(encodedBudget) || encodedBudget < 256 || encodedBudget > 4_096) {
+    throw new Error('INVALID_CLASSIFICATION_IN_FILTER_BUDGET');
+  }
+  if (values.length > POSTGREST_CLASSIFICATION_MAX_KEYS) {
+    throw new Error('CLASSIFICATION_KEY_COUNT_EXCEEDS_PAGE_BOUND');
+  }
+
+  const unique = [...new Set(values)];
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  let encodedLength = 0;
+
+  for (const value of unique) {
+    if (typeof value !== 'string' || !value.length) throw new Error('INVALID_CLASSIFICATION_EXTERNAL_KEY');
+    const valueLength = encodedInFilterKeyCost(value);
+    if (valueLength > encodedBudget) throw new Error('CLASSIFICATION_EXTERNAL_KEY_EXCEEDS_FILTER_BUDGET');
+    const separatorLength = chunk.length ? 3 : 0;
+    if (chunk.length && encodedLength + separatorLength + valueLength > encodedBudget) {
+      chunks.push(chunk);
+      chunk = [];
+      encodedLength = 0;
+    }
+    const nextSeparatorLength = chunk.length ? 3 : 0;
+    chunk.push(value);
+    encodedLength += nextSeparatorLength + valueLength;
+  }
+
+  if (chunk.length) chunks.push(chunk);
+  return chunks;
+}
+
 function retryDelayMs(response: Response | null, attempt: number) {
   const retryAfter = response?.headers.get('retry-after');
   if (retryAfter && /^\d+$/.test(retryAfter)) {

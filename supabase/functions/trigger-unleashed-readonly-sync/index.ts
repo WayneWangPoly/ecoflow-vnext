@@ -8,6 +8,7 @@ import {
   fetchUnleashedWithRetry,
   isRecord,
   normalizeTarget,
+  partitionExternalKeysForInFilter,
   readString,
   serializeUnleashedQuery,
   selectTargetItems,
@@ -30,6 +31,8 @@ const HARD_MAX_PAGE_SIZE = 200;
 const HARD_MAX_PAGES = 5;
 const R5_002_REQUEST_KEY = 'ECOFLOW-R5-002';
 const R5_002_REASON = 'ECOFLOW-R5-002 production ADL1 warehouse-scoped StockOnHand acquisition';
+const R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2';
+const R5_002_R2_REASON = 'ECOFLOW-R5-002-R2 recovery after classification-read defect';
 
 const modifiedSincePattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z?)?$/;
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -323,7 +326,7 @@ function normalizePreviousRunId(value: unknown) {
 
 function normalizeRequestKey(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
-  if (value !== R5_002_REQUEST_KEY) throw new Error('UNSUPPORTED_REQUEST_KEY');
+  if (value !== R5_002_REQUEST_KEY && value !== R5_002_R2_REQUEST_KEY) throw new Error('UNSUPPORTED_REQUEST_KEY');
   return value;
 }
 
@@ -353,13 +356,14 @@ function assertReservedRequestShape(input: {
   ];
   const bodyKeys = Object.keys(input.body).sort();
   const targetKeys = isRecord(input.body.target) ? Object.keys(input.body.target) : [];
+  const expectedReason = input.requestKey === R5_002_R2_REQUEST_KEY ? R5_002_R2_REASON : R5_002_REASON;
   const exactShape = bodyKeys.length === allowedKeys.length
     && allowedKeys.every((key) => bodyKeys.includes(key))
     && input.body.mode === 'bounded_snapshot'
     && Array.isArray(input.body.resources)
     && input.body.resources.length === 1
     && input.body.resources[0] === 'stock_on_hand'
-    && input.body.reason === R5_002_REASON
+    && input.body.reason === expectedReason
     && input.body.dryRun === false
     && input.body.pageSize === 200
     && input.body.maxPages === 5
@@ -548,19 +552,20 @@ async function classifySnapshotRows(
   rows: SnapshotRow[],
 ) {
   if (!rows.length) return { inserted: [] as SnapshotRow[], changed: [] as SnapshotRow[], unchanged: [] as SnapshotRow[] };
-  const { data, error } = await adminClient
-    .from('unleashed_raw_snapshots')
-    .select('external_key,payload_sha256')
-    .eq('resource', resource)
-    .in('external_key', rows.map((row) => row.external_key));
-  if (error) throw new Error(`UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:${error.message}`);
-  return classifyPayloadRows(
-    (data ?? []).map((row) => ({
+  const existing: Array<{ external_key: string; payload_sha256: string }> = [];
+  for (const keys of partitionExternalKeysForInFilter(rows.map((row) => row.external_key))) {
+    const { data, error } = await adminClient
+      .from('unleashed_raw_snapshots')
+      .select('external_key,payload_sha256')
+      .eq('resource', resource)
+      .in('external_key', keys);
+    if (error) throw new Error(`UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:${error.message}`);
+    existing.push(...(data ?? []).map((row) => ({
       external_key: String(row.external_key),
       payload_sha256: String(row.payload_sha256),
-    })),
-    rows,
-  );
+    })));
+  }
+  return classifyPayloadRows(existing, rows);
 }
 
 async function identityRowsNeedingWrite(
@@ -569,13 +574,20 @@ async function identityRowsNeedingWrite(
   rows: IdentityRow[],
 ) {
   if (!rows.length) return [];
-  const { data, error } = await adminClient
-    .from('unleashed_external_identities')
-    .select('external_key,latest_payload_sha256')
-    .eq('resource', resource)
-    .in('external_key', rows.map((row) => row.external_key));
-  if (error) throw new Error(`UNLEASHED_EXTERNAL_IDENTITY_CLASSIFY_FAILED:${error.message}`);
-  const hashes = new Map((data ?? []).map((row) => [String(row.external_key), String(row.latest_payload_sha256)]));
+  const existing: Array<{ external_key: string; latest_payload_sha256: string }> = [];
+  for (const keys of partitionExternalKeysForInFilter(rows.map((row) => row.external_key))) {
+    const { data, error } = await adminClient
+      .from('unleashed_external_identities')
+      .select('external_key,latest_payload_sha256')
+      .eq('resource', resource)
+      .in('external_key', keys);
+    if (error) throw new Error(`UNLEASHED_EXTERNAL_IDENTITY_CLASSIFY_FAILED:${error.message}`);
+    existing.push(...(data ?? []).map((row) => ({
+      external_key: String(row.external_key),
+      latest_payload_sha256: String(row.latest_payload_sha256),
+    })));
+  }
+  const hashes = new Map(existing.map((row) => [row.external_key, row.latest_payload_sha256]));
   return rows.filter((row) => hashes.get(row.external_key) !== row.latest_payload_sha256);
 }
 
@@ -602,6 +614,47 @@ async function insertDryRunBatch(
     .single();
   if (error || !data) throw new Error('UNLEASHED_DRY_RUN_BATCH_CREATE_FAILED:' + (error?.message ?? 'UNKNOWN'));
   return data;
+}
+
+async function verifyR5002R2RecoveryPrerequisites(adminClient: ReturnType<typeof createClient>) {
+  const { data: originalRuns, error: originalError } = await adminClient
+    .from('unleashed_sync_runs')
+    .select('id,status,resource_set,records_seen,records_staged,error_code,error_message,metadata')
+    .contains('metadata', { request_key: R5_002_REQUEST_KEY });
+  if (originalError) throw new Error(`R5_002_R2_ORIGINAL_LOOKUP_FAILED:${originalError.message}`);
+  if ((originalRuns ?? []).length !== 1) throw new Error('R5_002_R2_ORIGINAL_RUN_CARDINALITY_MISMATCH');
+
+  const original = originalRuns![0];
+  const metadata = isRecord(original.metadata) ? original.metadata : {};
+  const target = isRecord(metadata.target) ? metadata.target : {};
+  const exactFailure = original.status === 'FAILED'
+    && Array.isArray(original.resource_set)
+    && original.resource_set.length === 1
+    && original.resource_set[0] === 'stock_on_hand'
+    && original.records_seen === 200
+    && original.records_staged === 0
+    && original.error_code === 'UNLEASHED_CONNECTOR_PAGE_FAILED'
+    && typeof original.error_message === 'string'
+    && original.error_message.startsWith('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:')
+    && target.warehouseCode === 'ADL1';
+  if (!exactFailure) throw new Error('R5_002_R2_ORIGINAL_FAILURE_MISMATCH');
+
+  const [{ data: firstSeen, error: firstSeenError }, { data: lastSeen, error: lastSeenError }] = await Promise.all([
+    adminClient.from('unleashed_raw_snapshots').select('id').eq('first_seen_run_id', original.id).limit(1),
+    adminClient.from('unleashed_raw_snapshots').select('id').eq('last_seen_run_id', original.id).limit(1),
+  ]);
+  if (firstSeenError || lastSeenError) {
+    throw new Error(`R5_002_R2_SNAPSHOT_PROOF_FAILED:${firstSeenError?.message ?? lastSeenError?.message ?? 'UNKNOWN'}`);
+  }
+  if ((firstSeen ?? []).length || (lastSeen ?? []).length) throw new Error('R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES');
+
+  const { data: recoveryRuns, error: recoveryError } = await adminClient
+    .from('unleashed_sync_runs')
+    .select('id')
+    .contains('metadata', { request_key: R5_002_R2_REQUEST_KEY });
+  if (recoveryError) throw new Error(`R5_002_R2_RECOVERY_LOOKUP_FAILED:${recoveryError.message}`);
+  if ((recoveryRuns ?? []).length !== 0) throw new Error('R5_002_R2_REQUEST_KEY_ALREADY_USED');
+  return String(original.id);
 }
 
 Deno.serve(async (req) => {
@@ -696,6 +749,23 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'INVALID_REQUEST' });
+  }
+
+  if (requestKey === R5_002_R2_REQUEST_KEY) {
+    try {
+      const recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
+      return json(409, {
+        error: 'R5_002_R2_DORMANT_NOT_ACTIVATED',
+        requestKey,
+        recoveryOf,
+      });
+    } catch (error) {
+      return json(409, {
+        error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
+        details: error instanceof Error ? error.message : 'UNKNOWN',
+        requestKey,
+      });
+    }
   }
 
   let continuationHighWatermark: string | null = null;
