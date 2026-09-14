@@ -28,32 +28,10 @@ begin
 end;
 $deps$;
 
--- P4C must already be durably complete before promotion authority is changed.
-do $p4c_closed$
-begin
-  if (select count(*) from public.ecoflow_commercial_wave2_candidates where promotion_phase='EXPANSION') <> 163
-     or (select count(*) from public.ecoflow_commercial_wave2_candidates where promotion_phase='EXPANSION' and enabled) <> 163
-     or (select count(*) from public.ecoflow_commercial_wave2_phase_unlocks
-         where promotion_phase='EXPANSION'
-           and candidate_set_sha256='79d719a1fcc422afefdabacac4f5b6d7d52ae0b4cc3e8939120edb229160803a'
-           and unlocked_candidate_count=163
-           and authorization_command_id='430e5bfe-e8b1-44dd-a004-9dfb0bbc46b8'::uuid) <> 1
-     or (select count(*) from public.ecoflow_commercial_wave2_unlock_commands
-         where promotion_phase='EXPANSION'
-           and command_id='430e5bfe-e8b1-44dd-a004-9dfb0bbc46b8'::uuid
-           and (result->>'unlockedCandidateCount')::bigint=163
-           and not coalesce((result->>'promotionIncluded')::boolean,true)
-           and not coalesce((result->>'providerActionIncluded')::boolean,true)) <> 1
-     or (select count(*) from public.app_security_audit_events
-         where action='COMMERCIAL_WAVE2_EXPANSION_UNLOCKED_V2'
-           and target_type='ecoflow_commercial_wave2_phase_unlocks'
-           and target_id='EXPANSION') <> 1
-     or (select count(*) from public.ecoflow_commercial_wave2_promotions where external_product_code<>'140010') <> 0
-     or (select count(*) from public.ecoflow_commercial_wave2_promotion_commands where external_product_code<>'140010') <> 0 then
-    raise exception 'COMMERCIAL_WAVE2_P4D_P4C_CLOSURE_NOT_PROVEN';
-  end if;
-end;
-$p4c_closed$;
+-- Do not require production row data while applying the security migration.
+-- Trusted schema shadow deliberately carries schema/history only. Exact P4C closure
+-- remains mandatory in the authenticated readiness RPC below and again in the
+-- dormant mutation wrapper before any future P4E promotion can occur.
 
 -- Close the completed P4C mutation surface and revoke the incumbent promotion
 -- function from every application role. The historical implementation remains
@@ -134,6 +112,22 @@ begin
       and authorization_command_id='430e5bfe-e8b1-44dd-a004-9dfb0bbc46b8'::uuid
   ) then
     raise exception 'COMMERCIAL_WAVE2_P4D_EXPANSION_UNLOCK_NOT_PROVEN';
+  end if;
+
+  if not exists (
+    select 1 from public.ecoflow_commercial_wave2_unlock_commands
+    where promotion_phase='EXPANSION'
+      and command_id='430e5bfe-e8b1-44dd-a004-9dfb0bbc46b8'::uuid
+      and (result->>'unlockedCandidateCount')::bigint=163
+      and not coalesce((result->>'promotionIncluded')::boolean,true)
+      and not coalesce((result->>'providerActionIncluded')::boolean,true)
+  ) or not exists (
+    select 1 from public.app_security_audit_events
+    where action='COMMERCIAL_WAVE2_EXPANSION_UNLOCKED_V2'
+      and target_type='ecoflow_commercial_wave2_phase_unlocks'
+      and target_id='EXPANSION'
+  ) then
+    raise exception 'COMMERCIAL_WAVE2_P4D_P4C_CLOSURE_NOT_PROVEN';
   end if;
 
   select exists(
