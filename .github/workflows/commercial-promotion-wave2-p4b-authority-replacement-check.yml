@@ -1,0 +1,74 @@
+name: Commercial Promotion Wave 2 P4B authority replacement
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/commercial-promotion-wave2-p4b-authority-replacement-check.yml'
+      - 'scripts/commercial-promotion-wave2-p4b-authority-replacement-contract.test.mjs'
+      - 'scripts/commercial-promotion-wave2-p4b-authority-replacement-db-contract-test.sql'
+      - 'docs/engineering/work-packages/338-COMMERCIAL-WAVE2-P4B-AUTHORITY-REPLACEMENT.md'
+      - 'supabase/migrations/20260914001500_commercial_wave2_p4b_authority_replacement.sql'
+  push:
+    branches:
+      - 'agent/product-identity/338-wave2-p4b-authority-replacement'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head P4B authority replacement contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      EXACT_BASE_SHA: e2c00ce40948b36a3cf58f2eaed91e29001fb3d3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind exact branch head to P4A production base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Exercise P4B static authority replacement contract
+        run: node --test scripts/commercial-promotion-wave2-p4b-authority-replacement-contract.test.mjs
+      - name: Exercise PostgreSQL 17 P4B dormant replacement and simulated activation contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/commercial-promotion-wave2-p4b-authority-replacement-db-contract-test.sql
+      - name: Keep P4A readiness static contract green
+        run: node --test scripts/commercial-promotion-wave2-p4a-readiness-contract.test.mjs
+      - name: Keep P3A-R4 provider attribution contract green
+        run: node --test scripts/commercial-promotion-wave2-p3a-r4-master-sync-sentinel-contract.test.mjs
+      - name: Keep P2B promotion contract green
+        run: node --test scripts/commercial-promotion-wave2-p2b-canary-promotion-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD
