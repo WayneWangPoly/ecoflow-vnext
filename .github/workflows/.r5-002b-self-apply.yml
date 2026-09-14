@@ -22,7 +22,7 @@ jobs:
           python3 scripts/.r5-002b-apply.py
           rm scripts/.r5-002b-apply.py
           rm scripts/.r5-002b-self-apply.patch
-          rm .github/workflows/.r5-002b-self-apply.yml
+          rm .github/workflows/r5-002b-classification-recovery.yml
       - name: Commit branch implementation
         run: |
           git config user.name 'github-actions[bot]'
