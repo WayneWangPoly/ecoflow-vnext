@@ -212,11 +212,44 @@ begin
     raise exception 'COMMERCIAL_WAVE2_P4B_EXPANSION_SET_DRIFT';
   end if;
 
-  update public.ecoflow_commercial_wave2_candidates
+  -- Repeat the complete eligibility predicate inside the mutation statement.
+  -- READ COMMITTED gives each statement a fresh snapshot; this prevents a row
+  -- inserted or changed between the count and UPDATE from being enabled merely
+  -- because it carries the frozen cohort hash. Any eligible phantom makes the
+  -- affected row count differ from 163 and rolls back the entire transaction.
+  update public.ecoflow_commercial_wave2_candidates a
   set enabled = true
-  where promotion_phase = 'EXPANSION'
-    and not enabled
-    and candidate_set_sha256 = p_expected_candidate_set_sha256;
+  from public.ecoflow_unleashed_master_mappings m,
+       public.unleashed_raw_snapshots rs
+  where a.promotion_phase = 'EXPANSION'
+    and not a.enabled
+    and a.candidate_set_sha256 = p_expected_candidate_set_sha256
+    and m.id = a.unleashed_mapping_id
+    and m.entity_type = 'PRODUCT'
+    and m.mapping_status = 'UNMATCHED'
+    and m.source_duplicate_count = 1
+    and upper(btrim(coalesce(m.source_external_code, ''))) = a.external_product_code
+    and m.source_external_key = a.expected_source_external_key
+    and m.revision = a.expected_mapping_revision
+    and m.source_payload_sha256 = a.expected_source_payload_sha256
+    and rs.resource = 'products'
+    and rs.external_key = a.expected_source_external_key
+    and rs.payload_sha256 = a.expected_source_payload_sha256
+    and upper(btrim(coalesce(rs.payload ->> 'ProductCode', ''))) = a.external_product_code
+    and not public.ecoflow_unleashed_json_boolean(rs.payload -> 'Obsolete')
+    and lower(coalesce(rs.payload ->> 'Status', '')) not in ('obsolete', 'inactive', 'retired')
+    and (select count(*) from public.v_ecoflow_ordermentum_listed_skus l
+      where upper(btrim(coalesce(l.external_sku_code, ''))) = a.external_product_code
+        and l.is_visible_on_ordermentum) = 1
+    and not exists (
+      select 1 from public.external_product_mappings e
+      where e.provider = 'ORDERMENTUM'
+        and upper(btrim(e.external_product_code)) = a.external_product_code
+    )
+    and not exists (
+      select 1 from public.skus s
+      where upper(btrim(s.sku_code)) = a.external_product_code
+    );
 
   get diagnostics v_updated = row_count;
   if v_updated <> 163 then
