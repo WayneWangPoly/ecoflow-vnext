@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database, RadioTower, ShieldCheck } from 'lucide-react';
+import { Database, RadioTower, ShieldCheck, Warehouse } from 'lucide-react';
 import {
   runUnleashedConnectorAcceptance,
   type UnleashedAcceptanceResource,
   type UnleashedAcceptanceResult,
 } from '../team/unleashedConnectorAcceptance';
 import { runUnleashedReadonlyProbe, type UnleashedProbeResult } from '../team/unleashedReadonlyProbe';
+import {
+  runR5002Adl1StockOnHandAcquisition,
+  type R5002AcquisitionResult,
+} from '../team/unleashedAdl1StockOnHandAcquisition';
 import './teamAccessSettings.css';
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
@@ -32,6 +36,12 @@ function acceptanceTone(result: UnleashedAcceptanceResult | null) {
   return result.complete ? 'good' : 'warning';
 }
 
+function acquisitionTone(result: R5002AcquisitionResult | null, error: string) {
+  if (result) return 'good';
+  if (error) return 'danger';
+  return 'neutral';
+}
+
 export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseClient }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UnleashedProbeResult | null>(null);
@@ -41,9 +51,15 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [acceptanceRunning, setAcceptanceRunning] = useState(false);
   const [acceptanceResult, setAcceptanceResult] = useState<UnleashedAcceptanceResult | null>(null);
   const [acceptanceError, setAcceptanceError] = useState('');
+  const [acquisitionOpen, setAcquisitionOpen] = useState(false);
+  const [acquisitionAcknowledged, setAcquisitionAcknowledged] = useState(false);
+  const [acquisitionRunning, setAcquisitionRunning] = useState(false);
+  const [acquisitionAttempted, setAcquisitionAttempted] = useState(false);
+  const [acquisitionResult, setAcquisitionResult] = useState<R5002AcquisitionResult | null>(null);
+  const [acquisitionError, setAcquisitionError] = useState('');
 
   async function runProbe() {
-    if (running || acceptanceRunning) return;
+    if (running || acceptanceRunning || acquisitionRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -57,7 +73,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   }
 
   async function runAcceptance() {
-    if (!acceptanceAcknowledged || acceptanceRunning || running) return;
+    if (!acceptanceAcknowledged || acceptanceRunning || running || acquisitionRunning) return;
     setAcceptanceRunning(true);
     setAcceptanceResult(null);
     setAcceptanceError('');
@@ -68,6 +84,28 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     } finally {
       setAcceptanceRunning(false);
       setAcceptanceAcknowledged(false);
+    }
+  }
+
+  async function runAcquisition() {
+    if (
+      !acquisitionAcknowledged
+      || acquisitionRunning
+      || acquisitionAttempted
+      || running
+      || acceptanceRunning
+    ) return;
+    setAcquisitionAttempted(true);
+    setAcquisitionRunning(true);
+    setAcquisitionResult(null);
+    setAcquisitionError('');
+    try {
+      setAcquisitionResult(await runR5002Adl1StockOnHandAcquisition(supabase));
+    } catch (runError) {
+      setAcquisitionError(runError instanceof Error ? runError.message : String(runError));
+    } finally {
+      setAcquisitionRunning(false);
+      setAcquisitionAcknowledged(false);
     }
   }
 
@@ -89,7 +127,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || acceptanceRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || acceptanceRunning || acquisitionRunning}>
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page test'}
         </button>
@@ -98,10 +136,20 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           aria-expanded={acceptanceOpen}
           aria-controls="unleashed-production-acceptance"
           onClick={() => setAcceptanceOpen((current) => !current)}
-          disabled={running || acceptanceRunning}
+          disabled={running || acceptanceRunning || acquisitionRunning}
         >
           <ShieldCheck aria-hidden="true" size={17} />
           {acceptanceOpen ? 'Close acceptance' : 'Review production acceptance'}
+        </button>
+        <button
+          type="button"
+          aria-expanded={acquisitionOpen}
+          aria-controls="unleashed-r5-002-acquisition"
+          onClick={() => setAcquisitionOpen((current) => !current)}
+          disabled={running || acceptanceRunning || acquisitionRunning}
+        >
+          <Warehouse aria-hidden="true" size={17} />
+          {acquisitionOpen ? 'Close ADL1 acquisition' : 'Review ADL1 acquisition'}
         </button>
       </div>
 
@@ -160,11 +208,71 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           <button
             type="button"
             className="primary unleashed-acceptance-run"
-            disabled={!acceptanceAcknowledged || acceptanceRunning || running}
+            disabled={!acceptanceAcknowledged || acceptanceRunning || running || acquisitionRunning}
             onClick={() => void runAcceptance()}
           >
             <Database aria-hidden="true" size={17} />
             {acceptanceRunning ? 'Running acceptance…' : 'Store sample and verify replay'}
+          </button>
+        </div>
+      ) : null}
+
+      {acquisitionOpen ? (
+        <div className="unleashed-acceptance unleashed-r5-acquisition" id="unleashed-r5-002-acquisition">
+          <div className="unleashed-acceptance-head">
+            <div><h3>R5-002 ADL1 StockOnHand</h3><span>One shot · pages 1–5 · 200 rows per page</span></div>
+            <b className={`pill pill-${acquisitionTone(acquisitionResult, acquisitionError)}`}>
+              {acquisitionRunning ? 'RUNNING' : acquisitionResult ? 'SUCCEEDED' : acquisitionAttempted ? 'ATTEMPTED' : 'NOT RUN'}
+            </b>
+          </div>
+
+          <p className="unleashed-acceptance-note">
+            This sends GET-only StockOnHand requests scoped to warehouse ADL1 and stores source evidence only.
+            No STAGE, opening balance, stocktake, inventory movement, or Product Identity mutation.
+          </p>
+          <ul className="unleashed-acceptance-scope">
+            <li>Resource: stock_on_hand</li>
+            <li>Warehouse: ADL1</li>
+            <li>Window: page 1, maximum 5 pages</li>
+            <li>Request key: ECOFLOW-R5-002</li>
+          </ul>
+
+          <label className="unleashed-acceptance-confirm">
+            <input
+              type="checkbox"
+              checked={acquisitionAcknowledged}
+              disabled={acquisitionRunning || acquisitionAttempted}
+              onChange={(event) => setAcquisitionAcknowledged(event.target.checked)}
+            />
+            <span>I confirm this exact ADL1 source acquisition and understand this control allows one attempt only.</span>
+          </label>
+
+          {acquisitionError ? <div className="error-message" role="alert">{acquisitionError}</div> : null}
+          {acquisitionResult ? (
+            <div className="unleashed-acceptance-result" role="status">
+              <div className="unleashed-acceptance-summary">
+                <span>Run <strong>{acquisitionResult.runId.slice(0, 8)}</strong></span>
+                <span>Pages <strong>{acquisitionResult.pages.length}</strong></span>
+                <span>Source rows <strong>{acquisitionResult.recordsSeen}</strong></span>
+                <span>Window <strong>{acquisitionResult.paginationWindows[0].windowComplete ? 'COMPLETE' : 'INCOMPLETE'}</strong></span>
+              </div>
+            </div>
+          ) : null}
+
+          {acquisitionAttempted ? (
+            <div className="unleashed-acceptance-warning" role="status">
+              Do not retry. Verify the production ledger first.
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className="primary unleashed-acceptance-run"
+            disabled={!acquisitionAcknowledged || acquisitionRunning || acquisitionAttempted || running || acceptanceRunning}
+            onClick={() => void runAcquisition()}
+          >
+            <Database aria-hidden="true" size={17} />
+            {acquisitionRunning ? 'Acquiring ADL1 evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002 once'}
           </button>
         </div>
       ) : null}

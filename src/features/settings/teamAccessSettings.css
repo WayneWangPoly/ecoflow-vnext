@@ -359,7 +359,7 @@
 }
 
 .unleashed-probe-panel .unleashed-probe-actions {
-  grid-template-columns: repeat(2, minmax(220px, 320px));
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
 }
 
 .unleashed-probe-panel .unleashed-probe-actions button {

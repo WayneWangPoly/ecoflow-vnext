@@ -237,7 +237,7 @@ test('Production acceptance requires a bounded four-resource write and proves un
 
   assert.match(probePanel, /type="checkbox"/);
   assert.match(probePanel, /I confirm this bounded source-snapshot write/);
-  assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running\}/);
+  assert.match(probePanel, /disabled=\{!acceptanceAcknowledged \|\| acceptanceRunning \|\| running \|\| acquisitionRunning\}/);
   assert.match(probePanel, /setAcceptanceAcknowledged\(false\)/);
   assert.match(probePanel, /Store sample and verify replay/);
 });
