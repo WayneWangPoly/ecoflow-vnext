@@ -1,54 +1,51 @@
-name: R5-002-R2 activation apply
+name: R5-002B classification recovery
 
 on:
+  pull_request:
+    paths:
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'src/features/team/unleashedAdl1StockOnHandAcquisition.ts'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs'
+      - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md'
+      - '.github/workflows/r5-002b-classification-recovery.yml'
   push:
     branches:
-      - 'agent/unleashed/r5-002-r2-activation'
+      - 'agent/unleashed/r5-002b-*'
+      - 'agent/unleashed/r5-002-r2-*'
+    paths:
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'src/features/team/unleashedAdl1StockOnHandAcquisition.ts'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs'
+      - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md'
+      - '.github/workflows/r5-002b-classification-recovery.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/unleashed/r5-002-r2-activation
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Bind transformer to exact source shape
-        run: sed -i 's/edge.count(marker) != 2/edge.count(marker) != 1/' scripts/r5-002-r2-activate-transform.py
-      - name: Apply bounded R2 activation
-        run: python3 scripts/r5-002-r2-activate-transform.py
-      - name: Check patch
-        run: git diff --check
-      - name: Focused activation contracts
-        run: node --experimental-strip-types --test scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs scripts/r5-002b-classification-recovery-contract.test.mjs
+      - name: R5-002B contract
+        run: node --experimental-strip-types --test scripts/r5-002b-classification-recovery-contract.test.mjs
+      - name: R5-002A regression
+        run: node --experimental-strip-types --test scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs
+      - name: Existing Unleashed audit
+        run: npm run audit:unleashed
       - name: Typecheck
         run: npm run typecheck
       - name: Production build
         run: npm run build
-      - name: Commit activation carrier
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'WayneWangPoly'
-          git config user.email 'waynewangpoly@gmail.com'
-          git add \
-            supabase/functions/trigger-unleashed-readonly-sync/index.ts \
-            src/features/team/unleashedAdl1StockOnHandAcquisition.ts \
-            src/features/settings/UnleashedReadonlyProbePanel.tsx \
-            scripts/r5-002b-classification-recovery-contract.test.mjs \
-            docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md
-          if git diff --cached --quiet; then
-            echo 'Activation already applied.'
-            exit 0
-          fi
-          git commit -m 'ECOFLOW-R5-002-R2 — activate governed recovery carrier'
-          git push origin HEAD:agent/unleashed/r5-002-r2-activation
