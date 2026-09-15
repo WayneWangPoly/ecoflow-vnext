@@ -326,6 +326,13 @@ begin
   perform s.id from public.unleashed_raw_snapshots s where s.resource='customers' for share;
   perform r.id from public.ordermentum_raw_master_resources r where r.resource_type='purchasers' and coalesce(r.is_deleted_or_missing,false)=false for share;
 
+  -- Freeze the exact evidence relation used by every subsequent gate and write.
+  -- Under READ COMMITTED, re-running the live helper in later statements could
+  -- otherwise admit a concurrently inserted eligible row after the hash gate.
+  create temporary table pg_temp.ecoflow_customer_wave1_evidence_snapshot
+  on commit drop
+  as select * from public.ecoflow_customer_wave1_live_evidence_v1();
+
   select
     count(*)::integer,
     count(*) filter(where disposition='AUTO')::integer,
@@ -336,7 +343,7 @@ begin
     encode(extensions.digest(string_agg(evidence_line,E'\n' order by external_code) filter(where disposition='AUTO'),'sha256'),'hex'),
     encode(extensions.digest(string_agg(external_code||'|'||ordermentum_purchaser_id||'|'||match_method,E'\n' order by external_code) filter(where disposition='HOLD_DUPLICATE_EXTERNAL_ID'),'sha256'),'hex')
   into v_count,v_auto,v_hold,v_membership_90,v_membership_82,v_evidence_90,v_evidence_82,v_hold_8
-  from public.ecoflow_customer_wave1_live_evidence_v1();
+  from pg_temp.ecoflow_customer_wave1_evidence_snapshot;
 
   if v_count<>90 or v_auto<>82 or v_hold<>8
      or v_membership_90<>c_membership_90 or v_membership_82<>c_membership_82
@@ -346,26 +353,26 @@ begin
 
   if exists (
     select 1
-    from public.ecoflow_customer_wave1_live_evidence_v1() e
+    from pg_temp.ecoflow_customer_wave1_evidence_snapshot e
     join public.ecoflow_unleashed_master_mappings m on m.id=e.mapping_id
     where e.disposition='AUTO'
       and (m.mapping_status<>'UNMATCHED' or m.canonical_object_type is not null or m.canonical_object_id is not null or m.canonical_code is not null or m.ordermentum_external_id is not null)
   ) then raise exception 'CUSTOMER_WAVE1_SOURCE_MAPPING_NOT_PRISTINE'; end if;
 
   if exists (
-    select 1 from public.ecoflow_customer_wave1_live_evidence_v1() e
+    select 1 from pg_temp.ecoflow_customer_wave1_evidence_snapshot e
     join public.customers c on c.customer_code=e.external_code
     where e.disposition='AUTO'
   ) then raise exception 'CUSTOMER_WAVE1_CUSTOMER_CODE_CONFLICT'; end if;
 
   if exists (
-    select 1 from public.ecoflow_customer_wave1_live_evidence_v1() e
+    select 1 from pg_temp.ecoflow_customer_wave1_evidence_snapshot e
     join public.external_customer_mappings x on x.provider='ORDERMENTUM' and x.external_customer_id=e.ordermentum_purchaser_id
     where e.disposition='AUTO'
   ) then raise exception 'CUSTOMER_WAVE1_EXTERNAL_ID_CONFLICT'; end if;
 
   if exists (
-    select 1 from public.ecoflow_customer_wave1_live_evidence_v1() e
+    select 1 from pg_temp.ecoflow_customer_wave1_evidence_snapshot e
     where e.disposition='AUTO'
       and (
         nullif(btrim(coalesce(e.external_code,'')),'') is null
@@ -375,7 +382,7 @@ begin
   ) then raise exception 'CUSTOMER_WAVE1_SOURCE_PAYLOAD_INVALID'; end if;
 
   for v_row in
-    select * from public.ecoflow_customer_wave1_live_evidence_v1()
+    select * from pg_temp.ecoflow_customer_wave1_evidence_snapshot
     where disposition='AUTO'
     order by external_code
   loop
@@ -507,6 +514,13 @@ begin
   perform s.id from public.unleashed_raw_snapshots s where s.resource in ('customers','customer_delivery_addresses') for share;
   perform r.id from public.ordermentum_raw_master_resources r where r.resource_type='purchasers' and coalesce(r.is_deleted_or_missing,false)=false for share;
 
+  -- Freeze one statement snapshot for hashes, parent/source validation and the
+  -- mutation loop. New live rows may arrive concurrently, but cannot expand
+  -- this already verified command cohort.
+  create temporary table pg_temp.ecoflow_site_wave1_evidence_snapshot
+  on commit drop
+  as select * from public.ecoflow_site_wave1_live_evidence_v1();
+
   select
     count(*)::integer,
     count(*) filter(where exact_location)::integer,
@@ -519,7 +533,7 @@ begin
     encode(extensions.digest(string_agg(evidence_line,E'\n' order by parent_customer_code,address_guid) filter(where disposition='AUTO'),'sha256'),'hex'),
     encode(extensions.digest(string_agg(parent_customer_code||'|'||address_guid||'|'||ordermentum_purchaser_id,E'\n' order by parent_customer_code,address_guid) filter(where disposition='HOLD_DUPLICATE_PARENT'),'sha256'),'hex')
   into v_scoped,v_exact,v_auto,v_dup_hold,v_location_hold,v_membership_76,v_membership_71,v_evidence_75,v_evidence_71,v_hold_4
-  from public.ecoflow_site_wave1_live_evidence_v1();
+  from pg_temp.ecoflow_site_wave1_evidence_snapshot;
 
   if v_scoped<>76 or v_exact<>75 or v_auto<>71 or v_dup_hold<>4 or v_location_hold<>1
      or v_membership_76<>c_membership_76 or v_membership_71<>c_membership_71
@@ -528,7 +542,7 @@ begin
   end if;
 
   if not exists (
-    select 1 from public.ecoflow_site_wave1_live_evidence_v1() e
+    select 1 from pg_temp.ecoflow_site_wave1_evidence_snapshot e
     where e.disposition='HOLD_LOCATION_CONFLICT'
       and e.parent_customer_code=c_location_hold_code
       and e.address_guid=c_location_hold_guid
@@ -536,7 +550,7 @@ begin
 
   if exists (
     select 1
-    from public.ecoflow_site_wave1_live_evidence_v1() e
+    from pg_temp.ecoflow_site_wave1_evidence_snapshot e
     join public.ecoflow_unleashed_master_mappings dm on dm.id=e.delivery_mapping_id
     where e.disposition='AUTO'
       and (dm.mapping_status<>'UNMATCHED' or dm.canonical_object_type is not null or dm.canonical_object_id is not null or dm.canonical_code is not null or dm.ordermentum_external_id is not null)
@@ -544,7 +558,7 @@ begin
 
   if exists (
     select 1
-    from public.ecoflow_site_wave1_live_evidence_v1() e
+    from pg_temp.ecoflow_site_wave1_evidence_snapshot e
     left join public.ecoflow_unleashed_master_mappings cm
       on cm.entity_type='CUSTOMER' and upper(cm.source_external_code)=upper(e.parent_customer_code)
     left join public.customers c on c.id=cm.canonical_object_id
@@ -557,7 +571,7 @@ begin
   ) then raise exception 'SITE_WAVE1_PARENT_CUSTOMER_NOT_ACTIVE'; end if;
 
   if exists (
-    select 1 from public.ecoflow_site_wave1_live_evidence_v1() e
+    select 1 from pg_temp.ecoflow_site_wave1_evidence_snapshot e
     where e.disposition='AUTO' and (
       nullif(btrim(coalesce(e.address_guid,'')),'') is null
       or nullif(btrim(coalesce(e.address_payload->>'StreetAddress','')),'') is null
@@ -569,14 +583,14 @@ begin
 
   if exists (
     select 1
-    from public.ecoflow_site_wave1_live_evidence_v1() e
+    from pg_temp.ecoflow_site_wave1_evidence_snapshot e
     join public.customer_sites cs
       on cs.site_code=e.parent_customer_code||'-SITE-'||upper(substr(replace(e.address_guid,'-',''),1,8))
     where e.disposition='AUTO'
   ) then raise exception 'SITE_WAVE1_SITE_CODE_CONFLICT'; end if;
 
   for v_row in
-    select * from public.ecoflow_site_wave1_live_evidence_v1()
+    select * from pg_temp.ecoflow_site_wave1_evidence_snapshot
     where disposition='AUTO'
     order by parent_customer_code,address_guid
   loop

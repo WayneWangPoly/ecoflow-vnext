@@ -57,6 +57,19 @@ test('global cohort gate remains fail-closed, including explicit HOLDs', () => {
   assert.match(sql,/SITE_WAVE1_PARENT_CUSTOMER_NOT_ACTIVE/);
 });
 
+test('each promotion command freezes one evidence snapshot before validation and mutation', () => {
+  const customerBody = sql.match(/create or replace function public\.ecoflow_promote_customer_wave1_v1[\s\S]*?\$function\$;/i)?.[0] ?? '';
+  const siteBody = sql.match(/create or replace function public\.ecoflow_promote_site_wave1_v1[\s\S]*?\$function\$;/i)?.[0] ?? '';
+
+  assert.match(customerBody,/create temporary table pg_temp\.ecoflow_customer_wave1_evidence_snapshot[\s\S]*?as select \* from public\.ecoflow_customer_wave1_live_evidence_v1\(\)/i);
+  assert.match(siteBody,/create temporary table pg_temp\.ecoflow_site_wave1_evidence_snapshot[\s\S]*?as select \* from public\.ecoflow_site_wave1_live_evidence_v1\(\)/i);
+
+  assert.equal((customerBody.match(/public\.ecoflow_customer_wave1_live_evidence_v1\(\)/g) ?? []).length,1);
+  assert.equal((siteBody.match(/public\.ecoflow_site_wave1_live_evidence_v1\(\)/g) ?? []).length,1);
+  assert.match(customerBody,/from pg_temp\.ecoflow_customer_wave1_evidence_snapshot/g);
+  assert.match(siteBody,/from pg_temp\.ecoflow_site_wave1_evidence_snapshot/g);
+});
+
 test('Customer and Site writes are bounded to the intended canonical relations', () => {
   for (const relation of ['public.customers','public.external_customer_mappings','public.addresses','public.customer_sites','public.ecoflow_unleashed_master_mappings']) {
     assert.match(sql,new RegExp(relation.replaceAll('.','\\.')));

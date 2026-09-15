@@ -120,7 +120,10 @@ Both:
 - use actor-bound command IDs plus a deterministic request fingerprint;
 - replay same command/same actor/same payload;
 - reject same command with another actor or payload;
-- serialize command IDs and each batch authority with advisory locks.
+- serialize command IDs and each batch authority with advisory locks;
+- freeze one transaction-local evidence snapshot and reuse it for every hash,
+  conflict, parent/source and mutation step, so concurrent source inserts cannot
+  expand the verified cohort under PostgreSQL `READ COMMITTED`.
 
 Internal live-evidence helper functions are SECURITY INVOKER and have EXECUTE revoked from all API roles.
 
