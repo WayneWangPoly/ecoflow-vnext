@@ -1,0 +1,52 @@
+name: Deploy R5-003 inventory reference stage carrier
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/stage-unleashed-inventory-reference/**'
+      - '.github/workflows/deploy-r5-003-inventory-reference-stage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
+  SUPABASE_CLI_VERSION: 2.107.0
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require production deployment credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
+          test "$SUPABASE_PROJECT_REF" = 'kauqwlzuyxcudoyognwf'
+      - name: Install pinned Supabase CLI
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+      - name: Deploy authenticated R5-003 carrier with transient retry
+        shell: bash
+        run: |
+          node scripts/run-transient-supabase-command.mjs \
+            --label 'Deploy stage-unleashed-inventory-reference' \
+            --log r5-003-edge-deploy.log \
+            --attempts 5 --base-delay-ms 20000 --max-delay-ms 120000 \
+            -- supabase functions deploy stage-unleashed-inventory-reference --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Upload deployment log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-003-edge-deploy-${{ github.run_id }}
+          path: r5-003-edge-deploy.log
+          if-no-files-found: warn
