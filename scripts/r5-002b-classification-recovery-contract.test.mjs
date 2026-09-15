@@ -73,7 +73,7 @@ test('R5-002-R2 is activated only after proving the original failed run and rema
   assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
   assert.match(edge, /original\.records_staged === 0/);
   assert.match(edge, /original\.error_message\.startsWith\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\)/);
-  assert.match(edge, /recovery_of: recoveryOf/);
+  assert.equal((edge.match(/recovery_of: recoveryOf/g) ?? []).length, 2, 'recovery binding must survive run creation and final metadata rewrite');
   assert.match(edge, /UNLEASHED_REQUEST_KEY_REPLAY_BLOCKED/);
   assert.match(panel, /ECOFLOW-R5-002-R2/);
   assert.match(panel, /Run R5-002-R2 once/);

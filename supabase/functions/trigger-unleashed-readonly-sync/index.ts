@@ -1321,6 +1321,7 @@ Deno.serve(async (req) => {
       allowed_methods: ['GET'],
       credentials_location: 'supabase_edge_function_secrets',
       ...(requestKey ? { request_key: requestKey } : {}),
+      ...(recoveryOf ? { recovery_of: recoveryOf } : {}),
       target: target?.audit ?? null,
       records_inserted: recordsInserted,
       records_changed: recordsChanged,
