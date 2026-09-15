@@ -1,0 +1,74 @@
+name: ECOFLOW-340B-1 Customer legacy-master containment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/customer-legacy-master-containment-check.yml'
+      - 'docs/engineering/work-packages/340B-1-CUSTOMER-LEGACY-MASTER-CONTAINMENT.md'
+      - 'scripts/customer-legacy-master-containment-*'
+      - 'supabase/migrations/*_customer_legacy_master_containment.sql'
+  push:
+    branches:
+      - 'agent/unleashed/340b1-*'
+    paths:
+      - '.github/workflows/customer-legacy-master-containment-check.yml'
+      - 'docs/engineering/work-packages/340B-1-CUSTOMER-LEGACY-MASTER-CONTAINMENT.md'
+      - 'scripts/customer-legacy-master-containment-*'
+      - 'supabase/migrations/*_customer_legacy_master_containment.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Browser denial and governed Customer continuity
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run bounded static and caller contract
+        run: node --test scripts/customer-legacy-master-containment-contract.test.mjs
+      - name: Run PostgreSQL 17 RLS, grant, replay and continuity contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/customer-legacy-master-containment-db-contract-test.sql
+      - name: Regress current Customer frontend contract
+        run: node --experimental-strip-types --test scripts/transform-007-operational-records-frontend-contract.test.mjs
+      - name: Regress Customer master bridge and inventory reference
+        run: npm run audit:unleashed-master-data && npm run audit:unleashed-inventory-reference
+      - name: Regress commercial and warehouse bounded contracts
+        run: >-
+          node --experimental-strip-types --test
+          scripts/commercial-promotion-wave2-p4e-batch-promotion-contract.test.mjs
+          scripts/warehouse-survey-002-bounded-batch-contract.test.mjs
+      - name: Repository hygiene
+        run: npm run audit:repository-hygiene
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
