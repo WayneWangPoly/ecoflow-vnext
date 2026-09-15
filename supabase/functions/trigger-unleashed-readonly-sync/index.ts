@@ -751,14 +751,10 @@ Deno.serve(async (req) => {
     return json(400, { error: error instanceof Error ? error.message : 'INVALID_REQUEST' });
   }
 
+  let recoveryOf: string | null = null;
   if (requestKey === R5_002_R2_REQUEST_KEY) {
     try {
-      const recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
-      return json(409, {
-        error: 'R5_002_R2_DORMANT_NOT_ACTIVATED',
-        requestKey,
-        recoveryOf,
-      });
+      recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
     } catch (error) {
       return json(409, {
         error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
@@ -838,6 +834,7 @@ Deno.serve(async (req) => {
         allowed_methods: ['GET'],
         credentials_location: 'supabase_edge_function_secrets',
         ...(requestKey ? { request_key: requestKey } : {}),
+        ...(recoveryOf ? { recovery_of: recoveryOf } : {}),
         target: target?.audit ?? null,
         pagination_window: { start_page: startPage, max_pages: maxPages, previous_run_id: previousRunId },
       },

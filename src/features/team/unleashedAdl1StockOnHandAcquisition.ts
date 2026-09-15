@@ -11,6 +11,18 @@ export const R5_002_REQUEST = {
   target: { warehouseCode: 'ADL1' },
 } as const;
 
+
+export const R5_002_R2_REQUEST = {
+  requestKey: 'ECOFLOW-R5-002-R2',
+  mode: 'bounded_snapshot',
+  resources: ['stock_on_hand'],
+  reason: 'ECOFLOW-R5-002-R2 recovery after classification-read defect',
+  dryRun: false,
+  pageSize: 200,
+  maxPages: 5,
+  target: { warehouseCode: 'ADL1' },
+} as const;
+
 type AcquisitionPage = {
   resource: 'stock_on_hand';
   endpointPath: string;
@@ -38,7 +50,7 @@ type AcquisitionWindow = {
 export type R5002AcquisitionResult = {
   ok: true;
   runId: string;
-  requestKey: 'ECOFLOW-R5-002';
+  requestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2';
   requestedAt: string;
   status: 'SUCCEEDED';
   dryRun: false;
@@ -92,7 +104,10 @@ function isAcquisitionPage(value: unknown, expectedPage: number): value is Acqui
     && value.recordsStaged === Number(value.recordsInserted) + Number(value.recordsChanged);
 }
 
-function assertAcquisitionResult(value: unknown): R5002AcquisitionResult {
+function assertAcquisitionResult(
+  value: unknown,
+  expectedRequestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' = R5_002_REQUEST.requestKey,
+): R5002AcquisitionResult {
   if (!isRecord(value)) throw new Error('R5_002_ACQUISITION_CONTRACT_VIOLATION');
   const target = value.target;
   const windows = value.paginationWindows;
@@ -112,7 +127,7 @@ function assertAcquisitionResult(value: unknown): R5002AcquisitionResult {
   const fixedShape = value.ok === true
     && typeof value.runId === 'string'
     && typeof value.requestedAt === 'string'
-    && value.requestKey === R5_002_REQUEST.requestKey
+    && value.requestKey === expectedRequestKey
     && value.status === 'SUCCEEDED'
     && value.dryRun === false
     && Array.isArray(value.resources)
@@ -170,4 +185,19 @@ export async function runR5002Adl1StockOnHandAcquisition(
     throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
   }
   return assertAcquisitionResult(data);
+}
+
+
+export async function runR5002R2Adl1StockOnHandAcquisition(
+  supabase: SupabaseClient,
+): Promise<R5002AcquisitionResult> {
+  const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+    body: R5_002_R2_REQUEST,
+  });
+  if (error) throw error;
+  const connectorError = data as ConnectorError | null;
+  if (connectorError?.error) {
+    throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
+  }
+  return assertAcquisitionResult(data, R5_002_R2_REQUEST.requestKey);
 }
