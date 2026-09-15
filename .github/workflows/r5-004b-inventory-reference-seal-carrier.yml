@@ -1,0 +1,48 @@
+name: R5-004B inventory reference seal carrier
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/team/unleashedInventoryReferenceSeal.ts'
+      - 'src/features/settings/InventoryReferenceSealPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-004b-inventory-reference-seal-carrier-contract.test.mjs'
+      - 'scripts/unleashed-inventory-reference-contract.test.mjs'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - '.github/workflows/r5-004b-inventory-reference-seal-carrier.yml'
+  push:
+    branches:
+      - 'agent/unleashed/r5-004b-reference-seal-carrier'
+    paths:
+      - 'src/features/team/unleashedInventoryReferenceSeal.ts'
+      - 'src/features/settings/InventoryReferenceSealPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-004b-inventory-reference-seal-carrier-contract.test.mjs'
+      - 'scripts/unleashed-inventory-reference-contract.test.mjs'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - '.github/workflows/r5-004b-inventory-reference-seal-carrier.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: R5-004B exact authenticated SEAL carrier contract
+        run: node --test scripts/r5-004b-inventory-reference-seal-carrier-contract.test.mjs
+      - name: Existing inventory-reference contract
+        run: node --test scripts/unleashed-inventory-reference-contract.test.mjs
+      - name: Inventory-reference static audit
+        run: node scripts/audit-unleashed-inventory-reference.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
