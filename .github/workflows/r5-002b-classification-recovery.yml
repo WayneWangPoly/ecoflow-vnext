@@ -19,9 +19,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
+      - name: Bind transformer to exact source shape
+        run: sed -i 's/edge.count(marker) != 2/edge.count(marker) != 1/' scripts/r5-002-r2-activate-transform.py
       - name: Apply bounded R2 activation
         run: python3 scripts/r5-002-r2-activate-transform.py
       - name: Check patch
