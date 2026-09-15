@@ -1,0 +1,42 @@
+name: R5-004C BPB8 INITIAL canary carrier
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/team/bpb8InitialOpeningBalanceCanary.ts'
+      - 'src/features/settings/Bpb8InitialOpeningBalanceCanaryPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-004c-bpb8-initial-canary-carrier-contract.test.mjs'
+      - '.github/workflows/r5-004c-bpb8-initial-canary-carrier.yml'
+  push:
+    branches:
+      - 'agent/unleashed/r5-004c-bpb8-canary-carrier'
+    paths:
+      - 'src/features/team/bpb8InitialOpeningBalanceCanary.ts'
+      - 'src/features/settings/Bpb8InitialOpeningBalanceCanaryPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-004c-bpb8-initial-canary-carrier-contract.test.mjs'
+      - '.github/workflows/r5-004c-bpb8-initial-canary-carrier.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: R5-004C bounded canary contract
+        run: node --test scripts/r5-004c-bpb8-initial-canary-carrier-contract.test.mjs
+      - name: R5-004B SEAL regression
+        run: node --test scripts/r5-004b-inventory-reference-seal-carrier-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
