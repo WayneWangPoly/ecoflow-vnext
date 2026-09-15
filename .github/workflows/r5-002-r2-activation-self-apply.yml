@@ -1,0 +1,235 @@
+name: R5-002-R2 activation self apply
+
+on:
+  push:
+    branches:
+      - 'agent/unleashed/r5-002-r2-activation'
+    paths:
+      - '.github/workflows/r5-002-r2-activation-self-apply.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/unleashed/r5-002-r2-activation
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply bounded R2 activation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          edge_path = Path('supabase/functions/trigger-unleashed-readonly-sync/index.ts')
+          edge = edge_path.read_text()
+          old = """  if (requestKey === R5_002_R2_REQUEST_KEY) {
+            try {
+              const recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
+              return json(409, {
+                error: 'R5_002_R2_DORMANT_NOT_ACTIVATED',
+                requestKey,
+                recoveryOf,
+              });
+            } catch (error) {
+              return json(409, {
+                error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
+                details: error instanceof Error ? error.message : 'UNKNOWN',
+                requestKey,
+              });
+            }
+          }
+
+          let continuationHighWatermark: string | null = null;
+          """
+          new = """  let recoveryOf: string | null = null;
+          if (requestKey === R5_002_R2_REQUEST_KEY) {
+            try {
+              recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
+            } catch (error) {
+              return json(409, {
+                error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
+                details: error instanceof Error ? error.message : 'UNKNOWN',
+                requestKey,
+              });
+            }
+          }
+
+          let continuationHighWatermark: string | null = null;
+          """
+          if edge.count(old) != 1:
+              raise SystemExit(f'dormant block match count={edge.count(old)}')
+          edge = edge.replace(old, new)
+          marker = "        ...(requestKey ? { request_key: requestKey } : {}),\n        target: target?.audit ?? null,"
+          replacement = "        ...(requestKey ? { request_key: requestKey } : {}),\n        ...(recoveryOf ? { recovery_of: recoveryOf } : {}),\n        target: target?.audit ?? null,"
+          count = edge.count(marker)
+          if count != 2:
+              raise SystemExit(f'run metadata marker count={count}')
+          edge = edge.replace(marker, replacement)
+          edge_path.write_text(edge)
+
+          client_path = Path('src/features/team/unleashedAdl1StockOnHandAcquisition.ts')
+          client = client_path.read_text()
+          request_marker = """export const R5_002_REQUEST = {
+            requestKey: 'ECOFLOW-R5-002',
+            mode: 'bounded_snapshot',
+            resources: ['stock_on_hand'],
+            reason: 'ECOFLOW-R5-002 production ADL1 warehouse-scoped StockOnHand acquisition',
+            dryRun: false,
+            pageSize: 200,
+            maxPages: 5,
+            target: { warehouseCode: 'ADL1' },
+          } as const;
+          """
+          request_insert = request_marker + """
+
+          export const R5_002_R2_REQUEST = {
+            requestKey: 'ECOFLOW-R5-002-R2',
+            mode: 'bounded_snapshot',
+            resources: ['stock_on_hand'],
+            reason: 'ECOFLOW-R5-002-R2 recovery after classification-read defect',
+            dryRun: false,
+            pageSize: 200,
+            maxPages: 5,
+            target: { warehouseCode: 'ADL1' },
+          } as const;
+          """
+          if client.count(request_marker) != 1:
+              raise SystemExit('client request marker mismatch')
+          client = client.replace(request_marker, request_insert)
+          client = client.replace("  requestKey: 'ECOFLOW-R5-002';", "  requestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2';", 1)
+          old_sig = "function assertAcquisitionResult(value: unknown): R5002AcquisitionResult {"
+          new_sig = "function assertAcquisitionResult(\n  value: unknown,\n  expectedRequestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' = R5_002_REQUEST.requestKey,\n): R5002AcquisitionResult {"
+          if client.count(old_sig) != 1:
+              raise SystemExit('client assert signature mismatch')
+          client = client.replace(old_sig, new_sig)
+          client = client.replace("    && value.requestKey === R5_002_REQUEST.requestKey", "    && value.requestKey === expectedRequestKey", 1)
+          append_marker = """export async function runR5002Adl1StockOnHandAcquisition(
+            supabase: SupabaseClient,
+          ): Promise<R5002AcquisitionResult> {
+            const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+              body: R5_002_REQUEST,
+            });
+            if (error) throw error;
+            const connectorError = data as ConnectorError | null;
+            if (connectorError?.error) {
+              throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
+            }
+            return assertAcquisitionResult(data);
+          }
+          """
+          if client.count(append_marker) != 1:
+              raise SystemExit('client runner marker mismatch')
+          r2_runner = append_marker + """
+
+          export async function runR5002R2Adl1StockOnHandAcquisition(
+            supabase: SupabaseClient,
+          ): Promise<R5002AcquisitionResult> {
+            const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+              body: R5_002_R2_REQUEST,
+            });
+            if (error) throw error;
+            const connectorError = data as ConnectorError | null;
+            if (connectorError?.error) {
+              throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
+            }
+            return assertAcquisitionResult(data, R5_002_R2_REQUEST.requestKey);
+          }
+          """
+          client = client.replace(append_marker, r2_runner)
+          client_path.write_text(client)
+
+          panel_path = Path('src/features/settings/UnleashedReadonlyProbePanel.tsx')
+          panel = panel_path.read_text()
+          panel = panel.replace('  runR5002Adl1StockOnHandAcquisition,', '  runR5002R2Adl1StockOnHandAcquisition,', 1)
+          panel = panel.replace('await runR5002Adl1StockOnHandAcquisition(supabase)', 'await runR5002R2Adl1StockOnHandAcquisition(supabase)', 1)
+          panel = panel.replace('<div><h3>R5-002 ADL1 StockOnHand</h3><span>One shot · pages 1–5 · 200 rows per page</span></div>', '<div><h3>R5-002-R2 ADL1 StockOnHand recovery</h3><span>Authorized recovery · one shot · pages 1–5 · 200 rows per page</span></div>', 1)
+          panel = panel.replace('<li>Request key: ECOFLOW-R5-002</li>', '<li>Request key: ECOFLOW-R5-002-R2</li>', 1)
+          panel = panel.replace('I confirm this exact ADL1 source acquisition and understand this control allows one attempt only.', 'I confirm this authorized R5-002-R2 recovery acquisition and understand this control allows one attempt only.', 1)
+          panel = panel.replace("{acquisitionRunning ? 'Acquiring ADL1 evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002 once'}", "{acquisitionRunning ? 'Acquiring ADL1 recovery evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002-R2 once'}", 1)
+          panel_path.write_text(panel)
+
+          test_path = Path('scripts/r5-002b-classification-recovery-contract.test.mjs')
+          test = test_path.read_text()
+          test = test.replace("import {\n  POSTGREST_CLASSIFICATION_IN_FILTER_BUDGET,", "import {\n  POSTGREST_CLASSIFICATION_IN_FILTER_BUDGET,", 1)
+          old_test = """test('R5-002-R2 exists only as a dormant server-side recovery carrier', () => {
+            assert.match(edge, /R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2'/);
+            assert.match(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+            assert.match(edge, /R5_002_R2_ORIGINAL_FAILURE_MISMATCH/);
+            assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
+            assert.match(edge, /original\\.records_staged === 0/);
+            assert.match(edge, /original\\.error_message\\.startsWith\\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\\)/);
+            assert.doesNotMatch(panel, /ECOFLOW-R5-002-R2/);
+          });
+          """
+          new_test = """test('R5-002-R2 is activated only after proving the original failed run and remains one-shot', () => {
+            assert.match(edge, /R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2'/);
+            assert.doesNotMatch(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+            assert.match(edge, /let recoveryOf: string \\| null = null/);
+            assert.match(edge, /recoveryOf = await verifyR5002R2RecoveryPrerequisites\\(adminClient\\)/);
+            assert.match(edge, /R5_002_R2_ORIGINAL_FAILURE_MISMATCH/);
+            assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
+            assert.match(edge, /original\\.records_staged === 0/);
+            assert.match(edge, /original\\.error_message\\.startsWith\\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\\)/);
+            assert.match(edge, /recovery_of: recoveryOf/);
+            assert.match(edge, /UNLEASHED_REQUEST_KEY_REPLAY_BLOCKED/);
+            assert.match(panel, /ECOFLOW-R5-002-R2/);
+            assert.match(panel, /Run R5-002-R2 once/);
+          });
+          """
+          if test.count(old_test) != 1:
+              raise SystemExit('R5-002B dormant test marker mismatch')
+          test = test.replace(old_test, new_test)
+          test_path.write_text(test)
+
+          doc = Path('docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md')
+          doc.write_text("""# ECOFLOW-R5-002-R2 — authorized recovery activation
+
+## Binding
+
+- Protected base: `fbfbcf6a0bf94f4c90d27aace2758787492e625a`
+- Original failed run: `53c8bf37-ff65-473a-ae9f-ec899acc1770`
+- Original request key `ECOFLOW-R5-002` remains permanently consumed.
+- Recovery key: `ECOFLOW-R5-002-R2`.
+
+## Authorized scope
+
+This carrier activates exactly one Owner/Admin authenticated recovery acquisition for `stock_on_hand`, warehouse `ADL1`, page size 200, maximum five pages, source evidence only. Before run creation it must prove the canonical R5-002 failure and zero snapshot writes from that run. The existing request-key unique fence makes R2 one-shot.
+
+No STAGE, inventory-reference batch, INITIAL stocktake, warehouse/inventory movement, quantity mutation, Product Identity mutation, Commercial Wave-2 mutation, provider write, or cutover is included.
+
+## Failure rule
+
+Any failed, partial, incomplete, or ambiguous R2 attempt consumes the recovery key. Do not retry. Inspect the production ledger and stop.
+""")
+          PY
+          git diff --check
+      - name: Focused contracts
+        run: node --experimental-strip-types --test scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs scripts/r5-002b-classification-recovery-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Commit activation carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'WayneWangPoly'
+          git config user.email 'waynewangpoly@gmail.com'
+          git add \
+            supabase/functions/trigger-unleashed-readonly-sync/index.ts \
+            src/features/team/unleashedAdl1StockOnHandAcquisition.ts \
+            src/features/settings/UnleashedReadonlyProbePanel.tsx \
+            scripts/r5-002b-classification-recovery-contract.test.mjs \
+            docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md
+          git commit -m 'ECOFLOW-R5-002-R2 — activate governed recovery carrier'
+          git push origin HEAD:agent/unleashed/r5-002-r2-activation
