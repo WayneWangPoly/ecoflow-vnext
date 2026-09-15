@@ -1,0 +1,40 @@
+name: R5-002B classification recovery
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - '.github/workflows/r5-002b-classification-recovery.yml'
+  push:
+    branches:
+      - 'agent/unleashed/r5-002b-*'
+    paths:
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - '.github/workflows/r5-002b-classification-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: R5-002B contract
+        run: node --experimental-strip-types --test scripts/r5-002b-classification-recovery-contract.test.mjs
+      - name: Existing Unleashed audit
+        run: npm run audit:unleashed
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
