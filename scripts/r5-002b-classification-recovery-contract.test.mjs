@@ -64,14 +64,19 @@ test('both classification readers are bounded and page commit remains after clas
   assert.ok(rawClassify >= 0 && identityClassify > rawClassify && pageCommit > identityClassify);
 });
 
-test('R5-002-R2 exists only as a dormant server-side recovery carrier', () => {
+test('R5-002-R2 is activated only after proving the original failed run and remains one-shot', () => {
   assert.match(edge, /R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2'/);
-  assert.match(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+  assert.doesNotMatch(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+  assert.match(edge, /let recoveryOf: string \| null = null/);
+  assert.match(edge, /recoveryOf = await verifyR5002R2RecoveryPrerequisites\(adminClient\)/);
   assert.match(edge, /R5_002_R2_ORIGINAL_FAILURE_MISMATCH/);
   assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
   assert.match(edge, /original\.records_staged === 0/);
   assert.match(edge, /original\.error_message\.startsWith\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\)/);
-  assert.doesNotMatch(panel, /ECOFLOW-R5-002-R2/);
+  assert.equal((edge.match(/recovery_of: recoveryOf/g) ?? []).length, 2, 'recovery binding must survive run creation and final metadata rewrite');
+  assert.match(edge, /UNLEASHED_REQUEST_KEY_REPLAY_BLOCKED/);
+  assert.match(panel, /ECOFLOW-R5-002-R2/);
+  assert.match(panel, /Run R5-002-R2 once/);
 });
 
 test('warehouse MANY production boundary remains frozen', () => {

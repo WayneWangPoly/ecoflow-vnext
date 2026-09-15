@@ -4,16 +4,25 @@ on:
   pull_request:
     paths:
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'src/features/team/unleashedAdl1StockOnHandAcquisition.ts'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs'
       - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
       - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md'
       - '.github/workflows/r5-002b-classification-recovery.yml'
   push:
     branches:
       - 'agent/unleashed/r5-002b-*'
+      - 'agent/unleashed/r5-002-r2-*'
     paths:
       - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'src/features/team/unleashedAdl1StockOnHandAcquisition.ts'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs'
       - 'scripts/r5-002b-classification-recovery-contract.test.mjs'
       - 'docs/engineering/work-packages/ECOFLOW-R5-002B-classification-recovery.md'
+      - 'docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md'
       - '.github/workflows/r5-002b-classification-recovery.yml'
 
 permissions:
@@ -27,11 +36,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - name: R5-002B contract
         run: node --experimental-strip-types --test scripts/r5-002b-classification-recovery-contract.test.mjs
+      - name: R5-002A regression
+        run: node --experimental-strip-types --test scripts/r5-002a-authenticated-acquisition-carrier-contract.test.mjs
       - name: Existing Unleashed audit
         run: npm run audit:unleashed
       - name: Typecheck

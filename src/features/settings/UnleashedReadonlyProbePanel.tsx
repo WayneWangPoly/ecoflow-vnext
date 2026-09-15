@@ -8,7 +8,7 @@ import {
 } from '../team/unleashedConnectorAcceptance';
 import { runUnleashedReadonlyProbe, type UnleashedProbeResult } from '../team/unleashedReadonlyProbe';
 import {
-  runR5002Adl1StockOnHandAcquisition,
+  runR5002R2Adl1StockOnHandAcquisition,
   type R5002AcquisitionResult,
 } from '../team/unleashedAdl1StockOnHandAcquisition';
 import './teamAccessSettings.css';
@@ -100,7 +100,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     setAcquisitionResult(null);
     setAcquisitionError('');
     try {
-      setAcquisitionResult(await runR5002Adl1StockOnHandAcquisition(supabase));
+      setAcquisitionResult(await runR5002R2Adl1StockOnHandAcquisition(supabase));
     } catch (runError) {
       setAcquisitionError(runError instanceof Error ? runError.message : String(runError));
     } finally {
@@ -220,7 +220,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       {acquisitionOpen ? (
         <div className="unleashed-acceptance unleashed-r5-acquisition" id="unleashed-r5-002-acquisition">
           <div className="unleashed-acceptance-head">
-            <div><h3>R5-002 ADL1 StockOnHand</h3><span>One shot · pages 1–5 · 200 rows per page</span></div>
+            <div><h3>R5-002-R2 ADL1 StockOnHand recovery</h3><span>Authorized recovery · one shot · pages 1–5 · 200 rows per page</span></div>
             <b className={`pill pill-${acquisitionTone(acquisitionResult, acquisitionError)}`}>
               {acquisitionRunning ? 'RUNNING' : acquisitionResult ? 'SUCCEEDED' : acquisitionAttempted ? 'ATTEMPTED' : 'NOT RUN'}
             </b>
@@ -234,7 +234,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
             <li>Resource: stock_on_hand</li>
             <li>Warehouse: ADL1</li>
             <li>Window: page 1, maximum 5 pages</li>
-            <li>Request key: ECOFLOW-R5-002</li>
+            <li>Request key: ECOFLOW-R5-002-R2</li>
           </ul>
 
           <label className="unleashed-acceptance-confirm">
@@ -244,7 +244,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
               disabled={acquisitionRunning || acquisitionAttempted}
               onChange={(event) => setAcquisitionAcknowledged(event.target.checked)}
             />
-            <span>I confirm this exact ADL1 source acquisition and understand this control allows one attempt only.</span>
+            <span>I confirm this authorized R5-002-R2 recovery acquisition and understand this control allows one attempt only.</span>
           </label>
 
           {acquisitionError ? <div className="error-message" role="alert">{acquisitionError}</div> : null}
@@ -272,7 +272,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
             onClick={() => void runAcquisition()}
           >
             <Database aria-hidden="true" size={17} />
-            {acquisitionRunning ? 'Acquiring ADL1 evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002 once'}
+            {acquisitionRunning ? 'Acquiring ADL1 recovery evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002-R2 once'}
           </button>
         </div>
       ) : null}
