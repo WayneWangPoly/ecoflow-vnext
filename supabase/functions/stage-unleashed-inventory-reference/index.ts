@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     && sourceRun.records_seen === EXPECTED_SOURCE_ROWS
     && sourceRun.records_staged === EXPECTED_SOURCE_ROWS
     && sourceRun.records_failed === 0
-    && sourceRun.completed_at === AS_AT
+    && new Date(String(sourceRun.completed_at)).toISOString() === AS_AT
     && metadata.request_key === 'ECOFLOW-R5-002-R2'
     && metadata.recovery_of === RECOVERY_OF_RUN_ID
     && metadata.all_resources_complete === true
