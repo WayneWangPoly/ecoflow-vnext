@@ -1,0 +1,47 @@
+name: ECOFLOW-340B-2-R1 Customer/Site Wave-1 re-freeze
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/customer-site-wave1-refreeze-check.yml'
+      - 'docs/engineering/evidence/340B-2-R1-customer-site-wave1-refreeze.manifest'
+      - 'docs/engineering/work-packages/340B-2-R1-CUSTOMER-SITE-WAVE1-REFREEZE.md'
+      - 'scripts/customer-site-wave1-refreeze-contract.test.mjs'
+  push:
+    branches:
+      - 'agent/unleashed/340b2-r1-*'
+    paths:
+      - '.github/workflows/customer-site-wave1-refreeze-check.yml'
+      - 'docs/engineering/evidence/340B-2-R1-customer-site-wave1-refreeze.manifest'
+      - 'docs/engineering/work-packages/340B-2-R1-CUSTOMER-SITE-WAVE1-REFREEZE.md'
+      - 'scripts/customer-site-wave1-refreeze-contract.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Recoverable membership and fail-closed HOLD contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify frozen Customer/Site membership and HOLDs
+        run: node --test scripts/customer-site-wave1-refreeze-contract.test.mjs
+      - name: Regress current Customer frontend contract
+        run: node --experimental-strip-types --test scripts/transform-007-operational-records-frontend-contract.test.mjs
+      - name: Regress Unleashed master bridge and inventory reference
+        run: npm run audit:unleashed-master-data && npm run audit:unleashed-inventory-reference
+      - name: Repository hygiene
+        run: npm run audit:repository-hygiene
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
