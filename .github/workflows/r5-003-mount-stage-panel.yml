@@ -1,0 +1,34 @@
+name: R5-003 mount stage panel
+
+on:
+  push:
+    branches:
+      - agent/unleashed/r5-003-inventory-reference-stage-carrier
+    paths:
+      - 'scripts/r5-003-mount-stage-panel.mjs'
+      - '.github/workflows/r5-003-mount-stage-panel.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  mount:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/unleashed/r5-003-inventory-reference-stage-carrier
+      - run: node scripts/r5-003-mount-stage-panel.mjs
+      - name: Commit mounted panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'Panel already mounted.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/settings/UnleashedReadonlyProbePanel.tsx
+          git commit -m 'R5-003 mount inventory reference stage panel'
+          git push origin HEAD:agent/unleashed/r5-003-inventory-reference-stage-carrier
