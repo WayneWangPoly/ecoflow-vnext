@@ -74,7 +74,13 @@ immutable
 security definer
 set search_path = pg_catalog, public
 as $$
-  select encode(digest(convert_to(coalesce(p_payload,'{}'::jsonb)::text,'UTF8'),'sha256'),'hex')
+  select pg_catalog.encode(
+    extensions.digest(
+      pg_catalog.convert_to(coalesce(p_payload,'{}'::jsonb)::text,'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  )
 $$;
 
 revoke all on function public.ecoflow_r5_004a_payload_sha256(jsonb)
