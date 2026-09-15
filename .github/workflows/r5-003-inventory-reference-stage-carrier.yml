@@ -1,0 +1,52 @@
+name: R5-003 inventory reference stage carrier
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/stage-unleashed-inventory-reference/**'
+      - 'src/features/team/unleashedInventoryReferenceStage.ts'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs'
+      - 'scripts/unleashed-inventory-reference-contract.test.mjs'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - '.github/workflows/r5-003-inventory-reference-stage-carrier.yml'
+      - '.github/workflows/deploy-r5-003-inventory-reference-stage.yml'
+  push:
+    branches:
+      - 'agent/unleashed/r5-003-inventory-reference-stage-carrier'
+    paths:
+      - 'supabase/functions/stage-unleashed-inventory-reference/**'
+      - 'src/features/team/unleashedInventoryReferenceStage.ts'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs'
+      - 'scripts/unleashed-inventory-reference-contract.test.mjs'
+      - 'scripts/audit-unleashed-inventory-reference.mjs'
+      - '.github/workflows/r5-003-inventory-reference-stage-carrier.yml'
+      - '.github/workflows/deploy-r5-003-inventory-reference-stage.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: R5-003 exact carrier contract
+        run: node --test scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs
+      - name: Existing inventory-reference contract
+        run: node --test scripts/unleashed-inventory-reference-contract.test.mjs
+      - name: Inventory-reference static audit
+        run: node scripts/audit-unleashed-inventory-reference.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
