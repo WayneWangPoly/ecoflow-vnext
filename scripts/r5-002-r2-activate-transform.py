@@ -1,0 +1,159 @@
+from pathlib import Path
+
+edge_path = Path('supabase/functions/trigger-unleashed-readonly-sync/index.ts')
+edge = edge_path.read_text()
+dormant = """  if (requestKey === R5_002_R2_REQUEST_KEY) {
+    try {
+      const recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
+      return json(409, {
+        error: 'R5_002_R2_DORMANT_NOT_ACTIVATED',
+        requestKey,
+        recoveryOf,
+      });
+    } catch (error) {
+      return json(409, {
+        error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
+        details: error instanceof Error ? error.message : 'UNKNOWN',
+        requestKey,
+      });
+    }
+  }
+
+  let continuationHighWatermark: string | null = null;
+"""
+active = """  let recoveryOf: string | null = null;
+  if (requestKey === R5_002_R2_REQUEST_KEY) {
+    try {
+      recoveryOf = await verifyR5002R2RecoveryPrerequisites(adminClient);
+    } catch (error) {
+      return json(409, {
+        error: 'R5_002_R2_RECOVERY_PREREQUISITE_FAILED',
+        details: error instanceof Error ? error.message : 'UNKNOWN',
+        requestKey,
+      });
+    }
+  }
+
+  let continuationHighWatermark: string | null = null;
+"""
+if dormant in edge:
+    edge = edge.replace(dormant, active, 1)
+    marker = "        ...(requestKey ? { request_key: requestKey } : {}),\n        target: target?.audit ?? null,"
+    if edge.count(marker) != 2:
+        raise SystemExit(f'run metadata marker count={edge.count(marker)}')
+    edge = edge.replace(marker, "        ...(requestKey ? { request_key: requestKey } : {}),\n        ...(recoveryOf ? { recovery_of: recoveryOf } : {}),\n        target: target?.audit ?? null,")
+    edge_path.write_text(edge)
+elif 'R5_002_R2_DORMANT_NOT_ACTIVATED' in edge:
+    raise SystemExit('unexpected dormant shape')
+
+client_path = Path('src/features/team/unleashedAdl1StockOnHandAcquisition.ts')
+client = client_path.read_text()
+if 'export const R5_002_R2_REQUEST' not in client:
+    request_marker = """export const R5_002_REQUEST = {
+  requestKey: 'ECOFLOW-R5-002',
+  mode: 'bounded_snapshot',
+  resources: ['stock_on_hand'],
+  reason: 'ECOFLOW-R5-002 production ADL1 warehouse-scoped StockOnHand acquisition',
+  dryRun: false,
+  pageSize: 200,
+  maxPages: 5,
+  target: { warehouseCode: 'ADL1' },
+} as const;
+"""
+    request_insert = request_marker + """
+
+export const R5_002_R2_REQUEST = {
+  requestKey: 'ECOFLOW-R5-002-R2',
+  mode: 'bounded_snapshot',
+  resources: ['stock_on_hand'],
+  reason: 'ECOFLOW-R5-002-R2 recovery after classification-read defect',
+  dryRun: false,
+  pageSize: 200,
+  maxPages: 5,
+  target: { warehouseCode: 'ADL1' },
+} as const;
+"""
+    if client.count(request_marker) != 1:
+        raise SystemExit('client request marker mismatch')
+    client = client.replace(request_marker, request_insert)
+    client = client.replace("  requestKey: 'ECOFLOW-R5-002';", "  requestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2';", 1)
+    client = client.replace(
+        'function assertAcquisitionResult(value: unknown): R5002AcquisitionResult {',
+        "function assertAcquisitionResult(\n  value: unknown,\n  expectedRequestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' = R5_002_REQUEST.requestKey,\n): R5002AcquisitionResult {",
+        1,
+    )
+    client = client.replace("    && value.requestKey === R5_002_REQUEST.requestKey", "    && value.requestKey === expectedRequestKey", 1)
+    client += """
+
+export async function runR5002R2Adl1StockOnHandAcquisition(
+  supabase: SupabaseClient,
+): Promise<R5002AcquisitionResult> {
+  const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+    body: R5_002_R2_REQUEST,
+  });
+  if (error) throw error;
+  const connectorError = data as ConnectorError | null;
+  if (connectorError?.error) {
+    throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
+  }
+  return assertAcquisitionResult(data, R5_002_R2_REQUEST.requestKey);
+}
+"""
+    client_path.write_text(client)
+
+panel_path = Path('src/features/settings/UnleashedReadonlyProbePanel.tsx')
+panel = panel_path.read_text()
+if 'runR5002R2Adl1StockOnHandAcquisition' not in panel:
+    panel = panel.replace('  runR5002Adl1StockOnHandAcquisition,', '  runR5002R2Adl1StockOnHandAcquisition,', 1)
+    panel = panel.replace('await runR5002Adl1StockOnHandAcquisition(supabase)', 'await runR5002R2Adl1StockOnHandAcquisition(supabase)', 1)
+    panel = panel.replace('<div><h3>R5-002 ADL1 StockOnHand</h3><span>One shot · pages 1–5 · 200 rows per page</span></div>', '<div><h3>R5-002-R2 ADL1 StockOnHand recovery</h3><span>Authorized recovery · one shot · pages 1–5 · 200 rows per page</span></div>', 1)
+    panel = panel.replace('<li>Request key: ECOFLOW-R5-002</li>', '<li>Request key: ECOFLOW-R5-002-R2</li>', 1)
+    panel = panel.replace('I confirm this exact ADL1 source acquisition and understand this control allows one attempt only.', 'I confirm this authorized R5-002-R2 recovery acquisition and understand this control allows one attempt only.', 1)
+    panel = panel.replace("{acquisitionRunning ? 'Acquiring ADL1 evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002 once'}", "{acquisitionRunning ? 'Acquiring ADL1 recovery evidence…' : acquisitionAttempted ? 'Attempt locked' : 'Run R5-002-R2 once'}", 1)
+    panel_path.write_text(panel)
+
+test_path = Path('scripts/r5-002b-classification-recovery-contract.test.mjs')
+test = test_path.read_text()
+old_test = """test('R5-002-R2 exists only as a dormant server-side recovery carrier', () => {
+  assert.match(edge, /R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2'/);
+  assert.match(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+  assert.match(edge, /R5_002_R2_ORIGINAL_FAILURE_MISMATCH/);
+  assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
+  assert.match(edge, /original\.records_staged === 0/);
+  assert.match(edge, /original\.error_message\.startsWith\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\)/);
+  assert.doesNotMatch(panel, /ECOFLOW-R5-002-R2/);
+});
+"""
+if old_test in test:
+    test = test.replace(old_test, """test('R5-002-R2 is activated only after proving the original failed run and remains one-shot', () => {
+  assert.match(edge, /R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2'/);
+  assert.doesNotMatch(edge, /R5_002_R2_DORMANT_NOT_ACTIVATED/);
+  assert.match(edge, /let recoveryOf: string \| null = null/);
+  assert.match(edge, /recoveryOf = await verifyR5002R2RecoveryPrerequisites\(adminClient\)/);
+  assert.match(edge, /R5_002_R2_ORIGINAL_FAILURE_MISMATCH/);
+  assert.match(edge, /R5_002_R2_ORIGINAL_RUN_HAS_SNAPSHOT_WRITES/);
+  assert.match(edge, /original\.records_staged === 0/);
+  assert.match(edge, /original\.error_message\.startsWith\('UNLEASHED_RAW_SNAPSHOT_CLASSIFY_FAILED:'\)/);
+  assert.match(edge, /recovery_of: recoveryOf/);
+  assert.match(edge, /UNLEASHED_REQUEST_KEY_REPLAY_BLOCKED/);
+  assert.match(panel, /ECOFLOW-R5-002-R2/);
+  assert.match(panel, /Run R5-002-R2 once/);
+});
+""", 1)
+    test_path.write_text(test)
+elif "R5-002-R2 is activated only" not in test:
+    raise SystemExit('R5-002B test marker mismatch')
+
+doc = Path('docs/engineering/work-packages/ECOFLOW-R5-002-R2-activation.md')
+if not doc.exists():
+    doc.write_text("""# ECOFLOW-R5-002-R2 — authorized recovery activation
+
+- Protected base: `fbfbcf6a0bf94f4c90d27aace2758787492e625a`
+- Original failed run: `53c8bf37-ff65-473a-ae9f-ec899acc1770`
+- Original `ECOFLOW-R5-002` key remains permanently consumed.
+- Recovery key: `ECOFLOW-R5-002-R2`.
+
+The carrier activates exactly one Owner/Admin authenticated GET-only recovery acquisition for `stock_on_hand` at warehouse `ADL1`, page size 200, maximum five pages. Before run creation it proves the canonical R5-002 failure and zero snapshot writes from that run. The existing request-key unique fence makes R2 one-shot.
+
+No STAGE, inventory-reference batch, INITIAL stocktake, warehouse/inventory movement, quantity mutation, Product Identity mutation, Commercial Wave-2 mutation, provider write, or cutover is included. Any failed, partial, incomplete, or ambiguous R2 attempt consumes the recovery key and must STOP without retry.
+""")
