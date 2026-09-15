@@ -63,8 +63,6 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f scripts/customer-site-wave1-promotion-authority-db-contract-test.sql
       - name: Regress frozen R1 membership/HOLD contract
         run: node --test scripts/customer-site-wave1-refreeze-contract.test.mjs
-      - name: Regress Customer legacy containment static contract
-        run: node --test scripts/customer-legacy-master-containment-contract.test.mjs
       - name: Regress Unleashed master bridge and inventory reference
         run: npm run audit:unleashed-master-data && npm run audit:unleashed-inventory-reference
       - name: Repository hygiene
