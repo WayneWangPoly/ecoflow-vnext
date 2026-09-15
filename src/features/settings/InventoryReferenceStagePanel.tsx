@@ -5,6 +5,7 @@ import {
   runR5003InventoryReferenceStage,
   type R5003StageResult,
 } from '../team/unleashedInventoryReferenceStage';
+import { InventoryReferenceSealPanel } from './InventoryReferenceSealPanel';
 
 function tone(result: R5003StageResult | null, error: string) {
   if (result) return 'good';
@@ -112,6 +113,8 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
           </button>
         </div>
       ) : null}
+
+      <InventoryReferenceSealPanel supabase={supabase} />
     </div>
   );
 }
