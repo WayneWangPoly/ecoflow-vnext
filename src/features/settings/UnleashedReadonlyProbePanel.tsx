@@ -11,6 +11,7 @@ import {
   runR5002R2Adl1StockOnHandAcquisition,
   type R5002AcquisitionResult,
 } from '../team/unleashedAdl1StockOnHandAcquisition';
+import { InventoryReferenceStagePanel } from './InventoryReferenceStagePanel';
 import './teamAccessSettings.css';
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
@@ -276,6 +277,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           </button>
         </div>
       ) : null}
+      <InventoryReferenceStagePanel supabase={supabase} />
     </section>
   );
 }
