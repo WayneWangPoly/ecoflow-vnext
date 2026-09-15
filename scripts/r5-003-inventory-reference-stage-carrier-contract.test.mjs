@@ -50,11 +50,15 @@ test('R5-003 request surface is exact and browser cannot choose source, actor, c
   assert.match(edge, /keys\[1\] === 'requestKey'/);
   assert.match(edge, /body\.requestKey === REQUEST_KEY/);
   assert.match(edge, /body\.confirm === true/);
-  assert.match(client, /requestKey: 'ECOFLOW-R5-003'/);
-  assert.match(client, /confirm: true/);
-  assert.doesNotMatch(client, /sourceRunId\s*:/);
-  assert.doesNotMatch(client, /commandId\s*:/);
-  assert.doesNotMatch(client, /requestedBy\s*:/i);
+
+  const requestBlock = client.match(/export const R5_003_STAGE_REQUEST = \{[\s\S]*?\} as const;/)?.[0];
+  assert.ok(requestBlock, 'R5-003 request block must exist');
+  assert.match(requestBlock, /requestKey: 'ECOFLOW-R5-003'/);
+  assert.match(requestBlock, /confirm: true/);
+  assert.doesNotMatch(requestBlock, /sourceRunId\s*:/);
+  assert.doesNotMatch(requestBlock, /commandId\s*:/);
+  assert.doesNotMatch(requestBlock, /requestedBy\s*:/i);
+  assert.doesNotMatch(requestBlock, /asAt\s*:/);
 });
 
 test('R5-003 re-proves the 427-row ADL1 fence before invoking the existing stage RPC', () => {
