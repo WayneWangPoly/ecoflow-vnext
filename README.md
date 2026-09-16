@@ -25,8 +25,10 @@ npm ci                 # Node 22.x, npm 10.9.4
 npm run dev            # requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local
 ```
 
-Vercel builds the frontend on pushes to protected `main`. Supabase release
-control is deliberately split: matching `main` pushes shadow-verify pending
+Protected `main` does not auto-deploy production. Vercel Preview deployments may
+still run for feature/PR branches, while Vercel production requires a separately
+authorized manual exact-head run of `deploy-vercel-production.yml`. Supabase
+release control is likewise split: matching `main` pushes shadow-verify pending
 migrations without production mutation; applying migrations and deploying Edge
 Functions requires a separately authorized manual exact-head run of
 `deploy-supabase-migrations.yml`. See RELEASE-PROCESS.md and ADR-0010.
