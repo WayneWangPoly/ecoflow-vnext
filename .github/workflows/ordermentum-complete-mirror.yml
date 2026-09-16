@@ -29,7 +29,11 @@ jobs:
   complete-mirror:
     if: >-
       github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.event == 'workflow_dispatch'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -70,6 +74,10 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            test "${{ github.event.workflow_run.event }}" = "workflow_dispatch" || {
+              echo "Release verification requires an authorized Supabase production workflow_dispatch; upstream event=${{ github.event.workflow_run.event }}"
+              exit 1
+            }
             echo "MIRROR_MODE=verify_only" >> "$GITHUB_ENV"
             echo "MIRROR_REASON=Lightweight verification after successful Supabase production deployment" >> "$GITHUB_ENV"
             echo "MIRROR_STATUS_SHA=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_ENV"

@@ -62,6 +62,17 @@ test('post-deploy Complete Mirror is verification-only and does not fetch data',
   assert.match(mirror, /--mode="\$MIRROR_MODE"/);
 });
 
+test('post-deploy Complete Mirror requires an upstream workflow_dispatch production event', () => {
+  assert.match(mirror, /github\.event\.workflow_run\.event == 'workflow_dispatch'/);
+  assert.match(mirror, /test "\$\{\{ github\.event\.workflow_run\.event \}\}" = "workflow_dispatch"/);
+  assert.match(mirror, /Release verification requires an authorized Supabase production workflow_dispatch/);
+  assert.doesNotMatch(
+    mirror,
+    /github\.event\.workflow_run\.conclusion == 'success' &&\s*github\.event\.workflow_run\.head_branch == 'main'\s*\)/,
+    'workflow_run success on main alone must never authorize post-deploy mirror persistence',
+  );
+});
+
 test('full history remains manual-only', () => {
   assert.match(mirror, /- full_history/);
   assert.match(mirror, /inputs\.scope/);
