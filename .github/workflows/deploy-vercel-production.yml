@@ -119,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           npm install --global "vercel@$VERCEL_CLI_VERSION"
-          test "$(vercel --version | tr -d '\r')" = "Vercel CLI $VERCEL_CLI_VERSION" || vercel --version
+          vercel --version | grep -F "$VERCEL_CLI_VERSION" >/dev/null
 
       - name: Pull production project settings
         shell: bash
@@ -163,9 +163,9 @@ jobs:
         run: |
           set -euo pipefail
           vercel inspect "$DEPLOYMENT_URL" --wait --token "$VERCEL_TOKEN"
-          vercel list \
+          vercel ls \
             --prod \
-            --meta "githubCommitSha=$GITHUB_SHA" \
+            -m "githubCommitSha=$GITHUB_SHA" \
             --token "$VERCEL_TOKEN" \
             > /tmp/vercel-production-list.txt
           DEPLOYMENT_HOST="${DEPLOYMENT_URL#https://}"
