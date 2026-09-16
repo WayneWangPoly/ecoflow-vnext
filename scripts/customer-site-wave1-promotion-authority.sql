@@ -158,7 +158,6 @@ as $function$
   from labeled l;
 $function$;
 
-alter function public.ecoflow_customer_wave1_live_evidence_v1() owner to postgres;
 revoke all on function public.ecoflow_customer_wave1_live_evidence_v1() from public,anon,authenticated,service_role;
 
 create or replace function public.ecoflow_site_wave1_live_evidence_v1()
@@ -249,7 +248,6 @@ as $function$
   from labeled l;
 $function$;
 
-alter function public.ecoflow_site_wave1_live_evidence_v1() owner to postgres;
 revoke all on function public.ecoflow_site_wave1_live_evidence_v1() from public,anon,authenticated,service_role;
 
 create or replace function public.ecoflow_promote_customer_wave1_v1(
@@ -432,7 +430,6 @@ begin
 end;
 $function$;
 
-alter function public.ecoflow_promote_customer_wave1_v1(uuid,text,text,text) owner to postgres;
 revoke all on function public.ecoflow_promote_customer_wave1_v1(uuid,text,text,text) from public,anon,authenticated,service_role;
 grant execute on function public.ecoflow_promote_customer_wave1_v1(uuid,text,text,text) to authenticated;
 
@@ -661,7 +658,6 @@ begin
 end;
 $function$;
 
-alter function public.ecoflow_promote_site_wave1_v1(uuid,text,text,text) owner to postgres;
 revoke all on function public.ecoflow_promote_site_wave1_v1(uuid,text,text,text) from public,anon,authenticated,service_role;
 grant execute on function public.ecoflow_promote_site_wave1_v1(uuid,text,text,text) to authenticated;
 
