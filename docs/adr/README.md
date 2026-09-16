@@ -40,3 +40,4 @@ decision of an accepted ADR to reverse it; add a new ADR that supersedes it.
 | [0007](0007-analytics-semantic-layer.md) | A read-only Postgres analytics schema governs facts, dimensions, metrics, freshness and history |
 | [0008](0008-routed-workspace-overlay-navigation.md) | New workspaces use explicit routes, URL state and a bounded drawer/inspector/modal hierarchy |
 | [0009](0009-unleashed-shadow-migration-and-cutover.md) | Unleashed is shadow-migrated into WAYNX with explicit identity, ledger opening balance, reconciliation and direct Ordermentum cutover gates |
+| [0010](0010-explicit-production-deployment-gate.md) | Protected-main merge performs shadow verification only; production Supabase deployment requires a separate manual exact-head authority gate |
