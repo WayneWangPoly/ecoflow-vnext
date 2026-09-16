@@ -15,7 +15,7 @@ and statements — across Owner/Admin, Account, Warehouse and Driver surfaces.
 | [docs/engineering/FILE-OWNERSHIP.md](docs/engineering/FILE-OWNERSHIP.md) | Protected paths and required implementation/review ownership |
 | [docs/adr/README.md](docs/adr/README.md) | Accepted and proposed architecture decisions and ADR process |
 | [docs/OPERATIONS-RUNBOOK.md](docs/OPERATIONS-RUNBOOK.md) | Incident playbooks (deploy pipeline, DB connections, Vercel skew), storage retention, field-device issues |
-| [docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md) | Push discipline, shadow verification gate, release-sync status, local UI smoke testing |
+| [docs/RELEASE-PROCESS.md](docs/RELEASE-PROCESS.md) | Merge/shadow/deploy authority, release-sync status, local UI smoke testing |
 | docs/archive/ | Historical per-feature write-ups |
 
 ## Quick start (development)
@@ -25,6 +25,8 @@ npm ci                 # Node 22.x, npm 10.9.4
 npm run dev            # requires VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env.local
 ```
 
-Production deploys: Vercel builds the frontend on push; GitHub Actions
-(`deploy-supabase-migrations.yml`) shadow-verifies and applies database
-migrations, then deploys all edge functions. See RELEASE-PROCESS.md.
+Vercel builds the frontend on pushes to protected `main`. Supabase release
+control is deliberately split: matching `main` pushes shadow-verify pending
+migrations without production mutation; applying migrations and deploying Edge
+Functions requires a separately authorized manual exact-head run of
+`deploy-supabase-migrations.yml`. See RELEASE-PROCESS.md and ADR-0010.
