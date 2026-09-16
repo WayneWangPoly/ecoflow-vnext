@@ -2,15 +2,16 @@
 
 ## The one rule
 
-**Database-compatible first, frontend second.** When a change spans schema and
-UI, the migration must be backwards-compatible with the live frontend. Merging
-a migration into protected `main` does not itself authorize production database
-mutation.
+**Merge is not deployment authority.** Database and frontend production mutation
+are separately authorized from protected `main`. When a change spans schema and
+UI, the migration must remain backwards-compatible with the currently live
+frontend until both explicit production gates have completed.
 
 ## What happens on push to main
 
-1. **Vercel** builds and deploys the frontend on every push (free plan has a
-   daily build quota — see runbook).
+1. **Vercel Git auto-production is disabled for `main`.** A protected-main push
+   does not itself authorize or create a Vercel production deployment. Feature
+   and PR branches may still create Preview deployments.
 2. If the push touches `supabase/**` or the Supabase release-control files,
    GitHub Actions runs the production-schema **shadow gate**:
    - a no-secret preflight confirms this is a protected-main push;
@@ -21,8 +22,28 @@ mutation.
      and production deployment remained deferred;
    - trusted `Release sync` reports that the production database is unchanged.
 
-A green push therefore means **merge-safe / shadow-verified**, not "migration
-already applied to production".
+A green main push therefore means **merge-safe / verified**, not "frontend and
+migration already deployed to production".
+
+## Production Vercel deployment
+
+Production frontend deployment requires a separate manual run of
+`Deploy Vercel production` from protected `main`. The operator must supply:
+
+- `expected_main_sha`: the exact protected-main SHA carrying separate frontend
+  production deployment authority;
+- `confirmation`: exactly `DEPLOY_VERCEL_PRODUCTION`.
+
+Before production credentials are used, the workflow verifies that the selected
+ref is `main`, the input SHA equals the workflow SHA, a fresh `origin/main`
+still points at that SHA, and `vercel.json` still disables automatic `main` Git
+deployment. Any drift fails closed.
+
+The production job uses the pinned Vercel CLI, builds the authorized exact SHA,
+deploys the prebuilt artifact with exact-SHA metadata, waits for deployment
+readiness, verifies the deployment can be found by that SHA, and only then
+publishes the `Vercel` success status for the commit. The job requires the
+`VERCEL_TOKEN` production secret; a missing credential fails closed.
 
 ## Production Supabase deployment
 
@@ -38,9 +59,22 @@ Before production credentials are used, the workflow verifies that the selected
 ref is `main`, the input SHA equals the workflow SHA, and a fresh `origin/main`
 still points at that same SHA. Any drift fails closed.
 
-After a successful manual deployment, `Supabase migrations` records production
-completion and trusted `Release sync` checks any frontend/database skew for that
-same commit.
+After a successful manual database deployment, `Supabase migrations` records
+production completion and trusted `Release sync` checks any frontend/database
+skew for that same commit.
+
+## Release order when frontend and database both changed
+
+1. Merge the reviewed exact-head change to protected `main`.
+2. Confirm the main push is Vercel-production-deploy-free and any migration is
+   shadow-verified only.
+3. Explicitly authorize and run `Deploy Vercel production` for the exact main
+   SHA if the commit changed frontend-bearing paths.
+4. Explicitly authorize and run `Deploy Supabase migrations` for the same exact
+   main SHA when production database/Edge deployment is required.
+5. Confirm `Release sync` is green for the exact SHA.
+
+For migration-only commits with no frontend-bearing changes, step 3 is omitted.
 
 ## Before merge
 
@@ -50,22 +84,28 @@ same commit.
 - Contract tests: add the applicable DB/authority contract and wire it into the
   matching check workflow.
 - Migration-bearing changes need exact-head Verification before merge.
+- Release-control changes must prove that `main` cannot silently regain an
+  automatic production deployment path.
 
 ## After merge
 
-For a migration-bearing main commit, confirm:
+Confirm:
 
-- `Supabase migrations` ✅ says shadow verification passed and production deploy
-  is deferred;
+- there is no Vercel production deployment created merely because `main` moved;
+- for a migration-bearing commit, `Supabase migrations` ✅ says shadow
+  verification passed and production deploy is deferred;
 - `Release sync` ✅ says the production database is unchanged;
-- the workflow's `deploy` job is `skipped`.
+- the Supabase workflow's production `deploy` job is `skipped` on push.
 
-Do not infer production application from a migration file being present on
-`main`.
+Do not infer production application from files being present on `main`.
 
 ## After separately authorized production deployment
 
-Confirm the manual workflow targeted the authorized exact main SHA and that:
+For Vercel, confirm the manual workflow targeted the authorized exact main SHA,
+the deployment reached READY, and the `Vercel` commit status points to that
+verified deployment.
+
+For Supabase, confirm:
 
 - `Supabase migrations` ✅ reports authorized production deployment completed;
 - `Release sync` ✅ confirms frontend/database synchronization when relevant.

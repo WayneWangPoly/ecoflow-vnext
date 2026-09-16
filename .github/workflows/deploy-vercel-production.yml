@@ -1,0 +1,197 @@
+name: Deploy Vercel production
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact protected main SHA authorized for Vercel production deployment'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type DEPLOY_VERCEL_PRODUCTION to confirm production deployment authority'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ecoflow-vercel-production-deploy
+  cancel-in-progress: false
+
+env:
+  VERCEL_CLI_VERSION: 59.17.0
+  VERCEL_ORG_ID: team_oklEX8t5l9UolK9KmDwSAXYl
+  VERCEL_PROJECT_ID: prj_wlAGaHrUNXaSV3Vlx33FXxD02Ioj
+
+jobs:
+  authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact dispatch target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact protected-main authority
+        shell: bash
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch' || {
+            echo "Unsupported trigger: $GITHUB_EVENT_NAME"
+            exit 1
+          }
+          test "$GITHUB_REF" = 'refs/heads/main' || {
+            echo "Vercel production deployment must be dispatched from main; got $GITHUB_REF"
+            exit 1
+          }
+          test -n "$EXPECTED_MAIN_SHA" || {
+            echo 'expected_main_sha is required'
+            exit 1
+          }
+          test "$EXPECTED_MAIN_SHA" = "$GITHUB_SHA" || {
+            echo "Authorized SHA mismatch: expected=$EXPECTED_MAIN_SHA workflow=$GITHUB_SHA"
+            exit 1
+          }
+          test "$DEPLOY_CONFIRMATION" = 'DEPLOY_VERCEL_PRODUCTION' || {
+            echo 'Vercel production deployment confirmation token mismatch'
+            exit 1
+          }
+          git fetch origin main --depth=1
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          test "$CURRENT_MAIN_SHA" = "$GITHUB_SHA" || {
+            echo "Protected main moved after authorization: current=$CURRENT_MAIN_SHA workflow=$GITHUB_SHA"
+            exit 1
+          }
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync('vercel.json', 'utf8'));
+          if (config?.git?.deploymentEnabled?.main !== false) {
+            throw new Error('vercel.json must keep automatic main Git deployment disabled');
+          }
+          NODE
+          echo "Exact-head Vercel production deployment authority accepted for $GITHUB_SHA"
+
+  deploy:
+    needs: authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Publish pending Vercel production status
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='pending' \
+            -f context='Vercel' \
+            -f description='Authorized exact-head Vercel production deployment is running' \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
+
+      - name: Checkout authorized exact main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require Vercel deployment credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || {
+            echo 'Missing VERCEL_TOKEN production secret'
+            exit 1
+          }
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
+
+      - name: Install pinned Vercel CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global "vercel@$VERCEL_CLI_VERSION"
+          vercel --version | grep -F "$VERCEL_CLI_VERSION" >/dev/null
+
+      - name: Pull production project settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+
+      - name: Build authorized production artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel build --prod --token "$VERCEL_TOKEN"
+
+      - name: Deploy exact-head prebuilt artifact to production
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOYMENT_URL="$(
+            vercel deploy \
+              --prebuilt \
+              --prod \
+              --yes \
+              --token "$VERCEL_TOKEN" \
+              --meta "githubCommitSha=$GITHUB_SHA" \
+              --meta 'githubCommitRef=main' \
+              --meta 'ecoflowAuthority=workflow_dispatch' \
+              2> >(tee /tmp/vercel-deploy.stderr >&2) \
+              | tail -n 1
+          )"
+          [[ "$DEPLOYMENT_URL" == https://*.vercel.app ]] || {
+            echo "Unexpected Vercel deployment URL: $DEPLOYMENT_URL"
+            exit 1
+          }
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployment READY and bound to exact SHA
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: |
+          set -euo pipefail
+          vercel inspect "$DEPLOYMENT_URL" --wait --token "$VERCEL_TOKEN"
+          vercel ls \
+            --prod \
+            -m "githubCommitSha=$GITHUB_SHA" \
+            --token "$VERCEL_TOKEN" \
+            > /tmp/vercel-production-list.txt
+          DEPLOYMENT_HOST="${DEPLOYMENT_URL#https://}"
+          grep -F "$DEPLOYMENT_HOST" /tmp/vercel-production-list.txt >/dev/null || {
+            echo "Exact-SHA production deployment not found in Vercel deployment list"
+            cat /tmp/vercel-production-list.txt
+            exit 1
+          }
+
+      - name: Publish verified Vercel success status
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='success' \
+            -f context='Vercel' \
+            -f description='Authorized exact-head Vercel production deployment completed' \
+            -f target_url="$DEPLOYMENT_URL"
+
+      - name: Publish Vercel failure status
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state='failure' \
+            -f context='Vercel' \
+            -f description='Authorized Vercel production deployment failed; inspect workflow' \
+            -f target_url="$DEPLOYMENT_STATUS_URL"
