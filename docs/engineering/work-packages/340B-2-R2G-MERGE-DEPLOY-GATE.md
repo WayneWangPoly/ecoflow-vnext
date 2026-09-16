@@ -21,8 +21,15 @@ exact-head manual authority event.
 
 - `.github/workflows/deploy-supabase-migrations.yml`
 - `.github/workflows/release-sync-authority.yml`
+- `.github/workflows/shadow-extension-parity-check.yml`
 - `scripts/supabase-deploy-gate-contract.test.mjs`
+- `scripts/release-sync-frontend-paths-contract.test.mjs`
 - release/runbook/ADR documentation describing the split
+
+The shadow-extension and existing release-sync contract files are included only
+to replace old assertions that treated `main` push as synonymous with a
+completed production deployment. Their PostgreSQL extension-parity and trusted
+historical-target guarantees remain unchanged.
 
 ## Out of scope
 
@@ -77,6 +84,9 @@ claiming a production release.
   is deferred;
 - release-sync authority distinguishes upstream `push` from
   `workflow_dispatch` and never describes a push-only run as database deployed;
+- shadow-extension parity still proves the Postgres 17/Supabase UUID extension
+  layout and now audits the split authority instead of the retired in-workflow
+  Release sync writer;
 - existing transient retry, migration isolation, IPv4 pooler, migration apply,
   Edge Function deploy, deployment-log artifact, and Vercel skew checks remain
   available on the manually authorized production path;
@@ -87,7 +97,8 @@ claiming a production release.
 
 - exact changed-file list;
 - `node --test scripts/supabase-deploy-gate-contract.test.mjs` PASS;
-- existing release-sync contract PASS;
+- existing release-sync contract PASS under the split semantics;
+- shadow-extension parity PASS under the split semantics;
 - exact-head GitHub checks PASS;
 - independent review bound to the exact head;
 - durable #340 / #335 checkpoint recording zero production deployment/mutation.
