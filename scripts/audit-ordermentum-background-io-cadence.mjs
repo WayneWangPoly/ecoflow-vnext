@@ -32,7 +32,8 @@ assert.ok(!/\n\s*push:\s*\n/.test(cloudWorkflow), 'cloud sync must not auto-catc
 requireText(cloudWorkflow, 'retention-days: 1', 'cloud sync one-day artifact retention');
 
 // Preserve explicit recovery and post-deployment verification paths while
-// keeping actual reconciliation rare.
+// keeping actual reconciliation rare. A successful shadow-only main push must
+// never be mistaken for a production deployment.
 requireText(mirrorWorkflow, 'workflow_dispatch:', 'complete-mirror workflow');
 requireText(mirrorWorkflow, 'workflows: ["Deploy Supabase migrations"]', 'post-migration verification');
 requireText(mirrorWorkflow, '- cron: "30 17 * * 0"', 'weekly recent reconciliation');
@@ -40,11 +41,18 @@ requireText(mirrorWorkflow, '- full_history', 'manual full-history option');
 requireText(mirrorWorkflow, 'MIRROR_MODE=verify_only', 'post-migration verification-only mode');
 requireText(mirrorWorkflow, 'MIRROR_MODE=recent', 'recent reconciliation mode');
 requireText(mirrorWorkflow, 'MIRROR_MODE=resume_history', 'manual full-history resume mode');
+requireText(mirrorWorkflow, "github.event.workflow_run.event == 'workflow_dispatch'", 'production-deployment upstream event gate');
+requireText(mirrorWorkflow, 'test "${{ github.event.workflow_run.event }}" = "workflow_dispatch"', 'defence-in-depth upstream event assertion');
+requireText(mirrorWorkflow, 'Release verification requires an authorized Supabase production workflow_dispatch', 'fail-closed upstream event message');
 requireText(mirrorWorkflow, 'Lightweight verification after successful Supabase production deployment', 'post-migration verification reason');
 requireText(mirrorWorkflow, 'Weekly recent commercial reconciliation', 'weekly recent reason');
 requireText(mirrorWorkflow, 'retention-days: 1', 'complete-mirror one-day artifact retention');
 assert.ok(!/\n\s*push:\s*\n/.test(mirrorWorkflow), 'complete-mirror workflow must not self-trigger on push');
 assert.ok(!mirrorWorkflow.includes('30 17 * * *'), 'daily recent reconciliation must stay removed');
+assert.ok(
+  !/github\.event\.workflow_run\.conclusion == 'success' &&\s*github\.event\.workflow_run\.head_branch == 'main'\s*\)/.test(mirrorWorkflow),
+  'upstream success on main alone must not authorize post-deploy mirror persistence',
+);
 
 const automatedBlock = mirrorWorkflow.slice(
   mirrorWorkflow.indexOf('if [ "${{ github.event_name }}" = "workflow_run" ]'),
@@ -71,4 +79,4 @@ requireText(mirror, "if (history.state === 'COMPLETE')", 'completed-history veri
 requireText(mirror, 'await verifyMirror(true)', 'history completeness verification');
 requireText(mirror, 'ORDERMENTUM_STORAGE_GUARD', 'fail-closed storage guard');
 
-console.log('Ordermentum background IO cadence audit passed: four daily high-watermark deltas, weekly recent reconciliation, verification-only deployments, one-day artifacts, and manual-only full master/history refreshes.');
+console.log('Ordermentum background IO cadence audit passed: four daily high-watermark deltas, weekly recent reconciliation, production-dispatch-only release verification, one-day artifacts, and manual-only full master/history refreshes.');
