@@ -337,11 +337,11 @@ begin
     count(*)::integer,
     count(*) filter(where disposition='AUTO')::integer,
     count(*) filter(where disposition='HOLD_DUPLICATE_EXTERNAL_ID')::integer,
-    encode(extensions.digest(string_agg(membership_line,E'\n' order by external_code),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(membership_line,E'\n' order by external_code) filter(where disposition='AUTO'),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(evidence_line,E'\n' order by external_code),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(evidence_line,E'\n' order by external_code) filter(where disposition='AUTO'),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(external_code||'|'||ordermentum_purchaser_id||'|'||match_method,E'\n' order by external_code) filter(where disposition='HOLD_DUPLICATE_EXTERNAL_ID'),'sha256'),'hex')
+    encode(extensions.digest(string_agg(membership_line,chr(10) order by external_code),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(membership_line,chr(10) order by external_code) filter(where disposition='AUTO'),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(evidence_line,chr(10) order by external_code),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(evidence_line,chr(10) order by external_code) filter(where disposition='AUTO'),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(external_code||'|'||ordermentum_purchaser_id||'|'||match_method,chr(10) order by external_code) filter(where disposition='HOLD_DUPLICATE_EXTERNAL_ID'),'sha256'),'hex')
   into v_count,v_auto,v_hold,v_membership_90,v_membership_82,v_evidence_90,v_evidence_82,v_hold_8
   from pg_temp.ecoflow_customer_wave1_evidence_snapshot;
 
@@ -527,11 +527,11 @@ begin
     count(*) filter(where disposition='AUTO')::integer,
     count(*) filter(where disposition='HOLD_DUPLICATE_PARENT')::integer,
     count(*) filter(where disposition='HOLD_LOCATION_CONFLICT')::integer,
-    encode(extensions.digest(string_agg(membership_line,E'\n' order by parent_customer_code,address_guid),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(membership_line,E'\n' order by parent_customer_code,address_guid) filter(where disposition='AUTO'),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(evidence_line,E'\n' order by parent_customer_code,address_guid) filter(where exact_location),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(evidence_line,E'\n' order by parent_customer_code,address_guid) filter(where disposition='AUTO'),'sha256'),'hex'),
-    encode(extensions.digest(string_agg(parent_customer_code||'|'||address_guid||'|'||ordermentum_purchaser_id,E'\n' order by parent_customer_code,address_guid) filter(where disposition='HOLD_DUPLICATE_PARENT'),'sha256'),'hex')
+    encode(extensions.digest(string_agg(membership_line,chr(10) order by parent_customer_code,address_guid),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(membership_line,chr(10) order by parent_customer_code,address_guid) filter(where disposition='AUTO'),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(evidence_line,chr(10) order by parent_customer_code,address_guid) filter(where exact_location),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(evidence_line,chr(10) order by parent_customer_code,address_guid) filter(where disposition='AUTO'),'sha256'),'hex'),
+    encode(extensions.digest(string_agg(parent_customer_code||'|'||address_guid||'|'||ordermentum_purchaser_id,chr(10) order by parent_customer_code,address_guid) filter(where disposition='HOLD_DUPLICATE_PARENT'),'sha256'),'hex')
   into v_scoped,v_exact,v_auto,v_dup_hold,v_location_hold,v_membership_76,v_membership_71,v_evidence_75,v_evidence_71,v_hold_4
   from pg_temp.ecoflow_site_wave1_evidence_snapshot;
 
