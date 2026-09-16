@@ -24,6 +24,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
       FAILED_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+      FAILED_RUN_EVENT: ${{ github.event.workflow_run.event }}
       FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
       FAILED_RUN_URL: ${{ github.event.workflow_run.html_url }}
       DIAGNOSTIC_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -35,6 +36,7 @@ jobs:
           {
             echo "EcoFlow Supabase migration failure"
             echo "Run: $FAILED_RUN_URL"
+            echo "Trigger: $FAILED_RUN_EVENT"
             echo "Commit: $FAILED_SHA"
             echo
             gh run view "$FAILED_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed
@@ -62,8 +64,18 @@ jobs:
       - name: Publish exact error in an issue
         shell: bash
         run: |
+          case "$FAILED_RUN_EVENT" in
+            push|workflow_dispatch) ;;
+            *)
+              echo "Unsupported upstream event for canonical incident classification: $FAILED_RUN_EVENT"
+              exit 1
+              ;;
+          esac
+
           {
-            echo "Production migration run: $FAILED_RUN_URL"
+            echo "Supabase migration workflow run: $FAILED_RUN_URL"
+            echo
+            echo "Authority class / trigger: \`$FAILED_RUN_EVENT\`"
             echo
             echo "Commit: \`$FAILED_SHA\`"
             echo
@@ -76,14 +88,26 @@ jobs:
           } > /tmp/supabase-migration-issue.md
           gh issue create \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Supabase migration failure · run $FAILED_RUN_NUMBER" \
+            --title "Supabase migration failure · $FAILED_RUN_EVENT · run $FAILED_RUN_NUMBER" \
             --body-file /tmp/supabase-migration-issue.md
       - name: Publish diagnostic status
+        shell: bash
         run: |
+          case "$FAILED_RUN_EVENT" in
+            push)
+              description='Supabase shadow verification failed; exact error archived'
+              ;;
+            workflow_dispatch)
+              description='Supabase production deployment workflow failed; exact error archived'
+              ;;
+            *)
+              description='Supabase migration workflow failed; exact error archived'
+              ;;
+          esac
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$FAILED_SHA" \
             -f state='failure' \
             -f context='Supabase migration diagnostic' \
-            -f description='Exact failed migration error published and archived' \
+            -f description="$description" \
             -f target_url="$DIAGNOSTIC_RUN_URL"
 
   recover:
@@ -93,47 +117,79 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RECOVERED_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+      RECOVERED_RUN_EVENT: ${{ github.event.workflow_run.event }}
       RECOVERED_SHA: ${{ github.event.workflow_run.head_sha }}
       RECOVERED_RUN_URL: ${{ github.event.workflow_run.html_url }}
     steps:
-      - name: Close superseded failure issues
+      - name: Close superseded same-authority failure issues
         shell: bash
         run: |
           set -euo pipefail
+          case "$RECOVERED_RUN_EVENT" in
+            push|workflow_dispatch) ;;
+            *)
+              echo "Unsupported upstream event for recovery classification: $RECOVERED_RUN_EVENT"
+              exit 1
+              ;;
+          esac
+
           open_failures="$(
             gh issue list \
               --repo "$GITHUB_REPOSITORY" \
               --state open \
               --limit 1000 \
               --json number,title \
-              --jq '.[] | select(.title | startswith("Supabase migration failure · run ")) | [.number,.title] | @tsv'
+              --jq '.[] | select(.title | startswith("Supabase migration failure · ")) | [.number,.title] | @tsv'
           )"
 
           while IFS=$'\t' read -r issue_number issue_title; do
             if [[ -z "$issue_number" ]]; then
               continue
             fi
-            if [[ ! "$issue_title" =~ ^Supabase\ migration\ failure\ ·\ run\ ([0-9]+)$ ]]; then
-              echo "Skipping non-canonical diagnostic title: $issue_title"
+            if [[ ! "$issue_title" =~ ^Supabase\ migration\ failure\ ·\ (push|workflow_dispatch)\ ·\ run\ ([0-9]+)$ ]]; then
+              echo "Preserving legacy or non-canonical unclassified diagnostic: $issue_title"
               continue
             fi
-            failed_run_number="${BASH_REMATCH[1]}"
-            if (( failed_run_number > RECOVERED_RUN_NUMBER )); then
-              echo "Preserving newer failure run $failed_run_number after recovered run $RECOVERED_RUN_NUMBER"
+            failed_run_event="${BASH_REMATCH[1]}"
+            failed_run_number="${BASH_REMATCH[2]}"
+            if [[ "$failed_run_event" != "$RECOVERED_RUN_EVENT" ]]; then
+              echo "Preserving $failed_run_event failure during $RECOVERED_RUN_EVENT recovery: run $failed_run_number"
               continue
+            fi
+            if (( failed_run_number > RECOVERED_RUN_NUMBER )); then
+              echo "Preserving newer $failed_run_event failure run $failed_run_number after recovered run $RECOVERED_RUN_NUMBER"
+              continue
+            fi
+
+            if [[ "$RECOVERED_RUN_EVENT" = 'push' ]]; then
+              recovery_message="Resolved by later successful Supabase shadow-verification run $RECOVERED_RUN_NUMBER: $RECOVERED_RUN_URL. Production deployment is not implied. Historical failure evidence for run $failed_run_number is retained in this issue."
+            else
+              recovery_message="Resolved by later successful explicitly dispatched Supabase production deployment run $RECOVERED_RUN_NUMBER: $RECOVERED_RUN_URL. Historical failure evidence for run $failed_run_number is retained in this issue."
             fi
 
             gh issue comment "$issue_number" \
               --repo "$GITHUB_REPOSITORY" \
-              --body "Resolved by later successful Supabase deployment workflow run $RECOVERED_RUN_NUMBER: $RECOVERED_RUN_URL. Historical failure evidence for run $failed_run_number is retained in this issue."
+              --body "$recovery_message"
             gh issue close "$issue_number" \
               --repo "$GITHUB_REPOSITORY" \
               --reason completed
           done <<< "$open_failures"
       - name: Publish recovered diagnostic status
+        shell: bash
         run: |
+          case "$RECOVERED_RUN_EVENT" in
+            push)
+              description='Supabase shadow verification succeeded; production deployment deferred'
+              ;;
+            workflow_dispatch)
+              description='Supabase production deployment completed successfully'
+              ;;
+            *)
+              description='Supabase migration workflow completed successfully'
+              ;;
+          esac
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$RECOVERED_SHA" \
             -f state='success' \
             -f context='Supabase migration diagnostic' \
-            -f description='Supabase deployment completed successfully; prior diagnostics cleared' \
+            -f description="$description" \
             -f target_url="$RECOVERED_RUN_URL"
