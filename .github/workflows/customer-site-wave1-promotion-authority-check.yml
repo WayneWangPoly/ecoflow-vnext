@@ -1,0 +1,73 @@
+name: ECOFLOW-340B-2-R2 Customer/Site promotion authority
+
+on:
+  pull_request:
+    branches:
+      - 'agent/unleashed/340b2-r1-customer-site-refreeze'
+      - main
+    paths:
+      - '.github/workflows/customer-site-wave1-promotion-authority-check.yml'
+      - 'docs/engineering/work-packages/340B-2-R2-CUSTOMER-SITE-PROMOTION-AUTHORITY.md'
+      - 'scripts/customer-site-wave1-promotion-authority-*'
+  push:
+    branches:
+      - 'agent/unleashed/340b2-r2-*'
+    paths:
+      - '.github/workflows/customer-site-wave1-promotion-authority-check.yml'
+      - 'docs/engineering/work-packages/340B-2-R2-CUSTOMER-SITE-PROMOTION-AUTHORITY.md'
+      - 'scripts/customer-site-wave1-promotion-authority-*'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Governed Customer/Site authority contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify R2 static authority contract
+        run: node --test scripts/customer-site-wave1-promotion-authority-contract.test.mjs
+      - name: Load bounded PostgreSQL 17 fixture
+        run: psql -v ON_ERROR_STOP=1 -f scripts/customer-site-wave1-promotion-authority-fixture.sql
+      - name: Load migration-ready R2 authority carrier
+        run: psql -v ON_ERROR_STOP=1 -f scripts/customer-site-wave1-promotion-authority.sql
+      - name: Verify database authority, denial, replay and zero-write failure contracts
+        run: psql -v ON_ERROR_STOP=1 -f scripts/customer-site-wave1-promotion-authority-db-contract-test.sql
+      - name: Regress frozen R1 membership/HOLD contract
+        run: node --test scripts/customer-site-wave1-refreeze-contract.test.mjs
+      - name: Regress Unleashed master bridge and inventory reference
+        run: npm run audit:unleashed-master-data && npm run audit:unleashed-inventory-reference
+      - name: Repository hygiene
+        run: npm run audit:repository-hygiene
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
