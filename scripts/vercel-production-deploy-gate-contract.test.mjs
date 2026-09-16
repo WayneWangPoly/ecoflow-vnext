@@ -50,6 +50,8 @@ test('production deploy uses bounded production environment and pinned CLI', () 
   assert.match(workflow, /VERCEL_PROJECT_ID: prj_wlAGaHrUNXaSV3Vlx33FXxD02Ioj/);
   assert.match(deployJob, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
   assert.match(deployJob, /Missing VERCEL_TOKEN production secret/);
+  assert.match(deployJob, /npm install --global "vercel@\$VERCEL_CLI_VERSION"/);
+  assert.match(deployJob, /vercel --version \| grep -F "\$VERCEL_CLI_VERSION"/);
 });
 
 test('production mutation occurs only below the exact-head authority job', () => {
@@ -67,18 +69,22 @@ test('explicit deployment is built, production-targeted and exact-SHA tagged', (
   assert.match(deployJob, /vercel build --prod/);
   assert.match(deployJob, /--prebuilt/);
   assert.match(deployJob, /--prod/);
-  assert.match(deployJob, /githubCommitSha=\$GITHUB_SHA/);
-  assert.match(deployJob, /githubCommitRef=main/);
-  assert.match(deployJob, /ecoflowAuthority=workflow_dispatch/);
+  assert.match(deployJob, /--meta "githubCommitSha=\$GITHUB_SHA"/);
+  assert.match(deployJob, /--meta 'githubCommitRef=main'/);
+  assert.match(deployJob, /--meta 'ecoflowAuthority=workflow_dispatch'/);
 });
 
 test('success is published only after READY and exact-SHA verification', () => {
   const inspectIndex = deployJob.indexOf('vercel inspect "$DEPLOYMENT_URL" --wait');
-  const listIndex = deployJob.indexOf('--meta "githubCommitSha=$GITHUB_SHA"');
+  const listIndex = deployJob.indexOf('vercel ls \\');
+  const listShaIndex = deployJob.indexOf('-m "githubCommitSha=$GITHUB_SHA"');
   const successIndex = deployJob.indexOf("-f state='success'");
   assert.ok(inspectIndex >= 0);
   assert.ok(listIndex > inspectIndex);
-  assert.ok(successIndex > listIndex);
+  assert.ok(listShaIndex > listIndex);
+  assert.ok(successIndex > listShaIndex);
+  assert.match(deployJob, /DEPLOYMENT_HOST=.*DEPLOYMENT_URL/s);
+  assert.match(deployJob, /grep -F "\$DEPLOYMENT_HOST"/);
   assert.match(deployJob, /context='Vercel'/);
   assert.match(
     deployJob,
