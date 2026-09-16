@@ -109,7 +109,8 @@ jobs:
           deploy_job = deploy.index('\n  deploy:\n')
           before_deploy = deploy[:deploy_job]
           guarded_deploy = deploy[deploy_job:]
-          if "if: ${{ github.event_name == 'workflow_dispatch' }}" not in guarded_deploy:
+          dispatch_guard = "if: $" + "{{ github.event_name == 'workflow_dispatch' }}"
+          if dispatch_guard not in guarded_deploy:
               raise SystemExit('Production deploy job is not workflow_dispatch-only')
           if 'supabase db push --db-url "$SUPABASE_DB_URL" --include-all --yes' in before_deploy:
               raise SystemExit('Production migration application is reachable before the guarded deploy job')
@@ -122,7 +123,8 @@ jobs:
           if 'Production deployment deferred to explicit manual exact-head gate' not in deploy:
               raise SystemExit('Push shadow success does not explicitly defer production deployment')
 
-          if 'UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}' not in release:
+          upstream_event = 'UPSTREAM_EVENT: $' + '{{ github.event.workflow_run.event }}'
+          if upstream_event not in release:
               raise SystemExit('Trusted Release sync authority is missing upstream event classification')
           if 'Production database unchanged; deployment deferred to explicit manual exact-head gate' not in release:
               raise SystemExit('Push-only Release sync can still imply production deployment')
