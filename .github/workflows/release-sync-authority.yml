@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/release-sync-frontend-paths.mjs'
       - 'scripts/release-sync-frontend-paths-contract.test.mjs'
+      - 'scripts/supabase-deploy-gate-contract.test.mjs'
       - '.github/workflows/release-sync-authority.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
   workflow_run:
@@ -22,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify release-sync authority contract
-        run: node --test scripts/release-sync-frontend-paths-contract.test.mjs
+      - name: Verify release-sync authority contracts
+        run: node --test scripts/release-sync-frontend-paths-contract.test.mjs scripts/supabase-deploy-gate-contract.test.mjs
 
   authoritative-release-sync:
     if: github.event_name == 'workflow_run'
@@ -32,6 +33,7 @@ jobs:
     env:
       TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
       UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
       UPSTREAM_URL: ${{ github.event.workflow_run.html_url }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -53,11 +55,17 @@ jobs:
           TRUSTED_RUNTIME_SHA="$(git rev-parse HEAD)"
           echo "trusted runtime SHA: $TRUSTED_RUNTIME_SHA"
           echo "historical release target SHA: $TARGET_SHA"
+          echo "upstream event: $UPSTREAM_EVENT"
 
           if ! git cat-file -e "$TARGET_SHA^{commit}" 2>/dev/null; then
             DESCRIPTION="RELEASE NOT SYNCHRONIZED: target commit '$TARGET_SHA' is unavailable to trusted release authority."
           elif [ "$UPSTREAM_CONCLUSION" != 'success' ]; then
-            DESCRIPTION="RELEASE NOT SYNCHRONIZED: Supabase deployment concluded '$UPSTREAM_CONCLUSION'."
+            DESCRIPTION="RELEASE NOT SYNCHRONIZED: Supabase gate concluded '$UPSTREAM_CONCLUSION'."
+          elif [ "$UPSTREAM_EVENT" = 'push' ]; then
+            STATE='success'
+            DESCRIPTION='Production database unchanged; deployment deferred to explicit manual exact-head gate'
+          elif [ "$UPSTREAM_EVENT" != 'workflow_dispatch' ]; then
+            DESCRIPTION="RELEASE NOT SYNCHRONIZED: unexpected Supabase workflow trigger '$UPSTREAM_EVENT'."
           else
             read -ra COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$TARGET_SHA")"
             if [ "${#COMMIT_LINE[@]}" -gt 1 ]; then
@@ -70,7 +78,7 @@ jobs:
             echo "frontend files changed against first parent: $FRONTEND_CHANGED"
             if [ "$FRONTEND_CHANGED" = 'no' ]; then
               STATE='success'
-              DESCRIPTION='No frontend changes against first parent; database deployment completed'
+              DESCRIPTION='No frontend changes against first parent; authorized database deployment completed'
             else
               VERCEL_STATE=none
               for i in $(seq 1 20); do
@@ -84,9 +92,9 @@ jobs:
 
               if [ "$VERCEL_STATE" = 'success' ]; then
                 STATE='success'
-                DESCRIPTION='Frontend and database deployed from the same commit'
+                DESCRIPTION='Frontend and authorized database deployment are synchronized at the same commit'
               else
-                DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' for a frontend-changing commit."
+                DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' for a frontend-changing deployment commit."
               fi
             fi
           fi

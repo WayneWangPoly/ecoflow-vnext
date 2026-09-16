@@ -2,11 +2,29 @@
 
 What to do when production misbehaves. Written from real incidents.
 
-## Deploy pipeline failures (GitHub Actions → Supabase)
+## Supabase merge / deploy pipeline
 
-The deploy workflow is `.github/workflows/deploy-supabase-migrations.yml`:
-`shadow-verify` (gate) → `deploy` (migrations + edge functions) → `finalize`
-(commit statuses `Supabase migrations` and `Release sync`).
+The workflow is `.github/workflows/deploy-supabase-migrations.yml`, but it has
+two authority modes:
+
+- **push to protected `main`**: `authority` → `shadow-verify` → `deploy=skipped`
+  → `finalize`. This may read production migration history/schema but must not
+  mutate production. Green means pending migrations applied cleanly to the
+  production-schema shadow copy and deployment is deferred.
+- **manual `workflow_dispatch` from protected `main`**: exact-head authority
+  preflight → `shadow-verify` → `deploy` (migrations + Edge Functions) →
+  `finalize`. This is the production mutation path and requires separate
+  authorization.
+
+The manual run requires `expected_main_sha` equal to both the workflow SHA and a
+freshly fetched `origin/main`, plus confirmation token
+`DEPLOY_SUPABASE_PRODUCTION`. Never dispatch an older commit merely because it
+was previously verified; re-authorize the current protected-main SHA.
+
+`Supabase migrations` and trusted `Release sync` preserve the distinction:
+shadow-only push success says production is unchanged; manual deployment success
+says the authorized database deployment completed and verifies frontend skew
+when relevant.
 
 ### "failed to connect to postgres: Connection timed out"
 - The direct host `db.<ref>.supabase.co` is **IPv6-only**; GitHub runners have
@@ -28,18 +46,34 @@ management operations all time out.
 - Restart: `POST https://api.supabase.com/v1/projects/<ref>/restart` with a
   personal access token (the Supabase CLI token lives in Windows Credential
   Manager under `Supabase CLI:supabase`). ~30–60s outage. Re-dispatch the
-  deploy workflow afterwards.
+  deploy workflow afterwards only when production deployment remains authorized.
 
 ### Shadow verification failed
 The pending migration does not apply to a copy of the production schema. Fix
 the SQL locally — do NOT iterate against production. The shadow job log shows
 the exact failing statement.
 
+### Push run unexpectedly enters `deploy`
+Treat this as a release-control incident. A push-triggered run must have
+`deploy=skipped`. Do not approve environment gates or retry deployment. Stop the
+run, inspect `scripts/supabase-deploy-gate-contract.test.mjs`, and restore the
+R2G contract before merging another migration.
+
+### Manual dispatch rejected before shadow verification
+Check all three exact-head inputs before retrying:
+
+1. selected workflow ref is `main`;
+2. `expected_main_sha` equals the workflow SHA and current `origin/main`;
+3. confirmation is exactly `DEPLOY_SUPABASE_PRODUCTION`.
+
+A moved `main` is intentional fail-closed behaviour; verify and authorize the
+new exact SHA rather than bypassing the check.
+
 ### Vercel "Deployment rate limited"
-Free-plan build quota. `Release sync` commit status tells you whether it
-matters: failure = this commit changed frontend files and the DB is ahead —
-redeploy the frontend before operating; success-with-note = commit had no
-frontend changes, no skew. Long-term: upgrade Vercel or batch pushes.
+Free-plan build quota. `Release sync` matters after an authorized production
+deployment when the same commit changed frontend files: failure = DB is ahead
+of frontend; redeploy the frontend before operating. A shadow-only push never
+moves the production DB and therefore cannot create DB-ahead skew.
 
 ## Storage retention policy
 
@@ -75,5 +109,8 @@ Authorization: Bearer <owner session token>
 - Project ref: `kauqwlzuyxcudoyognwf` (region ap-southeast-2).
 - Migrations: only `YYYYMMDDHHMMSS_*.sql` files deploy; date-only legacy files
   are isolated by CI and must never be renamed into the deployable pattern.
+- A deployable migration on `main` may still be pending production application;
+  check migration history / the authorized manual deployment run rather than
+  assuming repository presence means deployed.
 - Mojibake: production data audited clean (2026-07-11, 1520 text columns);
   the pair-aware repair migration `20260711150000` stays as insurance.

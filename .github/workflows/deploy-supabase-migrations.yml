@@ -2,6 +2,15 @@ name: Deploy Supabase migrations
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact protected main SHA authorized for production deployment'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type DEPLOY_SUPABASE_PRODUCTION to confirm production deployment authority'
+        required: true
+        type: string
   push:
     branches: [main]
     paths:
@@ -11,6 +20,7 @@ on:
       - 'scripts/transient-supabase-command-contract.test.mjs'
       - 'scripts/release-sync-frontend-paths.mjs'
       - 'scripts/release-sync-frontend-paths-contract.test.mjs'
+      - 'scripts/supabase-deploy-gate-contract.test.mjs'
       - '.github/workflows/release-sync-authority.yml'
       - '.github/workflows/deploy-supabase-migrations.yml'
 
@@ -27,10 +37,66 @@ env:
   SUPABASE_POOLER_HOST: aws-1-ap-southeast-2.pooler.supabase.com
 
 jobs:
+  # No-secret authority preflight. A main push is shadow-only. A manual dispatch
+  # is allowed to continue toward production only when it targets the current
+  # protected main SHA and carries the frozen confirmation token.
+  authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify event authority
+        shell: bash
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            test "$GITHUB_REF" = 'refs/heads/main' || {
+              echo "Shadow gate push must target protected main; got $GITHUB_REF"
+              exit 1
+            }
+            echo 'main push accepted for shadow verification only; production deployment remains gated'
+            exit 0
+          fi
+
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch' || {
+            echo "Unsupported trigger: $GITHUB_EVENT_NAME"
+            exit 1
+          }
+          test "$GITHUB_REF" = 'refs/heads/main' || {
+            echo "Production deployment must be dispatched from main; got $GITHUB_REF"
+            exit 1
+          }
+          test -n "$EXPECTED_MAIN_SHA" || {
+            echo 'expected_main_sha is required'
+            exit 1
+          }
+          test "$EXPECTED_MAIN_SHA" = "$GITHUB_SHA" || {
+            echo "Authorized SHA mismatch: expected=$EXPECTED_MAIN_SHA workflow=$GITHUB_SHA"
+            exit 1
+          }
+          test "$DEPLOY_CONFIRMATION" = 'DEPLOY_SUPABASE_PRODUCTION' || {
+            echo 'Production deployment confirmation token mismatch'
+            exit 1
+          }
+          git fetch origin main --depth=1
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          test "$CURRENT_MAIN_SHA" = "$GITHUB_SHA" || {
+            echo "Protected main moved after authorization: current=$CURRENT_MAIN_SHA workflow=$GITHUB_SHA"
+            exit 1
+          }
+          echo "Exact-head production deployment authority accepted for $GITHUB_SHA"
+
   # Apply pending migrations to a copy of the real production schema before
-  # any production write is attempted. The same job verifies the retry runner
-  # used for transient Supabase and Cloudflare control-plane failures.
+  # any production write is attempted. Push-triggered runs stop after this gate.
   shadow-verify:
+    needs: authority
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
@@ -61,13 +127,15 @@ jobs:
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state='pending' \
             -f context='Supabase migrations' \
-            -f description='Shadow verification and production deployment are running' \
+            -f description='Shadow verification running; production deploy requires separate manual exact-head authority' \
             -f target_url="$DEPLOYMENT_STATUS_URL"
       - name: Checkout
         uses: actions/checkout@v4
       - name: Verify transient deployment retry contract
         run: node --test scripts/transient-supabase-command-contract.test.mjs
-      - name: Require production migration credentials
+      - name: Verify merge/deploy gate contract
+        run: node --test scripts/supabase-deploy-gate-contract.test.mjs
+      - name: Require production migration read credentials
         shell: bash
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN'; exit 1; }
@@ -134,10 +202,6 @@ jobs:
               end if;
             end loop;
           end $$;
-          -- Production Supabase installs UUID helpers in the extensions schema.
-          -- Keep the plain postgres shadow layout compatible before loading the
-          -- production dump; otherwise extension-qualified defaults fail before
-          -- pending migrations are even exercised.
           create schema if not exists extensions;
           create extension if not exists pgcrypto with schema extensions;
           create extension if not exists "uuid-ossp" with schema extensions;
@@ -229,7 +293,8 @@ jobs:
           echo 'All pending migrations applied cleanly against the production schema copy.'
 
   deploy:
-    needs: shadow-verify
+    needs: [authority, shadow-verify]
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: production
@@ -240,7 +305,7 @@ jobs:
       SUPABASE_PROJECT_REF: kauqwlzuyxcudoyognwf
       DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Checkout
+      - name: Checkout authorized exact head
         uses: actions/checkout@v4
       - name: Require production migration credentials
         shell: bash
@@ -275,8 +340,6 @@ jobs:
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
       - name: Install Supabase CLI
-        # Pinned: 2.109.x ships a rewritten PgClient that times out against the
-        # session pooler even when raw TCP is open. 2.107.0 is proven to connect.
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
       - name: Link production project with transient retry
         shell: bash
@@ -410,132 +473,58 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # Publish final database state and verify any frontend changed by this commit
-  # is not behind the database deployment.
+  # `Supabase migrations` remains a required protected-main status. On a push it
+  # now means the pending migration set passed the production-schema shadow gate,
+  # not that production was mutated. Production application requires a separate
+  # exact-head workflow_dispatch.
   finalize:
-    needs: [shadow-verify, deploy]
+    needs: [authority, shadow-verify, deploy]
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
       statuses: write
     env:
       GH_TOKEN: ${{ github.token }}
       DEPLOYMENT_STATUS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT_NAME: ${{ github.event_name }}
+      AUTH_RESULT: ${{ needs.authority.result }}
       SHADOW_RESULT: ${{ needs.shadow-verify.result }}
       DEPLOY_RESULT: ${{ needs.deploy.result }}
     steps:
       - name: Publish final migration status
         shell: bash
-        env:
-          GH_TOKEN_WRITE: ${{ github.token }}
         run: |
-          if [ "$SHADOW_RESULT" = 'success' ] && [ "$DEPLOY_RESULT" = 'success' ]; then
-            STATE='success'
-            DESCRIPTION='Shadow verification passed; production database and Edge Functions deployed'
+          set -euo pipefail
+          STATE='failure'
+          DESCRIPTION='Supabase migration gate did not reach a verified state'
+
+          if [ "$AUTH_RESULT" != 'success' ]; then
+            DESCRIPTION="Authority preflight failed or was skipped (authority=$AUTH_RESULT)"
           elif [ "$SHADOW_RESULT" != 'success' ]; then
-            STATE='failure'
-            DESCRIPTION='Shadow verification or production connection setup failed; inspect workflow logs'
+            DESCRIPTION="Shadow verification failed or was skipped (shadow=$SHADOW_RESULT)"
+          elif [ "$EVENT_NAME" = 'push' ]; then
+            if [ "$DEPLOY_RESULT" != 'skipped' ]; then
+              DESCRIPTION="Push run violated deploy separation (deploy=$DEPLOY_RESULT)"
+            else
+              STATE='success'
+              DESCRIPTION='Shadow verification passed; Production deployment deferred to explicit manual exact-head gate'
+            fi
+          elif [ "$EVENT_NAME" = 'workflow_dispatch' ] && [ "$DEPLOY_RESULT" = 'success' ]; then
+            STATE='success'
+            DESCRIPTION='Shadow verification passed; authorized production migration and Edge Function deployment completed'
+          elif [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            DESCRIPTION="Authorized production deployment failed or was skipped (deploy=$DEPLOY_RESULT)"
           else
-            STATE='failure'
-            DESCRIPTION='Production Supabase deployment failed; inspect workflow log artifact'
+            DESCRIPTION="Unexpected workflow trigger '$EVENT_NAME'"
           fi
-          GH_TOKEN="$GH_TOKEN_WRITE" gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$STATE" \
             -f context='Supabase migrations' \
             -f description="$DESCRIPTION" \
             -f target_url="$DEPLOYMENT_STATUS_URL"
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Verify frontend release is not behind the database
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD)
-          else
-            CHANGED=$(git ls-tree -r --name-only HEAD)
-          fi
-          if echo "$CHANGED" | grep -Eq '^(src/|public/|index\.html|package(-lock)?\.json|vite\.config\.ts|tsconfig\.json|vercel\.json)'; then
-            FRONTEND_CHANGED=yes
-          else
-            FRONTEND_CHANGED=no
-          fi
-          echo "frontend files changed in this commit: $FRONTEND_CHANGED"
-
-          if [ "$SHADOW_RESULT" != 'success' ] || [ "$DEPLOY_RESULT" != 'success' ]; then
-            STATE='failure'
-            DESCRIPTION="RELEASE NOT SYNCHRONIZED: database release incomplete (shadow=$SHADOW_RESULT deploy=$DEPLOY_RESULT)."
-          elif [ "$FRONTEND_CHANGED" = 'no' ]; then
-            STATE='success'
-            DESCRIPTION='No frontend changes in this commit; database deployment completed'
-          else
-            VERCEL_STATE=none
-            for i in $(seq 1 20); do
-              RESPONSE_FILE="/tmp/vercel-status-$i.json"
-              ERROR_FILE="/tmp/vercel-status-$i.err"
-              if gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" > "$RESPONSE_FILE" 2> "$ERROR_FILE"; then
-                VERCEL_STATE=$(python3 - "$RESPONSE_FILE" <<'PY'
-          import json
-          import sys
-
-          path = sys.argv[1]
-          try:
-              payload = json.load(open(path, encoding='utf-8'))
-          except Exception as error:
-              print(f"invalid:{type(error).__name__}")
-              raise SystemExit(0)
-
-          statuses = payload.get('statuses') if isinstance(payload, dict) else None
-          state = 'none'
-          if isinstance(statuses, list):
-              for status in statuses:
-                  if isinstance(status, dict) and status.get('context') == 'Vercel':
-                      state = str(status.get('state') or 'none')
-                      break
-          print(state)
-          PY
-                )
-                if [[ "$VERCEL_STATE" == invalid:* ]]; then
-                  echo "poll $i: GitHub returned a non-JSON status response; retrying"
-                  head -c 200 "$RESPONSE_FILE" || true
-                  VERCEL_STATE=api_error
-                else
-                  echo "poll $i: Vercel status = $VERCEL_STATE"
-                fi
-              else
-                echo "poll $i: GitHub status API failed; retrying"
-                head -c 300 "$ERROR_FILE" || true
-                VERCEL_STATE=api_error
-              fi
-              case "$VERCEL_STATE" in
-                success|failure|error) break ;;
-              esac
-              sleep 30
-            done
-
-            if [ "$VERCEL_STATE" = 'success' ]; then
-              STATE='success'
-              DESCRIPTION='Frontend and database deployed from the same commit'
-            else
-              STATE='failure'
-              DESCRIPTION="DATABASE IS AHEAD OF THE FRONTEND: Vercel state '$VERCEL_STATE' while this commit changes frontend files. Redeploy the frontend before operating."
-            fi
-          fi
 
           echo "$DESCRIPTION"
-          for attempt in 1 2 3; do
-            if gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -f state="$STATE" \
-              -f context='Release sync' \
-              -f description="$DESCRIPTION" \
-              -f target_url="$DEPLOYMENT_STATUS_URL"; then
-              exit 0
-            fi
-            echo "release status publish attempt $attempt failed; retrying in 10s"
-            [ "$attempt" = 3 ] && exit 1
-            sleep 10
-          done
+          test "$STATE" = 'success'

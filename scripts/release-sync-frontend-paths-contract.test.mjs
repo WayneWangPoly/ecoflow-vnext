@@ -39,31 +39,37 @@ test('authoritative workflow inspects historical merge targets without executing
   assert.doesNotMatch(workflow, /git diff-tree --no-commit-id --name-only -r HEAD/);
 });
 
-test('authoritative workflow retains same-target Vercel verification', () => {
+test('authoritative workflow retains same-target Vercel verification for authorized production deployment', () => {
   assert.match(workflow, /commits\/\$TARGET_SHA\/status/);
   assert.match(workflow, /select\(\.context == "Vercel"\)/);
-  assert.match(workflow, /Frontend and database deployed from the same commit/);
+  assert.match(workflow, /Frontend and authorized database deployment are synchronized at the same commit/);
 });
 
-test('authoritative workflow runs after the database deployment workflow', () => {
+test('authoritative workflow runs after the Supabase migration gate workflow', () => {
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /workflows: \['Deploy Supabase migrations'\]/);
   assert.match(workflow, /context='Release sync'/);
 });
 
-test('release-sync control-plane changes require fresh production deployment proof', () => {
+test('release-sync control-plane changes require fresh shadow proof and preserve manual deploy wiring', () => {
   for (const path of [
     'scripts/release-sync-frontend-paths.mjs',
     'scripts/release-sync-frontend-paths-contract.test.mjs',
+    'scripts/supabase-deploy-gate-contract.test.mjs',
     '.github/workflows/release-sync-authority.yml',
   ]) {
     assert.ok(
       deployWorkflow.includes(`- '${path}'`),
-      `Deploy Supabase migrations must run when ${path} changes on main`,
+      `Supabase shadow gate must run when ${path} changes on main`,
     );
   }
   assert.ok(
     workflow.includes("- '.github/workflows/deploy-supabase-migrations.yml'"),
-    'Release sync contract must run when the production proof trigger wiring changes',
+    'Release sync contract must run when the merge/deploy authority wiring changes',
+  );
+  assert.match(
+    deployWorkflow,
+    /if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}/,
+    'production deploy remains separately gated after release-sync control-plane changes',
   );
 });
