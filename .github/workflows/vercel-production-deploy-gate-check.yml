@@ -1,0 +1,33 @@
+name: Vercel production deploy gate check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'vercel.json'
+      - '.github/workflows/deploy-vercel-production.yml'
+      - '.github/workflows/vercel-production-deploy-gate-check.yml'
+      - 'scripts/vercel-production-deploy-gate-contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - 'vercel.json'
+      - '.github/workflows/deploy-vercel-production.yml'
+      - '.github/workflows/vercel-production-deploy-gate-check.yml'
+      - 'scripts/vercel-production-deploy-gate-contract.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify Vercel production deployment authority contract
+        run: node --test scripts/vercel-production-deploy-gate-contract.test.mjs
