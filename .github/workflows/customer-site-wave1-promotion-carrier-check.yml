@@ -1,0 +1,57 @@
+name: Customer Site Wave1 authenticated promotion carrier
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/customer-site-wave1-promotion-carrier-check.yml'
+      - 'docs/engineering/work-packages/340B-2-R2P-CUSTOMER-SITE-PROMOTION-CARRIER.md'
+      - 'scripts/customer-site-wave1-promotion-carrier-contract.test.mjs'
+      - 'scripts/customer-site-wave1-promotion-authority-contract.test.mjs'
+      - 'scripts/customer-site-wave1-promotion-authority.sql'
+      - 'src/data/repositories/customerSiteWave1Promotion.ts'
+      - 'src/features/customerSite/CustomerSiteWave1PromotionCarrier.tsx'
+      - 'src/features/customerSite/customerSiteWave1PromotionContract.ts'
+      - 'src/features/operationalStability/OperationalSettingsWorkspaceWithCustomerSite.tsx'
+      - 'src/features/operationalStability/OperationalStabilityWorkspace.tsx'
+      - 'supabase/migrations/20260915235756_customer_site_wave1_promotion_authority.sql'
+  push:
+    branches:
+      - 'agent/unleashed/340b2-r2p-customer-site-authenticated-carrier'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Exact-head Customer Site authenticated promotion carrier
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXACT_BASE_SHA: 5e855849c1f84a4a8a68945a07ad719e2eac19b8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind carrier to protected governance base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_BASE_SHA")" = "$EXACT_BASE_SHA"
+          echo "exact_head=$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify authenticated operator carrier contract
+        run: node --test scripts/customer-site-wave1-promotion-carrier-contract.test.mjs
+      - name: Keep governed Customer Site database authority contract green
+        run: node --test scripts/customer-site-wave1-promotion-authority-contract.test.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Reject whitespace errors
+        run: git diff --check "$EXACT_BASE_SHA"...HEAD
