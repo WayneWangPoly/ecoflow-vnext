@@ -31,6 +31,8 @@ jobs:
         run: node --test scripts/r5-005u-stocktake-approval-feedback-contract.test.mjs
       - name: Verify R5-005A ready-row commissioning kernel contract
         run: node --test scripts/r5-005a-ready-row-commissioning-kernel-contract.test.mjs
+      - name: Verify R5-005B positive-stock commissioning carrier contract
+        run: node --test scripts/r5-005b-ready-positive-stock-commissioning-carrier-contract.test.mjs
       - name: TypeScript
         run: npm run typecheck
       - name: Vite production build
