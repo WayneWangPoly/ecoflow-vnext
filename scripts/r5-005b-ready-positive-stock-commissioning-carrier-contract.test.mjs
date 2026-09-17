@@ -79,7 +79,10 @@ test('R5-005B preserves exact command ids across retry-capable actions', () => {
   assert.match(panel, /重试同一 MATERIALIZE command/);
 });
 
-test('R5-005B is wired into the existing inventory reference surface', () => {
-  assert.match(host, /import \{ ReadyPositiveStockCommissioningPanel \} from '\.\/ReadyPositiveStockCommissioningPanel'/);
-  assert.match(host, /<ReadyPositiveStockCommissioningPanel supabase=\{supabase\} \/>/);
+test('R5-005B is lazy-wired into the existing inventory reference surface to preserve bundle budgets', () => {
+  assert.match(host, /lazy\(async \(\) =>/);
+  assert.match(host, /import\('\.\/ReadyPositiveStockCommissioningPanel'\)/);
+  assert.match(host, /default:\s*module\.ReadyPositiveStockCommissioningPanel/);
+  assert.match(host, /<Suspense[\s\S]*<ReadyPositiveStockCommissioningPanel supabase=\{supabase\} \/>[\s\S]*<\/Suspense>/);
+  assert.doesNotMatch(host, /import \{ ReadyPositiveStockCommissioningPanel \} from '\.\/ReadyPositiveStockCommissioningPanel'/);
 });
