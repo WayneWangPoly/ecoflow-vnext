@@ -1,0 +1,95 @@
+name: R5-004D warehouse adjustment movement contract
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260917013000_r5_004d_warehouse_adjustment_movement_contract.sql'
+      - 'scripts/r5-004d-warehouse-adjustment-movement-contract.test.mjs'
+      - 'docs/engineering/work-packages/R5-004D-WAREHOUSE-ADJUSTMENT-MOVEMENT-CONTRACT.md'
+      - '.github/workflows/r5-004d-warehouse-adjustment-movement-contract.yml'
+  push:
+    branches:
+      - 'agent/inventory/r5-004d-warehouse-adjustment-contract'
+    paths:
+      - 'supabase/migrations/20260917013000_r5_004d_warehouse_adjustment_movement_contract.sql'
+      - 'scripts/r5-004d-warehouse-adjustment-movement-contract.test.mjs'
+      - 'docs/engineering/work-packages/R5-004D-WAREHOUSE-ADJUSTMENT-MOVEMENT-CONTRACT.md'
+      - '.github/workflows/r5-004d-warehouse-adjustment-movement-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DB_URL: postgresql://postgres:postgres@localhost:54329/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify bounded branch diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          unexpected="$(git diff --name-only origin/main...HEAD | grep -Ev '^(supabase/migrations/20260917013000_r5_004d_warehouse_adjustment_movement_contract\.sql|scripts/r5-004d-warehouse-adjustment-movement-contract\.test\.mjs|docs/engineering/work-packages/R5-004D-WAREHOUSE-ADJUSTMENT-MOVEMENT-CONTRACT\.md|\.github/workflows/r5-004d-warehouse-adjustment-movement-contract\.yml)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo 'Out-of-scope files detected:'
+            echo "$unexpected"
+            exit 1
+          fi
+      - name: Static contract regression
+        run: node --test scripts/r5-004d-warehouse-adjustment-movement-contract.test.mjs
+      - name: Apply migration against legacy warehouse movement constraint
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$TEST_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create table public.ecoflow_warehouse_movements (
+            movement_type text not null,
+            constraint ecoflow_warehouse_movements_movement_type_check
+              check (movement_type in ('RECEIVE','MOVE_IN','MOVE_OUT','ADJUST','PICK','COUNT'))
+          );
+          insert into public.ecoflow_warehouse_movements(movement_type)
+          values ('RECEIVE'),('MOVE_IN'),('MOVE_OUT'),('ADJUST'),('PICK'),('COUNT');
+          SQL
+          psql "$TEST_DB_URL" -v ON_ERROR_STOP=1 --single-transaction \
+            -f supabase/migrations/20260917013000_r5_004d_warehouse_adjustment_movement_contract.sql
+          psql "$TEST_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          insert into public.ecoflow_warehouse_movements(movement_type)
+          values ('ADJUST_IN'),('ADJUST_OUT');
+          do $$
+          begin
+            begin
+              insert into public.ecoflow_warehouse_movements(movement_type) values ('INVALID_R5_004D_TYPE');
+              raise exception 'R5_004D_INVALID_TYPE_WAS_ACCEPTED';
+            exception
+              when check_violation then null;
+            end;
+          end
+          $$;
+          SQL
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
