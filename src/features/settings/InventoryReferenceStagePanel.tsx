@@ -7,6 +7,7 @@ import {
 } from '../team/unleashedInventoryReferenceStage';
 import { InventoryReferenceSealPanel } from './InventoryReferenceSealPanel';
 import { Bpb8InitialOpeningBalanceCanaryPanel } from './Bpb8InitialOpeningBalanceCanaryPanel';
+import { ReadyPositiveStockCommissioningPanel } from './ReadyPositiveStockCommissioningPanel';
 
 function tone(result: R5003StageResult | null, error: string) {
   if (result) return 'good';
@@ -117,6 +118,7 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
 
       <InventoryReferenceSealPanel supabase={supabase} />
       <Bpb8InitialOpeningBalanceCanaryPanel supabase={supabase} />
+      <ReadyPositiveStockCommissioningPanel supabase={supabase} />
     </div>
   );
 }
