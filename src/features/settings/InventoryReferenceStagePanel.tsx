@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, ShieldCheck } from 'lucide-react';
 import {
@@ -7,7 +7,11 @@ import {
 } from '../team/unleashedInventoryReferenceStage';
 import { InventoryReferenceSealPanel } from './InventoryReferenceSealPanel';
 import { Bpb8InitialOpeningBalanceCanaryPanel } from './Bpb8InitialOpeningBalanceCanaryPanel';
-import { ReadyPositiveStockCommissioningPanel } from './ReadyPositiveStockCommissioningPanel';
+
+const ReadyPositiveStockCommissioningPanel = lazy(async () => {
+  const module = await import('./ReadyPositiveStockCommissioningPanel');
+  return { default: module.ReadyPositiveStockCommissioningPanel };
+});
 
 function tone(result: R5003StageResult | null, error: string) {
   if (result) return 'good';
@@ -118,7 +122,9 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
 
       <InventoryReferenceSealPanel supabase={supabase} />
       <Bpb8InitialOpeningBalanceCanaryPanel supabase={supabase} />
-      <ReadyPositiveStockCommissioningPanel supabase={supabase} />
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-005B commissioning carrier…</div>}>
+        <ReadyPositiveStockCommissioningPanel supabase={supabase} />
+      </Suspense>
     </div>
   );
 }
