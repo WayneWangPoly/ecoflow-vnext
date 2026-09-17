@@ -27,6 +27,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Audit Phase 9D-G completion
         run: node scripts/audit-operational-stability-completion.mjs
+      - name: R5-005U stocktake approval feedback contract
+        run: node --test scripts/r5-005u-stocktake-approval-feedback-contract.test.mjs
       - name: TypeScript
         run: npm run typecheck
       - name: Vite production build
