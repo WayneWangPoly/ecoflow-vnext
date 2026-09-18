@@ -97,7 +97,11 @@ begin
     raise exception 'active Ordermentum alias resolver repair failed: %', row_to_json(evidence);
   end if;
 end
-$$;
+$;
+
+-- Keep the repair fixture isolated from the incumbent reconciliation contracts.
+delete from public.external_product_mappings
+where provider='ORDERMENTUM' and external_product_code='CUP-12-ALT';
 
 -- Ambiguous authority fails closed instead of choosing one Commercial SKU.
 insert into public.skus(id,sku_code,display_name,category,setup_status) values
@@ -134,7 +138,12 @@ begin
     raise exception 'ambiguous Commercial SKU authority did not fail closed';
   end if;
 end
-$$;
+$;
+
+delete from public.external_product_mappings
+where provider='ORDERMENTUM' and external_product_code='AMBIG-CODE';
+delete from public.skus
+where id='aaaaaaaa-0000-4000-8000-000000000099'::uuid;
 
 -- Truly unknown SKU remains rejected.
 do $$
