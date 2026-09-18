@@ -61,7 +61,7 @@ test('authenticated Edge modes keep preflight SELECT-only and mutation command-b
   assert.doesNotMatch(preflight, /recordAudit|\.insert\(|\.update\(|COPY_IMAGES|planAssets|ensureAssetBucket/);
   assert.match(unlock, /ecoflow_execute_commercial_wave2_canary_unlock/);
   assert.doesNotMatch(unlock, /ecoflow_promote_commercial_wave2_sku|COPY_IMAGES|planAssets|ensureAssetBucket/);
-  assert.match(edge, /body\.mode !== 'WAVE2_PLAN_PREFLIGHT' && body\.mode !== 'WAVE2_CANARY_UNLOCK_PREFLIGHT'/);
+  assert.match(edge, /body\.mode !== 'WAVE2_PLAN_PREFLIGHT'[\s\S]*body\.mode !== 'WAVE2_CANARY_UNLOCK_PREFLIGHT'/);
 });
 
 test('P2A wrapper delegates the only write to incumbent authority and reuses its ledger', () => {
