@@ -18,6 +18,24 @@ export const R5_006_MAPPING_PLAN_ONLY_TARGET = {
   predictedReadyForLocationEvidenceCount: 4,
 } as const;
 
+export const R5_006_ACCEPTED_MAPPING_STATE = {
+  priorPlanAt: '2026-09-13T04:40:04.920876Z',
+  failedCommandId: 'bf35619d-a5e9-444d-a35f-b4af95083ef8',
+  intendedFrozenCohortCount: 151,
+  acceptedExactMappingCount: 164,
+  acceptedReferenceCount: 153,
+  acceptedOutsideReferenceCount: 11,
+  acceptedCodeDriftReferenceCount: 2,
+  finalPendingProductMappingCount: 94,
+  finalPendingPhysicalIdentityCount: 329,
+  finalReadyForLocationEvidenceCount: 4,
+  plannerPlannedCount: 1300,
+  plannerMatchedCount: 345,
+  plannerUnmatchedCount: 954,
+  plannerRetiredCount: 1,
+  plannerAmbiguousCount: 0,
+} as const;
+
 export type MappingPlanOnlyBatch = {
   id: string;
   batch_status: string;
@@ -40,9 +58,15 @@ export type MappingPlanOnlyMasterMapping = {
   entity_type: string;
   mapping_status: string;
   source_external_guid: string | null;
+  source_external_code?: string | null;
   source_duplicate_count: number | string;
   revision: number | string;
   source_payload_sha256: string;
+  canonical_object_id?: string | null;
+  canonical_code?: string | null;
+  match_method?: string | null;
+  candidate_count?: number | string;
+  decision_source?: string | null;
 };
 
 export type MappingPlanOnlySku = {
@@ -51,10 +75,12 @@ export type MappingPlanOnlySku = {
 };
 
 export type MappingPlanOnlyExternalMapping = {
+  id?: string;
   internal_sku_id: string;
   external_product_code: string;
   provider: string;
   is_active: boolean;
+  created_at?: string;
 };
 
 export type MappingPlanOnlyEvidence = {
@@ -81,6 +107,26 @@ export type MappingPlanOnlyEvidence = {
   };
 };
 
+export type MappingPlanOnlyAcceptedReconciliation = {
+  accepted: boolean;
+  status: 'ACCEPTED' | 'HOLD';
+  protectedMainSha: string;
+  referenceBatchId: string;
+  sourceSetSha256: string;
+  referenceRowCount: number;
+  pendingProductMappingCount: number;
+  pendingPhysicalIdentityCount: number;
+  readyForLocationEvidenceCount: number;
+  intendedFrozenCohortCount: number;
+  acceptedPotentialCount: number;
+  acceptedExactMappingCount: number;
+  acceptedReferenceCount: number;
+  acceptedOutsideReferenceCount: number;
+  acceptedCodeDriftReferenceCount: number;
+  acceptedInvariantFailureCount: number;
+  failedCommandId: string;
+};
+
 function normalCode(value: string | null | undefined) {
   return (value ?? '').trim().toUpperCase();
 }
@@ -98,6 +144,19 @@ async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function activeTargetsByCode(externalMappings: MappingPlanOnlyExternalMapping[]) {
+  const targets = new Map<string, Set<string>>();
+  for (const mapping of externalMappings) {
+    if (mapping.provider !== 'ORDERMENTUM' || mapping.is_active !== true) continue;
+    const code = normalCode(mapping.external_product_code);
+    if (!code) continue;
+    const ids = targets.get(code) ?? new Set<string>();
+    ids.add(mapping.internal_sku_id);
+    targets.set(code, ids);
+  }
+  return targets;
 }
 
 export async function computeR5006MappingPlanOnlyEvidence(input: {
@@ -121,15 +180,7 @@ export async function computeR5006MappingPlanOnlyEvidence(input: {
     mappingsByGuid.set(key, rows);
   }
 
-  const ordermentumTargetsByCode = new Map<string, Set<string>>();
-  for (const mapping of input.externalMappings) {
-    if (mapping.provider !== 'ORDERMENTUM' || mapping.is_active !== true) continue;
-    const code = normalCode(mapping.external_product_code);
-    if (!code) continue;
-    const targets = ordermentumTargetsByCode.get(code) ?? new Set<string>();
-    targets.add(mapping.internal_sku_id);
-    ordermentumTargetsByCode.set(code, targets);
-  }
+  const ordermentumTargetsByCode = activeTargetsByCode(input.externalMappings);
 
   const pending = input.referenceRows.filter((row) => row.readiness_status === 'PENDING_PRODUCT_MAPPING');
   const pendingPhysicalIdentityCount = input.referenceRows.filter((row) => row.readiness_status === 'PENDING_PHYSICAL_IDENTITY').length;
@@ -241,5 +292,124 @@ export async function computeR5006MappingPlanOnlyEvidence(input: {
       pendingPhysicalIdentityCount: target.predictedPendingPhysicalIdentityCount,
       readyForLocationEvidenceCount: target.predictedReadyForLocationEvidenceCount,
     },
+  };
+}
+
+export function computeR5006AcceptedReconciliation(input: {
+  batch: MappingPlanOnlyBatch;
+  referenceRows: MappingPlanOnlyReferenceRow[];
+  masterMappings: MappingPlanOnlyMasterMapping[];
+  externalMappings: MappingPlanOnlyExternalMapping[];
+}): MappingPlanOnlyAcceptedReconciliation {
+  const target = R5_006_MAPPING_PLAN_ONLY_TARGET;
+  const acceptedState = R5_006_ACCEPTED_MAPPING_STATE;
+  const referenceByGuid = new Map(
+    input.referenceRows.map((row) => [normalGuid(row.source_product_guid), row]),
+  );
+  const allTargetsByCode = activeTargetsByCode(input.externalMappings);
+  const newTargetsByCode = new Map<string, Set<string>>();
+  const priorPlanAtMs = Date.parse(acceptedState.priorPlanAt);
+
+  for (const mapping of input.externalMappings) {
+    if (mapping.provider !== 'ORDERMENTUM' || mapping.is_active !== true) continue;
+    const createdAtMs = mapping.created_at ? Date.parse(mapping.created_at) : NaN;
+    if (!Number.isFinite(createdAtMs) || createdAtMs <= priorPlanAtMs) continue;
+    const code = normalCode(mapping.external_product_code);
+    if (!code) continue;
+    const targets = newTargetsByCode.get(code) ?? new Set<string>();
+    targets.add(mapping.internal_sku_id);
+    newTargetsByCode.set(code, targets);
+  }
+
+  let acceptedPotentialCount = 0;
+  let acceptedExactMappingCount = 0;
+  let acceptedReferenceCount = 0;
+  let acceptedOutsideReferenceCount = 0;
+  let acceptedCodeDriftReferenceCount = 0;
+  let acceptedInvariantFailureCount = 0;
+
+  for (const mapping of input.masterMappings) {
+    if (mapping.entity_type !== 'PRODUCT') continue;
+    const currentCode = normalCode(mapping.source_external_code);
+    if (!currentCode) continue;
+    const postPriorTargets = [...(newTargetsByCode.get(currentCode) ?? new Set<string>())];
+    if (postPriorTargets.length !== 1) continue;
+
+    acceptedPotentialCount += 1;
+    const expectedSkuId = postPriorTargets[0];
+    const invariantOk = mapping.mapping_status === 'MATCHED'
+      && mapping.match_method === 'ORDERMENTUM_PRODUCT_CODE_EXACT'
+      && mapping.canonical_object_id === expectedSkuId
+      && numberValue(mapping.candidate_count) === 1
+      && numberValue(mapping.source_duplicate_count) === 1
+      && mapping.decision_source === 'AUTO';
+
+    if (!invariantOk) {
+      acceptedInvariantFailureCount += 1;
+      continue;
+    }
+
+    acceptedExactMappingCount += 1;
+    const reference = referenceByGuid.get(normalGuid(mapping.source_external_guid));
+    if (!reference) {
+      acceptedOutsideReferenceCount += 1;
+      continue;
+    }
+
+    acceptedReferenceCount += 1;
+    const frozenCode = normalCode(reference.source_product_code);
+    const frozenTargets = allTargetsByCode.get(frozenCode) ?? new Set<string>();
+    const currentTargets = allTargetsByCode.get(currentCode) ?? new Set<string>();
+    if (frozenCode !== currentCode && frozenTargets.size === 0 && currentTargets.size === 1) {
+      acceptedCodeDriftReferenceCount += 1;
+    }
+  }
+
+  const pendingProductMappingCount = input.referenceRows.filter(
+    (row) => row.readiness_status === 'PENDING_PRODUCT_MAPPING',
+  ).length;
+  const pendingPhysicalIdentityCount = input.referenceRows.filter(
+    (row) => row.readiness_status === 'PENDING_PHYSICAL_IDENTITY',
+  ).length;
+  const readyForLocationEvidenceCount = input.referenceRows.filter(
+    (row) => row.readiness_status === 'READY_FOR_LOCATION_EVIDENCE',
+  ).length;
+
+  const referenceRowCount = numberValue(input.batch.source_row_count);
+  const batchOk = input.batch.id === target.referenceBatchId
+    && input.batch.batch_status === 'SEALED'
+    && input.batch.source_set_sha256 === target.sourceSetSha256
+    && referenceRowCount === target.referenceRowCount
+    && input.referenceRows.length === target.referenceRowCount;
+
+  const accepted = batchOk
+    && acceptedPotentialCount === acceptedState.acceptedExactMappingCount
+    && acceptedExactMappingCount === acceptedState.acceptedExactMappingCount
+    && acceptedReferenceCount === acceptedState.acceptedReferenceCount
+    && acceptedOutsideReferenceCount === acceptedState.acceptedOutsideReferenceCount
+    && acceptedCodeDriftReferenceCount === acceptedState.acceptedCodeDriftReferenceCount
+    && acceptedInvariantFailureCount === 0
+    && pendingProductMappingCount === acceptedState.finalPendingProductMappingCount
+    && pendingPhysicalIdentityCount === acceptedState.finalPendingPhysicalIdentityCount
+    && readyForLocationEvidenceCount === acceptedState.finalReadyForLocationEvidenceCount;
+
+  return {
+    accepted,
+    status: accepted ? 'ACCEPTED' : 'HOLD',
+    protectedMainSha: target.protectedMainSha,
+    referenceBatchId: input.batch.id,
+    sourceSetSha256: input.batch.source_set_sha256,
+    referenceRowCount,
+    pendingProductMappingCount,
+    pendingPhysicalIdentityCount,
+    readyForLocationEvidenceCount,
+    intendedFrozenCohortCount: acceptedState.intendedFrozenCohortCount,
+    acceptedPotentialCount,
+    acceptedExactMappingCount,
+    acceptedReferenceCount,
+    acceptedOutsideReferenceCount,
+    acceptedCodeDriftReferenceCount,
+    acceptedInvariantFailureCount,
+    failedCommandId: acceptedState.failedCommandId,
   };
 }
