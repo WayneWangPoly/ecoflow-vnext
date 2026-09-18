@@ -59,7 +59,12 @@ test('browser carrier is authenticated, preflight-gated and explicit', () => {
   assert.match(panel, /!preflight\?\.ready/);
   assert.match(panel, /!acknowledged/);
   assert.match(panel, /No image planning, provider traffic, Physical Identity creation/);
+  assert.match(host, /lazy\(async \(\) =>/);
+  assert.match(host, /import\('\.\/MappingPlanOnlyPanel'\)/);
+  assert.match(host, /default:\s*module\.MappingPlanOnlyPanel/);
+  assert.match(host, /<Suspense/);
   assert.match(host, /<MappingPlanOnlyPanel supabase=\{supabase\} \/>/);
+  assert.doesNotMatch(host, /import \{ MappingPlanOnlyPanel \} from '\.\/MappingPlanOnlyPanel'/);
 });
 
 test('mapping-only carrier contains no direct inventory or Physical Identity mutation surface', () => {
