@@ -1,5 +1,5 @@
 export const R5_006_MAPPING_PLAN_ONLY_TARGET = {
-  protectedMainSha: '2545fd0c455f36f157c5609eff36d147f0c925b3',
+  protectedMainSha: '4f463eedf8c8343739d032eb08dd862f7aa15fe1',
   referenceBatchId: '4cdb85d3-06d8-44bf-96bb-93660e10c3c9',
   sourceSetSha256: '215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d',
   referenceRowCount: 427,
