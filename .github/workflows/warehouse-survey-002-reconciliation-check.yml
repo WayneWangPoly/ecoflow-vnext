@@ -24,6 +24,7 @@ on:
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
       - 'supabase/migrations/20260903172543_product_identity_bounded_batch.sql'
+      - 'supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql'
   workflow_dispatch:
 
 permissions:
@@ -71,6 +72,9 @@ jobs:
 
       - name: Static reconciliation authority contract
         run: node --test scripts/warehouse-survey-002-contract.test.mjs
+
+      - name: ECOFLOW-328 stale Survey SKU resolver static contract
+        run: node --test scripts/warehouse-survey-002-commercial-sku-resolver-repair-contract.test.mjs
 
       - name: Batch 2 P2 fresh-session resume contract
         run: node --experimental-strip-types --test scripts/batch2-p2-resume-submit-contract.test.mjs
@@ -182,6 +186,12 @@ jobs:
       - name: Apply Smart Packaging Evidence
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260820104500_warehouse_survey_001_smart_packaging_evidence.sql
 
+      - name: Apply ECOFLOW-328 stale Survey SKU resolver repair
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql
+
+      - name: Execute ECOFLOW-328 stale Survey SKU resolver database contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-commercial-sku-resolver-repair-db-contract-test.sql
+
       - name: Apply Survey-to-Product-Identity reconciliation authority
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql
 
@@ -198,11 +208,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          file=supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql
-          if grep -Eiq '^[[:space:]]*(insert[[:space:]]+into|update|delete[[:space:]]+from)[[:space:]]+public\.(ecoflow_inventory_movements|ecoflow_inventory_balances|ecoflow_warehouse_receiving|ecoflow_stocktake|ecoflow_pick|ecoflow_delivery)' "$file"; then
-            echo 'Survey reconciliation must never mutate operational quantities.' >&2
-            exit 1
-          fi
+          for file in \
+            supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql \
+            supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql
+          do
+            if grep -Eiq '^[[:space:]]*(insert[[:space:]]+into|update|delete[[:space:]]+from)[[:space:]]+public\.(ecoflow_inventory_movements|ecoflow_inventory_balances|ecoflow_warehouse_receiving|ecoflow_stocktake|ecoflow_pick|ecoflow_delivery)' "$file"; then
+              echo "Survey authority must never mutate operational quantities: $file" >&2
+              exit 1
+            fi
+          done
 
       - name: TypeScript
         run: npm run typecheck
