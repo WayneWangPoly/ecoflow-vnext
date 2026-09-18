@@ -4,6 +4,8 @@ export const R5_006_MAPPING_PLAN_ONLY_TARGET = {
   sourceSetSha256: '215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d',
   referenceRowCount: 427,
   pendingProductMappingCount: 247,
+  pendingPhysicalIdentityCount: 176,
+  readyForLocationEvidenceCount: 4,
   autoMatchableCount: 151,
   autoMatchablePositiveRows: 128,
   autoMatchablePositiveQty: 1675,
@@ -63,6 +65,8 @@ export type MappingPlanOnlyEvidence = {
   sourceSetSha256: string;
   referenceRowCount: number;
   pendingProductMappingCount: number;
+  pendingPhysicalIdentityCount: number;
+  readyForLocationEvidenceCount: number;
   autoMatchableCount: number;
   autoMatchablePositiveRows: number;
   autoMatchablePositiveQty: number;
@@ -128,6 +132,8 @@ export async function computeR5006MappingPlanOnlyEvidence(input: {
   }
 
   const pending = input.referenceRows.filter((row) => row.readiness_status === 'PENDING_PRODUCT_MAPPING');
+  const pendingPhysicalIdentityCount = input.referenceRows.filter((row) => row.readiness_status === 'PENDING_PHYSICAL_IDENTITY').length;
+  const readyForLocationEvidenceCount = input.referenceRows.filter((row) => row.readiness_status === 'READY_FOR_LOCATION_EVIDENCE').length;
   let autoMatchablePositiveRows = 0;
   let autoMatchablePositiveQty = 0;
   let noTargetCount = 0;
@@ -203,6 +209,8 @@ export async function computeR5006MappingPlanOnlyEvidence(input: {
   const ready = batchOk
     && input.referenceRows.length === target.referenceRowCount
     && pending.length === target.pendingProductMappingCount
+    && pendingPhysicalIdentityCount === target.pendingPhysicalIdentityCount
+    && readyForLocationEvidenceCount === target.readyForLocationEvidenceCount
     && cohort.length === target.autoMatchableCount
     && autoMatchablePositiveRows === target.autoMatchablePositiveRows
     && autoMatchablePositiveQty === target.autoMatchablePositiveQty
@@ -219,6 +227,8 @@ export async function computeR5006MappingPlanOnlyEvidence(input: {
     sourceSetSha256: batch.source_set_sha256,
     referenceRowCount,
     pendingProductMappingCount: pending.length,
+    pendingPhysicalIdentityCount,
+    readyForLocationEvidenceCount,
     autoMatchableCount: cohort.length,
     autoMatchablePositiveRows,
     autoMatchablePositiveQty,
