@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const R5_006_MAPPING_PLAN_ONLY_TARGET = {
-  protectedMainSha: '2545fd0c455f36f157c5609eff36d147f0c925b3',
+  protectedMainSha: '4f463eedf8c8343739d032eb08dd862f7aa15fe1',
   cohortSha256: '8e5974ea2ef8725977c2c38c135d517d1595cc2064bd6f03b9801e1b03adb020',
 } as const;
 

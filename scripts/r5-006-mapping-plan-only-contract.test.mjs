@@ -8,7 +8,7 @@ const client = readFileSync('src/features/team/unleashedMappingPlanOnly.ts', 'ut
 const panel = readFileSync('src/features/settings/MappingPlanOnlyPanel.tsx', 'utf8');
 const host = readFileSync('src/features/settings/UnleashedReadonlyProbePanel.tsx', 'utf8');
 
-const MAIN = '2545fd0c455f36f157c5609eff36d147f0c925b3';
+const MAIN = '4f463eedf8c8343739d032eb08dd862f7aa15fe1';
 const BATCH = '4cdb85d3-06d8-44bf-96bb-93660e10c3c9';
 const SET_SHA = '215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d';
 const COHORT_SHA = '8e5974ea2ef8725977c2c38c135d517d1595cc2064bd6f03b9801e1b03adb020';
