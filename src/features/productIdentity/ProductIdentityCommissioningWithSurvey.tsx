@@ -4,6 +4,7 @@ import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { BarcodeSurveyReconciliationPanel } from './BarcodeSurveyReconciliationPanel';
 import { Batch2P2ResumeSubmitCarrier } from './Batch2P2ResumeSubmitCarrier';
 import { BatchNextDraftOnlyCarrier } from './BatchNextDraftOnlyCarrier';
+import { BatchNextP2ResumeSubmitCarrier } from './BatchNextP2ResumeSubmitCarrier';
 import { Batch2P3ResumePublishCarrier } from './Batch2P3ResumePublishCarrier';
 import { Batch2ProductIdentityExecutionCarrier } from './Batch2ProductIdentityExecutionCarrier';
 import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
@@ -27,6 +28,10 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
   return (
     <>
       <BatchNextDraftOnlyCarrier
+        role={props.role}
+        onChanged={() => setCommissioningRevision((value) => value + 1)}
+      />
+      <BatchNextP2ResumeSubmitCarrier
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
