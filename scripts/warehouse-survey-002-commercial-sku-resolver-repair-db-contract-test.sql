@@ -97,7 +97,7 @@ begin
     raise exception 'active Ordermentum alias resolver repair failed: %', row_to_json(evidence);
   end if;
 end
-$;
+$$;
 
 -- Keep the repair fixture isolated from the incumbent reconciliation contracts.
 delete from public.external_product_mappings
@@ -138,7 +138,7 @@ begin
     raise exception 'ambiguous Commercial SKU authority did not fail closed';
   end if;
 end
-$;
+$$;
 
 delete from public.external_product_mappings
 where provider='ORDERMENTUM' and external_product_code='AMBIG-CODE';
