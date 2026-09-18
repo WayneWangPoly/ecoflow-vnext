@@ -7,13 +7,23 @@ const migration = readFileSync(
   'utf8',
 );
 
-test('repair removes stale inventory-control dependency from Survey evidence SKU resolution', () => {
-  assert.match(migration, /create or replace function public\.ecoflow_get_barcode_survey_packaging_evidence_v1/);
-  assert.doesNotMatch(migration, /v_ecoflow_inventory_sku_control/i);
+test('repair prefers Commercial authority without breaking Survey-first inventory fallback', () => {
+  assert.match(
+    migration,
+    /create or replace function public\.ecoflow_get_barcode_survey_packaging_evidence_v1/,
+  );
   assert.match(migration, /from public\.skus s/);
   assert.match(migration, /from public\.external_product_mappings m/);
   assert.match(migration, /m\.provider = 'ORDERMENTUM'/);
   assert.match(migration, /m\.is_active/);
+  assert.match(
+    migration,
+    /if v_match_count = 0 then[\s\S]*from public\.v_ecoflow_inventory_sku_control s/,
+  );
+  assert.ok(
+    migration.indexOf('from public.skus s')
+      < migration.indexOf('from public.v_ecoflow_inventory_sku_control s'),
+  );
   assert.match(migration, /BARCODE_SURVEY_SKU_UNKNOWN/);
   assert.match(migration, /BARCODE_SURVEY_SKU_AMBIGUOUS/);
 });
