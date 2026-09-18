@@ -12,6 +12,10 @@ import {
   readImageBytesBounded,
   sha256Hex,
 } from './core.ts';
+import {
+  R5_006_MAPPING_PLAN_ONLY_TARGET,
+  computeR5006MappingPlanOnlyEvidence,
+} from './mappingPlanOnly.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,6 +24,7 @@ const corsHeaders = {
 };
 
 type Mode = 'PLAN' | 'AUTHORIZE_ASSETS' | 'COPY_IMAGES' | 'GET_ASSET_URL'
+  | 'MAPPING_PLAN_ONLY_PREFLIGHT' | 'MAPPING_PLAN_ONLY'
   | 'WAVE2_PLAN_PREFLIGHT' | 'WAVE2_PLAN'
   | 'WAVE2_CANARY_UNLOCK_PREFLIGHT' | 'WAVE2_CANARY_UNLOCK';
 
@@ -37,6 +42,7 @@ type RequestBody = {
   limit?: number;
   assetId?: string;
   expectedProtectedMainSha?: string;
+  expectedCohortSha256?: string;
   expectedCandidateCount?: number;
   expectedCandidateSetSha256?: string;
   expectedCanaryExternalProductCode?: string;
@@ -136,6 +142,45 @@ function optionalIsoDate(value: unknown) {
 function exactSha(value: unknown, code: string, length: 40 | 64) {
   if (typeof value !== 'string' || !new RegExp(`^[0-9a-f]{${length}}$`).test(value)) throw new Error(code);
   return value;
+}
+
+async function readR5006MappingPlanOnlyEvidence(adminClient: ReturnType<typeof createClient>) {
+  const target = R5_006_MAPPING_PLAN_ONLY_TARGET;
+  const [
+    { data: batch, error: batchError },
+    { data: referenceRows, error: referenceError },
+    { data: masterMappings, error: mappingError },
+    { data: skus, error: skuError },
+    { data: externalMappings, error: externalError },
+  ] = await Promise.all([
+    adminClient.from('ecoflow_unleashed_inventory_reference_batches')
+      .select('id,batch_status,source_set_sha256,source_row_count')
+      .eq('id', target.referenceBatchId)
+      .single(),
+    adminClient.from('v_ecoflow_unleashed_inventory_reference_rows')
+      .select('reference_row_id,batch_id,source_product_guid,source_product_code,source_row_sha256,qty_on_hand,readiness_status')
+      .eq('batch_id', target.referenceBatchId),
+    adminClient.from('ecoflow_unleashed_master_mappings')
+      .select('id,entity_type,mapping_status,source_external_guid,source_duplicate_count,revision,source_payload_sha256')
+      .eq('entity_type', 'PRODUCT'),
+    adminClient.from('skus').select('id,sku_code'),
+    adminClient.from('external_product_mappings')
+      .select('internal_sku_id,external_product_code,provider,is_active')
+      .eq('provider', 'ORDERMENTUM')
+      .eq('is_active', true),
+  ]);
+  if (batchError || !batch) throw new Error(`R5_006_REFERENCE_BATCH_READ_FAILED:${batchError?.message ?? 'missing batch'}`);
+  if (referenceError) throw new Error(`R5_006_REFERENCE_ROWS_READ_FAILED:${referenceError.message}`);
+  if (mappingError) throw new Error(`R5_006_MASTER_MAPPING_READ_FAILED:${mappingError.message}`);
+  if (skuError) throw new Error(`R5_006_SKU_READ_FAILED:${skuError.message}`);
+  if (externalError) throw new Error(`R5_006_EXTERNAL_MAPPING_READ_FAILED:${externalError.message}`);
+  return computeR5006MappingPlanOnlyEvidence({
+    batch,
+    referenceRows: referenceRows ?? [],
+    masterMappings: masterMappings ?? [],
+    skus: skus ?? [],
+    externalMappings: externalMappings ?? [],
+  });
 }
 
 async function recordAudit(adminClient: ReturnType<typeof createClient>, values: Record<string, unknown>) {
@@ -394,6 +439,87 @@ Deno.serve(async (req) => {
     }
 
     if (!['OWNER', 'ADMIN'].includes(actor.app_role)) return json(403, { error: 'OWNER_ADMIN_REQUIRED' });
+
+    if (body.mode === 'MAPPING_PLAN_ONLY_PREFLIGHT') {
+      const expectedProtectedMainSha = exactSha(body.expectedProtectedMainSha, 'INVALID_EXPECTED_MAIN_SHA', 40);
+      const expectedCohortSha256 = exactSha(body.expectedCohortSha256, 'INVALID_EXPECTED_COHORT_HASH', 64);
+      if (expectedProtectedMainSha !== R5_006_MAPPING_PLAN_ONLY_TARGET.protectedMainSha
+          || expectedCohortSha256 !== R5_006_MAPPING_PLAN_ONLY_TARGET.cohortSha256) {
+        throw new Error('R5_006_FROZEN_EVIDENCE_MISMATCH');
+      }
+      const preflight = await readR5006MappingPlanOnlyEvidence(adminClient);
+      return json(200, { mode: 'MAPPING_PLAN_ONLY_PREFLIGHT', preflight });
+    }
+
+    if (body.mode === 'MAPPING_PLAN_ONLY') {
+      const commandId = uuid(body.commandId, 'INVALID_COMMAND_ID');
+      const expectedProtectedMainSha = exactSha(body.expectedProtectedMainSha, 'INVALID_EXPECTED_MAIN_SHA', 40);
+      const expectedCohortSha256 = exactSha(body.expectedCohortSha256, 'INVALID_EXPECTED_COHORT_HASH', 64);
+      const planReason = reason(body.reason);
+      if (expectedProtectedMainSha !== R5_006_MAPPING_PLAN_ONLY_TARGET.protectedMainSha
+          || expectedCohortSha256 !== R5_006_MAPPING_PLAN_ONLY_TARGET.cohortSha256) {
+        throw new Error('R5_006_FROZEN_EVIDENCE_MISMATCH');
+      }
+
+      const { data: priorAudit, error: priorAuditError } = await adminClient
+        .from('app_security_audit_events')
+        .select('after_data')
+        .eq('action', 'UNLEASHED_MAPPING_PLAN_ONLY_EXECUTED')
+        .eq('target_type', 'ecoflow_unleashed_master_mappings')
+        .eq('target_id', commandId)
+        .limit(1);
+      if (priorAuditError) throw new Error(`R5_006_REPLAY_READ_FAILED:${priorAuditError.message}`);
+      if (priorAudit?.length) {
+        return json(200, {
+          mode: 'MAPPING_PLAN_ONLY',
+          plan: { ...(priorAudit[0].after_data as Record<string, unknown>), replayed: true },
+        });
+      }
+
+      const preflight = await readR5006MappingPlanOnlyEvidence(adminClient);
+      if (!preflight.ready) throw new Error('R5_006_MAPPING_PLAN_PREFLIGHT_HOLD');
+
+      const { data: mappings, error: plannerError } = await adminClient.rpc('ecoflow_plan_unleashed_master_mappings', {
+        p_requested_by: userData.user.id,
+        p_reason: planReason,
+      });
+      if (plannerError) throw new Error(`R5_006_MAPPING_PLAN_FAILED:${plannerError.message}`);
+
+      const postflight = await readR5006MappingPlanOnlyEvidence(adminClient);
+      const postflightOk = postflight.pendingProductMappingCount === R5_006_MAPPING_PLAN_ONLY_TARGET.predictedPendingProductMappingCount
+        && postflight.pendingPhysicalIdentityCount === R5_006_MAPPING_PLAN_ONLY_TARGET.predictedPendingPhysicalIdentityCount
+        && postflight.readyForLocationEvidenceCount === R5_006_MAPPING_PLAN_ONLY_TARGET.predictedReadyForLocationEvidenceCount
+        && postflight.autoMatchableCount === 0
+        && postflight.noTargetCount === R5_006_MAPPING_PLAN_ONLY_TARGET.predictedPendingProductMappingCount
+        && postflight.ambiguousTargetCount === 0
+        && postflight.mappingInvariantFailureCount === 0;
+      if (!postflightOk) throw new Error('R5_006_MAPPING_PLAN_POSTFLIGHT_HOLD');
+
+      const result = {
+        commandId,
+        protectedMainSha: expectedProtectedMainSha,
+        cohortSha256: expectedCohortSha256,
+        mappings,
+        preflight,
+        postflight,
+        providerTrafficIncluded: false,
+        imagePlanningIncluded: false,
+        physicalAuthorityCreated: false,
+        inventoryAuthorityCreated: false,
+        replayed: false,
+      };
+      await recordAudit(adminClient, {
+        actor_user_id: userData.user.id,
+        actor_email: actor.email,
+        actor_role: actor.app_role,
+        action: 'UNLEASHED_MAPPING_PLAN_ONLY_EXECUTED',
+        target_type: 'ecoflow_unleashed_master_mappings',
+        target_id: commandId,
+        before_data: preflight,
+        after_data: result,
+      });
+      return json(200, { mode: 'MAPPING_PLAN_ONLY', plan: result });
+    }
 
     if (body.mode === 'WAVE2_PLAN_PREFLIGHT') {
       const expectedProtectedMainSha = exactSha(body.expectedProtectedMainSha, 'INVALID_EXPECTED_MAIN_SHA', 40);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Database, RadioTower, ShieldCheck, Warehouse } from 'lucide-react';
 import {
@@ -13,6 +13,11 @@ import {
 } from '../team/unleashedAdl1StockOnHandAcquisition';
 import { InventoryReferenceStagePanel } from './InventoryReferenceStagePanel';
 import './teamAccessSettings.css';
+
+const MappingPlanOnlyPanel = lazy(async () => {
+  const module = await import('./MappingPlanOnlyPanel');
+  return { default: module.MappingPlanOnlyPanel };
+});
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
   products: 'Product',
@@ -277,6 +282,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           </button>
         </div>
       ) : null}
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-006 mapping PLAN…</div>}>
+        <MappingPlanOnlyPanel supabase={supabase} />
+      </Suspense>
       <InventoryReferenceStagePanel supabase={supabase} />
     </section>
   );

@@ -1,0 +1,52 @@
+name: R5-006 mapping-only PLAN carrier
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/r5-006-mapping-plan-only-check.yml'
+      - 'supabase/functions/trigger-unleashed-master-migration/index.ts'
+      - 'supabase/functions/trigger-unleashed-master-migration/mappingPlanOnly.ts'
+      - 'src/features/team/unleashedMappingPlanOnly.ts'
+      - 'src/features/settings/MappingPlanOnlyPanel.tsx'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-006-mapping-plan-only-contract.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches:
+      - 'agent/product-identity/338-p5a-mapping-plan-only'
+    paths:
+      - '.github/workflows/r5-006-mapping-plan-only-check.yml'
+      - 'supabase/functions/trigger-unleashed-master-migration/index.ts'
+      - 'supabase/functions/trigger-unleashed-master-migration/mappingPlanOnly.ts'
+      - 'src/features/team/unleashedMappingPlanOnly.ts'
+      - 'src/features/settings/MappingPlanOnlyPanel.tsx'
+      - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
+      - 'scripts/r5-006-mapping-plan-only-contract.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  carrier:
+    name: Mapping-only PLAN exact-head contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Run R5-006 bounded carrier contract
+        run: node --test scripts/r5-006-mapping-plan-only-contract.test.mjs
+      - name: Check Unleashed Edge function syntax contract
+        run: node scripts/check-unleashed-edge-function-syntax.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
