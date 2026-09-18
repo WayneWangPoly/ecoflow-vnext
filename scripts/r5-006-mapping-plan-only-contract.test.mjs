@@ -74,7 +74,7 @@ test('browser surface exposes reconciliation only and no PLAN command', () => {
   assert.match(panel, /执行入口已关闭/);
   assert.match(panel, /刷新只读核对/);
   assert.match(panel, /执行已永久禁用/);
-  assert.doesNotMatch(panel, /Run mapping-only PLAN/);
+  assert.doesNotMatch(panel, /runR5006MappingPlanOnly|void execute\(|function execute\(/);
   assert.doesNotMatch(panel, /checkbox/);
   assert.doesNotMatch(panel, /crypto\.randomUUID/);
 
