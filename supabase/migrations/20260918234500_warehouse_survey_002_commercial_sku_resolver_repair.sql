@@ -54,8 +54,9 @@ begin
     raise exception 'BARCODE_SURVEY_SKU_REQUIRED';
   end if;
 
-  -- Resolve against canonical Commercial SKU authority plus active Ordermentum
-  -- aliases. Do not require the SKU to have reached inventory-control projection.
+  -- Prefer canonical Commercial SKU authority plus active Ordermentum aliases.
+  -- This fixes false SKU_UNKNOWN for valid Commercial SKUs that have not yet
+  -- reached the narrower inventory-control projection.
   with candidates as (
     select
       s.id as commercial_sku_id,
@@ -92,12 +93,25 @@ begin
     )
   into v_match_count, v_sku_context;
 
-  if v_match_count = 0 or v_sku_context is null then
-    raise exception 'BARCODE_SURVEY_SKU_UNKNOWN';
+  if v_match_count > 1 then
+    raise exception 'BARCODE_SURVEY_SKU_AMBIGUOUS';
   end if;
 
-  if v_match_count <> 1 then
-    raise exception 'BARCODE_SURVEY_SKU_AMBIGUOUS';
+  -- Preserve the incumbent Survey-first workflow: a warehouse SKU may have
+  -- physical evidence before Commercial mapping exists. Inventory control is a
+  -- fallback evidence namespace only, never preferred over Commercial authority.
+  if v_match_count = 0 then
+    select nullif(trim(s.sku), '')
+      into v_sku_context
+    from public.v_ecoflow_inventory_sku_control s
+    where s.sku is not null
+      and lower(trim(s.sku)) = lower(v_requested_sku)
+    order by lower(coalesce(s.product_name, ''))
+    limit 1;
+  end if;
+
+  if v_sku_context is null then
+    raise exception 'BARCODE_SURVEY_SKU_UNKNOWN';
   end if;
 
   if v_carton_barcode is null or char_length(v_carton_barcode) > 128 then
@@ -172,6 +186,6 @@ grant execute on function public.ecoflow_get_barcode_survey_packaging_evidence_v
   to authenticated;
 
 comment on function public.ecoflow_get_barcode_survey_packaging_evidence_v1(text, text) is
-  'Authenticated Barcode Survey evidence lookup. SKU context resolves from canonical Commercial SKU authority or active Ordermentum mapping; physical evidence remains exact SKU + carton OBSERVED_NOW only.';
+  'Authenticated Barcode Survey evidence lookup. Prefer canonical Commercial SKU / active Ordermentum authority, with inventory-control fallback for Survey-first evidence; exact SKU + carton OBSERVED_NOW semantics remain unchanged.';
 
 commit;
