@@ -5,6 +5,7 @@ import { BarcodeSurveyReconciliationPanel } from './BarcodeSurveyReconciliationP
 import { Batch2P2ResumeSubmitCarrier } from './Batch2P2ResumeSubmitCarrier';
 import { BatchNextDraftOnlyCarrier } from './BatchNextDraftOnlyCarrier';
 import { BatchNextP2ResumeSubmitCarrier } from './BatchNextP2ResumeSubmitCarrier';
+import { BatchNextP3ResumePublishCarrier } from './BatchNextP3ResumePublishCarrier';
 import { Batch2P3ResumePublishCarrier } from './Batch2P3ResumePublishCarrier';
 import { Batch2ProductIdentityExecutionCarrier } from './Batch2ProductIdentityExecutionCarrier';
 import { BoundedProductIdentityExecutionCarrier } from './BoundedProductIdentityExecutionCarrier';
@@ -32,6 +33,10 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
       <BatchNextP2ResumeSubmitCarrier
+        role={props.role}
+        onChanged={() => setCommissioningRevision((value) => value + 1)}
+      />
+      <BatchNextP3ResumePublishCarrier
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
       />
