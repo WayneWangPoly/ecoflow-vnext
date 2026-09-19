@@ -161,13 +161,13 @@ test('post-boundary failure wording prohibits blind retry', () => {
   assert.match(uncertain, /read-only server verification/i);
 });
 
-test('completed NEXT4 P3 is archived when NEXT5 P2 becomes active, while NEXT4 P3 remains CI-gated', () => {
+test('completed NEXT4 P3 is archived when NEXT5 P3 becomes active, while NEXT4 P3 remains CI-gated', () => {
   assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P3ResumePublishCarrier'\)/);
   assert.doesNotMatch(wrapper, /<BatchNext4P3ResumePublishCarrier/);
   assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P2ResumeSubmitCarrier'\)/);
   assert.doesNotMatch(wrapper, /<BatchNext4P2ResumeSubmitCarrier/);
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5P2ResumeSubmitCarrier'\)/);
-  assert.match(wrapper, /<BatchNext5P2ResumeSubmitCarrier/);
+  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5P3ResumePublishCarrier'\)/);
+  assert.match(wrapper, /<BatchNext5P3ResumePublishCarrier/);
   assert.match(workflow, /ecoflow-328-batch-next4-p3-publish-contract\.test\.mjs/);
   assert.match(workflow, /BatchNext4P3ResumePublishCarrier\.tsx/);
   assert.match(workflow, /batchNext4P3ResumePublishContract\.ts/);
