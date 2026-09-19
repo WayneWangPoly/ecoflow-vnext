@@ -117,6 +117,49 @@ function exactQueueMatches(rows: BarcodeSurveyReconciliationRow[], candidate: Ba
   );
 }
 
+export function validateBatchNext4CandidateRow(
+  candidate: BatchNext4Candidate,
+  row: BarcodeSurveyReconciliationRow,
+  allowExistingDrafts: boolean,
+): BatchNext4QueueEvidence {
+  const alreadyDrafted = row.queueStatus === 'DRAFT_CREATED'
+    && row.reconciliationStatus === 'DRAFTED'
+    && Boolean(row.reconciliationId)
+    && Boolean(row.productIdentityObservationId);
+
+  if (normalized(row.skuContext) !== candidate.code || row.cartonBarcode !== candidate.cartonBarcode) {
+    throw new Error(`${candidate.code}: resolved Survey row no longer matches the frozen SKU + carton barcode.`);
+  }
+  if (row.queueStatus !== 'READY_TO_RECONCILE' && !(allowExistingDrafts && alreadyDrafted)) {
+    throw new Error(`${candidate.code}: queue drifted to ${row.queueStatus}; stop.`);
+  }
+  if (row.commercialMatchCount !== 1 || row.commercialSkuId !== candidate.commercialSkuId) {
+    throw new Error(`${candidate.code}: Commercial identity no longer matches the frozen unique target.`);
+  }
+  if (normalized(row.commercialSkuCode) !== candidate.code) {
+    throw new Error(`${candidate.code}: canonical Commercial code drifted to ${row.commercialSkuCode ?? 'NULL'}.`);
+  }
+  if (row.commercialName !== candidate.physicalName || row.skuProductName !== candidate.physicalName) {
+    throw new Error(`${candidate.code}: canonical / Survey display name drifted.`);
+  }
+  if (row.evidenceSource !== 'OBSERVED_NOW') {
+    throw new Error(`${candidate.code}: direct physical evidence is no longer OBSERVED_NOW.`);
+  }
+  if (!['SCANNED', 'NO_SEPARATE_BARCODE'].includes(row.sleeveStatus)) {
+    throw new Error(`${candidate.code}: physical package verification drifted to ${row.sleeveStatus}.`);
+  }
+  if (row.sleeveStatus === 'SCANNED' && !row.sleeveBarcode) {
+    throw new Error(`${candidate.code}: SCANNED sleeve evidence has no barcode.`);
+  }
+  if (row.existingPhysicalSkuCode) {
+    throw new Error(`${candidate.code}: carton barcode already has a published Physical SKU owner; stop.`);
+  }
+  if (!alreadyDrafted && (row.reconciliationId || row.productIdentityObservationId || row.reconciliationStatus)) {
+    throw new Error(`${candidate.code}: reconciliation state is inconsistent with READY_TO_RECONCILE.`);
+  }
+  return { candidate, row, alreadyDrafted };
+}
+
 export function validateBatchNext4Queue(
   rows: BarcodeSurveyReconciliationRow[],
   allowExistingDrafts: boolean,
@@ -127,44 +170,7 @@ export function validateBatchNext4Queue(
     if (matches.length !== 1) {
       throw new Error(`${candidate.code}: authenticated queue must contain exactly one frozen SKU + carton barcode row; found ${matches.length}.`);
     }
-    const row = matches[0];
-
-    const alreadyDrafted = row.queueStatus === 'DRAFT_CREATED'
-      && row.reconciliationStatus === 'DRAFTED'
-      && Boolean(row.reconciliationId)
-      && Boolean(row.productIdentityObservationId);
-
-    if (row.queueStatus !== 'READY_TO_RECONCILE' && !(allowExistingDrafts && alreadyDrafted)) {
-      throw new Error(`${candidate.code}: queue drifted to ${row.queueStatus}; stop.`);
-    }
-    if (row.commercialMatchCount !== 1 || row.commercialSkuId !== candidate.commercialSkuId) {
-      throw new Error(`${candidate.code}: Commercial identity no longer matches the frozen unique target.`);
-    }
-    if (normalized(row.commercialSkuCode) !== candidate.code) {
-      throw new Error(`${candidate.code}: canonical Commercial code drifted to ${row.commercialSkuCode ?? 'NULL'}.`);
-    }
-    if (row.commercialName !== candidate.physicalName || row.skuProductName !== candidate.physicalName) {
-      throw new Error(`${candidate.code}: canonical / Survey display name drifted.`);
-    }
-    if (row.cartonBarcode !== candidate.cartonBarcode) {
-      throw new Error(`${candidate.code}: carton barcode drifted.`);
-    }
-    if (row.evidenceSource !== 'OBSERVED_NOW') {
-      throw new Error(`${candidate.code}: direct physical evidence is no longer OBSERVED_NOW.`);
-    }
-    if (!['SCANNED', 'NO_SEPARATE_BARCODE'].includes(row.sleeveStatus)) {
-      throw new Error(`${candidate.code}: physical package verification drifted to ${row.sleeveStatus}.`);
-    }
-    if (row.sleeveStatus === 'SCANNED' && !row.sleeveBarcode) {
-      throw new Error(`${candidate.code}: SCANNED sleeve evidence has no barcode.`);
-    }
-    if (row.existingPhysicalSkuCode) {
-      throw new Error(`${candidate.code}: carton barcode already has a published Physical SKU owner; stop.`);
-    }
-    if (!alreadyDrafted && (row.reconciliationId || row.productIdentityObservationId || row.reconciliationStatus)) {
-      throw new Error(`${candidate.code}: reconciliation state is inconsistent with READY_TO_RECONCILE.`);
-    }
-    return { candidate, row, alreadyDrafted };
+    return validateBatchNext4CandidateRow(candidate, matches[0], allowExistingDrafts);
   });
 
   const distinctCommercial = new Set(result.map((item) => item.candidate.commercialSkuId));
@@ -190,8 +196,7 @@ export function buildBatchNext4ReconcileInput(
   confirmed: boolean,
 ) {
   if (!confirmed) throw new Error(`${candidate.code}: explicit Owner/Admin confirmation is required.`);
-  const exact = validateBatchNext4Queue([row], false)[0];
-  if (exact.candidate.code !== candidate.code) throw new Error(`${candidate.code}: resolved Survey row does not match candidate.`);
+  validateBatchNext4CandidateRow(candidate, row, false);
 
   return {
     surveyObservationId: row.surveyObservationId,
