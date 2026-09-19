@@ -22,16 +22,14 @@ test('Batch Next 5 P3 target is frozen to exact SUBMITTED rev9 and one unused PU
   assert.equal(BATCH_NEXT5_P3_TARGET.submitCommandId, '29ba6829-d831-4c8c-bf45-f6e79dfb64d6');
   assert.equal(BATCH_NEXT5_P3_TARGET.publishCommandId, '06e765f0-b07d-4f1b-9844-a64492be27a9');
   assert.deepEqual(Object.keys(BATCH_NEXT5_P3_TARGET.identities), [
-    'BSB42LPLA',
-    'CCEA12-90',
-    'CCSW12-80',
-    'IC4BOX',
-    'KRC650',
-    'KSB16',
-    'KSB25',
-    'KSB32',
-    'PCB11',
-    'Q514S0001',
+    'PSJALLBLACK',
+    'WRC750',
+    'KRC500',
+    'Q404S0001',
+    'SB32BOX',
+    'Q-500',
+    'SB24/32/40SLBOX',
+    'CC832F',
   ]);
 });
 
@@ -68,7 +66,7 @@ test('PUBLISH input and acknowledgement are exact', () => {
   ]) assert.throws(() => assertBatchNext5P3PublishAcknowledgement({ ...accepted, ...invalid }), /acknowledgement/i);
 });
 
-test('contract freezes the ten exact canonical graphs and PRE/POST states', () => {
+test('contract freezes the eight exact canonical graphs and PRE/POST states', () => {
   for (const identity of Object.values(BATCH_NEXT5_P3_TARGET.identities)) {
     for (const value of [
       identity.commercialSkuId,
