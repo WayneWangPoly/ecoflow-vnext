@@ -171,7 +171,7 @@ export function BatchNext5DraftOnlyCarrier({ role, onChanged }: Props) {
       }
       setPreflightEvidence(queueEvidence);
       setMode('NEW');
-      setMessage('Preflight PASS / NEW: eight frozen SKU + carton barcode targets resolve to ten unique authenticated READY_TO_RECONCILE Survey observations and no open DRAFT/SUBMITTED Product Identity batch exists.');
+      setMessage('Preflight PASS / NEW: eight frozen SKU + carton barcode targets resolve to eight unique authenticated READY_TO_RECONCILE Survey observations and no open DRAFT/SUBMITTED Product Identity batch exists.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -283,7 +283,7 @@ export function BatchNext5DraftOnlyCarrier({ role, onChanged }: Props) {
           <h2>ECOFLOW-328 · Batch Next 5 Physical Identity DRAFT</h2>
           <p>
             Frozen engineering base <code>{target.protectedMainSha}</code>. Authenticated census found
-            {' '}<strong>{target.authenticatedCensus.ready} READY</strong>; the all eight remaining evidence-backed eligible SKUs cover
+            {' '}<strong>{target.authenticatedCensus.ready} READY</strong>; all eight remaining evidence-backed eligible SKUs cover
             {' '}<strong>{target.totalReferenceQty} reference cartons</strong>. This is the complete current READY_TO_RECONCILE cohort; no conflict or identity-confirmation row is included. Survey observation IDs are resolved only inside the authenticated Owner/Admin queue and must remain exact through each write.
           </p>
         </div>
@@ -401,7 +401,7 @@ export function BatchNext5DraftOnlyCarrier({ role, onChanged }: Props) {
 
       <div className="unleashed-acceptance-warning" role="note">
         <strong>DRAFT-only hard stop.</strong> This carrier imports no SUBMIT or PUBLISH action and has no inventory, stocktake, location, barcode-reassignment/retirement or provider capability.
-        Completed DRAFTs: {completeCount}/10.
+        Completed DRAFTs: {completeCount}/8.
       </div>
 
       <p className="survey-reconciliation-message" role="status">{message}</p>
