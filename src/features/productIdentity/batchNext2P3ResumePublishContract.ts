@@ -401,8 +401,8 @@ export function assertBatchNext2P3Preflight(
   assertCurrentBatch(currentBatch);
   assertBatch(evidence.batches, 'PRE');
   assertScope(evidence.scopeItems);
-  requireCount(evidence.reconciliations, 5, 'reconciliation evidence');
-  requireCount(evidence.observations, 5, 'observation evidence');
+  requireCount(evidence.reconciliations, 10, 'reconciliation evidence');
+  requireCount(evidence.observations, 10, 'observation evidence');
   for (const [code, identity] of Object.entries(BATCH_NEXT2_P3_TARGET.identities)) {
     assertReconciliationAndObservation(evidence, code, identity);
   }
@@ -415,8 +415,8 @@ export function assertBatchNext2P3Preflight(
 export function assertBatchNext2P3Postflight(evidence: BatchNext2P3Evidence) {
   assertBatch(evidence.batches, 'POST');
   assertScope(evidence.scopeItems);
-  requireCount(evidence.reconciliations, 5, 'POST reconciliation evidence');
-  requireCount(evidence.observations, 5, 'POST observation evidence');
+  requireCount(evidence.reconciliations, 10, 'POST reconciliation evidence');
+  requireCount(evidence.observations, 10, 'POST observation evidence');
   for (const [code, identity] of Object.entries(BATCH_NEXT2_P3_TARGET.identities)) {
     assertReconciliationAndObservation(evidence, code, identity);
   }
