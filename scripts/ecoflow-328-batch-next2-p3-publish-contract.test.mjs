@@ -15,7 +15,7 @@ const wrapper = readFileSync('src/features/productIdentity/ProductIdentityCommis
 const workflow = readFileSync('.github/workflows/warehouse-survey-002-reconciliation-check.yml', 'utf8');
 const authorityMigration = readFileSync('supabase/migrations/20260808180500_product_identity_authority.sql', 'utf8');
 
-test('Batch Next 2 P3 target is frozen to exact SUBMITTED rev6 and one unused PUBLISH command', () => {
+test('Batch Next 2 P3 target is frozen to exact SUBMITTED rev11 and one unused PUBLISH command', () => {
   assert.equal(BATCH_NEXT2_P3_TARGET.protectedMainSha, 'e001ddcbcc300cf19ec13e590694157b2ef810c7');
   assert.equal(BATCH_NEXT2_P3_TARGET.batchId, 'db7887ba-937e-4782-81a4-3eff21a6dfd4');
   assert.equal(BATCH_NEXT2_P3_TARGET.expectedRevision, 11);
@@ -89,7 +89,7 @@ test('contract freezes the ten exact canonical graphs and PRE/POST states', () =
   assert.match(contract, /currentBatch\.resolvedTasks !== 0/);
   assert.match(contract, /!currentBatch\.canPublish/);
   assert.match(contract, /phase === 'POST' \? 'PUBLISHED' : 'SUBMITTED'/);
-  assert.match(contract, /phase === 'POST' \? 7 : 6/);
+  assert.match(contract, /phase === 'POST' \\? 12 : 11/);
   assert.match(contract, /phase === 'POST' \? 'ACTIVE' : 'DRAFT'/);
   assert.match(contract, /phase === 'POST' \? 'RESOLVED' : 'DRAFT_READY'/);
   assert.match(contract, /reconciliation_status: 'DRAFTED'/);
