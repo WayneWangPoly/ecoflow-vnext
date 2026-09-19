@@ -76,7 +76,7 @@ export function BatchNext5P2ResumeSubmitCarrier({ role, onChanged }: Props) {
           <dl className="survey-reconciliation-evidence survey-reconciliation-note">
             <div><dt>Engineering base</dt><dd>{BATCH_NEXT5_P2_TARGET.protectedMainSha}</dd></div>
             <div><dt>Batch ID</dt><dd>{BATCH_NEXT5_P2_TARGET.batchId}</dd></div>
-            <div><dt>Required state</dt><dd>DRAFT revision 10</dd></div>
+            <div><dt>Required state</dt><dd>DRAFT revision 8</dd></div>
             <div><dt>Required tasks</dt><dd>0 open / 8 draft-ready / 0 conflict</dd></div>
             <div><dt>Expected revision</dt><dd>{BATCH_NEXT5_P2_TARGET.expectedRevision}</dd></div>
             <div><dt>SUBMIT command</dt><dd>{BATCH_NEXT5_P2_TARGET.submitCommandId}</dd></div>
