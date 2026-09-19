@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET,
-  buildBatchNext4ReconcileInput,
-  buildBatchNext4StartInput,
-  validateBatchNext4Queue,
-} from '../src/features/productIdentity/batchNext4DraftOnlyContract.ts';
+  ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET,
+  buildBatchNext5ReconcileInput,
+  buildBatchNext5StartInput,
+  validateBatchNext5Queue,
+} from '../src/features/productIdentity/batchNext5DraftOnlyContract.ts';
 
-const carrier = readFileSync('src/features/productIdentity/BatchNext4DraftOnlyCarrier.tsx', 'utf8');
-const evidence = readFileSync('src/data/repositories/batchNext4DraftResumeEvidence.ts', 'utf8');
+const carrier = readFileSync('src/features/productIdentity/BatchNext5DraftOnlyCarrier.tsx', 'utf8');
+const evidence = readFileSync('src/data/repositories/batchNext5DraftResumeEvidence.ts', 'utf8');
 const wrapper = readFileSync('src/features/productIdentity/ProductIdentityCommissioningWithSurvey.tsx', 'utf8');
 const workflow = readFileSync('.github/workflows/warehouse-survey-002-reconciliation-check.yml', 'utf8');
 
@@ -18,7 +18,7 @@ function queueRow(candidate, index, patch = {}) {
     surveyObservationId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
     sourceObservationId: null,
     skuContext: candidate.code,
-    skuProductName: candidate.physicalName,
+    skuProductName: candidate.surveyProductName,
     cartonBarcode: candidate.cartonBarcode,
     sleeveStatus: 'NO_SEPARATE_BARCODE',
     sleeveBarcode: null,
@@ -28,7 +28,7 @@ function queueRow(candidate, index, patch = {}) {
     commercialMatchCount: 1,
     commercialSkuId: candidate.commercialSkuId,
     commercialSkuCode: candidate.code,
-    commercialName: candidate.physicalName,
+    commercialName: candidate.commercialName,
     ordermentumSku: candidate.code,
     existingPhysicalSkuCode: null,
     queueStatus: 'READY_TO_RECONCILE',
@@ -41,35 +41,39 @@ function queueRow(candidate, index, patch = {}) {
   };
 }
 
-test('Batch Next 4 freezes the top ten authenticated READY x reference-quantity cohort', () => {
-  const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
-  assert.equal(target.protectedMainSha, 'bdf3a64db1e07d633b0afbd5f7c81f5af1b43eb8');
-  assert.equal(target.batchName, 'ECOFLOW-328 Batch Next 4 DRAFT-only');
-  assert.equal(target.startCommandId, 'f2bf897d-a1e6-54e2-909a-c58204960210');
+test('Batch Next 5 freezes the final eight evidence-backed READY cohort', () => {
+  const target = ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET;
+  assert.equal(target.protectedMainSha, 'ee9120437fadd2f2f96b496f5cbe448494034d57');
+  assert.equal(target.batchName, 'ECOFLOW-328 Batch Next 5 DRAFT-only');
+  assert.equal(target.startCommandId, '6e0520a2-42bb-4caa-be57-13978326f4ed');
   assert.equal(target.referenceBatchId, '4cdb85d3-06d8-44bf-96bb-93660e10c3c9');
   assert.deepEqual(target.authenticatedCensus, {
-    ready: 18,
+    ready: 8,
     needsIdentity: 2,
     conflict: 2,
     insufficient: 77,
     drafted: 0,
-    published: 29,
+    published: 39,
   });
-  assert.equal(target.candidates.length, 10);
-  assert.equal(target.totalReferenceQty, 94);
-  assert.equal(new Set(target.candidates.map((x) => x.code)).size, 10);
-  assert.equal(new Set(target.candidates.map((x) => x.commercialSkuId)).size, 10);
-  assert.equal(new Set(target.candidates.map((x) => x.reconcileCommandId)).size, 10);
-  assert.equal(target.candidates.reduce((sum, x) => sum + x.referenceQty, 0), 94);
+  assert.equal(target.candidates.length, 8);
+  assert.equal(target.totalReferenceQty, 14);
+  assert.equal(new Set(target.candidates.map((x) => x.code)).size, 8);
+  assert.equal(new Set(target.candidates.map((x) => x.commercialSkuId)).size, 8);
+  assert.equal(new Set(target.candidates.map((x) => x.reconcileCommandId)).size, 8);
+  assert.equal(target.candidates.reduce((sum, x) => sum + x.referenceQty, 0), 14);
   assert.deepEqual(target.candidates.map((x) => x.code), [
-    'IC4BOX','CCEA12-90','CCSW12-80','BSB42LPLA','KSB25',
-    'PCB11','KRC650','KSB16','Q514S0001','KSB32',
+    'PSJALLBLACK','WRC750','KRC500','Q404S0001',
+    'SB32BOX','Q-500','SB24/32/40SLBOX','CC832F',
   ]);
-  assert.deepEqual(target.candidates.map((x) => x.referenceQty), [15,14,13,12,12,11,6,4,4,3]);
+  assert.deepEqual(target.candidates.map((x) => x.referenceQty), [3,3,2,2,2,1,1,0]);
+  const q500 = target.candidates.find((x) => x.code === 'Q-500');
+  assert.equal(q500?.physicalName, '500ml Clear Tumbler BioCup');
+  assert.equal(q500?.surveyProductName, '500ml Clear Tumbler BioCup');
+  assert.equal(q500?.commercialName, '500ml Clear Tumbler BioCup - 1000pcs');
 });
 
 test('authenticated queue resolution ignores only harmless historical insufficient rows and keeps current evidence fail-closed', () => {
-  const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
+  const target = ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET;
   const rows = target.candidates.map((candidate, index) => queueRow(candidate, index));
 
   const legacyIc4 = queueRow(target.candidates[0], 50, {
@@ -83,20 +87,20 @@ test('authenticated queue resolution ignores only harmless historical insufficie
     queueReason: 'Only direct OBSERVED_NOW physical evidence can seed a Product Identity draft.',
   });
 
-  const evidence = validateBatchNext4Queue([...rows, legacyIc4, legacyKsb16], false);
-  assert.equal(evidence.length, 10);
-  assert.equal(new Set(evidence.map((x) => x.row.surveyObservationId)).size, 10);
+  const evidence = validateBatchNext5Queue([...rows, legacyIc4, legacyKsb16], false);
+  assert.equal(evidence.length, 8);
+  assert.equal(new Set(evidence.map((x) => x.row.surveyObservationId)).size, 8);
   assert.deepEqual(evidence.map((x) => x.candidate.code), target.candidates.map((x) => x.code));
   assert.equal(evidence[0].row.surveyObservationId, rows[0].surveyObservationId);
   assert.equal(evidence[7].row.surveyObservationId, rows[7].surveyObservationId);
 
   assert.throws(
-    () => validateBatchNext4Queue([...rows, { ...rows[0], surveyObservationId: 'duplicate-ready-observation' }], false),
+    () => validateBatchNext5Queue([...rows, { ...rows[0], surveyObservationId: 'duplicate-ready-observation' }], false),
     /found 2 executable row\(s\)/,
   );
 
   assert.throws(
-    () => validateBatchNext4Queue([...rows, queueRow(target.candidates[0], 52, {
+    () => validateBatchNext5Queue([...rows, queueRow(target.candidates[0], 52, {
       queueStatus: 'INSUFFICIENT_EVIDENCE',
       evidenceSource: 'OBSERVED_NOW',
     })], false),
@@ -104,7 +108,7 @@ test('authenticated queue resolution ignores only harmless historical insufficie
   );
 
   assert.throws(
-    () => validateBatchNext4Queue([...rows, queueRow(target.candidates[0], 53, {
+    () => validateBatchNext5Queue([...rows, queueRow(target.candidates[0], 53, {
       queueStatus: 'DUPLICATE_CONFLICT',
       evidenceSource: 'OBSERVED_NOW',
     })], false),
@@ -112,25 +116,25 @@ test('authenticated queue resolution ignores only harmless historical insufficie
   );
 
   assert.throws(
-    () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, queueStatus: 'NEEDS_IDENTITY_CONFIRMATION' } : row), false),
+    () => validateBatchNext5Queue(rows.map((row, i) => i === 0 ? { ...row, queueStatus: 'NEEDS_IDENTITY_CONFIRMATION' } : row), false),
     /non-historical blocking queue row/,
   );
   assert.throws(
-    () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, evidenceSource: 'LEGACY' } : row), false),
+    () => validateBatchNext5Queue(rows.map((row, i) => i === 0 ? { ...row, evidenceSource: 'LEGACY' } : row), false),
     /OBSERVED_NOW/,
   );
   assert.throws(
-    () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, sleeveStatus: 'UNKNOWN' } : row), false),
+    () => validateBatchNext5Queue(rows.map((row, i) => i === 0 ? { ...row, sleeveStatus: 'UNKNOWN' } : row), false),
     /physical package verification drifted/,
   );
   assert.throws(
-    () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, existingPhysicalSkuCode: 'OTHER' } : row), false),
+    () => validateBatchNext5Queue(rows.map((row, i) => i === 0 ? { ...row, existingPhysicalSkuCode: 'OTHER' } : row), false),
     /published Physical SKU owner/,
   );
 });
 
 test('resume accepts one exact DRAFT_CREATED row plus harmless historical insufficient evidence', () => {
-  const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
+  const target = ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET;
   const rows = target.candidates.map((candidate, index) => queueRow(candidate, index));
   rows[0] = queueRow(target.candidates[0], 0, {
     queueStatus: 'DRAFT_CREATED',
@@ -143,26 +147,26 @@ test('resume accepts one exact DRAFT_CREATED row plus harmless historical insuff
     evidenceSource: 'LEGACY',
   });
 
-  const evidence = validateBatchNext4Queue([...rows, legacy], true);
+  const evidence = validateBatchNext5Queue([...rows, legacy], true);
   assert.equal(evidence[0].alreadyDrafted, true);
   assert.equal(evidence[0].row.surveyObservationId, rows[0].surveyObservationId);
 });
 
-test('start input is exactly one bounded ten-SKU scope with frozen unused command', () => {
-  const input = buildBatchNext4StartInput();
-  assert.equal(input.batchName, ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET.batchName);
-  assert.equal(input.commandId, ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET.startCommandId);
-  assert.deepEqual(input.commercialSkuIds, ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET.candidates.map((x) => x.commercialSkuId));
+test('start input is exactly one bounded eight-SKU scope with frozen unused command', () => {
+  const input = buildBatchNext5StartInput();
+  assert.equal(input.batchName, ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET.batchName);
+  assert.equal(input.commandId, ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET.startCommandId);
+  assert.deepEqual(input.commercialSkuIds, ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET.candidates.map((x) => x.commercialSkuId));
 });
 
 test('reconcile input binds the runtime authenticated Survey ID and remains CARTON x1 / PROHIBITED / preferred', () => {
-  const candidate = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET.candidates[0];
+  const candidate = ECOFLOW_328_BATCH_NEXT5_DRAFT_TARGET.candidates[0];
   const row = queueRow(candidate, 0);
   assert.throws(
-    () => buildBatchNext4ReconcileInput(candidate, row, '11111111-1111-4111-8111-111111111111', false),
+    () => buildBatchNext5ReconcileInput(candidate, row, '11111111-1111-4111-8111-111111111111', false),
     /explicit Owner\/Admin confirmation/,
   );
-  const input = buildBatchNext4ReconcileInput(candidate, row, '11111111-1111-4111-8111-111111111111', true);
+  const input = buildBatchNext5ReconcileInput(candidate, row, '11111111-1111-4111-8111-111111111111', true);
   assert.equal(input.surveyObservationId, row.surveyObservationId);
   assert.equal(input.commandId, candidate.reconcileCommandId);
   assert.equal(input.physicalSkuCode, candidate.code);
@@ -182,7 +186,7 @@ test('carrier rereads protected queue before every DRAFT write and fail-closes a
   assert.match(carrier, /role === 'owner' \|\| role === 'admin'/);
   assert.match(carrier, /readBarcodeSurveyReconciliationQueue\(500\)/);
   assert.match(carrier, /resolved Survey observation ID changed after preflight/);
-  assert.match(carrier, /readBatchNext4ResumeEvidence\(batchId\)/);
+  assert.match(carrier, /readBatchNext5ResumeEvidence\(batchId\)/);
   assert.match(carrier, /server already contains the exact frozen DRAFT provenance/);
   assert.match(carrier, /START may have crossed the command boundary/);
   assert.match(carrier, /Reconciliation may have crossed the command boundary/);
@@ -203,17 +207,13 @@ test('resume evidence is three authenticated SELECT-only reads bound to exact ba
   assert.doesNotMatch(evidence, /service[_-]?role|access[_-]?token|refresh[_-]?token|jwt/i);
 });
 
-test('completed NEXT4 carriers remain archived when NEXT5 DRAFT becomes active, while NEXT4 DRAFT contract stays CI-gated', () => {
-  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4DraftOnlyCarrier'\)/);
-  assert.doesNotMatch(wrapper, /<BatchNext4DraftOnlyCarrier/);
-  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P2ResumeSubmitCarrier'\)/);
-  assert.doesNotMatch(wrapper, /<BatchNext4P2ResumeSubmitCarrier/);
-  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P3ResumePublishCarrier'\)/);
-  assert.doesNotMatch(wrapper, /<BatchNext4P3ResumePublishCarrier/);
+test('NEXT5 final-eight DRAFT carrier is the active native surface and remains CI-gated', () => {
   assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5DraftOnlyCarrier'\)/);
   assert.match(wrapper, /<BatchNext5DraftOnlyCarrier/);
-  assert.match(workflow, /ecoflow-328-batch-next4-draft-carrier-contract\.test\.mjs/);
-  assert.match(workflow, /BatchNext4DraftOnlyCarrier\.tsx/);
-  assert.match(workflow, /batchNext4DraftOnlyContract\.ts/);
-  assert.match(workflow, /batchNext4DraftResumeEvidence\.ts/);
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P3ResumePublishCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext4P3ResumePublishCarrier/);
+  assert.match(workflow, /ecoflow-328-batch-next5-draft-carrier-contract\.test\.mjs/);
+  assert.match(workflow, /BatchNext5DraftOnlyCarrier\.tsx/);
+  assert.match(workflow, /batchNext5DraftOnlyContract\.ts/);
+  assert.match(workflow, /batchNext5DraftResumeEvidence\.ts/);
 });
