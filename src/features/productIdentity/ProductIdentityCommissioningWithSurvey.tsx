@@ -19,6 +19,7 @@ import { CommercialWave2PlanCarrier } from './CommercialWave2PlanCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
 
 const BatchNext2DraftOnlyCarrier = lazy(() => import('./BatchNext2DraftOnlyCarrier').then((module) => ({ default: module.BatchNext2DraftOnlyCarrier })));
+const BatchNext2P2ResumeSubmitCarrier = lazy(() => import('./BatchNext2P2ResumeSubmitCarrier').then((module) => ({ default: module.BatchNext2P2ResumeSubmitCarrier })));
 
 type Props = {
   role: Role;
@@ -30,6 +31,12 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <BatchNext2P2ResumeSubmitCarrier
+          role={props.role}
+          onChanged={() => setCommissioningRevision((value) => value + 1)}
+        />
+      </Suspense>
       <Suspense fallback={null}>
         <BatchNext2DraftOnlyCarrier
           role={props.role}
