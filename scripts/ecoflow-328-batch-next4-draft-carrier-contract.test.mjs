@@ -43,7 +43,7 @@ function queueRow(candidate, index, patch = {}) {
 
 test('Batch Next 4 freezes the top ten authenticated READY x reference-quantity cohort', () => {
   const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
-  assert.equal(target.protectedMainSha, 'ba9ca4ae51ff0dd7c2bb57f6b3f04b117cbf9742');
+  assert.equal(target.protectedMainSha, 'bdf3a64db1e07d633b0afbd5f7c81f5af1b43eb8');
   assert.equal(target.batchName, 'ECOFLOW-328 Batch Next 4 DRAFT-only');
   assert.equal(target.startCommandId, 'f2bf897d-a1e6-54e2-909a-c58204960210');
   assert.equal(target.referenceBatchId, '4cdb85d3-06d8-44bf-96bb-93660e10c3c9');
@@ -68,21 +68,52 @@ test('Batch Next 4 freezes the top ten authenticated READY x reference-quantity 
   assert.deepEqual(target.candidates.map((x) => x.referenceQty), [15,14,13,12,12,11,6,4,4,3]);
 });
 
-test('authenticated queue resolution is exact by frozen SKU + carton barcode and ten distinct runtime Survey IDs', () => {
+test('authenticated queue resolution ignores only harmless historical insufficient rows and keeps current evidence fail-closed', () => {
   const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
   const rows = target.candidates.map((candidate, index) => queueRow(candidate, index));
-  const evidence = validateBatchNext4Queue(rows, false);
+
+  const legacyIc4 = queueRow(target.candidates[0], 50, {
+    queueStatus: 'INSUFFICIENT_EVIDENCE',
+    evidenceSource: 'LEGACY',
+    queueReason: 'Only direct OBSERVED_NOW physical evidence can seed a Product Identity draft.',
+  });
+  const legacyKsb16 = queueRow(target.candidates[7], 51, {
+    queueStatus: 'INSUFFICIENT_EVIDENCE',
+    evidenceSource: 'IMPORTED_HISTORY',
+    queueReason: 'Only direct OBSERVED_NOW physical evidence can seed a Product Identity draft.',
+  });
+
+  const evidence = validateBatchNext4Queue([...rows, legacyIc4, legacyKsb16], false);
   assert.equal(evidence.length, 10);
   assert.equal(new Set(evidence.map((x) => x.row.surveyObservationId)).size, 10);
   assert.deepEqual(evidence.map((x) => x.candidate.code), target.candidates.map((x) => x.code));
+  assert.equal(evidence[0].row.surveyObservationId, rows[0].surveyObservationId);
+  assert.equal(evidence[7].row.surveyObservationId, rows[7].surveyObservationId);
 
   assert.throws(
-    () => validateBatchNext4Queue([...rows, { ...rows[0], surveyObservationId: 'duplicate-observation' }], false),
-    /exactly one frozen SKU \+ carton barcode row/,
+    () => validateBatchNext4Queue([...rows, { ...rows[0], surveyObservationId: 'duplicate-ready-observation' }], false),
+    /found 2 executable row\(s\)/,
   );
+
+  assert.throws(
+    () => validateBatchNext4Queue([...rows, queueRow(target.candidates[0], 52, {
+      queueStatus: 'INSUFFICIENT_EVIDENCE',
+      evidenceSource: 'OBSERVED_NOW',
+    })], false),
+    /non-historical blocking queue row/,
+  );
+
+  assert.throws(
+    () => validateBatchNext4Queue([...rows, queueRow(target.candidates[0], 53, {
+      queueStatus: 'DUPLICATE_CONFLICT',
+      evidenceSource: 'OBSERVED_NOW',
+    })], false),
+    /non-historical blocking queue row/,
+  );
+
   assert.throws(
     () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, queueStatus: 'NEEDS_IDENTITY_CONFIRMATION' } : row), false),
-    /queue drifted/,
+    /non-historical blocking queue row/,
   );
   assert.throws(
     () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, evidenceSource: 'LEGACY' } : row), false),
@@ -96,6 +127,25 @@ test('authenticated queue resolution is exact by frozen SKU + carton barcode and
     () => validateBatchNext4Queue(rows.map((row, i) => i === 0 ? { ...row, existingPhysicalSkuCode: 'OTHER' } : row), false),
     /published Physical SKU owner/,
   );
+});
+
+test('resume accepts one exact DRAFT_CREATED row plus harmless historical insufficient evidence', () => {
+  const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
+  const rows = target.candidates.map((candidate, index) => queueRow(candidate, index));
+  rows[0] = queueRow(target.candidates[0], 0, {
+    queueStatus: 'DRAFT_CREATED',
+    reconciliationId: '11111111-1111-4111-8111-111111111111',
+    productIdentityObservationId: '22222222-2222-4222-8222-222222222222',
+    reconciliationStatus: 'DRAFTED',
+  });
+  const legacy = queueRow(target.candidates[0], 60, {
+    queueStatus: 'INSUFFICIENT_EVIDENCE',
+    evidenceSource: 'LEGACY',
+  });
+
+  const evidence = validateBatchNext4Queue([...rows, legacy], true);
+  assert.equal(evidence[0].alreadyDrafted, true);
+  assert.equal(evidence[0].row.surveyObservationId, rows[0].surveyObservationId);
 });
 
 test('start input is exactly one bounded ten-SKU scope with frozen unused command', () => {
