@@ -101,10 +101,10 @@ test('evidence repository is nine exact SELECT-only RLS reads', () => {
   assert.doesNotMatch(evidence, /\.rpc\s*\(|service[_-]?role|access[_-]?token|jwt/i);
 });
 
-test('native Product Identity surface lazy-mounts the dedicated carrier and CI executes this contract', () => {
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3P2ResumeSubmitCarrier'\)/);
-  assert.match(wrapper, /<BatchNext3P2ResumeSubmitCarrier/);
-  assert.match(workflow, /ecoflow-328-batch-next2-p2-submit-contract\.test\.mjs/);
+test('completed Batch Next 3 P2 carrier remains archived and CI-gated but is not active in production UI', () => {
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3P2ResumeSubmitCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext3P2ResumeSubmitCarrier/);
+  assert.match(workflow, /ecoflow-328-batch-next3-p2-submit-contract\.test\.mjs/);
   assert.match(workflow, /BatchNext3P2ResumeSubmitCarrier\.tsx/);
   assert.match(workflow, /batchNext3P2ResumeSubmitContract\.ts/);
   assert.match(workflow, /batchNext3P2ResumeEvidence\.ts/);
