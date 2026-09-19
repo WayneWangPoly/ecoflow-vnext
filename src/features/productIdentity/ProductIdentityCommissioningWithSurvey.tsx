@@ -20,6 +20,7 @@ import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissi
 
 const BatchNext2DraftOnlyCarrier = lazy(() => import('./BatchNext2DraftOnlyCarrier').then((module) => ({ default: module.BatchNext2DraftOnlyCarrier })));
 const BatchNext3DraftOnlyCarrier = lazy(() => import('./BatchNext3DraftOnlyCarrier').then((module) => ({ default: module.BatchNext3DraftOnlyCarrier })));
+const BatchNext3P2ResumeSubmitCarrier = lazy(() => import('./BatchNext3P2ResumeSubmitCarrier').then((module) => ({ default: module.BatchNext3P2ResumeSubmitCarrier })));
 const BatchNext2P2ResumeSubmitCarrier = lazy(() => import('./BatchNext2P2ResumeSubmitCarrier').then((module) => ({ default: module.BatchNext2P2ResumeSubmitCarrier })));
 const BatchNext2P3ResumePublishCarrier = lazy(() => import('./BatchNext2P3ResumePublishCarrier').then((module) => ({ default: module.BatchNext2P3ResumePublishCarrier })));
 
@@ -33,6 +34,12 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <BatchNext3P2ResumeSubmitCarrier
+          role={props.role}
+          onChanged={() => setCommissioningRevision((value) => value + 1)}
+        />
+      </Suspense>
       <Suspense fallback={null}>
         <BatchNext3DraftOnlyCarrier
           role={props.role}
