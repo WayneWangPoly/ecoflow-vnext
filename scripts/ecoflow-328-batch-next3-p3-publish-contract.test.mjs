@@ -161,8 +161,11 @@ test('post-boundary failure wording prohibits blind retry', () => {
   assert.match(uncertain, /read-only server verification/i);
 });
 
-test('native surface mounts carrier and CI executes the dedicated contract', () => {
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3P3ResumePublishCarrier'\)/);
-  assert.match(wrapper, /<BatchNext3P3ResumePublishCarrier/);
-  assert.match(workflow, /ecoflow-328-batch-next2-p3-publish-contract\.test\.mjs/);
+test('completed NEXT3 P3 carrier remains archived and CI-gated but is not active in production UI', () => {
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3P3ResumePublishCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext3P3ResumePublishCarrier/);
+  assert.match(workflow, /ecoflow-328-batch-next3-p3-publish-contract\.test\.mjs/);
+  assert.match(workflow, /BatchNext3P3ResumePublishCarrier\.tsx/);
+  assert.match(workflow, /batchNext3P3ResumePublishContract\.ts/);
+  assert.match(workflow, /batchNext3P3ResumeEvidence\.ts/);
 });
