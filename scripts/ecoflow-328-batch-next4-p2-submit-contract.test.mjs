@@ -101,9 +101,9 @@ test('evidence repository is nine exact SELECT-only RLS reads', () => {
   assert.doesNotMatch(evidence, /\.rpc\s*\(|service[_-]?role|access[_-]?token|jwt/i);
 });
 
-test('NEXT4 P2 replaces completed DRAFT carrier on the native surface and remains CI-gated', () => {
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P2ResumeSubmitCarrier'\)/);
-  assert.match(wrapper, /<BatchNext4P2ResumeSubmitCarrier/);
+test('completed NEXT4 P2 remains archived and CI-gated after P3 activation', () => {
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P2ResumeSubmitCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext4P2ResumeSubmitCarrier/);
   assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4DraftOnlyCarrier'\)/);
   assert.doesNotMatch(wrapper, /<BatchNext4DraftOnlyCarrier/);
   assert.match(workflow, /ecoflow-328-batch-next4-p2-submit-contract\.test\.mjs/);
