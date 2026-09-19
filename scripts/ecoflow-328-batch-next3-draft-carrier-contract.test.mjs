@@ -96,11 +96,10 @@ test('resume evidence is SELECT-only and bound to exact batch + scope', () => {
   assert.doesNotMatch(evidence, /service[_-]?role|access[_-]?token|refresh[_-]?token|jwt/i);
 });
 
-test('native surface lazy-loads Batch Next 3 and CI gates it', () => {
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3DraftOnlyCarrier'\)/);
-  assert.match(wrapper, /<BatchNext3DraftOnlyCarrier/);
-  assert.match(wrapper, /<Suspense fallback=\{null\}>/);
-  assert.match(workflow, /ecoflow-328-batch-next2-draft-carrier-contract\.test\.mjs/);
+test('completed Batch Next 3 DRAFT carrier remains archived and CI-gated but is not active in production UI', () => {
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3DraftOnlyCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext3DraftOnlyCarrier/);
+  assert.match(workflow, /ecoflow-328-batch-next3-draft-carrier-contract\.test\.mjs/);
   assert.match(workflow, /BatchNext3DraftOnlyCarrier\.tsx/);
   assert.match(workflow, /batchNext3DraftOnlyContract\.ts/);
   assert.match(workflow, /batchNext3DraftResumeEvidence\.ts/);

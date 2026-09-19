@@ -12,6 +12,7 @@ on:
       - 'scripts/ecoflow-328-batch-next2-draft-carrier-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next3-draft-carrier-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next3-p2-submit-contract.test.mjs'
+      - 'scripts/ecoflow-328-batch-next3-p3-publish-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next2-p2-submit-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next2-p3-publish-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next-p2-submit-contract.test.mjs'
@@ -24,6 +25,7 @@ on:
       - 'src/data/repositories/batchNext2DraftResumeEvidence.ts'
       - 'src/data/repositories/batchNext3DraftResumeEvidence.ts'
       - 'src/data/repositories/batchNext3P2ResumeEvidence.ts'
+      - 'src/data/repositories/batchNext3P3ResumeEvidence.ts'
       - 'src/data/repositories/batchNext2P2ResumeEvidence.ts'
       - 'src/data/repositories/batchNext2P3ResumeEvidence.ts'
       - 'src/features/productIdentity/BarcodeSurveyReconciliationPanel.tsx'
@@ -39,6 +41,8 @@ on:
       - 'src/features/productIdentity/batchNext3DraftOnlyContract.ts'
       - 'src/features/productIdentity/BatchNext3P2ResumeSubmitCarrier.tsx'
       - 'src/features/productIdentity/batchNext3P2ResumeSubmitContract.ts'
+      - 'src/features/productIdentity/BatchNext3P3ResumePublishCarrier.tsx'
+      - 'src/features/productIdentity/batchNext3P3ResumePublishContract.ts'
       - 'src/features/productIdentity/BatchNext2P2ResumeSubmitCarrier.tsx'
       - 'src/features/productIdentity/batchNext2P2ResumeSubmitContract.ts'
       - 'src/features/productIdentity/BatchNext2P3ResumePublishCarrier.tsx'
@@ -121,6 +125,9 @@ jobs:
 
       - name: ECOFLOW-328 Batch Next 3 P2 SUBMIT-only carrier contract
         run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next3-p2-submit-contract.test.mjs
+
+      - name: ECOFLOW-328 Batch Next 3 P3 PUBLISH-only carrier contract
+        run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next3-p3-publish-contract.test.mjs
 
       - name: ECOFLOW-328 Batch Next 2 P2 SUBMIT-only carrier contract
         run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next2-p2-submit-contract.test.mjs
