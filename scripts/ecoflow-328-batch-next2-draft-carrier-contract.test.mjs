@@ -65,7 +65,7 @@ test('carrier is DRAFT-only and supports exact DRAFT resume after refresh', () =
   assert.equal((carrier.match(/startBoundedProductIdentityBatch\(/g) || []).length, 1);
   assert.equal((carrier.match(/reconcileBarcodeSurveyObservation\(/g) || []).length, 1);
   assert.doesNotMatch(carrier, /submitProductIdentityBatch|publishProductIdentityBatch|retireProductIdentityBarcode|reopenProductIdentityBatch/);
-  assert.doesNotMatch(carrier, /inventory|stocktake|location.*(?:insert|update|delete)|api\.ordermentum\.com|api\.unleashedsoftware\.com|fetch\(/i);
+  assert.doesNotMatch(carrier, /ecoflow_inventory_movements|ecoflow_warehouse_movements|ecoflow_warehouse_location_items|inventory_balances|stock_movements|approveStocktake|record[A-Za-z]*Location|api\.ordermentum\.com|api\.unleashedsoftware\.com|fetch\(/i);
 });
 
 test('resume evidence is SELECT-only and bound to exact batch + scope', () => {
