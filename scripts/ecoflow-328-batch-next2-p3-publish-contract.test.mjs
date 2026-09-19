@@ -163,5 +163,5 @@ test('post-boundary failure wording prohibits blind retry', () => {
 test('native surface mounts carrier and CI executes the dedicated contract', () => {
   assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext2P3ResumePublishCarrier'\)/);
   assert.match(wrapper, /<BatchNext2P3ResumePublishCarrier/);
-  assert.match(workflow, /ecoflow-328-batch-next-p3-publish-contract\.test\.mjs/);
+  assert.match(workflow, /ecoflow-328-batch-next2-p3-publish-contract\.test\.mjs/);
 });
