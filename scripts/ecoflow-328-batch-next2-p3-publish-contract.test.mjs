@@ -89,7 +89,7 @@ test('contract freezes the ten exact canonical graphs and PRE/POST states', () =
   assert.match(contract, /currentBatch\.resolvedTasks !== 0/);
   assert.match(contract, /!currentBatch\.canPublish/);
   assert.match(contract, /phase === 'POST' \? 'PUBLISHED' : 'SUBMITTED'/);
-  assert.match(contract, /phase === 'POST' \\? 12 : 11/);
+  assert.match(contract, /phase === 'POST' \? 12 : 11/);
   assert.match(contract, /phase === 'POST' \? 'ACTIVE' : 'DRAFT'/);
   assert.match(contract, /phase === 'POST' \? 'RESOLVED' : 'DRAFT_READY'/);
   assert.match(contract, /reconciliation_status: 'DRAFTED'/);
