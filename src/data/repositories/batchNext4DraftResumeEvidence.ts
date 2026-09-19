@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 export type BatchNext4ResumeEvidence = {
   batchRows: Array<Record<string, unknown>>;
   scopeRows: Array<Record<string, unknown>>;
+  reconciliationRows: Array<Record<string, unknown>>;
 };
 
 function activeClient(input?: SupabaseClient | null) {
@@ -33,7 +34,7 @@ export async function readBatchNext4ResumeEvidence(
   client?: SupabaseClient | null,
 ): Promise<BatchNext4ResumeEvidence> {
   const active = activeClient(client);
-  const [batchRows, scopeRows] = await Promise.all([
+  const [batchRows, scopeRows, reconciliationRows] = await Promise.all([
     readRows('batch evidence', active
       .from('ecoflow_product_identity_batches')
       .select('id,batch_name,batch_status,revision,start_command_id,submit_command_id,publish_command_id')
@@ -44,6 +45,11 @@ export async function readBatchNext4ResumeEvidence(
       .select('batch_id,commercial_sku_id,start_command_id')
       .eq('batch_id', batchId)
       .limit(11)),
+    readRows('reconciliation evidence', active
+      .from('ecoflow_barcode_survey_identity_reconciliations')
+      .select('id,batch_id,survey_observation_id,product_identity_observation_id,command_id,commercial_sku_id,sku_context,carton_barcode,reconciliation_status')
+      .eq('batch_id', batchId)
+      .limit(11)),
   ]);
-  return { batchRows, scopeRows };
+  return { batchRows, scopeRows, reconciliationRows };
 }
