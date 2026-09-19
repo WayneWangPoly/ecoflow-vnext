@@ -48,7 +48,7 @@ function assertExactResumeBatch(
   if (evidence.scopeRows.length !== target.candidates.length) {
     throw new Error('Existing DRAFT batch scope count does not equal the frozen ten-SKU scope.');
   }
-  const expected = new Set(target.candidates.map((candidate) => candidate.commercialSkuId));
+  const expected = new Set<string>(target.candidates.map((candidate) => candidate.commercialSkuId));
   for (const row of evidence.scopeRows) {
     const commercialSkuId = text(row.commercial_sku_id);
     if (!commercialSkuId || !expected.has(commercialSkuId)) {
