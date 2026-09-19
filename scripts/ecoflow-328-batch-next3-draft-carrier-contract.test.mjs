@@ -25,6 +25,26 @@ test('Batch Next 3 freezes ten distinct high-impact Survey candidates', () => {
   assert.equal(new Set(target.candidates.map((x) => x.surveyObservationId)).size, 10);
   assert.equal(new Set(target.candidates.map((x) => x.reconcileCommandId)).size, 10);
   assert.equal(target.candidates.reduce((sum, x) => sum + x.referenceQty, 0), 401);
+  assert.deepEqual(target.candidates.map((x) => x.code), [
+    'NPK1LW','NPK2LK','CCEB16-90','CCSB12-80','CCSKBM12-80',
+    'CCSB16-90','CCSB8-90','CCLWPLA-62','CCSPW6-80','IC5BBOX',
+  ]);
+  assert.deepEqual(target.candidates.map((x) => x.reconcileCommandId), [
+    '9e2dc95d-b60a-5c2a-8eb0-af63bb9bcd43',
+    'f3741782-edef-58e3-bf7b-09a438f8ed5e',
+    '3a87bfdd-86b1-5f76-a26e-f7c862f451c7',
+    'c23fed38-16aa-5ee1-834f-799d6ce2e4b1',
+    'a61fdfc2-efb5-54e3-a62b-75d77ade8bf0',
+    'd14a41d9-ea69-5332-9d44-007600ca300f',
+    '647e65a8-e401-5d0d-b2bc-61272dd8e6e3',
+    'c4fd7c00-7598-5b4b-8171-de8bf54cf483',
+    'b91632ca-8d17-5339-81d6-ba376188f3b0',
+    '2c6e667d-2064-5180-be71-4500431cfb6d',
+  ]);
+  assert.deepEqual(target.candidates.map((x) => x.cartonBarcode), [
+    '757953135845','757953135876','757953138709','757953138624','757953139676',
+    '757953138648','757953138617','757953139737','757953135494','19348045026554',
+  ]);
 });
 
 test('start input is exactly one bounded ten-SKU scope', () => {
