@@ -203,11 +203,11 @@ test('resume evidence is three authenticated SELECT-only reads bound to exact ba
   assert.doesNotMatch(evidence, /service[_-]?role|access[_-]?token|refresh[_-]?token|jwt/i);
 });
 
-test('native surface lazy-mounts NEXT4 while completed NEXT3 P3 is archived, and CI gates NEXT4', () => {
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4DraftOnlyCarrier'\)/);
-  assert.match(wrapper, /<BatchNext4DraftOnlyCarrier/);
-  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext3P3ResumePublishCarrier'\)/);
-  assert.doesNotMatch(wrapper, /<BatchNext3P3ResumePublishCarrier/);
+test('completed NEXT4 DRAFT carrier is archived when P2 becomes active, while DRAFT contract stays CI-gated', () => {
+  assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4DraftOnlyCarrier'\)/);
+  assert.doesNotMatch(wrapper, /<BatchNext4DraftOnlyCarrier/);
+  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext4P2ResumeSubmitCarrier'\)/);
+  assert.match(wrapper, /<BatchNext4P2ResumeSubmitCarrier/);
   assert.match(workflow, /ecoflow-328-batch-next4-draft-carrier-contract\.test\.mjs/);
   assert.match(workflow, /BatchNext4DraftOnlyCarrier\.tsx/);
   assert.match(workflow, /batchNext4DraftOnlyContract\.ts/);

@@ -13,6 +13,7 @@ on:
       - 'scripts/ecoflow-328-batch-next3-draft-carrier-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next3-p2-submit-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next3-p3-publish-contract.test.mjs'
+      - 'scripts/ecoflow-328-batch-next4-p2-submit-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next4-draft-carrier-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next2-p2-submit-contract.test.mjs'
       - 'scripts/ecoflow-328-batch-next2-p3-publish-contract.test.mjs'
@@ -47,6 +48,9 @@ on:
       - 'src/features/productIdentity/batchNext3P3ResumePublishContract.ts'
       - 'src/features/productIdentity/BatchNext4DraftOnlyCarrier.tsx'
       - 'src/features/productIdentity/batchNext4DraftOnlyContract.ts'
+      - 'src/features/productIdentity/BatchNext4P2ResumeSubmitCarrier.tsx'
+      - 'src/features/productIdentity/batchNext4P2ResumeSubmitContract.ts'
+      - 'src/data/repositories/batchNext4P2ResumeEvidence.ts'
       - 'src/features/productIdentity/BatchNext2P2ResumeSubmitCarrier.tsx'
       - 'src/features/productIdentity/batchNext2P2ResumeSubmitContract.ts'
       - 'src/features/productIdentity/BatchNext2P3ResumePublishCarrier.tsx'
@@ -135,6 +139,9 @@ jobs:
 
       - name: ECOFLOW-328 Batch Next 4 authenticated DRAFT-only carrier contract
         run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next4-draft-carrier-contract.test.mjs
+
+      - name: ECOFLOW-328 Batch Next 4 P2 SUBMIT-only carrier contract
+        run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next4-p2-submit-contract.test.mjs
 
       - name: ECOFLOW-328 Batch Next 2 P2 SUBMIT-only carrier contract
         run: node --experimental-strip-types --test scripts/ecoflow-328-batch-next2-p2-submit-contract.test.mjs
