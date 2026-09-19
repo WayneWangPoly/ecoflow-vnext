@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { Role } from '@/domain/types';
 import type { EcoFlowAuthProfile } from '@/features/auth/authTypes';
 import { BarcodeSurveyReconciliationPanel } from './BarcodeSurveyReconciliationPanel';
@@ -18,6 +18,8 @@ import { CommercialWave2P4ReadinessCarrier } from './CommercialWave2P4ReadinessC
 import { CommercialWave2PlanCarrier } from './CommercialWave2PlanCarrier';
 import { ProductIdentityCommissioningWorkspace } from './ProductIdentityCommissioningWorkspace';
 
+const BatchNext2DraftOnlyCarrier = lazy(() => import('./BatchNext2DraftOnlyCarrier').then((module) => ({ default: module.BatchNext2DraftOnlyCarrier })));
+
 type Props = {
   role: Role;
   profile: EcoFlowAuthProfile;
@@ -28,6 +30,12 @@ export function ProductIdentityCommissioningWithSurvey(props: Props) {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <BatchNext2DraftOnlyCarrier
+          role={props.role}
+          onChanged={() => setCommissioningRevision((value) => value + 1)}
+        />
+      </Suspense>
       <BatchNextDraftOnlyCarrier
         role={props.role}
         onChanged={() => setCommissioningRevision((value) => value + 1)}
