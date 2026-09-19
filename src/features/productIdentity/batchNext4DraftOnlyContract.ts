@@ -1,7 +1,7 @@
 import type { BarcodeSurveyReconciliationRow } from '@/data/repositories/barcodeSurveyReconciliation';
 
 export const ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET = {
-  protectedMainSha: 'ba9ca4ae51ff0dd7c2bb57f6b3f04b117cbf9742',
+  protectedMainSha: 'bdf3a64db1e07d633b0afbd5f7c81f5af1b43eb8',
   batchName: 'ECOFLOW-328 Batch Next 4 DRAFT-only',
   startCommandId: 'f2bf897d-a1e6-54e2-909a-c58204960210',
   referenceBatchId: '4cdb85d3-06d8-44bf-96bb-93660e10c3c9',
@@ -160,6 +160,15 @@ export function validateBatchNext4CandidateRow(
   return { candidate, row, alreadyDrafted };
 }
 
+function isHarmlessHistoricalInsufficient(row: BarcodeSurveyReconciliationRow) {
+  return row.queueStatus === 'INSUFFICIENT_EVIDENCE'
+    && row.evidenceSource !== 'OBSERVED_NOW'
+    && row.reconciliationId === null
+    && row.productIdentityObservationId === null
+    && row.reconciliationStatus === null
+    && row.existingPhysicalSkuCode === null;
+}
+
 export function validateBatchNext4Queue(
   rows: BarcodeSurveyReconciliationRow[],
   allowExistingDrafts: boolean,
@@ -167,10 +176,25 @@ export function validateBatchNext4Queue(
   const target = ECOFLOW_328_BATCH_NEXT4_DRAFT_TARGET;
   const result = target.candidates.map((candidate) => {
     const matches = exactQueueMatches(rows, candidate);
-    if (matches.length !== 1) {
-      throw new Error(`${candidate.code}: authenticated queue must contain exactly one frozen SKU + carton barcode row; found ${matches.length}.`);
+    const eligible = matches.filter((row) =>
+      row.queueStatus === 'READY_TO_RECONCILE'
+      || (allowExistingDrafts && row.queueStatus === 'DRAFT_CREATED'),
+    );
+    const blockers = matches.filter((row) =>
+      !eligible.includes(row) && !isHarmlessHistoricalInsufficient(row),
+    );
+
+    if (blockers.length !== 0) {
+      throw new Error(
+        `${candidate.code}: exact SKU + carton barcode has ${blockers.length} non-historical blocking queue row(s); stop.`,
+      );
     }
-    return validateBatchNext4CandidateRow(candidate, matches[0], allowExistingDrafts);
+    if (eligible.length !== 1) {
+      throw new Error(
+        `${candidate.code}: authenticated queue must resolve to exactly one executable READY/DRAFT row after excluding harmless historical insufficient evidence; found ${eligible.length} executable row(s) across ${matches.length} exact match(es).`,
+      );
+    }
+    return validateBatchNext4CandidateRow(candidate, eligible[0], allowExistingDrafts);
   });
 
   const distinctCommercial = new Set(result.map((item) => item.candidate.commercialSkuId));
