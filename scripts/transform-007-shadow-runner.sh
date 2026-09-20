@@ -43,7 +43,6 @@ except UnicodeDecodeError:
     raise SystemExit(65)
 
 dollar_tag = re.compile(r'\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$')
-identifier_continuation = re.compile(r'[A-Za-z0-9_$]')
 state = 'NORMAL'
 closing_tag = None
 block_depth = 0
@@ -69,6 +68,9 @@ def enter(next_state):
     opened_line = line
     opened_column = column
 
+def is_identifier_continuation(character):
+    return character.isascii() is False or character.isalnum() or character in '_$'
+
 while i < len(sql):
     if state == 'NORMAL':
         if sql[i] == '\\':
@@ -87,7 +89,7 @@ while i < len(sql):
             sql[i] in 'Ee'
             and i + 1 < len(sql)
             and sql[i + 1] == "'"
-            and (i == 0 or identifier_continuation.fullmatch(sql[i - 1]) is None)
+            and (i == 0 or not is_identifier_continuation(sql[i - 1]))
         ):
             enter('ESCAPE_STRING')
             advance(2)
@@ -100,7 +102,7 @@ while i < len(sql):
             enter('QUOTED_IDENTIFIER')
             advance()
             continue
-        if sql[i] == '$' and (i == 0 or identifier_continuation.fullmatch(sql[i - 1]) is None):
+        if sql[i] == '$' and (i == 0 or not is_identifier_continuation(sql[i - 1])):
             match = dollar_tag.match(sql, i)
             if match:
                 enter('DOLLAR_STRING')

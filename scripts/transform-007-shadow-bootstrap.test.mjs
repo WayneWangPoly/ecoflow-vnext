@@ -385,6 +385,8 @@ test('candidate lexical guard rejects standalone and inline unquoted psql meta-c
     String.raw`\gexec`,
     String.raw`select 1; \gexec`,
     String.raw`select 1 \g`,
+    String.raw`λE'quoted\' \g'`,
+    String.raw`λ$tag$not-a-dollar-quote \g$tag$`,
   ];
   for (const sql of forbidden) {
     const result = runLexicalGuard(sql);
