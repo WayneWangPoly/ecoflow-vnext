@@ -8,6 +8,7 @@ import test from 'node:test';
 const requestPath = '.github/workflows/transform-007-shadow-request.yml';
 const trustedPath = '.github/workflows/transform-007-shadow-trusted.yml';
 const runnerPath = 'scripts/transform-007-shadow-runner.sh';
+const migrationAliasHelperPath = 'scripts/normalize-supabase-production-migration-aliases.mjs';
 const ownershipPath = 'docs/engineering/FILE-OWNERSHIP.md';
 const packagePath = 'docs/engineering/work-packages/TRANSFORM-007-shadow-bootstrap.md';
 
@@ -149,7 +150,7 @@ function migration(path = targetPath, status = 'added', sha = blobA) {
 }
 
 test('bootstrap scope contains every declared trust-boundary file', () => {
-  for (const path of [requestPath, trustedPath, runnerPath, ownershipPath, packagePath]) {
+  for (const path of [requestPath, trustedPath, runnerPath, migrationAliasHelperPath, ownershipPath, packagePath]) {
     assert.ok(existsSync(path), `${path} is required`);
   }
 });
@@ -309,6 +310,20 @@ test('runner binds generic sequenced target and production migration parity befo
   assert.match(runner, /MAIN_MIGRATION_NOT_DEPLOYED/);
   assert.match(runner, /REMOTE_MIGRATION_MISSING_FROM_MAIN/);
   assert.doesNotMatch(runner, /readonly target_(?:path|version)=/);
+});
+
+test('trusted reader normalizes the known production migration alias before parity comparison', () => {
+  const normalizeCall = runner.indexOf('node scripts/normalize-supabase-production-migration-aliases.mjs');
+  const parityCheck = runner.indexOf('missing_remote = sorted(local - remote)');
+  assert.ok(normalizeCall >= 0, 'trusted reader must invoke the canonical migration alias helper');
+  assert.ok(parityCheck > normalizeCall, 'alias normalization must happen before main/remote migration parity comparison');
+  assert.match(trusted, /scripts\/normalize-supabase-production-migration-aliases\\\.mjs/);
+});
+
+test('migration alias helper is part of the protected trusted shadow boundary', () => {
+  const output = runResolver([{ filename: migrationAliasHelperPath, status: 'modified', sha: blobA }]);
+  assert.equal(output.verdict, 'blocked');
+  assert.equal(output.reason, 'TRUST_BOUNDARY_CHANGED');
 });
 
 test('candidate executes only in credential-free PostgreSQL under a non-superuser', () => {
