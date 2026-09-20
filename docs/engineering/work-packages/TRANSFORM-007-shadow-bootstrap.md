@@ -11,6 +11,27 @@ This package is release infrastructure for the Phase 5 migration-shadow exit
 criterion. It adds no product surface, business command, database migration or
 production write.
 
+## 2026-09-20 production-migration alias parity amendment
+
+Production deployment established one bounded legacy migration identity mapping:
+
+- repository identity: `20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql`
+- production migration-history identity: `20260918135648_warehouse_survey_002_commercial_sku_resolver_repair`
+- immutable source Git blob: `3fd51aea0e83d96621426c73182e374b516b4923`
+
+The canonical production deployment workflow already normalizes this mapping only
+inside its ephemeral Actions workspace through
+`scripts/normalize-supabase-production-migration-aliases.mjs`.
+
+The trusted production-schema shadow reader must use the identical fail-closed
+normalization before comparing protected-main migration filenames with remote
+migration history. It must not edit Git history, mutate production migration
+history, run `supabase migration repair`, or run `supabase db pull`.
+
+The shared alias helper is now part of the shadow trust boundary. A pull request
+that modifies it must fail closed as `TRUST_BOUNDARY_CHANGED` until separately
+reviewed and bootstrapped into protected main.
+
 ## 2026-08-16 scope amendment
 
 The original bootstrap below was deliberately fixed to the TRANSFORM-007A

@@ -17,6 +17,7 @@ who may implement and who must review.
 | auth, role mapping, RLS | Platform/Security | Chief Engineer + Verification |
 | routing shell, shared reducers, global CSS | Chief Engineer-assigned agent | Chief Engineer |
 | `.github/workflows/**` | Platform/Release | Chief Engineer |
+| `scripts/normalize-supabase-production-migration-aliases.mjs` | Platform/Release | Chief Engineer + Verification |
 | `docs/adr/**` | Chief Engineer or delegated author | Chief Engineer |
 
 ## Collision rule
