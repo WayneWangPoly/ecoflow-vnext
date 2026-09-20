@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const deployPath = '.github/workflows/deploy-supabase-migrations.yml';
@@ -7,6 +9,10 @@ const releaseSyncPath = '.github/workflows/release-sync-authority.yml';
 
 const deploy = readFileSync(deployPath, 'utf8');
 const releaseSync = readFileSync(releaseSyncPath, 'utf8');
+const aliasHelperPath = 'scripts/normalize-supabase-production-migration-aliases.mjs';
+const aliasHelper = readFileSync(aliasHelperPath, 'utf8');
+const resolverMigrationPath = 'supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql';
+const resolverMigration = readFileSync(resolverMigrationPath);
 
 test('main pushes remain shadow-only while production deployment is manual exact-head authority', () => {
   assert.match(deploy, /workflow_dispatch:\s*\n\s+inputs:/, 'workflow_dispatch inputs are required');
@@ -46,6 +52,44 @@ test('main pushes remain shadow-only while production deployment is manual exact
     /Production deployment deferred to explicit manual exact-head gate/,
     'push completion must state that production deployment remains deferred',
   );
+});
+
+
+test('known production migration identity drift is normalized only in the ephemeral deployment workspace', async () => {
+  assert.match(deploy, /scripts\/normalize-supabase-production-migration-aliases\.mjs/);
+  assert.equal(
+    deploy.match(/name: Normalize known production migration identity aliases/g)?.length,
+    2,
+    'shadow and deploy jobs must use the same migration alias normalizer',
+  );
+  assert.match(aliasHelper, /20260918234500_warehouse_survey_002_commercial_sku_resolver_repair\.sql/);
+  assert.match(aliasHelper, /20260918135648_warehouse_survey_002_commercial_sku_resolver_repair\.sql/);
+  assert.match(aliasHelper, /3fd51aea0e83d96621426c73182e374b516b4923/);
+  assert.match(aliasHelper, /SUPABASE_MIGRATION_ALIAS_BOTH_PRESENT/);
+  assert.match(aliasHelper, /SUPABASE_MIGRATION_ALIAS_SOURCE_MISSING/);
+  assert.match(aliasHelper, /SUPABASE_MIGRATION_ALIAS_CONTENT_MISMATCH/);
+  assert.doesNotMatch(deploy, /supabase migration repair/);
+  assert.doesNotMatch(deploy, /supabase db pull/);
+
+  const { normalizeKnownMigrationAlias, KNOWN_MIGRATION_ALIAS } = await import('./normalize-supabase-production-migration-aliases.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'ecoflow-migration-alias-'));
+  try {
+    const source = join(root, KNOWN_MIGRATION_ALIAS.source);
+    const target = join(root, KNOWN_MIGRATION_ALIAS.target);
+    mkdirSync(join(root, 'supabase', 'migrations'), { recursive: true });
+    writeFileSync(source, resolverMigration);
+
+    const first = normalizeKnownMigrationAlias(root);
+    assert.equal(first.status, 'NORMALIZED');
+    assert.equal(existsSync(source), false);
+    assert.equal(existsSync(target), true);
+    assert.deepEqual(readFileSync(target), resolverMigration);
+
+    const replay = normalizeKnownMigrationAlias(root);
+    assert.equal(replay.status, 'ALREADY_NORMALIZED');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('release-sync authority distinguishes shadow-only pushes from production deployment runs', () => {
