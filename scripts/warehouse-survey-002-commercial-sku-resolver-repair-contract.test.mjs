@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const migration = readFileSync(
-  'supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql',
+  'supabase/migrations/20260918135648_warehouse_survey_002_commercial_sku_resolver_repair.sql',
   'utf8',
 );
 
