@@ -16,7 +16,7 @@ const workflow = readFileSync('.github/workflows/warehouse-survey-002-reconcilia
 const authorityMigration = readFileSync('supabase/migrations/20260808180500_product_identity_authority.sql', 'utf8');
 
 test('Batch Next 5 P3 target is frozen to exact SUBMITTED rev9 and one unused PUBLISH command', () => {
-  assert.equal(BATCH_NEXT5_P3_TARGET.protectedMainSha, '5af0c2b97352140cd4f79641ae7877fb059c4047');
+  assert.equal(BATCH_NEXT5_P3_TARGET.protectedMainSha, '22e4dd4dc5f6c94a304b2c3230a5b1d27994334e');
   assert.equal(BATCH_NEXT5_P3_TARGET.batchId, 'ab01a3b6-04c6-4ce2-b7d1-65d878fb6669');
   assert.equal(BATCH_NEXT5_P3_TARGET.expectedRevision, 9);
   assert.equal(BATCH_NEXT5_P3_TARGET.submitCommandId, '29ba6829-d831-4c8c-bf45-f6e79dfb64d6');
@@ -88,12 +88,21 @@ test('contract freezes the eight exact canonical graphs and PRE/POST states', ()
   assert.match(contract, /currentBatch\.resolvedTasks !== 0/);
   assert.match(contract, /!currentBatch\.canPublish/);
   assert.match(contract, /phase === 'POST' \? 'PUBLISHED' : 'SUBMITTED'/);
-  assert.match(contract, /phase === 'POST' \? 12 : 11/);
+  assert.match(contract, /phase === 'POST' \? 10 : 9/);
   assert.match(contract, /phase === 'POST' \? 'ACTIVE' : 'DRAFT'/);
   assert.match(contract, /phase === 'POST' \? 'RESOLVED' : 'DRAFT_READY'/);
   assert.match(contract, /reconciliation_status: 'DRAFTED'/);
   assert.match(contract, /observation_status: 'DRAFTED'/);
   assert.match(contract, /quantity isolation sentinel/);
+  assert.match(contract, /observation_count: 8/);
+  assert.match(contract, /requireCount\(evidence\.reconciliations, 8, 'reconciliation evidence'\)/);
+  assert.match(contract, /requireCount\(evidence\.observations, 8, 'observation evidence'\)/);
+  assert.match(contract, /requireCount\(evidence\.reconciliations, 8, 'POST reconciliation evidence'\)/);
+  assert.match(contract, /requireCount\(evidence\.observations, 8, 'POST observation evidence'\)/);
+  assert.doesNotMatch(contract, /phase === 'POST' \? 12 : 11/);
+  assert.doesNotMatch(contract, /observation_count: 10/);
+  assert.doesNotMatch(contract, /requireCount\(evidence\.(?:reconciliations|observations), 10,/);
+  assert.doesNotMatch(contract, /PUBLISHED rev10 \/ 10-10-10-10 result/);
 });
 
 test('carrier performs exactly one incumbent PUBLISH between exact preflight and postflight', () => {

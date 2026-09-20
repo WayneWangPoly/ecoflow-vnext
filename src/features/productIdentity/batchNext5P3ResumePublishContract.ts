@@ -49,7 +49,7 @@ export type BatchNext5P3PublishAcknowledgement = {
 };
 
 export const BATCH_NEXT5_P3_TARGET = {
-  protectedMainSha: '5af0c2b97352140cd4f79641ae7877fb059c4047',
+  protectedMainSha: '22e4dd4dc5f6c94a304b2c3230a5b1d27994334e',
   batchId: 'ab01a3b6-04c6-4ce2-b7d1-65d878fb6669',
   batchName: 'ECOFLOW-328 Batch Next 5 DRAFT-only',
   expectedRevision: 9,
@@ -237,7 +237,7 @@ function assertBatch(rows: BatchNext5P3EvidenceRow[], phase: 'PRE' | 'POST') {
     id: t.batchId,
     batch_name: t.batchName,
     batch_status: published ? 'PUBLISHED' : 'SUBMITTED',
-    revision: published ? 12 : 11,
+    revision: published ? 10 : 9,
     start_command_id: t.startCommandId,
     submit_command_id: t.submitCommandId,
     publish_command_id: published ? t.publishCommandId : null,
@@ -362,8 +362,8 @@ function assertPublicationAudit(rows: BatchNext5P3EvidenceRow[], phase: 'PRE' | 
     batch_id: BATCH_NEXT5_P3_TARGET.batchId,
     batch_name: BATCH_NEXT5_P3_TARGET.batchName,
     batch_status: phase === 'POST' ? 'PUBLISHED' : 'SUBMITTED',
-    revision: phase === 'POST' ? 12 : 11,
-    observation_count: 10,
+    revision: phase === 'POST' ? 10 : 9,
+    observation_count: 8,
     conflict_observation_count: 0,
   })) expectField(row, field, expected, `${phase} publication audit`);
   expectTimestamp(row.submitted_at, BATCH_NEXT5_P3_TARGET.submittedAt, `${phase} publication audit submitted_at`);
@@ -384,8 +384,8 @@ export function assertBatchNext5P3Preflight(
   assertCurrentBatch(currentBatch);
   assertBatch(evidence.batches, 'PRE');
   assertScope(evidence.scopeItems);
-  requireCount(evidence.reconciliations, 10, 'reconciliation evidence');
-  requireCount(evidence.observations, 10, 'observation evidence');
+  requireCount(evidence.reconciliations, 8, 'reconciliation evidence');
+  requireCount(evidence.observations, 8, 'observation evidence');
   for (const [code, identity] of Object.entries(BATCH_NEXT5_P3_TARGET.identities)) {
     assertReconciliationAndObservation(evidence, code, identity);
   }
@@ -398,8 +398,8 @@ export function assertBatchNext5P3Preflight(
 export function assertBatchNext5P3Postflight(evidence: BatchNext5P3Evidence) {
   assertBatch(evidence.batches, 'POST');
   assertScope(evidence.scopeItems);
-  requireCount(evidence.reconciliations, 10, 'POST reconciliation evidence');
-  requireCount(evidence.observations, 10, 'POST observation evidence');
+  requireCount(evidence.reconciliations, 8, 'POST reconciliation evidence');
+  requireCount(evidence.observations, 8, 'POST observation evidence');
   for (const [code, identity] of Object.entries(BATCH_NEXT5_P3_TARGET.identities)) {
     assertReconciliationAndObservation(evidence, code, identity);
   }
@@ -431,7 +431,7 @@ export function assertBatchNext5P3PublishAcknowledgement(result: BatchNext5P3Pub
     || typeof result.publishedAt !== 'string'
     || !result.publishedAt
     || Number.isNaN(Date.parse(result.publishedAt))
-  ) throw new Error('Batch Next 5 P3 PUBLISH acknowledgement is not the exact PUBLISHED rev10 / 10-10-10-10 result.');
+  ) throw new Error('Batch Next 5 P3 PUBLISH acknowledgement is not the exact PUBLISHED rev10 / 8-8-8-8 result.');
 }
 
 export function formatBatchNext5P3Failure(error: unknown, commandCrossedBoundary: boolean) {
