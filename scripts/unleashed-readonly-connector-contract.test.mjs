@@ -74,6 +74,7 @@ test('Edge Function is GET-only against allowlisted migration resources', () => 
     'warehouses',
     'stock_on_hand',
     'sales_orders_open',
+    'sales_orders_history',
     'purchase_orders_open',
     'sales_invoices',
     'credit_notes',
@@ -83,6 +84,36 @@ test('Edge Function is GET-only against allowlisted migration resources', () => 
   ]) {
     assert.match(edgeFunction, new RegExp(`${resource}: \\{`));
   }
+});
+
+
+test('Sales BI history uses a separate full-history SalesOrders resource without widening defaults', () => {
+  const historyMatch = edgeFunctionIndex.match(/sales_orders_history:\s*\{([\s\S]*?)\n\s*\},/);
+  assert.ok(historyMatch, 'sales_orders_history resource must exist');
+  assert.match(historyMatch[1], /endpoint: 'SalesOrders'/);
+  assert.match(historyMatch[1], /paginated: true/);
+  assert.match(historyMatch[1], /supportsModifiedSince: true/);
+  assert.match(historyMatch[1], /itemKeys: \['Items', 'SalesOrder', 'SalesOrders'\]/);
+  assert.doesNotMatch(historyMatch[1], /defaultQuery|orderStatus/);
+
+  const openMatch = edgeFunctionIndex.match(/sales_orders_open:\s*\{([\s\S]*?)\n\s*\},/);
+  assert.ok(openMatch, 'sales_orders_open resource must remain present');
+  assert.match(openMatch[1], /endpoint: 'SalesOrders'/);
+  assert.match(openMatch[1], /defaultQuery: \{ orderStatus: 'Parked,Placed,Backordered' \}/);
+
+  const defaultMatch = edgeFunctionIndex.match(/const DEFAULT_RESOURCES: ResourceName\[\] = \[([\s\S]*?)\n\];/);
+  assert.ok(defaultMatch, 'DEFAULT_RESOURCES must remain explicit');
+  assert.match(defaultMatch[1], /'sales_orders_open'/);
+  assert.doesNotMatch(defaultMatch[1], /'sales_orders_history'/);
+
+  const intelligenceMatch = edgeFunctionIndex.match(/const SALES_INTELLIGENCE_RESOURCES: ResourceName\[\] = \[([\s\S]*?)\n\];/);
+  assert.ok(intelligenceMatch, 'SALES_INTELLIGENCE_RESOURCES must remain explicit');
+  assert.match(intelligenceMatch[1], /'sales_orders_open'/);
+  assert.match(intelligenceMatch[1], /'sales_orders_history'/);
+
+  assert.match(edgeFunctionIndex, /if \(value === 'sales_intelligence'\) return SALES_INTELLIGENCE_RESOURCES/);
+  assert.match(edgeFunctionIndex, /return typeof value === 'string' && Object\.hasOwn\(RESOURCE_DEFINITIONS, value\)/);
+  assert.match(edgeFunctionIndex, /const HARD_MAX_PAGES = 5/);
 });
 
 test('Connector execution is bounded and dry-run by default', () => {

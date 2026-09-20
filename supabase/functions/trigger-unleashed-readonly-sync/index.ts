@@ -92,6 +92,12 @@ const RESOURCE_DEFINITIONS = {
     defaultQuery: { orderStatus: 'Parked,Placed,Backordered' },
     itemKeys: ['Items', 'SalesOrder', 'SalesOrders'],
   },
+  sales_orders_history: {
+    endpoint: 'SalesOrders',
+    paginated: true,
+    supportsModifiedSince: true,
+    itemKeys: ['Items', 'SalesOrder', 'SalesOrders'],
+  },
   purchase_orders_open: {
     endpoint: 'PurchaseOrders',
     paginated: true,
@@ -265,6 +271,7 @@ const DEFAULT_RESOURCES: ResourceName[] = [
 
 const SALES_INTELLIGENCE_RESOURCES: ResourceName[] = [
   'sales_orders_open',
+  'sales_orders_history',
   'sales_invoices',
   'credit_notes',
   'sales_shipments',
