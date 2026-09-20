@@ -131,6 +131,11 @@ SQL
     sleep 20
   done
 
+  # Production migration history contains one known legacy timestamp identity.
+  # Normalize that alias only in this ephemeral trusted-main checkout, using the
+  # same fail-closed, blob-pinned helper as canonical production deployment.
+  node scripts/normalize-supabase-production-migration-aliases.mjs
+
   python3 - "$input_dir/remote-migration-versions.txt" "$TRANSFORM_007_TARGET_VERSION" <<'PY'
 import re
 import sys

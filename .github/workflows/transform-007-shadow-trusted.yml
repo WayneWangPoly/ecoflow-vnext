@@ -159,7 +159,7 @@ jobs:
           fi
           merge_sha="$current_merge_sha"
 
-          protected_pattern='^(\.github/workflows/transform-007-shadow-(request|trusted)\.yml|scripts/transform-007-shadow-(runner\.sh|bootstrap\.test\.mjs)|docs/engineering/FILE-OWNERSHIP\.md|docs/engineering/work-packages/TRANSFORM-007-shadow-bootstrap\.md)$'
+          protected_pattern='^(\.github/workflows/transform-007-shadow-(request|trusted)\.yml|scripts/transform-007-shadow-(runner\.sh|bootstrap\.test\.mjs)|scripts/normalize-supabase-production-migration-aliases\.mjs|docs/engineering/FILE-OWNERSHIP\.md|docs/engineering/work-packages/TRANSFORM-007-shadow-bootstrap\.md)$'
           if jq -e --arg pattern "$protected_pattern" 'any(.[]; (.filename | test($pattern)) or ((.previous_filename // "") | test($pattern)))' /tmp/transform-007-pr-files.json > /dev/null; then
             emit blocked TRUST_BOUNDARY_CHANGED "$pr_number" "$head_sha" "$merge_sha"
             exit 0
