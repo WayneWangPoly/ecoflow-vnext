@@ -4,6 +4,14 @@ import fs from 'node:fs';
 const migrationFile =
   'supabase/migrations/20260920093537_sales_transaction_fact_foundation.sql';
 const migration = fs.readFileSync(migrationFile, 'utf8');
+const workflow = fs.readFileSync(
+  '.github/workflows/warehouse-productisation-check.yml',
+  'utf8',
+);
+const fixture = fs.readFileSync(
+  'scripts/sales-transaction-facts-migration-fixture.sql',
+  'utf8',
+);
 
 const required = [
   ['transaction boundary', /\bbegin;[\s\S]*\bcommit;\s*$/i],
@@ -52,8 +60,25 @@ for (const [name, pattern] of forbidden) {
   assert.doesNotMatch(migration, pattern, `Sales transaction fact audit found ${name}`);
 }
 
+const supportChecks = [
+  ['workflow fixture', workflow, /scripts\/sales-transaction-facts-migration-fixture\.sql/],
+  ['workflow migration', workflow, /supabase\/migrations\/20260920093537_sales_transaction_fact_foundation\.sql/],
+  ['workflow DB contract', workflow, /scripts\/sales-transaction-facts-contract-test\.sql/],
+  ['raw snapshot shell', fixture, /create table if not exists public\.unleashed_raw_snapshots/],
+];
+
+for (const [name, content, pattern] of supportChecks) {
+  assert.match(content, pattern, `Sales transaction support audit failed: ${name}`);
+}
+assert.doesNotMatch(
+  fixture,
+  /insert\s+into\s+public\.unleashed_raw_snapshots/i,
+  'Sales transaction migration fixture must not include business data',
+);
+
 assert.equal(required.length, 24);
 assert.equal(forbidden.length, 9);
+assert.equal(supportChecks.length, 4);
 console.log(
-  `Sales transaction fact static audit passed (${required.length + forbidden.length}/${required.length + forbidden.length}).`,
+  `Sales transaction fact static audit passed (${required.length + forbidden.length + supportChecks.length + 1}/${required.length + forbidden.length + supportChecks.length + 1}).`,
 );

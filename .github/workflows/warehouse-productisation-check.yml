@@ -103,6 +103,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f scripts/operational-state-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/order-fulfilment-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
           psql -v ON_ERROR_STOP=1 -f scripts/actionable-exception-read-model-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
+          psql -v ON_ERROR_STOP=1 -f scripts/sales-transaction-facts-migration-fixture.sql 2>&1 | tee -a operational-db-contract.log
       - name: Apply operational migrations through lifecycle ledger
         shell: bash
         run: |
@@ -150,7 +151,6 @@ jobs:
             supabase/migrations/20260730103000_metric_readiness_read_boundary.sql \
             supabase/migrations/20260730160000_actionable_exception_read_model.sql \
             supabase/migrations/20260730190000_actionable_exception_lifecycle_ledger.sql \
-            supabase/migrations/20260830090000_unleashed_readonly_connector_foundation.sql \
             supabase/migrations/20260920093537_sales_transaction_fact_foundation.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
