@@ -207,11 +207,11 @@ test('resume evidence is three authenticated SELECT-only reads bound to exact ba
   assert.doesNotMatch(evidence, /service[_-]?role|access[_-]?token|refresh[_-]?token|jwt/i);
 });
 
-test('completed NEXT5 DRAFT carrier is archived when NEXT5 P2 becomes active, while DRAFT remains CI-gated', () => {
+test('completed NEXT5 DRAFT carrier is archived when NEXT5 P3 becomes active, while DRAFT remains CI-gated', () => {
   assert.doesNotMatch(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5DraftOnlyCarrier'\)/);
   assert.doesNotMatch(wrapper, /<BatchNext5DraftOnlyCarrier/);
-  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5P2ResumeSubmitCarrier'\)/);
-  assert.match(wrapper, /<BatchNext5P2ResumeSubmitCarrier/);
+  assert.match(wrapper, /lazy\(\(\) => import\('\.\/BatchNext5P3ResumePublishCarrier'\)/);
+  assert.match(wrapper, /<BatchNext5P3ResumePublishCarrier/);
   assert.match(workflow, /ecoflow-328-batch-next5-draft-carrier-contract\.test\.mjs/);
   assert.match(workflow, /BatchNext5DraftOnlyCarrier\.tsx/);
   assert.match(workflow, /batchNext5DraftOnlyContract\.ts/);
