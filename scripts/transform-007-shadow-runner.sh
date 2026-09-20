@@ -28,6 +28,159 @@ validate_target() {
   }
 }
 
+validate_candidate_sql() {
+  local candidate_path="$1"
+  python3 - "$candidate_path" <<'PYLEX'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    sql = path.read_text(encoding='utf-8')
+except UnicodeDecodeError:
+    print('PSQL_LEXICAL_INPUT_INVALID_UTF8', file=sys.stderr)
+    raise SystemExit(65)
+
+dollar_tag = re.compile(r'\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$')
+state = 'NORMAL'
+closing_tag = None
+block_depth = 0
+opened_line = 1
+opened_column = 1
+i = 0
+line = 1
+column = 1
+
+def advance(count=1):
+    global i, line, column
+    for _ in range(count):
+        if sql[i] == '\n':
+            line += 1
+            column = 1
+        else:
+            column += 1
+        i += 1
+
+def enter(next_state):
+    global state, opened_line, opened_column
+    state = next_state
+    opened_line = line
+    opened_column = column
+
+def is_identifier_continuation(character):
+    return character.isascii() is False or character.isalnum() or character in '_$'
+
+while i < len(sql):
+    if state == 'NORMAL':
+        if sql[i] == '\\':
+            print(f'PSQL_META_COMMAND_ESCAPE_FORBIDDEN:{line}:{column}', file=sys.stderr)
+            raise SystemExit(65)
+        if sql.startswith('--', i):
+            enter('LINE_COMMENT')
+            advance(2)
+            continue
+        if sql.startswith('/*', i):
+            enter('BLOCK_COMMENT')
+            block_depth = 1
+            advance(2)
+            continue
+        if (
+            sql[i] in 'Ee'
+            and i + 1 < len(sql)
+            and sql[i + 1] == "'"
+            and (i == 0 or not is_identifier_continuation(sql[i - 1]))
+        ):
+            enter('ESCAPE_STRING')
+            advance(2)
+            continue
+        if sql[i] == "'":
+            enter('STRING')
+            advance()
+            continue
+        if sql[i] == '"':
+            enter('QUOTED_IDENTIFIER')
+            advance()
+            continue
+        if sql[i] == '$' and (i == 0 or not is_identifier_continuation(sql[i - 1])):
+            match = dollar_tag.match(sql, i)
+            if match:
+                enter('DOLLAR_STRING')
+                closing_tag = match.group(0)
+                advance(len(closing_tag))
+                continue
+        advance()
+        continue
+
+    if state == 'LINE_COMMENT':
+        if sql[i] == '\n':
+            state = 'NORMAL'
+        advance()
+        continue
+
+    if state == 'BLOCK_COMMENT':
+        if sql.startswith('/*', i):
+            block_depth += 1
+            advance(2)
+        elif sql.startswith('*/', i):
+            block_depth -= 1
+            advance(2)
+            if block_depth == 0:
+                state = 'NORMAL'
+        else:
+            advance()
+        continue
+
+    if state == 'STRING':
+        if sql.startswith("''", i):
+            advance(2)
+        elif sql[i] == "'":
+            state = 'NORMAL'
+            advance()
+        else:
+            advance()
+        continue
+
+    if state == 'ESCAPE_STRING':
+        if sql[i] == '\\':
+            advance()
+            if i < len(sql):
+                advance()
+        elif sql.startswith("''", i):
+            advance(2)
+        elif sql[i] == "'":
+            state = 'NORMAL'
+            advance()
+        else:
+            advance()
+        continue
+
+    if state == 'QUOTED_IDENTIFIER':
+        if sql.startswith('""', i):
+            advance(2)
+        elif sql[i] == '"':
+            state = 'NORMAL'
+            advance()
+        else:
+            advance()
+        continue
+
+    if state == 'DOLLAR_STRING':
+        if sql.startswith(closing_tag, i):
+            advance(len(closing_tag))
+            closing_tag = None
+            state = 'NORMAL'
+        else:
+            advance()
+
+if state == 'LINE_COMMENT':
+    state = 'NORMAL'
+if state != 'NORMAL':
+    print(f'PSQL_LEXICAL_STATE_UNTERMINATED:{state}:{opened_line}:{opened_column}', file=sys.stderr)
+    raise SystemExit(65)
+PYLEX
+}
+
 read_production() {
   : "${TRANSFORM_007_SHADOW_READ_DB_URL:?Missing dedicated TRANSFORM_007_SHADOW_READ_DB_URL}"
   : "${TRANSFORM_007_TARGET_PATH:?TRANSFORM_007_TARGET_PATH is required}"
@@ -231,10 +384,7 @@ PY
   test "$(sha256sum "$input_dir/shadow-runner.sh" | cut -d' ' -f1)" = "$(jq -r '.runner_sha256' "$input_dir/manifest.json")"
   test "$(git hash-object "$input_dir/candidate.sql")" = "$EXPECTED_CANDIDATE_BLOB_SHA"
 
-  if LC_ALL=C grep -q '\\' "$input_dir/candidate.sql"; then
-    echo 'Candidate SQL contains a psql meta-command escape and is forbidden.'
-    exit 65
-  fi
+  validate_candidate_sql "$input_dir/candidate.sql"
 
   psql "$SHADOW_ADMIN_DB_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
 do $$
