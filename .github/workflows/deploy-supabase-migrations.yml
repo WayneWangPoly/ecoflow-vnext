@@ -17,6 +17,7 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/functions/**'
       - 'scripts/run-transient-supabase-command.mjs'
+      - 'scripts/normalize-supabase-production-migration-aliases.mjs'
       - 'scripts/transient-supabase-command-contract.test.mjs'
       - 'scripts/release-sync-frontend-paths.mjs'
       - 'scripts/release-sync-frontend-paths-contract.test.mjs'
@@ -155,6 +156,8 @@ jobs:
             fi
             mv "$file" "/tmp/ecoflow-legacy-migrations/$base"
           done
+      - name: Normalize known production migration identity aliases
+        run: node scripts/normalize-supabase-production-migration-aliases.mjs
       - name: Install Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
       - name: Construct IPv4 pooler database URL
@@ -339,6 +342,8 @@ jobs:
           test -f supabase/migrations/20260624_remote_production_baseline.sql
           archived_count="$(find /tmp/ecoflow-legacy-migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           echo "Legacy SQL archives excluded from deployment: $archived_count"
+      - name: Normalize known production migration identity aliases
+        run: node scripts/normalize-supabase-production-migration-aliases.mjs
       - name: Install Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
       - name: Link production project with transient retry
