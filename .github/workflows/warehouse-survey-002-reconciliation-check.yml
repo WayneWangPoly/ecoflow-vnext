@@ -80,7 +80,7 @@ on:
       - 'src/features/operationalRoutes/UnifiedOperationalRoutes.tsx'
       - 'supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql'
       - 'supabase/migrations/20260903172543_product_identity_bounded_batch.sql'
-      - 'supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql'
+      - 'supabase/migrations/20260918135648_warehouse_survey_002_commercial_sku_resolver_repair.sql'
   workflow_dispatch:
 
 permissions:
@@ -285,7 +285,7 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260820104500_warehouse_survey_001_smart_packaging_evidence.sql
 
       - name: Apply ECOFLOW-328 stale Survey SKU resolver repair
-        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260918135648_warehouse_survey_002_commercial_sku_resolver_repair.sql
 
       - name: Execute ECOFLOW-328 stale Survey SKU resolver database contract
         run: psql -v ON_ERROR_STOP=1 -f scripts/warehouse-survey-002-commercial-sku-resolver-repair-db-contract-test.sql
@@ -308,7 +308,7 @@ jobs:
           set -euo pipefail
           for file in \
             supabase/migrations/20260826093000_warehouse_survey_002_product_identity_reconciliation.sql \
-            supabase/migrations/20260918234500_warehouse_survey_002_commercial_sku_resolver_repair.sql
+            supabase/migrations/20260918135648_warehouse_survey_002_commercial_sku_resolver_repair.sql
           do
             if grep -Eiq '^[[:space:]]*(insert[[:space:]]+into|update|delete[[:space:]]+from)[[:space:]]+public\.(ecoflow_inventory_movements|ecoflow_inventory_balances|ecoflow_warehouse_receiving|ecoflow_stocktake|ecoflow_pick|ecoflow_delivery)' "$file"; then
               echo "Survey authority must never mutate operational quantities: $file" >&2
