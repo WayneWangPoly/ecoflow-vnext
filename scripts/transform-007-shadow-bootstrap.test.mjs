@@ -15,6 +15,20 @@ const packagePath = 'docs/engineering/work-packages/TRANSFORM-007-shadow-bootstr
 const request = readFileSync(requestPath, 'utf8');
 const trusted = readFileSync(trustedPath, 'utf8');
 const runner = readFileSync(runnerPath, 'utf8');
+const lexicalGuard = runner.match(/python3 - "\$candidate_path" <<'PYLEX'\n([\s\S]*?)\nPYLEX/)?.[1];
+
+function runLexicalGuard(sql) {
+  assert.ok(lexicalGuard, 'embedded candidate SQL lexical guard is required');
+  const root = mkdtempSync(join(tmpdir(), 'transform-007-lexical-'));
+  const candidate = join(root, 'candidate.sql');
+  writeFileSync(candidate, sql);
+  const result = spawnSync('python3', ['-', candidate], {
+    encoding: 'utf8',
+    input: lexicalGuard,
+  });
+  rmSync(root, { recursive: true, force: true });
+  return result;
+}
 
 function workflowStepRun(job) {
   const result = spawnSync('python', ['-c', [
@@ -330,11 +344,71 @@ test('candidate executes only in credential-free PostgreSQL under a non-superuse
   assert.match(trusted, /postgres:17/);
   assert.match(trusted, /permissions:\n      actions: read/);
   assert.match(runner, /create role transform_007_shadow login password 'shadow-candidate'[\s\S]*?nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls/);
-  assert.match(runner, /Candidate SQL contains a psql meta-command escape and is forbidden/);
+  assert.match(runner, /PSQL_META_COMMAND_ESCAPE_FORBIDDEN/);
   assert.match(runner, /git hash-object \"\$input_dir\/candidate\.sql\"/);
   assert.match(runner, /--single-transaction -f \"\$input_dir\/candidate\.sql\"/);
   assert.match(runner, /alter schema public owner to transform_007_shadow/);
   assert.doesNotMatch(runner.match(/\nshadow\(\) \{[\s\S]*?\n\}\n\ncase /)?.[0] ?? '', /TRANSFORM_007_SHADOW_READ_DB_URL/);
+  const candidateBlobCheck = runner.indexOf('git hash-object "$input_dir/candidate.sql"');
+  const lexicalCheck = runner.indexOf('validate_candidate_sql "$input_dir/candidate.sql"');
+  const candidateExecution = runner.indexOf('--single-transaction -f "$input_dir/candidate.sql"');
+  assert.ok(candidateBlobCheck >= 0 && lexicalCheck > candidateBlobCheck && candidateExecution > lexicalCheck);
+});
+
+test('candidate lexical guard allows backslashes only inside PostgreSQL quoted and comment contexts', () => {
+  const allowed = [
+    String.raw`if p_value ~ '^/Date\(-?[0-9]+(?:[+-][0-9]{4})?\)/$' then`,
+    String.raw`v_millis := substring(p_value from '^/Date\((-?[0-9]+)')::numeric;`,
+    String.raw`select 'ordinary ''quoted'' \\ string';`,
+    String.raw`select E'escaped\'quote and \\ slash';`,
+    String.raw`select "quoted""\\identifier";`,
+    String.raw`select $$dollar \\ string$$, $tag$tagged \\ string$tag$;`,
+    String.raw`-- line comment \\gexec
+select 1;`,
+    String.raw`/* outer \\copy /* nested \\i */ still comment */ select 1;`,
+  ];
+  for (const sql of allowed) {
+    const result = runLexicalGuard(sql);
+    assert.equal(result.status, 0, `${JSON.stringify(sql)}\n${result.stdout}\n${result.stderr}`);
+  }
+});
+
+test('candidate lexical guard rejects standalone and inline unquoted psql meta-command escapes', () => {
+  const forbidden = [
+    String.raw`\!`,
+    String.raw`\copy`,
+    String.raw`\i`,
+    String.raw`\ir`,
+    String.raw`\include`,
+    String.raw`\set`,
+    String.raw`\g`,
+    String.raw`\gexec`,
+    String.raw`select 1; \gexec`,
+    String.raw`select 1 \g`,
+    String.raw`λE'quoted\' \g'`,
+    String.raw`λ$tag$not-a-dollar-quote \g$tag$`,
+  ];
+  for (const sql of forbidden) {
+    const result = runLexicalGuard(sql);
+    assert.equal(result.status, 65, JSON.stringify(sql));
+    assert.match(result.stderr, /^PSQL_META_COMMAND_ESCAPE_FORBIDDEN:1:\d+\n$/);
+    assert.equal(result.stdout, '');
+  }
+});
+
+test('candidate lexical guard fails closed on unterminated quoted and comment contexts', () => {
+  const malformed = [
+    { sql: "select 'unterminated", state: 'STRING' },
+    { sql: 'select "unterminated', state: 'QUOTED_IDENTIFIER' },
+    { sql: 'select $tag$unterminated', state: 'DOLLAR_STRING' },
+    { sql: 'select /* unterminated', state: 'BLOCK_COMMENT' },
+  ];
+  for (const { sql, state } of malformed) {
+    const result = runLexicalGuard(sql);
+    assert.equal(result.status, 65, JSON.stringify(sql));
+    assert.match(result.stderr, new RegExp(`^PSQL_LEXICAL_STATE_UNTERMINATED:${state}:1:\\d+\\n$`));
+    assert.equal(result.stdout, '');
+  }
 });
 
 test('shadow ownership handoff excludes table-owned serial and identity sequences', () => {
