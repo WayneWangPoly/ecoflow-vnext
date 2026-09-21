@@ -1,21 +1,15 @@
--- ECOFLOW-R5-007 — bounded provisional reference opening authority for #339
+-- ECOFLOW-R5-007 — bounded provisional reference planning evidence for #339
 --
--- Purpose:
--- During the active ADL1 warehouse relocation, preserve the Owner's accepted
--- operating decision that the frozen Unleashed QtyOnHand may be used as a
--- provisional migration/reference baseline WITHOUT claiming it is a physical
--- count. The resulting quantity is placed at the frozen planned location in
--- HOLD state, so it is excluded from normal ACTIVE picking/read paths.
+-- During ADL1 relocation, the Owner accepted frozen Unleashed QtyOnHand as a
+-- provisional migration/reference baseline only. It is NOT a physical count
+-- and must NOT enter operational warehouse quantity or inventory movements.
 --
--- Scope is deliberately frozen to the two already-started R5-005B DRAFT
--- commissionings only:
---   R-360Y          -> A2-03-02A -> 3 cartons
---   SB24/32/40LBOX -> A2-03-03A -> 5 cartons
+-- Scope is frozen to the two already-started R5-005B DRAFT commissionings:
+--   R-360Y          -> reference 3 cartons -> planned A2-03-02A
+--   SB24/32/40LBOX -> reference 5 cartons -> planned A2-03-03A
 --
--- This carrier does not approve a stocktake and does not mark commissioning
--- evidence FINALIZED/MATERIALIZED. Later real field stocktake evidence must
--- include the provisional location so the normal stocktake approval can
--- overwrite/zero the HOLD quantity and create only compensating movements.
+-- The existing R5-005B physical evidence path remains the only way to create
+-- INITIAL stocktake evidence and later inventory authority.
 
 create table if not exists public.ecoflow_unleashed_inventory_provisional_openings (
   id uuid primary key default gen_random_uuid(),
@@ -34,18 +28,17 @@ create table if not exists public.ecoflow_unleashed_inventory_provisional_openin
   physical_sku_id uuid not null references public.ecoflow_physical_skus(id),
   package_id uuid not null references public.ecoflow_physical_sku_packages(id),
   operational_barcode text not null,
-  location_id uuid not null references public.ecoflow_warehouse_locations(id),
-  location_code text not null,
-  source_qty_on_hand numeric not null check (source_qty_on_hand > 0 and source_qty_on_hand = trunc(source_qty_on_hand)),
+  planned_location_id uuid not null references public.ecoflow_warehouse_locations(id),
+  planned_location_code text not null,
+  source_qty_on_hand numeric not null
+    check (source_qty_on_hand > 0 and source_qty_on_hand = trunc(source_qty_on_hand)),
   units_per_package numeric not null check (units_per_package > 0),
-  warehouse_movement_id uuid not null references public.ecoflow_warehouse_movements(id),
-  inventory_movement_id uuid not null references public.ecoflow_inventory_movements(id),
-  status text not null default 'PROVISIONAL_HOLD'
-    check (status in ('PROVISIONAL_HOLD','RECONCILED')),
+  status text not null default 'PROVISIONAL_REFERENCE'
+    check (status in ('PROVISIONAL_REFERENCE','RECONCILED')),
   actor_user_id uuid not null references auth.users(id),
   actor_role text not null,
   reason text not null check (btrim(reason) <> '' and length(reason) <= 2000),
-  applied_at timestamptz not null default clock_timestamp(),
+  recorded_at timestamptz not null default clock_timestamp(),
   reconciled_stocktake_session_id uuid references public.ecoflow_stocktake_sessions(id),
   reconciled_at timestamptz,
   result jsonb not null default '{}'::jsonb
@@ -212,8 +205,9 @@ begin
     'provisionalEligible',v_eligible,
     'provisionalOpeningId',v_opening.id,
     'provisionalStatus',v_opening.status,
-    'provisionalAppliedAt',v_opening.applied_at,
+    'provisionalRecordedAt',v_opening.recorded_at,
     'provisionalQuantity',v_opening.source_qty_on_hand,
+    'inventoryMutationCreated',false,
     'operationalInventoryAuthorityCreated',false,
     'physicalCountClaimed',false,
     'requiresLaterPhysicalStocktake',true,
@@ -244,12 +238,8 @@ declare
   v_existing public.ecoflow_unleashed_inventory_provisional_openings%rowtype;
   v_set public.ecoflow_unleashed_inventory_commissioning_sets%rowtype;
   v_phys public.ecoflow_physical_skus%rowtype;
-  v_location public.ecoflow_warehouse_locations%rowtype;
   v_payload jsonb;
   v_payload_hash text;
-  v_reference text;
-  v_warehouse_movement_id uuid;
-  v_inventory_movement_id uuid;
   v_result jsonb;
 begin
   if p_commissioning_id is null then raise exception 'R5_007_COMMISSIONING_ID_REQUIRED'; end if;
@@ -293,11 +283,6 @@ begin
   from public.ecoflow_physical_skus
   where id=v_set.physical_sku_id;
 
-  select * into v_location
-  from public.ecoflow_warehouse_locations
-  where id=(v_gate->>'plannedLocationId')::uuid
-  for update;
-
   if exists (
     select 1 from public.ecoflow_unleashed_inventory_provisional_openings
     where commissioning_id=p_commissioning_id
@@ -307,95 +292,36 @@ begin
     select 1 from public.ecoflow_warehouse_location_items
     where upper(sku)=upper(v_phys.physical_sku_code)
       and quantity<>0
-  ) then raise exception 'R5_007_EXISTING_WAREHOUSE_QUANTITY_BLOCKS_OPENING'; end if;
+  ) then raise exception 'R5_007_EXISTING_WAREHOUSE_QUANTITY_BLOCKS_REFERENCE'; end if;
 
   if exists (
     select 1 from public.ecoflow_inventory_movements
     where upper(sku)=upper(v_phys.physical_sku_code)
-  ) then raise exception 'R5_007_EXISTING_INVENTORY_MOVEMENT_BLOCKS_OPENING'; end if;
-
-  v_reference:='PROVISIONAL-OPENING:'||p_commissioning_id::text;
-
-  insert into public.ecoflow_warehouse_location_items(
-    location_id,sku,product_name,source_barcode,unit_level,quantity,status,
-    last_movement_at,last_note,created_at,updated_at
-  ) values (
-    v_location.id,
-    v_phys.physical_sku_code,
-    v_phys.display_name,
-    v_set.operational_barcode,
-    'carton',
-    v_set.source_qty_on_hand,
-    'HOLD',
-    clock_timestamp(),
-    left('PROVISIONAL_REFERENCE_ONLY — not physically counted. '||btrim(p_reason),2000),
-    clock_timestamp(),
-    clock_timestamp()
-  );
-
-  insert into public.ecoflow_warehouse_movements(
-    movement_type,location_id,to_location_id,sku,product_name,barcode,
-    unit_level,quantity,note,actor_user_id,created_at,reference_type,reference_id,transfer_reference
-  ) values (
-    'ADJUST_IN',
-    v_location.id,
-    v_location.id,
-    v_phys.physical_sku_code,
-    v_phys.display_name,
-    v_set.operational_barcode,
-    'carton',
-    v_set.source_qty_on_hand,
-    left('PROVISIONAL_REFERENCE_ONLY — not physically counted. '||btrim(p_reason),2000),
-    auth.uid(),
-    clock_timestamp(),
-    'PROVISIONAL_OPENING_REFERENCE',
-    p_commissioning_id::text,
-    v_reference
-  ) returning id into v_warehouse_movement_id;
-
-  insert into public.ecoflow_inventory_movements(
-    sku,product_name,movement_type,quantity,from_location,to_location,
-    reference_type,reference_id,action_note,source,moved_by,moved_at
-  ) values (
-    v_phys.physical_sku_code,
-    v_phys.display_name,
-    'ADJUST_IN',
-    v_set.source_qty_on_hand*v_set.units_per_package,
-    null,
-    v_location.location_code,
-    'PROVISIONAL_OPENING_REFERENCE',
-    p_commissioning_id::text,
-    left('PROVISIONAL_REFERENCE_ONLY — not physically counted. '||btrim(p_reason),2000),
-    'UNLEASHED_REFERENCE_BASELINE',
-    auth.uid(),
-    clock_timestamp()
-  ) returning id into v_inventory_movement_id;
+  ) then raise exception 'R5_007_EXISTING_INVENTORY_MOVEMENT_BLOCKS_REFERENCE'; end if;
 
   v_result:=jsonb_build_object(
     'commissioningId',v_set.id,
     'sourceProductCode',v_phys.physical_sku_code,
     'sourceQtyOnHand',v_set.source_qty_on_hand,
-    'plannedLocationCode',v_location.location_code,
-    'warehouseItemStatus','HOLD',
-    'provisionalReferenceLedgerCreated',true,
+    'plannedLocationCode',v_gate->>'plannedLocationCode',
+    'provisionalReferenceRecorded',true,
+    'inventoryMutationCreated',false,
     'operationalInventoryAuthorityCreated',false,
     'physicalCountClaimed',false,
-    'requiresLaterPhysicalStocktake',true,
-    'warehouseMovementId',v_warehouse_movement_id,
-    'inventoryMovementId',v_inventory_movement_id
+    'requiresLaterPhysicalStocktake',true
   );
 
   insert into public.ecoflow_unleashed_inventory_provisional_openings(
     command_id,command_payload_sha256,commissioning_id,reference_batch_id,reference_row_id,
     source_run_id,source_set_sha256,source_row_sha256,source_product_code,physical_sku_id,
-    package_id,operational_barcode,location_id,location_code,source_qty_on_hand,units_per_package,
-    warehouse_movement_id,inventory_movement_id,status,actor_user_id,actor_role,reason,result
+    package_id,operational_barcode,planned_location_id,planned_location_code,source_qty_on_hand,
+    units_per_package,status,actor_user_id,actor_role,reason,result
   ) values (
     p_command_id,v_payload_hash,v_set.id,v_set.reference_batch_id,v_set.reference_row_id,
     v_set.source_run_id,v_set.source_set_sha256,v_set.source_row_sha256,v_phys.physical_sku_code,
-    v_set.physical_sku_id,v_set.package_id,v_set.operational_barcode,v_location.id,v_location.location_code,
-    v_set.source_qty_on_hand,v_set.units_per_package,v_warehouse_movement_id,v_inventory_movement_id,
-    'PROVISIONAL_HOLD',auth.uid(),v_role,left(btrim(p_reason),2000),v_result
+    v_set.physical_sku_id,v_set.package_id,v_set.operational_barcode,
+    (v_gate->>'plannedLocationId')::uuid,v_gate->>'plannedLocationCode',v_set.source_qty_on_hand,
+    v_set.units_per_package,'PROVISIONAL_REFERENCE',auth.uid(),v_role,left(btrim(p_reason),2000),v_result
   );
 
   return v_result;
@@ -406,40 +332,6 @@ revoke all on function public.ecoflow_apply_provisional_reference_opening_balanc
   from public, anon, authenticated, service_role;
 grant execute on function public.ecoflow_apply_provisional_reference_opening_balance(uuid,uuid,text)
   to authenticated;
-
-create or replace function public.ecoflow_guard_provisional_opening_finalization()
-returns trigger
-language plpgsql
-security definer
-set search_path = pg_catalog, public
-as $$
-declare
-  v_opening public.ecoflow_unleashed_inventory_provisional_openings%rowtype;
-begin
-  if old.status='DRAFT' and new.status='FINALIZED' then
-    select * into v_opening
-    from public.ecoflow_unleashed_inventory_provisional_openings
-    where commissioning_id=new.id
-      and status='PROVISIONAL_HOLD';
-
-    if found and not exists (
-      select 1
-      from public.ecoflow_unleashed_inventory_commissioning_locations l
-      where l.commissioning_id=new.id
-        and l.location_id=v_opening.location_id
-    ) then
-      raise exception 'R5_007_PROVISIONAL_LOCATION_MUST_BE_INCLUDED_IN_PHYSICAL_STOCKTAKE';
-    end if;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists ecoflow_guard_provisional_opening_finalization
-  on public.ecoflow_unleashed_inventory_commissioning_sets;
-create trigger ecoflow_guard_provisional_opening_finalization
-before update on public.ecoflow_unleashed_inventory_commissioning_sets
-for each row execute function public.ecoflow_guard_provisional_opening_finalization();
 
 create or replace function public.ecoflow_mark_provisional_opening_reconciled()
 returns trigger
@@ -456,11 +348,14 @@ begin
     from public.ecoflow_unleashed_inventory_commissioning_sets c
     where c.stocktake_session_id=new.id
       and p.commissioning_id=c.id
-      and p.status='PROVISIONAL_HOLD';
+      and p.status='PROVISIONAL_REFERENCE';
   end if;
   return new;
 end;
 $$;
+
+revoke all on function public.ecoflow_mark_provisional_opening_reconciled()
+  from public, anon, authenticated, service_role;
 
 drop trigger if exists ecoflow_mark_provisional_opening_reconciled
   on public.ecoflow_stocktake_sessions;
@@ -469,8 +364,8 @@ after update on public.ecoflow_stocktake_sessions
 for each row execute function public.ecoflow_mark_provisional_opening_reconciled();
 
 comment on table public.ecoflow_unleashed_inventory_provisional_openings is
-  'R5-007 immutable provenance for provisional Unleashed-reference opening quantities placed in HOLD while ADL1 relocation prevents immediate physical count.';
+  'R5-007 immutable planning/reference evidence only. It records frozen Unleashed QtyOnHand plus planned placement during relocation and creates no warehouse/inventory quantity.';
 comment on function public.ecoflow_read_provisional_reference_opening_gate(uuid) is
-  'R5-007 read-only exact-scope gate. Provisional quantity is reference evidence only and never claims a physical count.';
+  'R5-007 read-only exact-scope gate for provisional reference planning evidence.';
 comment on function public.ecoflow_apply_provisional_reference_opening_balance(uuid,uuid,text) is
-  'R5-007 bounded Owner/Admin application of frozen Unleashed reference quantity into HOLD at the frozen planned location. Picking remains blocked until real physical stocktake reconciliation.';
+  'R5-007 bounded Owner/Admin recording of frozen Unleashed reference quantity plus planned location. No warehouse item, inventory movement, physical-count claim, stocktake approval or operational inventory authority is created.';
