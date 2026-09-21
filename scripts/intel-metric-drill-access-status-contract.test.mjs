@@ -7,7 +7,7 @@ import {
   metricDrillAccessListLabel,
   metricDrillAccessSummary,
 } from '../src/features/intelligence/crossFilter/metricDrillAccessPresentationContract.ts';
-import { operationalPulseMetricKeys } from '../src/features/intelligence/operationalPulse/operationalPulseContract.ts';
+import { metricDrillAccessMetricKeys } from '../src/features/intelligence/crossFilter/metricDrillAccessContract.ts';
 
 function row(metricKey, overrides = {}) {
   return {
@@ -28,14 +28,14 @@ function row(metricKey, overrides = {}) {
 }
 
 function canonicalRows(overrides = {}) {
-  return operationalPulseMetricKeys.map((metricKey) => row(metricKey, overrides[metricKey] ?? {}));
+  return metricDrillAccessMetricKeys.map((metricKey) => row(metricKey, overrides[metricKey] ?? {}));
 }
 
-test('current ten-metric access summary remains canonical and fully unavailable', () => {
+test('current twelve-metric access summary remains canonical and fully unavailable', () => {
   assert.deepEqual(metricDrillAccessSummary(canonicalRows()), {
-    total: 10,
+    total: 12,
     available: 0,
-    unavailable: 10,
+    unavailable: 12,
     unknown: 0,
     issueCount: 0,
     canonicalCoverage: true,
@@ -49,7 +49,7 @@ test('access summary separates available unavailable unknown and issue counts', 
     gross_margin: { drillCapability: 'UNKNOWN' },
   }), 3);
   assert.equal(summary.available, 1);
-  assert.equal(summary.unavailable, 8);
+  assert.equal(summary.unavailable, 10);
   assert.equal(summary.unknown, 1);
   assert.equal(summary.issueCount, 3);
 });
