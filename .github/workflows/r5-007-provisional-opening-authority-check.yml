@@ -1,0 +1,50 @@
+name: R5-007 provisional opening authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/r5-007-provisional-reference-opening-authority.sql'
+      - 'scripts/r5-007-provisional-reference-opening-authority-contract.test.mjs'
+      - 'src/features/team/provisionalReferenceOpening.ts'
+      - 'src/features/settings/ProvisionalReferenceOpeningPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'docs/engineering/work-packages/R5-007-PROVISIONAL-REFERENCE-OPENING-AUTHORITY.md'
+      - '.github/workflows/r5-007-provisional-opening-authority-check.yml'
+  push:
+    branches:
+      - 'agent/inventory/339-provisional-reference-opening-r1'
+    paths:
+      - 'scripts/r5-007-provisional-reference-opening-authority.sql'
+      - 'scripts/r5-007-provisional-reference-opening-authority-contract.test.mjs'
+      - 'src/features/team/provisionalReferenceOpening.ts'
+      - 'src/features/settings/ProvisionalReferenceOpeningPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'docs/engineering/work-packages/R5-007-PROVISIONAL-REFERENCE-OPENING-AUTHORITY.md'
+      - '.github/workflows/r5-007-provisional-opening-authority-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: R5-007 provisional opening static authority contract
+        run: node --test scripts/r5-007-provisional-reference-opening-authority-contract.test.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Vite production build
+        run: npm run build
+      - name: Repository hygiene
+        run: npm run audit:repository-hygiene
