@@ -62,7 +62,7 @@ function exactRequestShape(body: StageRequest) {
 
 async function runLegacyR5003(
   adminClient: ReturnType<typeof createClient>,
-  userId: string,
+  userData: { user: { id: string } },
 ) {
   const { data: sourceRun, error: sourceRunError } = await adminClient
     .from('unleashed_sync_runs')
@@ -124,7 +124,7 @@ async function runLegacyR5003(
 
   const { data: result, error: stageError } = await adminClient.rpc('ecoflow_stage_unleashed_inventory_reference', {
     p_command_id: STAGE_COMMAND_ID,
-    p_requested_by: userId,
+    p_requested_by: userData.user.id,
     p_source_run_id: SOURCE_RUN_ID,
     p_as_at: AS_AT,
     p_reason: REASON,
@@ -154,13 +154,13 @@ async function runLegacyR5003(
 
 async function runFreshR5009(
   adminClient: ReturnType<typeof createClient>,
-  userId: string,
+  userData: { user: { id: string } },
 ) {
   const { data: reconstruction, error: reconstructionError } = await adminClient.rpc(
     'ecoflow_reconstruct_r5_008_stock_membership',
     {
       p_command_id: R5_009_RECONSTRUCT_COMMAND_ID,
-      p_requested_by: userId,
+      p_requested_by: userData.user.id,
       p_reason: R5_009_RECONSTRUCT_REASON,
     },
   );
@@ -183,7 +183,7 @@ async function runFreshR5009(
     'ecoflow_stage_unleashed_inventory_reference_v2',
     {
       p_command_id: R5_009_STAGE_COMMAND_ID,
-      p_requested_by: userId,
+      p_requested_by: userData.user.id,
       p_source_run_id: R5_009_SOURCE_RUN_ID,
       p_as_at: R5_009_AS_AT,
       p_reason: R5_009_STAGE_REASON,
@@ -259,7 +259,7 @@ Deno.serve(async (req) => {
   if (!exactRequestShape(body)) return json(400, { error: 'INVENTORY_REFERENCE_STAGE_REQUEST_SHAPE_MISMATCH' });
 
   if (body.requestKey === R5_009_REQUEST_KEY) {
-    return runFreshR5009(adminClient, userData.user.id);
+    return runFreshR5009(adminClient, userData);
   }
-  return runLegacyR5003(adminClient, userData.user.id);
+  return runLegacyR5003(adminClient, userData);
 });
