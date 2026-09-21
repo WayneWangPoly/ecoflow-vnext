@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { AlertTriangle, Database, RefreshCw } from 'lucide-react';
 import {
   R5_007_PROVISIONAL_TARGETS,
-  applyR5007ProvisionalOpening,
+  recordR5007ProvisionalReference,
   readR5007Gate,
   type R5007Gate,
   type R5007ProductCode,
@@ -58,7 +58,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
     setRunning('apply');
     setError('');
     try {
-      setGate(await applyR5007ProvisionalOpening(supabase, productCode, { commandId: id, reason }));
+      setGate(await recordR5007ProvisionalReference(supabase, productCode, { commandId: id, reason }));
       setCommandId(null);
       setAckReference(false);
       setAckHold(false);
