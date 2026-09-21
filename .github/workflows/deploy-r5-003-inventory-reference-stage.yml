@@ -1,11 +1,8 @@
-name: Deploy R5-003 inventory reference stage carrier
+name: Legacy manual deploy R5 inventory reference stage carrier
 
+# Legacy dedicated deploy is manual-only. Canonical production deployment is
+# .github/workflows/deploy-supabase-migrations.yml under exact-main authority.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/stage-unleashed-inventory-reference/**'
-      - '.github/workflows/deploy-r5-003-inventory-reference-stage.yml'
   workflow_dispatch:
 
 permissions:

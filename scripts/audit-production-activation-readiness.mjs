@@ -61,6 +61,7 @@ for (const functionName of [
   'statement-dispatch',
   'storage-retention',
   'trigger-unleashed-readonly-sync',
+  'stage-unleashed-inventory-reference',
   'trigger-unleashed-master-migration',
 ]) {
   const command = `-- supabase functions deploy ${functionName} --project-ref`;
@@ -68,8 +69,8 @@ for (const functionName of [
 }
 assert.equal(
   (deployment.match(/node scripts\/run-transient-supabase-command\.mjs/g) ?? []).length,
-  8,
-  'Production deployment must use the retry runner for one link and seven Edge Functions',
+  9,
+  'Production deployment must use the retry runner for one link and eight Edge Functions',
 );
 assert.ok(!deployment.includes('pull_request:'), 'Production deployment must never run from a pull request');
 
