@@ -6,25 +6,16 @@ export function FreshInventoryReferenceBridgePanel({ supabase }: { supabase: Sup
   const [activate, setActivate] = useState('CHECKING');
 
   useEffect(() => {
-    let live = true;
     void supabase.rpc('ecoflow_read_r5_009_fresh_reference_bridge_gate').then(({ data, error }) => {
-      if (!live) return;
       if (error) {
         setStage('UNKNOWN');
         setActivate('BLOCKED');
         return;
       }
       const status = data?.freshBatchStatus;
-      setStage(status === 'STAGED' || status === 'SEALED' ? status : 'NOT RUN');
-      setActivate(
-        data?.safeToActivate === true
-          ? 'READY'
-          : status === 'SEALED'
-            ? 'ACTIVATED'
-            : 'BLOCKED',
-      );
+      setStage(status ?? 'NOT RUN');
+      setActivate(data?.safeToActivate === true ? 'READY' : status === 'SEALED' ? 'ACTIVATED' : 'BLOCKED');
     });
-    return () => { live = false; };
   }, [supabase]);
 
   async function runStage() {
