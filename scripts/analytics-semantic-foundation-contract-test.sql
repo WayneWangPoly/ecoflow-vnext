@@ -231,14 +231,22 @@ begin
     raise exception 'Adelaide business-date dimension semantics are incorrect';
   end if;
 
-  if (select count(*) from analytics.metric_definition) <> 10 then
-    raise exception 'unexpected draft metric seed count';
+  if (
+      select count(*) from analytics.metric_definition
+      where metric_key in (
+        'revenue','gross_margin','fill_rate','on_time_delivery_rate',
+        'stockout_risk_count','substitution_rate','lines_picked_per_hour',
+        'inventory_days_of_cover','dead_stock_value','customer_concentration'
+      )
+        and metric_version=1
+    ) <> 10 then
+    raise exception 'original analytics metric seed set is incomplete';
   end if;
 
   if exists(
     select 1 from analytics.metric_definition where status <> 'DRAFT'
   ) then
-    raise exception 'foundation migration incorrectly claims an active metric';
+    raise exception 'analytics engineering incorrectly claims an active metric';
   end if;
 end;
 $structure$;
@@ -369,7 +377,9 @@ select set_config(
   false
 );
 
-select (count(*)=10) as owner_metric_ok
+select (
+  count(*)=(select count(*) from analytics.metric_definition)
+) as owner_metric_ok
 from public.v_ecoflow_analytics_metric_catalog
 \gset
 \if :owner_metric_ok
