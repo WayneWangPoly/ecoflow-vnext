@@ -69,7 +69,7 @@ test('fresh reference staging consumes immutable membership rather than last_see
   assert.ok(v2Start >= 0);
   const v2 = migration.slice(v2Start);
   assert.match(v2, /from public\.unleashed_snapshot_run_membership m/);
-  assert.match(v2, /m\.payload_sha256=s\.payload_sha256/);
+  assert.match(v2, /s\.payload_sha256=m\.payload_sha256/);
   assert.match(v2, /v_membership_count<>v_run\.records_seen/);
   assert.match(v2, /membershipBacked',true/);
   assert.match(v2, /authorityEffect','NONE'/);
