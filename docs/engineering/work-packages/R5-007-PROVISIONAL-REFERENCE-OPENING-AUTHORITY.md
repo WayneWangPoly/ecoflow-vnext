@@ -1,89 +1,97 @@
-# ECOFLOW-R5-007 — Provisional reference opening authority
+# ECOFLOW-R5-007 — Provisional reference planning evidence
 
 ## Purpose
 
-#339 remains blocked by a deliberate evidence distinction:
+#339 has two already-started positive-stock R5-005B commissionings that remain DRAFT while ADL1 is relocating inventory.
 
-- the SEALED ADL1 Unleashed StockOnHand reference is immutable migration evidence;
-- warehouse relocation means the two already-started R5-005B commissionings do not yet have truthful physical counts;
-- the Owner explicitly accepted the frozen Unleashed QtyOnHand as a **provisional migration/reference baseline only**, with later warehouse stocktake/location correction.
+The Owner's accepted operating decision is precise:
 
-R5-007 encodes that decision without pretending reference quantity is a physical count.
+- the frozen Unleashed QtyOnHand may be retained as a **provisional migration/reference baseline**;
+- the planned shelf may be retained as migration planning evidence;
+- neither value is a physical count;
+- warehouse staff will later provide the truthful location(s) and counted cartons.
+
+R5-007 encodes that decision without manufacturing physical evidence and without creating operational inventory authority.
+
+## Why this package is evidence-only
+
+An earlier R5-007 engineering draft considered placing the provisional quantity into `ecoflow_warehouse_location_items` with `HOLD` status.
+
+That approach was rejected during second-layer review because existing historical warehouse/analytics paths are not uniform about status filtering. Some rollups sum location quantity or treat any non-`ZEROED` row as occupied. A provisional quantity in the live location ledger could therefore leak into stock totals even if picking itself filtered `ACTIVE`.
+
+The final R5-007 design writes **no operational quantity at all**.
 
 ## Frozen scope
 
-Exactly two already-started DRAFT commissionings:
+Exactly two existing DRAFT rev0 commissionings:
 
 | SKU | Commissioning | Immutable reference | Planned location |
 | --- | --- | ---: | --- |
 | R-360Y | `44f09191-85f6-4682-8934-98c459cc4d88` | 3 cartons | `A2-03-02A` |
 | SB24/32/40LBOX | `2124ea46-765f-488a-8442-baf9dbd268d0` | 5 cartons | `A2-03-03A` |
 
-The scope is bound to reference batch `4cdb85d3-06d8-44bf-96bb-93660e10c3c9`, source run `5cd0e73b-956d-4c80-9e70-6d841d27b163`, and source-set SHA-256 `215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d`.
+Frozen upstream evidence:
 
-No other SKU or commissioning is admitted.
+- reference batch: `4cdb85d3-06d8-44bf-96bb-93660e10c3c9`;
+- source run: `5cd0e73b-956d-4c80-9e70-6d841d27b163`;
+- source-set SHA-256: `215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d`;
+- exact existing Physical SKU / CARTON package / barcode binding per target;
+- planned locations must still exist and be ACTIVE.
+
+No third SKU or commissioning can enter the authority.
 
 ## Authority semantics
 
-The apply RPC:
+The authenticated apply RPC:
 
-1. requires authenticated Warehouse Control authority with mutation capability;
-2. re-verifies the frozen commissioning/reference/Physical SKU/package/barcode/location bindings;
-3. requires DRAFT rev0 and zero prior non-zero warehouse quantity / inventory movement;
-4. writes the immutable Unleashed reference quantity to the frozen planned location as `HOLD`;
-5. records one warehouse `ADJUST_IN` movement and one inventory `ADJUST_IN` movement with provenance `PROVISIONAL_OPENING_REFERENCE` / `UNLEASHED_REFERENCE_BASELINE`;
-6. records immutable exactly-once command provenance;
-7. explicitly reports:
-   - `physicalCountClaimed=false`;
-   - `operationalInventoryAuthorityCreated=false`;
-   - `requiresLaterPhysicalStocktake=true`.
+1. requires Warehouse Control mutation authority and records `auth.uid()`;
+2. serializes per commissioning;
+3. verifies the latest SEALED reference and every frozen reference/Physical/package/barcode/planned-location identity;
+4. requires the commissioning to remain `DRAFT rev0` with no physical location evidence or stocktake session;
+5. requires zero pre-existing non-zero warehouse quantity and zero inventory movements for the Physical SKU;
+6. records exactly one immutable provisional reference row containing the frozen quantity and planned location;
+7. binds replay to command ID + actor + payload hash;
+8. explicitly reports `inventoryMutationCreated=false`, `physicalCountClaimed=false`, `operationalInventoryAuthorityCreated=false`, and `requiresLaterPhysicalStocktake=true`.
 
-HOLD is intentional. Existing pick/read paths consume ACTIVE quantity; R5-007 does not make the provisional reference pickable.
+The apply RPC does **not** insert/update:
+
+- `ecoflow_warehouse_location_items`;
+- `ecoflow_warehouse_movements`;
+- `ecoflow_inventory_movements`;
+- commissioning location evidence;
+- commissioning status;
+- stocktake sessions or observations.
 
 ## Later field reconciliation
 
-R5-007 leaves the incumbent R5-005B commissioning in DRAFT.
+R5-007 does not change the existing R5-005B physical evidence path.
 
-When truthful field evidence becomes available, operators continue through the existing path:
+When warehouse staff obtain truthful evidence, the operator still uses:
 
-`RECORD_LOCATION -> FINALIZE -> MATERIALIZE -> separately governed stocktake APPROVE`.
+`RECORD_LOCATION(real location + counted cartons) -> FINALIZE -> MATERIALIZE(INITIAL/REVIEW) -> separately governed stocktake APPROVE`.
 
-A database trigger prevents DRAFT -> FINALIZED when a provisional opening exists unless the field-evidence set includes the provisional location. This guarantees the later stocktake approval has an observation for the old HOLD location, so approval can overwrite/zero it instead of leaving duplicate quantity behind.
+Only that path can create operational warehouse quantity and adjustment movements.
 
-The field evidence may show:
-
-- all stock is still at the provisional location;
-- some remains there and some moved;
-- none remains there and the provisional location is counted as zero.
-
-Normal stocktake approval then creates only the required compensating ADJUST movements. Historical provisional movement evidence is never deleted or overwritten.
-
-After the linked stocktake session reaches APPROVED, R5-007 provenance becomes `RECONCILED`.
+After the commissioning-linked stocktake reaches `APPROVED`, an internal trigger marks the R5-007 provisional evidence `RECONCILED`. The original reference/planned-location record remains durable history; it is never rewritten to pretend it was a physical count.
 
 ## Explicit non-scope
 
-This engineering package does not authorize or perform:
-
-- production SQL/migration deployment;
-- production provisional opening application;
-- physical-count fabrication;
-- stocktake approval;
-- Product Identity mutation;
-- provider traffic;
-- barcode reassignment/retirement;
-- any SKU outside the two frozen targets;
-- #342 cutover.
+This engineering package does not authorize or perform merge, formal migration materialisation, production SQL deployment, production R5-007 evidence recording, warehouse/inventory quantity mutation, stocktake approval, Product Identity mutation, provider traffic, barcode reassignment/retirement, or #342 cutover.
 
 ## Migration materialisation
 
-The reviewed SQL is intentionally held under `scripts/` at this stage.
+The reviewed SQL remains under `scripts/` during this engineering phase.
 
-Before production deployment, create the formal migration using the repository-pinned Supabase CLI with:
+A later materialisation gate must use the repository-pinned Supabase CLI:
 
 `supabase migration new <approved-r5-007-name>`
 
-Then copy the reviewed SQL byte-for-byte into that generated migration file and rerun exact-head CI plus the required trusted Supabase shadow gate. Do not invent a timestamped migration filename.
+The reviewed carrier is then copied into the generated migration file and exact-head CI plus the required trusted Supabase shadow gate are rerun. No timestamp is invented manually.
 
-## Current gate
+## Acceptance focus
 
-`ENGINEERING_ONLY / PROVISIONAL_REFERENCE_NOT_PHYSICAL_COUNT / HOLD_BEFORE_MIGRATION_MATERIALISATION_AND_PRODUCTION_MUTATION`
+R5-007 succeeds only if reference quantity and planned placement are durable while physical-count claims and operational quantity mutation remain zero, later field stocktake remains mandatory, and reconciliation remains traceable.
+
+Current disposition:
+
+`ENGINEERING_ONLY / PROVISIONAL_REFERENCE_EVIDENCE_ONLY / ZERO_INVENTORY_MUTATION / HOLD_BEFORE_MIGRATION_MATERIALISATION_AND_PRODUCTION_EXECUTION`
