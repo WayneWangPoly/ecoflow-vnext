@@ -4,6 +4,9 @@ import {
   buildOperationalPulseDeck,
   operationalPulseMetricKeys,
 } from '../src/features/intelligence/operationalPulse/operationalPulseContract.ts';
+import {
+  readinessRowsToOperationalPulse,
+} from '../src/features/intelligence/analytics/operationalPulseReadinessContract.ts';
 
 const keys = [...operationalPulseMetricKeys];
 
@@ -45,4 +48,65 @@ test('ready readiness metadata cannot manufacture a KPI value', () => {
   assert.equal(deck.metrics[0]?.availability, 'EMPTY');
   assert.equal(deck.metrics[0]?.value, null);
   assert.ok(deck.issues.some((issue) => issue.code === 'READY_VALUE_INVALID'));
+});
+
+
+test('transaction-only readiness identities are excluded from the ten-metric Operational Pulse deck', () => {
+  const rows = [
+    ...keys.map((key) => ({
+      metricKey: key,
+      metricVersion: 1,
+      displayName: key.replaceAll('_', ' '),
+      unitKind: 'COUNT',
+      metricStatus: 'DRAFT',
+      projectionStatus: 'BLOCKED',
+      exactGrain: 'fixture',
+      requiredDatasetKeys: [],
+      supportedDimensionKeys: ['date'],
+      blockedDimensionKeys: [],
+      blockerCodes: ['NOT_READY'],
+      reconciliationTolerance: 0,
+      dataOwner: 'Commercial',
+      qualityPolicy: 'FAIL_CLOSED',
+      readinessUpdatedAt: '2026-07-30T00:00:00Z',
+    })),
+    {
+      metricKey: 'sales_orders',
+      metricVersion: 1,
+      displayName: 'Sales Orders',
+      unitKind: 'COUNT',
+      metricStatus: 'ACTIVE',
+      projectionStatus: 'READY',
+      exactGrain: 'period',
+      requiredDatasetKeys: ['analytics.sales_transaction_documents'],
+      supportedDimensionKeys: ['date'],
+      blockedDimensionKeys: [],
+      blockerCodes: [],
+      reconciliationTolerance: 0,
+      dataOwner: 'Commercial',
+      qualityPolicy: 'FAIL_CLOSED',
+      readinessUpdatedAt: '2026-07-30T00:00:00Z',
+    },
+    {
+      metricKey: 'average_revenue_per_order',
+      metricVersion: 1,
+      displayName: 'Average Revenue per Order',
+      unitKind: 'CURRENCY',
+      metricStatus: 'ACTIVE',
+      projectionStatus: 'READY',
+      exactGrain: 'period',
+      requiredDatasetKeys: ['analytics.sales_transaction_documents'],
+      supportedDimensionKeys: ['date'],
+      blockedDimensionKeys: [],
+      blockerCodes: [],
+      reconciliationTolerance: 0.000001,
+      dataOwner: 'Commercial',
+      qualityPolicy: 'FAIL_CLOSED',
+      readinessUpdatedAt: '2026-07-30T00:00:00Z',
+    },
+  ];
+
+  const deck = readinessRowsToOperationalPulse(rows);
+  assert.deepEqual(deck.metrics.map((metric) => metric.metricKey), keys);
+  assert.equal(deck.issues.some((issue) => issue.code === 'UNKNOWN_METRIC_KEY'), false);
 });
