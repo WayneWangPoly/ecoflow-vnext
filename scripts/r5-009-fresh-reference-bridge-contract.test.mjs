@@ -26,6 +26,14 @@ const host = fs.readFileSync(
   'src/features/settings/InventoryReferenceStagePanel.tsx',
   'utf8',
 );
+const canonicalDeploy = fs.readFileSync(
+  '.github/workflows/deploy-supabase-migrations.yml',
+  'utf8',
+);
+const legacyStageDeploy = fs.readFileSync(
+  '.github/workflows/deploy-r5-003-inventory-reference-stage.yml',
+  'utf8',
+);
 
 test('R5-009 records complete run membership without rewriting unchanged semantic versions', () => {
   assert.match(migration, /create table if not exists public\.unleashed_snapshot_run_membership/);
@@ -113,4 +121,17 @@ test('browser surface freezes Phase A and keeps Phase B separately acknowledged'
   assert.match(panel, /!gate\?\.safeToActivate/);
   assert.match(host, /FreshInventoryReferenceBridgePanel/);
   assert.match(host, /Loading R5-009 fresh reference bridge/);
+});
+
+
+test('stage carrier production deployment is canonical exact-main gated only', () => {
+  assert.match(
+    canonicalDeploy,
+    /supabase functions deploy stage-unleashed-inventory-reference --project-ref "\$SUPABASE_PROJECT_REF"/,
+  );
+  assert.match(canonicalDeploy, /expected_main_sha/);
+  assert.match(canonicalDeploy, /DEPLOY_SUPABASE_PRODUCTION/);
+  assert.doesNotMatch(legacyStageDeploy, /\n\s*push:\s*\n/);
+  assert.match(legacyStageDeploy, /workflow_dispatch:/);
+  assert.match(legacyStageDeploy, /Canonical production deployment is/);
 });
