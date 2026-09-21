@@ -88,7 +88,7 @@ for (const forbidden of [
 
 for (const marker of [
   'metricDrillAccessSummary',
-  'operationalPulseMetricKeys',
+  'metricDrillAccessMetricKeys',
   "row.drillCapability === 'AVAILABLE'",
   "row.drillCapability === 'UNAVAILABLE'",
   "row.drillCapability === 'UNKNOWN'",
@@ -128,7 +128,7 @@ for (const reference of Array.from(style.matchAll(/var\((--ef-[a-z0-9-]+)/gi), (
 }
 
 for (const testName of [
-  'current ten-metric access summary remains canonical and fully unavailable',
+  'current twelve-metric access summary remains canonical and fully unavailable',
   'access summary separates available unavailable unknown and issue counts',
   'non-canonical coverage and mixed server timestamps remain explicit',
   'capability labels and tones remain bounded to governance states',
