@@ -1,0 +1,86 @@
+name: R5-007 materialise migration once
+
+on:
+  push:
+    branches:
+      - 'agent/inventory/339-provisional-reference-opening-r1'
+    paths:
+      - '.github/workflows/r5-007-materialise-migration-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: r5-007-materialise-migration-once
+  cancel-in-progress: false
+
+env:
+  SUPABASE_CLI_VERSION: 2.107.0
+  EXPECTED_TRIGGER_HEAD: 5badf33d571898d8743910eec2958610323cf25e
+
+jobs:
+  materialise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact engineering head
+        uses: actions/checkout@v4
+        with:
+          ref: agent/inventory/339-provisional-reference-opening-r1
+          fetch-depth: 0
+
+      - name: Verify exact trigger boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_SHA" = "$EXPECTED_TRIGGER_HEAD" || {
+            echo "Unexpected trigger head: $GITHUB_SHA expected $EXPECTED_TRIGGER_HEAD"
+            exit 1
+          }
+          test "$(git rev-parse HEAD)" = "$EXPECTED_TRIGGER_HEAD"
+
+      - name: Install repository-pinned Supabase CLI
+        run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
+
+      - name: Generate formal migration name with Supabase CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(find supabase/migrations -maxdepth 1 -type f -name '*_r5_007_provisional_inventory_reference_evidence.sql' -print | wc -l | tr -d ' ')"
+          test "$before" = "0" || {
+            echo 'R5-007 formal migration already exists'
+            exit 1
+          }
+
+          supabase migration new r5_007_provisional_inventory_reference_evidence
+
+          mapfile -t files < <(find supabase/migrations -maxdepth 1 -type f -name '*_r5_007_provisional_inventory_reference_evidence.sql' -print | sort)
+          test "${#files[@]}" = "1" || {
+            printf 'Expected exactly one generated migration; got %s\n' "${#files[@]}"
+            printf '%s\n' "${files[@]}"
+            exit 1
+          }
+
+          generated="${files[0]}"
+          base="$(basename "$generated")"
+          [[ "$base" =~ ^[0-9]{14}_r5_007_provisional_inventory_reference_evidence\.sql$ ]] || {
+            echo "Generated filename is not canonical: $base"
+            exit 1
+          }
+
+          cp scripts/r5-007-provisional-reference-opening-authority.sql "$generated"
+          cmp -s scripts/r5-007-provisional-reference-opening-authority.sql "$generated"
+          echo "GENERATED_MIGRATION=$generated" >> "$GITHUB_ENV"
+          echo "Generated formal migration: $generated"
+
+      - name: Remove one-shot workflow and commit generated migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/r5-007-materialise-migration-once.yml
+          git add "$GENERATED_MIGRATION"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ECOFLOW-339 R5-007 materialise formal Supabase migration'
+          git push origin HEAD:agent/inventory/339-provisional-reference-opening-r1
