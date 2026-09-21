@@ -1,9 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export function FreshInventoryReferenceBridgePanel({ supabase }: { supabase: SupabaseClient }) {
-  const [stage, setStage] = useState('NOT RUN');
-  const [activate, setActivate] = useState('BLOCKED');
+  const [stage, setStage] = useState('CHECKING');
+  const [activate, setActivate] = useState('CHECKING');
+
+  useEffect(() => {
+    let live = true;
+    void supabase.rpc('ecoflow_read_r5_009_fresh_reference_bridge_gate').then(({ data, error }) => {
+      if (!live) return;
+      if (error) {
+        setStage('UNKNOWN');
+        setActivate('BLOCKED');
+        return;
+      }
+      const status = data?.freshBatchStatus;
+      setStage(status === 'STAGED' || status === 'SEALED' ? status : 'NOT RUN');
+      setActivate(
+        data?.safeToActivate === true
+          ? 'READY'
+          : status === 'SEALED'
+            ? 'ACTIVATED'
+            : 'BLOCKED',
+      );
+    });
+    return () => { live = false; };
+  }, [supabase]);
 
   async function runStage() {
     if (stage !== 'NOT RUN') return;
@@ -30,6 +52,7 @@ export function FreshInventoryReferenceBridgePanel({ supabase }: { supabase: Sup
       setActivate(`FAILED — ${error?.message ?? 'contract violation'}`);
       return;
     }
+    setStage('SEALED');
     setActivate('ACTIVATED');
   }
 
