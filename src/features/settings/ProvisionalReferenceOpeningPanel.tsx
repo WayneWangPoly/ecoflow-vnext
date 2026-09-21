@@ -159,7 +159,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
                         setReason(event.target.value);
                         setCommandId(null);
                       }}
-                      placeholder="例如：ADL1 relocation in progress; freeze immutable Unleashed reference as provisional HOLD until field stocktake."
+                      placeholder="例如：ADL1 relocation in progress; record immutable Unleashed reference + planned location as evidence only; await field stocktake."
                     />
                   </label>
 
