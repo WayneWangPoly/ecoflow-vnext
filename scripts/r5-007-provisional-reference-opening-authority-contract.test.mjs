@@ -109,3 +109,12 @@ test('R5-007 remains lazy-wired to preserve the existing frontend bundle boundar
   assert.match(host, /import\('\.\/ProvisionalReferenceOpeningPanel'\)/);
   assert.match(host, /<ProvisionalReferenceOpeningPanel supabase=\{supabase\} \/>/);
 });
+
+
+test('R5-007 UI keeps SKU selector available after one evidence row is recorded', () => {
+  assert.match(panel, /disabled=\{Boolean\(running\)\}/);
+  assert.doesNotMatch(panel, /disabled=\{Boolean\(running\) \|\| Boolean\(gate\?\.provisionalEvidenceId\)\}/);
+  assert.match(panel, /onChange=\{\(event\) => reset\(event\.target\.value as R5007ProductCode\)\}/);
+  assert.match(panel, /if \(next\) setProductCode\(next\)/);
+  assert.match(panel, /setGate\(null\)/);
+});

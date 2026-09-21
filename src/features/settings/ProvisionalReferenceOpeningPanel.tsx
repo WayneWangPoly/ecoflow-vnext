@@ -105,7 +105,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
 
           <label>
             SKU
-            <select value={productCode} disabled={Boolean(running) || Boolean(gate?.provisionalEvidenceId)} onChange={(event) => reset(event.target.value as R5007ProductCode)}>
+            <select value={productCode} disabled={Boolean(running)} onChange={(event) => reset(event.target.value as R5007ProductCode)}>
               {codes.map((code) => (
                 <option key={code} value={code}>
                   {code} · reference {R5_007_PROVISIONAL_TARGETS[code].sourceQtyOnHand} · planned {R5_007_PROVISIONAL_TARGETS[code].plannedLocationCode}
