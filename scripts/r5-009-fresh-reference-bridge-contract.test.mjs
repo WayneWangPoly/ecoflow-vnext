@@ -109,8 +109,8 @@ test('browser surface freezes Phase A and keeps Phase B separately acknowledged'
   assert.match(panel, /ecoflow_activate_r5_009_fresh_reference_bridge/);
   assert.match(panel, /Phase A · stage fresh reference once/);
   assert.match(panel, /Phase B · activate fresh reference once/);
-  assert.match(panel, /No provider traffic, stocktake, quantity or inventory authority/);
-  assert.match(panel, /Physical stocktake remains mandatory/);
+  assert.match(panel, /stage 428-row evidence only; no inventory authority/);
+  assert.match(panel, /stocktake still required/);
   assert.match(panel, /stage !== 'NOT RUN'/);
   assert.match(panel, /activate !== 'READY'/);
   assert.match(panel, /safeToActivate === true/);
