@@ -9,6 +9,7 @@ export const R5_007_PROVISIONAL_TARGETS = {
     physicalSkuId: '8905b519-6418-4bb1-a2a4-bdd8d48157f7',
     packageId: 'ff12d5f1-ba94-4960-bee6-c3c12aaf53ba',
     barcode: '19344062000652',
+    sourceRowSha256: 'bf95d275d9419dae66a29e10a2a1e4e4f4b57d83a1ae872f4626260cb1592e0d',
   },
   'SB24/32/40LBOX': {
     commissioningId: '2124ea46-765f-488a-8442-baf9dbd268d0',
@@ -18,6 +19,7 @@ export const R5_007_PROVISIONAL_TARGETS = {
     physicalSkuId: 'd8d9a558-37e6-4a22-99a2-7f0caf7492ac',
     packageId: '203dedb0-3ab7-425d-85e2-ac646b1fa601',
     barcode: '19348045022914',
+    sourceRowSha256: 'afbf51ee85d8785036a4532f9ab5ba4f9334ceee6c87998ba09762ed82e9afb6',
   },
 } as const;
 
@@ -49,7 +51,7 @@ export type R5007Gate = {
   plannedLocationCode: string;
   plannedLocationId: string;
   provisionalEligible: boolean;
-  provisionalOpeningId: string | null;
+  provisionalEvidenceId: string | null;
   provisionalStatus: 'PROVISIONAL_REFERENCE' | 'RECONCILED' | null;
   provisionalAppliedAt: string | null;
   provisionalQuantity: number | null;
@@ -97,6 +99,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
     || value.sourceRunId !== R5_007_SOURCE_RUN_ID
     || value.sourceSetSha256 !== R5_007_SOURCE_SET_SHA256
     || value.sourceProductCode !== productCode
+    || value.sourceRowSha256 !== frozen.sourceRowSha256
     || asNumber(value.sourceQtyOnHand, 'R5_007_QTY_REQUIRED') !== frozen.sourceQtyOnHand
     || value.physicalSkuId !== frozen.physicalSkuId
     || value.packageId !== frozen.packageId
@@ -119,7 +122,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
     referenceRowId: frozen.referenceRowId,
     sourceRunId: R5_007_SOURCE_RUN_ID,
     sourceSetSha256: R5_007_SOURCE_SET_SHA256,
-    sourceRowSha256: asString(value.sourceRowSha256, 'R5_007_SOURCE_ROW_HASH_REQUIRED'),
+    sourceRowSha256: frozen.sourceRowSha256,
     sourceProductCode: productCode,
     sourceQtyOnHand: frozen.sourceQtyOnHand,
     physicalSkuId: frozen.physicalSkuId,
@@ -132,7 +135,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
     plannedLocationCode: frozen.plannedLocationCode,
     plannedLocationId: asString(value.plannedLocationId, 'R5_007_LOCATION_ID_REQUIRED'),
     provisionalEligible: value.provisionalEligible === true,
-    provisionalOpeningId: value.provisionalOpeningId == null ? null : String(value.provisionalOpeningId),
+    provisionalEvidenceId: value.provisionalEvidenceId == null ? null : String(value.provisionalEvidenceId),
     provisionalStatus: provisionalStatus as R5007Gate['provisionalStatus'],
     provisionalAppliedAt: value.provisionalAppliedAt == null ? null : String(value.provisionalAppliedAt),
     provisionalQuantity: value.provisionalQuantity == null ? null : asNumber(value.provisionalQuantity, 'R5_007_PROVISIONAL_QTY_INVALID'),
@@ -147,7 +150,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
 
 export async function readR5007Gate(supabase: SupabaseClient, productCode: R5007ProductCode): Promise<R5007Gate> {
   const frozen = R5_007_PROVISIONAL_TARGETS[productCode];
-  const { data, error } = await supabase.rpc('ecoflow_read_provisional_reference_opening_gate', {
+  const { data, error } = await supabase.rpc('ecoflow_read_provisional_inventory_reference_gate', {
     p_commissioning_id: frozen.commissioningId,
   });
   if (error) throw error;
@@ -163,11 +166,11 @@ export async function applyR5007ProvisionalOpening(
   if (!input.reason.trim()) throw new Error('R5_007_REASON_REQUIRED');
 
   const before = await readR5007Gate(supabase, productCode);
-  if (!before.provisionalEligible || before.provisionalOpeningId) throw new Error('R5_007_NOT_ELIGIBLE');
+  if (!before.provisionalEligible || before.provisionalEvidenceId) throw new Error('R5_007_NOT_ELIGIBLE');
   if (before.commissioningStatus !== 'DRAFT' || before.commissioningRevision !== 0) throw new Error('R5_007_DRAFT_REV0_REQUIRED');
   if (before.existingNonZeroLocationRows !== 0 || before.existingInventoryMovements !== 0) throw new Error('R5_007_ZERO_PRIOR_QUANTITY_REQUIRED');
 
-  const { error } = await supabase.rpc('ecoflow_apply_provisional_reference_opening_balance', {
+  const { error } = await supabase.rpc('ecoflow_record_provisional_inventory_reference', {
     p_commissioning_id: before.commissioningId,
     p_command_id: input.commandId,
     p_reason: input.reason.trim(),
