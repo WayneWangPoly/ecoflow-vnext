@@ -11,13 +11,15 @@ import {
 const migrationPath = 'supabase/migrations/20260914213123_unleashed_r5_002_request_key_fence.sql';
 const functionPath = 'supabase/functions/trigger-unleashed-readonly-sync/index.ts';
 const panelPath = 'src/features/settings/UnleashedReadonlyProbePanel.tsx';
+const freshPanelPath = 'src/features/settings/FreshAdl1StockOnHandAcquisitionPanel.tsx';
 const workflowPath = '.github/workflows/unleashed-readonly-connector-check.yml';
 const workPackagePath = 'docs/engineering/work-packages/ECOFLOW-R5-002A-owner-admin-acquisition-carrier.md';
 
-const [migration, edgeFunction, panel, workflow, workPackage] = await Promise.all([
+const [migration, edgeFunction, panel, freshPanel, workflow, workPackage] = await Promise.all([
   readFile(migrationPath, 'utf8'),
   readFile(functionPath, 'utf8'),
   readFile(panelPath, 'utf8'),
+  readFile(freshPanelPath, 'utf8'),
   readFile(workflowPath, 'utf8'),
   readFile(workPackagePath, 'utf8'),
 ]);
@@ -192,6 +194,7 @@ test('R5-008 fresh pre-stocktake acquisition is a new one-shot reserved shape', 
   assert.match(edgeFunction, /R5_008_REASON = 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition'/);
   assert.match(panel, /R5-002-R2 ADL1 StockOnHand recovery/);
   assert.match(panel, /Run R5-002-R2 once/);
-  assert.match(panel, /R5-008 fresh ADL1 StockOnHand pre-stocktake snapshot/);
-  assert.match(panel, /Acquire fresh ADL1 snapshot once/);
+  assert.match(panel, /FreshAdl1StockOnHandAcquisitionPanel/);
+  assert.match(freshPanel, /R5-008 fresh ADL1 StockOnHand pre-stocktake snapshot/);
+  assert.match(freshPanel, /Acquire fresh ADL1 snapshot once/);
 });
