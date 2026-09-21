@@ -25,7 +25,10 @@ function availabilityFor(row: AnalyticsMetricReadinessRow): OperationalPulseAvai
 export function readinessRowsToOperationalPulse(
   rows: readonly AnalyticsMetricReadinessRow[],
 ): OperationalPulseDeck {
-  const inputs: OperationalPulseMetricInput[] = rows.map((row) => ({
+  const pulseKeys = new Set<string>(operationalPulseMetricKeys);
+  const inputs: OperationalPulseMetricInput[] = rows
+    .filter((row) => pulseKeys.has(row.metricKey))
+    .map((row) => ({
     metricKey: row.metricKey,
     displayName: row.displayName,
     unitKind: row.unitKind,
@@ -35,8 +38,8 @@ export function readinessRowsToOperationalPulse(
     freshness: 'UNKNOWN',
     quality: row.metricStatus === 'ACTIVE' ? 'TRUSTED' : 'UNKNOWN',
     asOfAt: row.readinessUpdatedAt,
-    blockerCodes: row.blockerCodes,
-  }));
+      blockerCodes: row.blockerCodes,
+    }));
   return buildOperationalPulseDeck(inputs);
 }
 
