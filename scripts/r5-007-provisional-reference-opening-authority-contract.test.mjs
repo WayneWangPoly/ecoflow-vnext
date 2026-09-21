@@ -96,6 +96,8 @@ test('R5-007 marks planning evidence reconciled only after a linked later stockt
 
 test('R5-007 authority is authenticated-only, role-gated and trigger helper is not callable', () => {
   assert.match(sql, /ecoflow_require_warehouse_control_role\(true\)/);
+  assert.match(sql, /actor_user_id uuid not null/);
+  assert.doesNotMatch(sql, /actor_user_id uuid not null references auth\.users/i);
   assert.match(sql, /revoke all on function public\.ecoflow_record_provisional_inventory_reference\(uuid,uuid,text\)[\s\S]*from public, anon, authenticated, service_role/);
   assert.match(sql, /grant execute on function public\.ecoflow_record_provisional_inventory_reference\(uuid,uuid,text\)[\s\S]*to authenticated/);
   assert.match(sql, /revoke all on function public\.ecoflow_mark_provisional_opening_reconciled\(\)[\s\S]*from public, anon, authenticated, service_role/);
