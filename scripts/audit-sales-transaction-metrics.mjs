@@ -9,6 +9,14 @@ const rematerializationMigration = fs.readFileSync(
   'supabase/migrations/20260921044500_sales_transaction_transform_version_rematerialization.sql',
   'utf8',
 );
+const readinessDrillMigration = fs.readFileSync(
+  'supabase/migrations/20260921063000_sales_transaction_metric_readiness_drill.sql',
+  'utf8',
+);
+const readinessDrillContract = fs.readFileSync(
+  'scripts/sales-transaction-metric-readiness-drill-contract-test.sql',
+  'utf8',
+);
 const workflow = fs.readFileSync(
   '.github/workflows/warehouse-productisation-check.yml',
   'utf8',
@@ -43,6 +51,14 @@ const required = [
   ['line transform hash', /sales_transaction_transform_v2_invoice_status'[\s\S]{0,220}d\.source_snapshot_hash,d\.order_snapshot_hash,d\.invoice_snapshot_hash,l\.value,l\.ordinality/, rematerializationMigration],
   ['workflow rematerialization migration', /20260921044500_sales_transaction_transform_version_rematerialization\.sql/, workflow],
   ['legacy same-source-hash regression', /legacy_without_transform_contract[\s\S]{0,4000}\$transform_rematerialization\$/, factContract],
+  ['transaction readiness migration', /20260921063000_sales_transaction_metric_readiness_drill\.sql/, workflow],
+  ['transaction readiness contract', /sales-transaction-metric-readiness-drill-contract-test\.sql/, workflow],
+  ['Revenue v2 READY readiness', /'revenue'::text[\s\S]{0,220}2::integer[\s\S]{0,220}'READY'/, readinessDrillMigration],
+  ['Sales Orders readiness', /'sales_orders'::text/, readinessDrillMigration],
+  ['ARPO readiness', /'average_revenue_per_order'::text/, readinessDrillMigration],
+  ['canonical lifecycle ranking', /row_number\(\) over[\s\S]{0,300}when 'ACTIVE' then 1[\s\S]{0,220}r\.metric_version desc/, readinessDrillMigration],
+  ['twelve drill identities', /'sales_orders'[\s\S]{0,120}'average_revenue_per_order'[\s\S]{0,500}'customer_concentration'/, readinessDrillMigration],
+  ['transaction drill regression', /active_ready_transaction_metrics_gain_bounded_drill_authority/, readinessDrillContract],
 ];
 
 for (const [name, pattern, content = migration] of required) {
@@ -64,8 +80,18 @@ for (const [name, pattern] of forbidden) {
   assert.doesNotMatch(rematerializationMigration, pattern, `Sales transaction metric audit found forbidden ${name} in rematerialization migration`);
 }
 
-assert.equal(required.length, 24);
+for (const [name, pattern] of [
+  ['metric lifecycle mutation', /update\s+analytics\.metric_definition/i],
+  ['automatic fact refresh', /select\s+(?:\*\s+from\s+)?analytics\.refresh_sales_transaction_facts\s*\(/i],
+  ['provider traffic', /http_(?:get|post)|net\.http|unleashedsoftware\.com/i],
+  ['fact mutation', /(?:insert\s+into|update|delete\s+from)\s+analytics\.fact_sales_transaction_/i],
+  ['browser projection grant', /grant\s+select\s+on\s+analytics\.v_sales_transaction_metric_input_internal[\s\S]{0,80}\b(?:anon|authenticated)\b/i],
+]) {
+  assert.doesNotMatch(readinessDrillMigration, pattern, `Transaction metric readiness/drill migration found forbidden ${name}`);
+}
+
+assert.equal(required.length, 32);
 assert.equal(forbidden.length, 7);
 console.log(
-  `Sales transaction metric static audit passed (${required.length + (forbidden.length * 2)}/${required.length + (forbidden.length * 2)}).`,
+  `Sales transaction metric static audit passed (${required.length + (forbidden.length * 2) + 5}/${required.length + (forbidden.length * 2) + 5}).`,
 );
