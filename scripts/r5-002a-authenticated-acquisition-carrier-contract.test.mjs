@@ -190,7 +190,8 @@ test('R5-008 fresh pre-stocktake acquisition is a new one-shot reserved shape', 
   assert.equal(result.requestKey, 'ECOFLOW-R5-008');
   assert.match(edgeFunction, /const R5_008_REQUEST_KEY = 'ECOFLOW-R5-008'/);
   assert.match(edgeFunction, /R5_008_REASON = 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition'/);
+  assert.match(panel, /R5-002-R2 ADL1 StockOnHand recovery/);
+  assert.match(panel, /Run R5-002-R2 once/);
   assert.match(panel, /R5-008 fresh ADL1 StockOnHand pre-stocktake snapshot/);
   assert.match(panel, /Acquire fresh ADL1 snapshot once/);
-  assert.doesNotMatch(panel, /Run R5-002-R2 once/);
 });
