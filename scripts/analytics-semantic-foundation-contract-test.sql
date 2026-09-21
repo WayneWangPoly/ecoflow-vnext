@@ -246,7 +246,7 @@ begin
   if exists(
     select 1 from analytics.metric_definition where status <> 'DRAFT'
   ) then
-    raise exception 'analytics engineering incorrectly claims an active metric';
+    raise exception 'foundation migration incorrectly claims an active metric';
   end if;
 end;
 $structure$;
