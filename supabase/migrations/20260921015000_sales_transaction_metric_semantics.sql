@@ -16,10 +16,11 @@ begin
     raise exception 'SALES_TRANSACTION_METRIC_PREREQUISITES_MISSING';
   end if;
 
-  if not exists(
-    select 1 from analytics.metric_definition
-    where metric_key='revenue' and metric_version=1 and status='DRAFT'
-  ) then
+  if exists(select 1 from analytics.metric_definition)
+     and not exists(
+       select 1 from analytics.metric_definition
+       where metric_key='revenue' and metric_version=1 and status='DRAFT'
+     ) then
     raise exception 'REVENUE_V1_DRAFT_BASELINE_MISSING';
   end if;
 
