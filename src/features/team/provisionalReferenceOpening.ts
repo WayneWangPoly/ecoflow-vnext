@@ -53,7 +53,7 @@ export type R5007Gate = {
   provisionalEligible: boolean;
   provisionalEvidenceId: string | null;
   provisionalStatus: 'PROVISIONAL_REFERENCE' | 'RECONCILED' | null;
-  provisionalAppliedAt: string | null;
+  provisionalRecordedAt: string | null;
   provisionalQuantity: number | null;
   inventoryMutationCreated: boolean;
   operationalInventoryAuthorityCreated: boolean;
@@ -89,7 +89,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
   const value = asRecord(raw);
   const frozen = R5_007_PROVISIONAL_TARGETS[productCode];
   const provisionalStatus = value.provisionalStatus == null ? null : String(value.provisionalStatus);
-  if (provisionalStatus !== null && !['PROVISIONAL_HOLD', 'RECONCILED'].includes(provisionalStatus)) {
+  if (provisionalStatus !== null && !['PROVISIONAL_REFERENCE', 'RECONCILED'].includes(provisionalStatus)) {
     throw new Error('R5_007_STATUS_CONTRACT_VIOLATION');
   }
   if (
@@ -137,7 +137,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
     provisionalEligible: value.provisionalEligible === true,
     provisionalEvidenceId: value.provisionalEvidenceId == null ? null : String(value.provisionalEvidenceId),
     provisionalStatus: provisionalStatus as R5007Gate['provisionalStatus'],
-    provisionalAppliedAt: value.provisionalAppliedAt == null ? null : String(value.provisionalAppliedAt),
+    provisionalRecordedAt: value.provisionalRecordedAt == null ? null : String(value.provisionalRecordedAt),
     provisionalQuantity: value.provisionalQuantity == null ? null : asNumber(value.provisionalQuantity, 'R5_007_PROVISIONAL_QTY_INVALID'),
     inventoryMutationCreated: false,
     operationalInventoryAuthorityCreated: false,
