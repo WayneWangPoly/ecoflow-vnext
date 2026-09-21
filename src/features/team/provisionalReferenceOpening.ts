@@ -157,7 +157,7 @@ export async function readR5007Gate(supabase: SupabaseClient, productCode: R5007
   return normalizeGate(productCode, data);
 }
 
-export async function applyR5007ProvisionalOpening(
+export async function recordR5007ProvisionalReference(
   supabase: SupabaseClient,
   productCode: R5007ProductCode,
   input: { commandId: string; reason: string },
