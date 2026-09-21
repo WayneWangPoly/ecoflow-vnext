@@ -29,15 +29,15 @@ export function readinessRowsToOperationalPulse(
   const inputs: OperationalPulseMetricInput[] = rows
     .filter((row) => pulseKeys.has(row.metricKey))
     .map((row) => ({
-    metricKey: row.metricKey,
-    displayName: row.displayName,
-    unitKind: row.unitKind,
-    availability: availabilityFor(row),
-    value: null,
-    displayValue: null,
-    freshness: 'UNKNOWN',
-    quality: row.metricStatus === 'ACTIVE' ? 'TRUSTED' : 'UNKNOWN',
-    asOfAt: row.readinessUpdatedAt,
+      metricKey: row.metricKey,
+      displayName: row.displayName,
+      unitKind: row.unitKind,
+      availability: availabilityFor(row),
+      value: null,
+      displayValue: null,
+      freshness: 'UNKNOWN',
+      quality: row.metricStatus === 'ACTIVE' ? 'TRUSTED' : 'UNKNOWN',
+      asOfAt: row.readinessUpdatedAt,
       blockerCodes: row.blockerCodes,
     }));
   return buildOperationalPulseDeck(inputs);
