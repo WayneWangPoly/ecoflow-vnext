@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   R5_002_REQUEST,
+  R5_008_REQUEST,
   runR5002Adl1StockOnHandAcquisition,
+  runR5008Adl1StockOnHandAcquisition,
 } from '../src/features/team/unleashedAdl1StockOnHandAcquisition.ts';
 
 const migrationPath = 'supabase/migrations/20260914213123_unleashed_r5_002_request_key_fence.sql';
@@ -166,4 +168,29 @@ test('CI includes the carrier and database replay contract', () => {
   assert.match(workflow, /r5-002a-authenticated-acquisition-carrier-db-contract-test\.sql/);
   assert.match(workflow, /agent\/unleashed\/r5-002a-\*/);
   assert.match(workPackage, /does\s+not execute the acquisition or authorize a retry/);
+});
+
+
+test('R5-008 fresh pre-stocktake acquisition is a new one-shot reserved shape', async () => {
+  const accepted = { ...acceptedResult, requestKey: 'ECOFLOW-R5-008' };
+  const mock = mockSupabase(accepted);
+  const result = await runR5008Adl1StockOnHandAcquisition(mock.client);
+
+  assert.deepEqual(mock.bodies, [R5_008_REQUEST]);
+  assert.deepEqual(R5_008_REQUEST, {
+    requestKey: 'ECOFLOW-R5-008',
+    mode: 'bounded_snapshot',
+    resources: ['stock_on_hand'],
+    reason: 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition',
+    dryRun: false,
+    pageSize: 200,
+    maxPages: 5,
+    target: { warehouseCode: 'ADL1' },
+  });
+  assert.equal(result.requestKey, 'ECOFLOW-R5-008');
+  assert.match(edgeFunction, /const R5_008_REQUEST_KEY = 'ECOFLOW-R5-008'/);
+  assert.match(edgeFunction, /R5_008_REASON = 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition'/);
+  assert.match(panel, /R5-008 fresh ADL1 StockOnHand pre-stocktake snapshot/);
+  assert.match(panel, /Acquire fresh ADL1 snapshot once/);
+  assert.doesNotMatch(panel, /Run R5-002-R2 once/);
 });
