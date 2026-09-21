@@ -14,10 +14,6 @@ const stageEdge = fs.readFileSync(
   'supabase/functions/stage-unleashed-inventory-reference/index.ts',
   'utf8',
 );
-const client = fs.readFileSync(
-  'src/features/team/freshInventoryReferenceBridge.ts',
-  'utf8',
-);
 const panel = fs.readFileSync(
   'src/features/settings/FreshInventoryReferenceBridgePanel.tsx',
   'utf8',
@@ -108,17 +104,16 @@ test('activation is exact-scope reference lifecycle supersession with no invento
 });
 
 test('browser surface freezes Phase A and keeps Phase B separately acknowledged', () => {
-  assert.match(client, /requestKey: 'ECOFLOW-R5-009A'/);
-  assert.match(client, /membershipCount: 428/);
-  assert.match(client, /activateR5009FreshReferenceBridge/);
-  assert.match(client, /ecoflow_activate_r5_009_fresh_reference_bridge/);
-  assert.match(panel, /Phase A · reconstruct \+ stage fresh reference/);
-  assert.match(panel, /Phase B · activate fresh reference lifecycle/);
-  assert.match(panel, /Provider traffic: NONE/);
-  assert.match(panel, /Physical stocktake remains mandatory and separately authorized/);
-  assert.match(panel, /setStageAttempted\(true\)/);
-  assert.match(panel, /setActivateAttempted\(true\)/);
-  assert.match(panel, /!gate\?\.safeToActivate/);
+  assert.match(panel, /requestKey: 'ECOFLOW-R5-009A'/);
+  assert.match(panel, /sourceRowCount !== 428/);
+  assert.match(panel, /ecoflow_activate_r5_009_fresh_reference_bridge/);
+  assert.match(panel, /Phase A · stage fresh reference once/);
+  assert.match(panel, /Phase B · activate fresh reference once/);
+  assert.match(panel, /No provider traffic, stocktake, quantity or inventory authority/);
+  assert.match(panel, /Physical stocktake remains mandatory/);
+  assert.match(panel, /stage !== 'NOT RUN'/);
+  assert.match(panel, /activate !== 'READY'/);
+  assert.match(panel, /safeToActivate === true/);
   assert.match(host, /FreshInventoryReferenceBridgePanel/);
   assert.match(host, /Loading R5-009 fresh reference bridge/);
 });
