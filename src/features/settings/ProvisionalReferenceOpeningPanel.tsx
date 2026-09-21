@@ -91,7 +91,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
           <div className="unleashed-acceptance-head">
             <div>
               <h3>R5-007 provisional reference opening</h3>
-              <span>搬仓期间的 reference baseline · HOLD · 不宣称现场实盘</span>
+              <span>搬仓期间的 immutable reference planning evidence · 不宣称现场实盘</span>
             </div>
             <b className={`pill pill-${error ? 'danger' : gate?.provisionalStatus ? 'good' : 'neutral'}`}>
               {running ? '执行中' : gate?.provisionalStatus ?? '未读取'}
@@ -100,7 +100,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
 
           <div className="unleashed-acceptance-warning">
             <AlertTriangle aria-hidden="true" size={16} />
-            这不是 physical stocktake。系统只把冻结的 Unleashed QtyOnHand 写成 provisional reference，并将仓位库存置为 HOLD；正常 picking 不得消费该数量。
+            这不是 physical stocktake，也不是 opening quantity mutation。系统只记录冻结的 Unleashed QtyOnHand 与 planned location 作为 provisional reference evidence；不会创建 warehouse quantity、inventory movement 或可用库存。
           </div>
 
           <label>
@@ -118,7 +118,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
             <span>Reference <strong>{frozen.sourceQtyOnHand} cartons</strong></span>
             <span>Planned location <strong>{frozen.plannedLocationCode}</strong></span>
             <span>Barcode <strong>{frozen.barcode}</strong></span>
-            <span>Operational authority <strong>NO</strong></span>
+            <span>Inventory mutation <strong>NONE</strong></span>
           </div>
 
           <button type="button" onClick={() => void refresh()} disabled={Boolean(running)}>
@@ -137,9 +137,9 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
                 <span>Physical count claimed <strong>NO</strong></span>
               </div>
 
-              {gate.provisionalStatus === 'PROVISIONAL_HOLD' ? (
+              {gate.provisionalStatus === 'PROVISIONAL_REFERENCE' ? (
                 <div className="unleashed-acceptance-warning" role="status">
-                  Provisional baseline 已建立。该数量仍是 HOLD。后续真实 stocktake 必须把 {gate.plannedLocationCode} 也纳入盘点证据，才能通过 FINALIZE，并通过 stocktake APPROVE 产生补偿调整。
+                  Provisional reference 已建立：{gate.provisionalQuantity} cartons / planned {gate.plannedLocationCode}。这只是迁移规划证据，warehouse quantity 与 inventory movements 仍保持零；后续现场 stocktake 才能创建库存 authority。
                 </div>
               ) : null}
 
@@ -169,16 +169,16 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
                   </label>
                   <label className="unleashed-acceptance-confirm">
                     <input type="checkbox" checked={ackHold} onChange={(event) => setAckHold(event.target.checked)} />
-                    <span>我确认 provisional quantity 会写入 {frozen.plannedLocationCode} 且状态为 HOLD，不能正常拣货。</span>
+                    <span>我确认 planned location {frozen.plannedLocationCode} 仅作为迁移规划证据记录；本动作不写 warehouse quantity 或 inventory movement。</span>
                   </label>
                   <label className="unleashed-acceptance-confirm">
                     <input type="checkbox" checked={ackCorrection} onChange={(event) => setAckCorrection(event.target.checked)} />
-                    <span>我确认后续真实 stocktake 必须包含 provisional location，并通过补偿 movement 修正，不覆盖历史。</span>
+                    <span>我确认后续真实 stocktake 必须重新提供真实 location 与 counted cartons；reference evidence 不能替代现场盘点，也不能直接变成库存数量。</span>
                   </label>
 
                   <button type="button" className="primary" disabled={Boolean(running) || !canApply} onClick={() => void apply()}>
                     <Database aria-hidden="true" size={16} />
-                    {commandId ? '重试同一 provisional command' : '建立 provisional HOLD baseline'}
+                    {commandId ? '重试同一 provisional command' : '记录 provisional reference evidence'}
                   </button>
                 </>
               ) : null}
