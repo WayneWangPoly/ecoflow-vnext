@@ -5,6 +5,10 @@ const migration = fs.readFileSync(
   'supabase/migrations/20260921015000_sales_transaction_metric_semantics.sql',
   'utf8',
 );
+const rematerializationMigration = fs.readFileSync(
+  'supabase/migrations/20260921044500_sales_transaction_transform_version_rematerialization.sql',
+  'utf8',
+);
 const workflow = fs.readFileSync(
   '.github/workflows/warehouse-productisation-check.yml',
   'utf8',
@@ -34,6 +38,11 @@ const required = [
   ['workflow audit', /audit-sales-transaction-metrics\.mjs/, workflow],
   ['contract parked invoice', /InvoiceStatus":"Parked"/, factContract],
   ['contract distinct order metric', /sales_orders=2/, factContract],
+  ['transform contract version', /sales_transaction_transform_v2_invoice_status/, rematerializationMigration],
+  ['document transform hash', /sales_transaction_transform_v2_invoice_status'[\s\S]{0,180}d\.source_snapshot_hash,d\.order_snapshot_hash,d\.invoice_snapshot_hash/, rematerializationMigration],
+  ['line transform hash', /sales_transaction_transform_v2_invoice_status'[\s\S]{0,220}d\.source_snapshot_hash,d\.order_snapshot_hash,d\.invoice_snapshot_hash,l\.value,l\.ordinality/, rematerializationMigration],
+  ['workflow rematerialization migration', /20260921044500_sales_transaction_transform_version_rematerialization\.sql/, workflow],
+  ['legacy same-source-hash regression', /legacy_without_transform_contract[\s\S]{0,4000}\$transform_rematerialization\$/, factContract],
 ];
 
 for (const [name, pattern, content = migration] of required) {
@@ -51,11 +60,12 @@ const forbidden = [
 ];
 
 for (const [name, pattern] of forbidden) {
-  assert.doesNotMatch(migration, pattern, `Sales transaction metric audit found forbidden ${name}`);
+  assert.doesNotMatch(migration, pattern, `Sales transaction metric audit found forbidden ${name} in metric migration`);
+  assert.doesNotMatch(rematerializationMigration, pattern, `Sales transaction metric audit found forbidden ${name} in rematerialization migration`);
 }
 
-assert.equal(required.length, 19);
+assert.equal(required.length, 24);
 assert.equal(forbidden.length, 7);
 console.log(
-  `Sales transaction metric static audit passed (${required.length + forbidden.length}/${required.length + forbidden.length}).`,
+  `Sales transaction metric static audit passed (${required.length + (forbidden.length * 2)}/${required.length + (forbidden.length * 2)}).`,
 );
