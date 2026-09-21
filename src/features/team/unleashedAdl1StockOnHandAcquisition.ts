@@ -23,6 +23,17 @@ export const R5_002_R2_REQUEST = {
   target: { warehouseCode: 'ADL1' },
 } as const;
 
+export const R5_008_REQUEST = {
+  requestKey: 'ECOFLOW-R5-008',
+  mode: 'bounded_snapshot',
+  resources: ['stock_on_hand'],
+  reason: 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition',
+  dryRun: false,
+  pageSize: 200,
+  maxPages: 5,
+  target: { warehouseCode: 'ADL1' },
+} as const;
+
 type AcquisitionPage = {
   resource: 'stock_on_hand';
   endpointPath: string;
