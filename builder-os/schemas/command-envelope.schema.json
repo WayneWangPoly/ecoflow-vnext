@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://builder-os.local/schemas/command-envelope.schema.json",
+  "title": "Builder OS Command Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "command_id",
+    "command_type",
+    "aggregate_type",
+    "aggregate_id",
+    "expected_revision",
+    "device_id",
+    "issued_at",
+    "payload"
+  ],
+  "properties": {
+    "command_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "command_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "aggregate_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "expected_revision": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "client_context": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "schema_version": {
+      "type": "string",
+      "default": "0.1"
+    }
+  },
+  "description": "Client command request. Actor/role/authorization MUST be derived or revalidated by the trusted server and MUST NOT be trusted merely because the client supplied them."
+}
