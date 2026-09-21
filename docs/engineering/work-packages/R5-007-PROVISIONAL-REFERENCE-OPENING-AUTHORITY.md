@@ -35,6 +35,7 @@ Frozen upstream evidence:
 - reference batch: `4cdb85d3-06d8-44bf-96bb-93660e10c3c9`;
 - source run: `5cd0e73b-956d-4c80-9e70-6d841d27b163`;
 - source-set SHA-256: `215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d`;
+- exact source-row SHA-256 per frozen target;
 - exact existing Physical SKU / CARTON package / barcode binding per target;
 - planned locations must still exist and be ACTIVE.
 
@@ -76,17 +77,31 @@ After the commissioning-linked stocktake reaches `APPROVED`, an internal trigger
 
 ## Explicit non-scope
 
-This engineering package does not authorize or perform merge, formal migration materialisation, production SQL deployment, production R5-007 evidence recording, warehouse/inventory quantity mutation, stocktake approval, Product Identity mutation, provider traffic, barcode reassignment/retirement, or #342 cutover.
+This engineering package does not authorize or perform merge, production SQL deployment, production R5-007 evidence recording, warehouse/inventory quantity mutation, stocktake approval, Product Identity mutation, provider traffic, barcode reassignment/retirement, or #342 cutover.
 
 ## Migration materialisation
 
-The reviewed SQL remains under `scripts/` during this engineering phase.
+Formal materialisation is complete.
 
-A later materialisation gate must use the repository-pinned Supabase CLI:
+Repository-pinned Supabase CLI version:
 
-`supabase migration new <approved-r5-007-name>`
+`2.107.0`
 
-The reviewed carrier is then copied into the generated migration file and exact-head CI plus the required trusted Supabase shadow gate are rerun. No timestamp is invented manually.
+CLI command:
+
+`supabase migration new r5_007_provisional_inventory_reference_evidence`
+
+CLI-generated migration:
+
+`supabase/migrations/20260921093607_r5_007_provisional_inventory_reference_evidence.sql`
+
+The formal migration content is byte-for-byte identical to the reviewed carrier:
+
+`scripts/r5-007-provisional-reference-opening-authority.sql`
+
+No migration timestamp was manually invented.
+
+Exact-head CI and trusted Supabase shadow must pass on the post-materialisation head before merge authority is considered.
 
 ## Acceptance focus
 
@@ -94,4 +109,4 @@ R5-007 succeeds only if reference quantity and planned placement are durable whi
 
 Current disposition:
 
-`ENGINEERING_ONLY / PROVISIONAL_REFERENCE_EVIDENCE_ONLY / ZERO_INVENTORY_MUTATION / HOLD_BEFORE_MIGRATION_MATERIALISATION_AND_PRODUCTION_EXECUTION`
+`MIGRATION_MATERIALISED / PROVISIONAL_REFERENCE_EVIDENCE_ONLY / ZERO_INVENTORY_MUTATION / HOLD_BEFORE_MERGE_AND_PRODUCTION_EXECUTION`
