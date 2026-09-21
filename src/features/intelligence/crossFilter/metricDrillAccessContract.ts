@@ -7,6 +7,20 @@ import {
   type OperationalPulseMetricKey,
 } from '../operationalPulse/operationalPulseContract.ts';
 
+export const transactionMetricDrillKeys = [
+  'sales_orders',
+  'average_revenue_per_order',
+] as const;
+
+export type TransactionMetricDrillKey = (typeof transactionMetricDrillKeys)[number];
+export type MetricDrillAccessMetricKey = OperationalPulseMetricKey | TransactionMetricDrillKey;
+
+export const metricDrillAccessMetricKeys: readonly MetricDrillAccessMetricKey[] = [
+  'revenue',
+  ...transactionMetricDrillKeys,
+  ...operationalPulseMetricKeys.filter((metricKey) => metricKey !== 'revenue'),
+];
+
 export const metricDrillAccessRpcName = 'get_metric_drill_access' as const;
 
 export type MetricDrillAccessCapability = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
@@ -14,7 +28,7 @@ export type MetricDrillProjectionStatus = 'SHADOW' | 'BLOCKED' | 'READY' | 'UNKN
 export type MetricDrillAccessReadState = 'ready' | 'partial' | 'empty';
 
 export type MetricDrillAccessRecord = {
-  metricKey: OperationalPulseMetricKey;
+  metricKey: MetricDrillAccessMetricKey;
   metricVersion: number;
   displayName: string;
   metricStatus: string;
@@ -77,7 +91,7 @@ export type MetricDrillAccessFailure = {
 
 export type MetricDrillAccessResult = MetricDrillAccessSuccess | MetricDrillAccessFailure;
 
-const METRIC_KEYS = new Set<string>(operationalPulseMetricKeys);
+const METRIC_KEYS = new Set<string>(metricDrillAccessMetricKeys);
 const PROJECTION_STATUSES = new Set<MetricDrillProjectionStatus>([
   'SHADOW',
   'BLOCKED',
@@ -85,7 +99,7 @@ const PROJECTION_STATUSES = new Set<MetricDrillProjectionStatus>([
   'UNKNOWN',
 ]);
 const METRIC_ORDER = new Map(
-  operationalPulseMetricKeys.map((metricKey, index) => [metricKey, index]),
+  metricDrillAccessMetricKeys.map((metricKey, index) => [metricKey, index]),
 );
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -197,7 +211,7 @@ function metricReadState(
   issues: readonly MetricDrillAccessIssue[],
 ): MetricDrillAccessReadState {
   if (rows.length === 0) return 'empty';
-  return rows.length === operationalPulseMetricKeys.length && issues.length === 0
+  return rows.length === metricDrillAccessMetricKeys.length && issues.length === 0
     ? 'ready'
     : 'partial';
 }
@@ -208,8 +222,8 @@ export function normaliseMetricDrillAccessRows(input: unknown): NormalisedMetric
   if (!Array.isArray(input)) issues.push({ code: 'INVALID_ACCESS_RESULT' });
 
   const rows: MetricDrillAccessRecord[] = [];
-  const seenMetrics = new Set<OperationalPulseMetricKey>();
-  const receivedOrder: OperationalPulseMetricKey[] = [];
+  const seenMetrics = new Set<MetricDrillAccessMetricKey>();
+  const receivedOrder: MetricDrillAccessMetricKey[] = [];
 
   source.forEach((value, index) => {
     const raw = recordOf(value);
@@ -227,7 +241,7 @@ export function normaliseMetricDrillAccessRows(input: unknown): NormalisedMetric
       });
       return;
     }
-    const metricKey = rawMetricKey as OperationalPulseMetricKey;
+    const metricKey = rawMetricKey as MetricDrillAccessMetricKey;
     if (seenMetrics.has(metricKey)) {
       issues.push({ code: 'DUPLICATE_METRIC_KEY', metricKey });
       return;
@@ -337,12 +351,12 @@ export function normaliseMetricDrillAccessRows(input: unknown): NormalisedMetric
     });
   });
 
-  operationalPulseMetricKeys.forEach((metricKey) => {
+  metricDrillAccessMetricKeys.forEach((metricKey) => {
     if (!seenMetrics.has(metricKey)) issues.push({ code: 'MISSING_METRIC_KEY', metricKey });
   });
 
   const receivedCanonical = receivedOrder.every(
-    (metricKey, index) => metricKey === operationalPulseMetricKeys[index],
+    (metricKey, index) => metricKey === metricDrillAccessMetricKeys[index],
   );
   if (receivedOrder.length > 0 && !receivedCanonical) {
     issues.push({ code: 'NON_CANONICAL_ORDER' });

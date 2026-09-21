@@ -5,7 +5,7 @@ import {
   type OperationalPulseAvailability,
   type OperationalPulseDeck,
   type OperationalPulseMetricInput,
-} from '../operationalPulse/operationalPulseContract';
+} from '../operationalPulse/operationalPulseContract.ts';
 
 export type OperationalPulseReadinessSummary = {
   total: number;
@@ -25,18 +25,21 @@ function availabilityFor(row: AnalyticsMetricReadinessRow): OperationalPulseAvai
 export function readinessRowsToOperationalPulse(
   rows: readonly AnalyticsMetricReadinessRow[],
 ): OperationalPulseDeck {
-  const inputs: OperationalPulseMetricInput[] = rows.map((row) => ({
-    metricKey: row.metricKey,
-    displayName: row.displayName,
-    unitKind: row.unitKind,
-    availability: availabilityFor(row),
-    value: null,
-    displayValue: null,
-    freshness: 'UNKNOWN',
-    quality: row.metricStatus === 'ACTIVE' ? 'TRUSTED' : 'UNKNOWN',
-    asOfAt: row.readinessUpdatedAt,
-    blockerCodes: row.blockerCodes,
-  }));
+  const pulseKeys = new Set<string>(operationalPulseMetricKeys);
+  const inputs: OperationalPulseMetricInput[] = rows
+    .filter((row) => pulseKeys.has(row.metricKey))
+    .map((row) => ({
+      metricKey: row.metricKey,
+      displayName: row.displayName,
+      unitKind: row.unitKind,
+      availability: availabilityFor(row),
+      value: null,
+      displayValue: null,
+      freshness: 'UNKNOWN',
+      quality: row.metricStatus === 'ACTIVE' ? 'TRUSTED' : 'UNKNOWN',
+      asOfAt: row.readinessUpdatedAt,
+      blockerCodes: row.blockerCodes,
+    }));
   return buildOperationalPulseDeck(inputs);
 }
 

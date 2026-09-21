@@ -32,6 +32,8 @@ const app = fs.readFileSync('src/app/App.tsx', 'utf8');
 for (const marker of [
   "metricDrillAccessRpcName = 'get_metric_drill_access'",
   'operationalPulseMetricKeys',
+  'transactionMetricDrillKeys',
+  'metricDrillAccessMetricKeys',
   "MetricDrillAccessCapability = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN'",
   'let valid = true',
   'return valid ? output : null',
@@ -125,7 +127,7 @@ for (const marker of [
 }
 
 for (const testName of [
-  'current ten-metric access envelope remains ready but fully unavailable',
+  'current twelve-metric access envelope remains ready but fully unavailable',
   'AVAILABLE survives only with ACTIVE READY governed dimensions and no reason codes',
   'malformed list arrays never retain AVAILABLE authority',
   'server AVAILABLE with non-ready governance fails closed to UNKNOWN',

@@ -1,9 +1,7 @@
 import {
-  operationalPulseMetricKeys,
-} from '../operationalPulse/operationalPulseContract.ts';
-import type {
-  MetricDrillAccessCapability,
-  MetricDrillAccessRecord,
+  metricDrillAccessMetricKeys,
+  type MetricDrillAccessCapability,
+  type MetricDrillAccessRecord,
 } from './metricDrillAccessContract.ts';
 
 export type MetricDrillAccessTone = 'success' | 'warning' | 'neutral';
@@ -29,8 +27,8 @@ export function metricDrillAccessSummary(
     unavailable: rows.filter((row) => row.drillCapability === 'UNAVAILABLE').length,
     unknown: rows.filter((row) => row.drillCapability === 'UNKNOWN').length,
     issueCount,
-    canonicalCoverage: rows.length === operationalPulseMetricKeys.length
-      && operationalPulseMetricKeys.every(
+    canonicalCoverage: rows.length === metricDrillAccessMetricKeys.length
+      && metricDrillAccessMetricKeys.every(
         (metricKey, index) => rows[index]?.metricKey === metricKey,
       ),
     readAt: readTimes.size === 1 ? rows[0]?.readAt ?? null : null,
