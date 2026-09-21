@@ -23,6 +23,17 @@ export const R5_002_R2_REQUEST = {
   target: { warehouseCode: 'ADL1' },
 } as const;
 
+export const R5_008_REQUEST = {
+  requestKey: 'ECOFLOW-R5-008',
+  mode: 'bounded_snapshot',
+  resources: ['stock_on_hand'],
+  reason: 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition',
+  dryRun: false,
+  pageSize: 200,
+  maxPages: 5,
+  target: { warehouseCode: 'ADL1' },
+} as const;
+
 type AcquisitionPage = {
   resource: 'stock_on_hand';
   endpointPath: string;
@@ -50,7 +61,7 @@ type AcquisitionWindow = {
 export type R5002AcquisitionResult = {
   ok: true;
   runId: string;
-  requestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2';
+  requestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' | 'ECOFLOW-R5-008';
   requestedAt: string;
   status: 'SUCCEEDED';
   dryRun: false;
@@ -106,7 +117,7 @@ function isAcquisitionPage(value: unknown, expectedPage: number): value is Acqui
 
 function assertAcquisitionResult(
   value: unknown,
-  expectedRequestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' = R5_002_REQUEST.requestKey,
+  expectedRequestKey: 'ECOFLOW-R5-002' | 'ECOFLOW-R5-002-R2' | 'ECOFLOW-R5-008' = R5_002_REQUEST.requestKey,
 ): R5002AcquisitionResult {
   if (!isRecord(value)) throw new Error('R5_002_ACQUISITION_CONTRACT_VIOLATION');
   const target = value.target;
@@ -200,4 +211,18 @@ export async function runR5002R2Adl1StockOnHandAcquisition(
     throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
   }
   return assertAcquisitionResult(data, R5_002_R2_REQUEST.requestKey);
+}
+
+export async function runR5008Adl1StockOnHandAcquisition(
+  supabase: SupabaseClient,
+): Promise<R5002AcquisitionResult> {
+  const { data, error } = await supabase.functions.invoke('trigger-unleashed-readonly-sync', {
+    body: R5_008_REQUEST,
+  });
+  if (error) throw error;
+  const connectorError = data as ConnectorError | null;
+  if (connectorError?.error) {
+    throw new Error(`${connectorError.error}${connectorError.details ? `: ${connectorError.details}` : ''}`);
+  }
+  return assertAcquisitionResult(data, R5_008_REQUEST.requestKey);
 }

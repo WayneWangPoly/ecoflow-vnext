@@ -19,6 +19,11 @@ const MappingPlanOnlyPanel = lazy(async () => {
   return { default: module.MappingPlanOnlyPanel };
 });
 
+const FreshAdl1StockOnHandAcquisitionPanel = lazy(async () => {
+  const module = await import('./FreshAdl1StockOnHandAcquisitionPanel');
+  return { default: module.FreshAdl1StockOnHandAcquisitionPanel };
+});
+
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
   products: 'Product',
   stock_on_hand: 'Stock on hand',
@@ -282,6 +287,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           </button>
         </div>
       ) : null}
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-008 fresh ADL1 acquisition gate…</div>}>
+        <FreshAdl1StockOnHandAcquisitionPanel supabase={supabase} />
+      </Suspense>
       <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-006 mapping PLAN…</div>}>
         <MappingPlanOnlyPanel supabase={supabase} />
       </Suspense>

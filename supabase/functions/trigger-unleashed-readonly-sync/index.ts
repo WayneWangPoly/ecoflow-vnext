@@ -33,6 +33,8 @@ const R5_002_REQUEST_KEY = 'ECOFLOW-R5-002';
 const R5_002_REASON = 'ECOFLOW-R5-002 production ADL1 warehouse-scoped StockOnHand acquisition';
 const R5_002_R2_REQUEST_KEY = 'ECOFLOW-R5-002-R2';
 const R5_002_R2_REASON = 'ECOFLOW-R5-002-R2 recovery after classification-read defect';
+const R5_008_REQUEST_KEY = 'ECOFLOW-R5-008';
+const R5_008_REASON = 'ECOFLOW-R5-008 fresh pre-stocktake ADL1 StockOnHand acquisition';
 
 const modifiedSincePattern = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z?)?$/;
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -333,7 +335,7 @@ function normalizePreviousRunId(value: unknown) {
 
 function normalizeRequestKey(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
-  if (value !== R5_002_REQUEST_KEY && value !== R5_002_R2_REQUEST_KEY) throw new Error('UNSUPPORTED_REQUEST_KEY');
+  if (value !== R5_002_REQUEST_KEY && value !== R5_002_R2_REQUEST_KEY && value !== R5_008_REQUEST_KEY) throw new Error('UNSUPPORTED_REQUEST_KEY');
   return value;
 }
 
@@ -363,7 +365,11 @@ function assertReservedRequestShape(input: {
   ];
   const bodyKeys = Object.keys(input.body).sort();
   const targetKeys = isRecord(input.body.target) ? Object.keys(input.body.target) : [];
-  const expectedReason = input.requestKey === R5_002_R2_REQUEST_KEY ? R5_002_R2_REASON : R5_002_REASON;
+  const expectedReason = input.requestKey === R5_002_R2_REQUEST_KEY
+    ? R5_002_R2_REASON
+    : input.requestKey === R5_008_REQUEST_KEY
+      ? R5_008_REASON
+      : R5_002_REASON;
   const exactShape = bodyKeys.length === allowedKeys.length
     && allowedKeys.every((key) => bodyKeys.includes(key))
     && input.body.mode === 'bounded_snapshot'
