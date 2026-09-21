@@ -88,7 +88,7 @@ insert into public.unleashed_raw_snapshots(
 )
 values
   (
-    'SalesOrders','SO-1','so-guid-1','SO-1','2026-01-01 01:00:00+00',
+    'sales_orders_history','SO-1','so-guid-1','SO-1','2026-01-01 01:00:00+00',
     '{
       "Guid":"so-guid-1","OrderNumber":"SO-1","Status":"Completed",
       "SalesPerson":{"Guid":"sp-1","FullName":"Alex Seller"},
@@ -99,7 +99,7 @@ values
     repeat('1',64)
   ),
   (
-    'SalesOrders','SO-2','so-guid-2','SO-2','2026-01-01 01:00:00+00',
+    'sales_orders_history','SO-2','so-guid-2','SO-2','2026-01-01 01:00:00+00',
     '{
       "Guid":"so-guid-2","OrderNumber":"SO-2","Status":"Completed",
       "SalesPerson":{"Guid":"sp-2","FullName":"Bea Seller"},
@@ -110,7 +110,7 @@ values
     repeat('2',64)
   ),
   (
-    'SalesOrders','SO-3','so-guid-3','SO-3','2026-01-01 01:00:00+00',
+    'sales_orders_history','SO-3','so-guid-3','SO-3','2026-01-01 01:00:00+00',
     '{
       "Guid":"so-guid-3","OrderNumber":"SO-3","Status":"Completed",
       "SalesPerson":null,
@@ -121,7 +121,7 @@ values
     repeat('3',64)
   ),
   (
-    'SalesInvoices','INV-1','inv-guid-1','INV-1','2026-01-02 01:00:00+00',
+    'sales_invoices','INV-1','inv-guid-1','INV-1','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-1","InvoiceNumber":"INV-1","OrderNumber":"SO-1",
       "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
@@ -139,7 +139,7 @@ values
     repeat('4',64)
   ),
   (
-    'SalesInvoices','INV-CHARGE','inv-guid-charge','INV-CHARGE','2026-01-02 01:00:00+00',
+    'sales_invoices','INV-CHARGE','inv-guid-charge','INV-CHARGE','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-charge","InvoiceNumber":"INV-CHARGE","OrderNumber":"SO-2",
       "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
@@ -156,7 +156,7 @@ values
     repeat('5',64)
   ),
   (
-    'SalesInvoices','INV-DISCOUNT','inv-guid-discount','INV-DISCOUNT','2026-01-02 01:00:00+00',
+    'sales_invoices','INV-DISCOUNT','inv-guid-discount','INV-DISCOUNT','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-discount","InvoiceNumber":"INV-DISCOUNT","OrderNumber":"SO-3",
       "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
@@ -174,7 +174,7 @@ values
     repeat('6',64)
   ),
   (
-    'CreditNotes','CR-1','credit-guid-1','CR-1','2026-01-03 01:00:00+00',
+    'credit_notes','CR-1','credit-guid-1','CR-1','2026-01-03 01:00:00+00',
     '{
       "Guid":"credit-guid-1","CreditNoteNumber":"CR-1","InvoiceNumber":"INV-1",
       "SalesOrder":{"Guid":"so-guid-1","OrderNumber":"SO-1"},
@@ -207,6 +207,17 @@ begin
   if (select count(*) from analytics.fact_sales_transaction_document where is_current)<>4
      or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>4 then
     raise exception 'unexpected document or line grain after first refresh';
+  end if;
+
+  if (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and source_resource='SalesInvoices')<>3
+     or (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and source_resource='CreditNotes')<>1
+     or exists(
+       select 1 from analytics.fact_sales_transaction_document
+       where is_current and source_resource not in ('SalesInvoices','CreditNotes')
+     ) then
+    raise exception 'raw resource namespace leaked into frozen fact-layer source_resource semantics';
   end if;
 
   if not exists(
@@ -296,7 +307,7 @@ set payload=jsonb_set(
     ),
     payload_sha256=repeat('8',64),
     source_last_modified_at='2026-01-11 00:00:00+00'
-where resource='SalesInvoices' and external_key='INV-DISCOUNT';
+where resource='sales_invoices' and external_key='INV-DISCOUNT';
 
 select * from analytics.refresh_sales_transaction_facts('2026-01-11 01:00:00+00');
 
@@ -323,7 +334,7 @@ $version_change$;
 update public.unleashed_raw_snapshots
 set payload=jsonb_set(payload,'{SubTotal}','"not-a-number"'::jsonb),
     payload_sha256=repeat('9',64)
-where resource='SalesInvoices' and external_key='INV-DISCOUNT';
+where resource='sales_invoices' and external_key='INV-DISCOUNT';
 
 create temporary table sales_transaction_failed_refresh as
 select * from analytics.refresh_sales_transaction_facts('2026-01-12 01:00:00+00');

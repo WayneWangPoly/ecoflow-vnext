@@ -151,7 +151,8 @@ jobs:
             supabase/migrations/20260730103000_metric_readiness_read_boundary.sql \
             supabase/migrations/20260730160000_actionable_exception_read_model.sql \
             supabase/migrations/20260730190000_actionable_exception_lifecycle_ledger.sql \
-            supabase/migrations/20260920093537_sales_transaction_fact_foundation.sql
+            supabase/migrations/20260920093537_sales_transaction_fact_foundation.sql \
+            supabase/migrations/20260921004801_sales_transaction_fact_resource_namespace_repair.sql
           do
             echo "==> $file" | tee -a operational-db-contract.log
             if [[ "$file" == 'supabase/migrations/20260727120470_recompile_legacy_returns_for_managed_postgres.sql' ]]; then

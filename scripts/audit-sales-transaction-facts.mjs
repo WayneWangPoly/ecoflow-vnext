@@ -4,6 +4,9 @@ import fs from 'node:fs';
 const migrationFile =
   'supabase/migrations/20260920093537_sales_transaction_fact_foundation.sql';
 const migration = fs.readFileSync(migrationFile, 'utf8');
+const repairMigrationFile =
+  'supabase/migrations/20260921004801_sales_transaction_fact_resource_namespace_repair.sql';
+const repairMigration = fs.readFileSync(repairMigrationFile, 'utf8');
 const workflow = fs.readFileSync(
   '.github/workflows/warehouse-productisation-check.yml',
   'utf8',
@@ -60,9 +63,39 @@ for (const [name, pattern] of forbidden) {
   assert.doesNotMatch(migration, pattern, `Sales transaction fact audit found ${name}`);
 }
 
+
+const namespaceRepairChecks = [
+  ['production order-history raw namespace', /where s\.resource='sales_orders_history'/],
+  ['production invoice raw namespace', /where s\.resource='sales_invoices'/],
+  ['production credit raw namespace', /where s\.resource='credit_notes'/],
+  ['frozen invoice fact source label', /'SalesInvoices'::text as source_resource/],
+  ['frozen credit fact source label', /'CreditNotes'::text,'CREDIT_NOTE'/],
+  ['no refresh invocation in repair', /No refresh is invoked by this migration/],
+];
+
+for (const [name, pattern] of namespaceRepairChecks) {
+  assert.match(
+    repairMigration,
+    pattern,
+    `Sales transaction namespace repair audit failed: ${name}`,
+  );
+}
+
+assert.doesNotMatch(
+  repairMigration,
+  /where s\.resource='(?:SalesOrders|SalesInvoices|CreditNotes)'/,
+  'Sales transaction namespace repair retained a legacy raw resource filter',
+);
+assert.doesNotMatch(
+  repairMigration,
+  /insert\s+into\s+analytics\.metric_definition|update\s+analytics\.metric_definition|http_(?:get|post)|net\.http|unleashed\.com/i,
+  'Sales transaction namespace repair crossed metric/provider boundaries',
+);
+
 const supportChecks = [
   ['workflow fixture', workflow, /scripts\/sales-transaction-facts-migration-fixture\.sql/],
   ['workflow migration', workflow, /supabase\/migrations\/20260920093537_sales_transaction_fact_foundation\.sql/],
+  ['workflow namespace repair', workflow, /supabase\/migrations\/20260921004801_sales_transaction_fact_resource_namespace_repair\.sql/],
   ['workflow DB contract', workflow, /scripts\/sales-transaction-facts-contract-test\.sql/],
   ['raw snapshot shell', fixture, /create table if not exists public\.unleashed_raw_snapshots/],
 ];
@@ -78,7 +111,8 @@ assert.doesNotMatch(
 
 assert.equal(required.length, 24);
 assert.equal(forbidden.length, 9);
-assert.equal(supportChecks.length, 4);
+assert.equal(supportChecks.length, 5);
+assert.equal(namespaceRepairChecks.length, 6);
 console.log(
-  `Sales transaction fact static audit passed (${required.length + forbidden.length + supportChecks.length + 1}/${required.length + forbidden.length + supportChecks.length + 1}).`,
+  `Sales transaction fact static audit passed (${required.length + forbidden.length + supportChecks.length + namespaceRepairChecks.length + 3}/${required.length + forbidden.length + supportChecks.length + namespaceRepairChecks.length + 3}).`,
 );
