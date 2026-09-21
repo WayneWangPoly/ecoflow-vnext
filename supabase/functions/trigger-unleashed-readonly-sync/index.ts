@@ -1095,10 +1095,11 @@ Deno.serve(async (req) => {
         let changedOnPage = 0;
         let unchangedOnPage = 0;
         let identityWritesOnPage = 0;
+        let snapshotRows: SnapshotRow[] = [];
         let semanticRows: SnapshotRow[] = [];
         let identitiesNeedingWrite: IdentityRow[] = [];
         if (!dryRun && items.length) {
-          const snapshotRows = await buildSnapshotRows(resource, run.id, items);
+          snapshotRows = await buildSnapshotRows(resource, run.id, items);
           const classifiedRows = await classifySnapshotRows(adminClient, resource, snapshotRows);
           semanticRows = [...classifiedRows.inserted, ...classifiedRows.changed];
           const identityRows: IdentityRow[] = snapshotRows.map((row) => ({
@@ -1151,6 +1152,10 @@ Deno.serve(async (req) => {
             p_batch_metadata: batchMetadata,
             p_snapshot_rows: semanticRows,
             p_identity_rows: identitiesNeedingWrite,
+            p_seen_rows: snapshotRows.map((row) => ({
+              external_key: row.external_key,
+              payload_sha256: row.payload_sha256,
+            })),
           });
           if (commitError) throw new Error(`UNLEASHED_FENCED_PAGE_COMMIT_FAILED:${commitError.message}`);
         } else {
