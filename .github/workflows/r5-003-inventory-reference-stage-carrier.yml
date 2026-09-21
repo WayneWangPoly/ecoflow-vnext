@@ -4,10 +4,15 @@ on:
   pull_request:
     paths:
       - 'supabase/functions/stage-unleashed-inventory-reference/**'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'supabase/migrations/20260921143711_r5_009_fresh_reference_membership_bridge.sql'
       - 'src/features/team/unleashedInventoryReferenceStage.ts'
+      - 'src/features/team/freshInventoryReferenceBridge.ts'
       - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'src/features/settings/FreshInventoryReferenceBridgePanel.tsx'
       - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
       - 'scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs'
+      - 'scripts/r5-009-fresh-reference-bridge-contract.test.mjs'
       - 'scripts/unleashed-inventory-reference-contract.test.mjs'
       - 'scripts/audit-unleashed-inventory-reference.mjs'
       - '.github/workflows/r5-003-inventory-reference-stage-carrier.yml'
@@ -17,10 +22,15 @@ on:
       - 'agent/unleashed/r5-003-inventory-reference-stage-carrier'
     paths:
       - 'supabase/functions/stage-unleashed-inventory-reference/**'
+      - 'supabase/functions/trigger-unleashed-readonly-sync/**'
+      - 'supabase/migrations/20260921143711_r5_009_fresh_reference_membership_bridge.sql'
       - 'src/features/team/unleashedInventoryReferenceStage.ts'
+      - 'src/features/team/freshInventoryReferenceBridge.ts'
       - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'src/features/settings/FreshInventoryReferenceBridgePanel.tsx'
       - 'src/features/settings/UnleashedReadonlyProbePanel.tsx'
       - 'scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs'
+      - 'scripts/r5-009-fresh-reference-bridge-contract.test.mjs'
       - 'scripts/unleashed-inventory-reference-contract.test.mjs'
       - 'scripts/audit-unleashed-inventory-reference.mjs'
       - '.github/workflows/r5-003-inventory-reference-stage-carrier.yml'
@@ -42,6 +52,8 @@ jobs:
       - run: npm ci
       - name: R5-003 exact carrier contract
         run: node --test scripts/r5-003-inventory-reference-stage-carrier-contract.test.mjs
+      - name: R5-009 fresh reference bridge contract
+        run: node --test scripts/r5-009-fresh-reference-bridge-contract.test.mjs
       - name: Existing inventory-reference contract
         run: node --test scripts/unleashed-inventory-reference-contract.test.mjs
       - name: Inventory-reference static audit
