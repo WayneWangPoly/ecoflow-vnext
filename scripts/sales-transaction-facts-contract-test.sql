@@ -75,9 +75,12 @@ begin
     raise exception 'sales transaction datasets did not start in NEVER state';
   end if;
 
-  if (select count(*) from analytics.metric_definition)<>10
-     or exists(select 1 from analytics.metric_definition where status<>'DRAFT') then
-    raise exception 'sales transaction migration changed the 10/10 DRAFT metric registry';
+  if exists(select 1 from analytics.metric_definition where status<>'DRAFT')
+     or not exists(select 1 from analytics.metric_definition where metric_key='revenue' and metric_version=1)
+     or not exists(select 1 from analytics.metric_definition where metric_key='revenue' and metric_version=2)
+     or not exists(select 1 from analytics.metric_definition where metric_key='sales_orders' and metric_version=1)
+     or not exists(select 1 from analytics.metric_definition where metric_key='average_revenue_per_order' and metric_version=1) then
+    raise exception 'sales transaction metric candidate registry is not fully DRAFT';
   end if;
 end;
 $structure$;
@@ -124,7 +127,7 @@ values
     'sales_invoices','INV-1','inv-guid-1','INV-1','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-1","InvoiceNumber":"INV-1","OrderNumber":"SO-1",
-      "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
+      "InvoiceStatus":"Completed","InvoiceDate":"/Date(1767312000000)/",
       "Customer":{"Guid":"cust-1","CustomerCode":"C-1","CustomerName":"Customer One"},
       "Currency":{"CurrencyCode":"AUD"},"ExchangeRate":1,
       "SubTotal":100,"TaxTotal":10,"Total":110,
@@ -139,10 +142,28 @@ values
     repeat('4',64)
   ),
   (
+    'sales_invoices','INV-SECOND','inv-guid-second','INV-SECOND','2026-01-02 01:05:00+00',
+    '{
+      "Guid":"inv-guid-second","InvoiceNumber":"INV-SECOND","OrderNumber":"SO-1",
+      "InvoiceStatus":"Completed","InvoiceDate":"/Date(1767312000000)/",
+      "Customer":{"Guid":"cust-1","CustomerCode":"C-1","CustomerName":"Customer One"},
+      "Currency":{"CurrencyCode":"AUD"},"ExchangeRate":1,
+      "SubTotal":40,"TaxTotal":4,"Total":44,
+      "BCSubTotal":40,"BCTaxTotal":4,"BCTotal":44,
+      "InvoiceLines":[{
+        "Guid":"inv-line-second","LineNumber":1,
+        "Product":{"Guid":"product-1","ProductCode":"P-1","ProductDescription":"Ordinary"},
+        "InvoiceQuantity":1,"UnitPrice":40,"BCUnitPrice":40,
+        "DiscountRate":0,"LineTotal":40,"LineTax":4
+      }]
+    }'::jsonb,
+    repeat('a',64)
+  ),
+  (
     'sales_invoices','INV-CHARGE','inv-guid-charge','INV-CHARGE','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-charge","InvoiceNumber":"INV-CHARGE","OrderNumber":"SO-2",
-      "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
+      "InvoiceStatus":"Parked","InvoiceDate":"/Date(1767312000000)/",
       "Customer":{"Guid":"cust-2","CustomerCode":"C-2","CustomerName":"Customer Two"},
       "Currency":{"CurrencyCode":"AUD"},"ExchangeRate":1,
       "SubTotal":-5,"TaxTotal":0,"Total":-5,
@@ -159,7 +180,7 @@ values
     'sales_invoices','INV-DISCOUNT','inv-guid-discount','INV-DISCOUNT','2026-01-02 01:00:00+00',
     '{
       "Guid":"inv-guid-discount","InvoiceNumber":"INV-DISCOUNT","OrderNumber":"SO-3",
-      "Status":"Completed","InvoiceDate":"/Date(1767312000000)/",
+      "InvoiceStatus":"Completed","InvoiceDate":"/Date(1767312000000)/",
       "Customer":{"Guid":"cust-3","CustomerCode":"C-3","CustomerName":"Customer Three"},
       "Currency":{"CurrencyCode":"AUD"},"ExchangeRate":1,
       "SubTotal":100,"TaxTotal":9.1,"Total":109.1,
@@ -204,13 +225,13 @@ begin
     raise exception 'first sales transaction refresh failed';
   end if;
 
-  if (select count(*) from analytics.fact_sales_transaction_document where is_current)<>4
-     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>4 then
+  if (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
+     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
     raise exception 'unexpected document or line grain after first refresh';
   end if;
 
   if (select count(*) from analytics.fact_sales_transaction_document
-      where is_current and source_resource='SalesInvoices')<>3
+      where is_current and source_resource='SalesInvoices')<>4
      or (select count(*) from analytics.fact_sales_transaction_document
       where is_current and source_resource='CreditNotes')<>1
      or exists(
@@ -281,8 +302,45 @@ begin
     raise exception 'missing optional SalesPerson incorrectly invalidated a document';
   end if;
 
-  if (select count(*) from analytics.v_sales_transaction_source_quality_internal)<>4 then
+  if (select count(*) from analytics.v_sales_transaction_source_quality_internal)<>5 then
     raise exception 'internal quality view does not preserve document grain';
+  end if;
+
+  if (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and transaction_kind='INVOICE' and document_status='Completed')<>3
+     or (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and transaction_kind='INVOICE' and document_status='Parked')<>1 then
+    raise exception 'InvoiceStatus was not mapped into invoice document_status';
+  end if;
+
+  if not exists(
+    select 1
+    from analytics.reconcile_sales_transaction_metrics(date '2026-01-02',date '2026-01-03')
+    where revenue_base=220
+      and sales_orders=2
+      and average_revenue_per_order=110
+      and eligible_invoice_documents=3
+      and eligible_credit_documents=1
+      and parked_invoice_documents=1
+      and invalid_documents=0
+      and header_line_variance_documents=1
+  ) then
+    raise exception 'sales transaction metric semantics failed Completed/Parked, credit, or distinct-order contract';
+  end if;
+
+  if exists(
+    select 1 from analytics.metric_definition
+    where metric_key in ('revenue','sales_orders','average_revenue_per_order')
+      and status<>'DRAFT'
+  ) then
+    raise exception 'sales transaction metric engineering activated a candidate metric';
+  end if;
+
+  if not exists(
+    select 1 from analytics.metric_definition
+    where metric_key='revenue' and metric_version=1 and status='DRAFT'
+  ) then
+    raise exception 'Revenue v1 was mutated or retired by metric engineering';
   end if;
 end;
 $first_refresh$;
@@ -291,10 +349,10 @@ select * from analytics.refresh_sales_transaction_facts('2026-01-10 01:00:00+00'
 
 do $replay$
 begin
-  if (select count(*) from analytics.fact_sales_transaction_document)<>4
-     or (select count(*) from analytics.fact_sales_transaction_line)<>4
-     or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>4
-     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>4 then
+  if (select count(*) from analytics.fact_sales_transaction_document)<>5
+     or (select count(*) from analytics.fact_sales_transaction_line)<>5
+     or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
+     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
     raise exception 'same-hash replay created duplicate versions';
   end if;
 end;
@@ -313,10 +371,10 @@ select * from analytics.refresh_sales_transaction_facts('2026-01-11 01:00:00+00'
 
 do $version_change$
 begin
-  if (select count(*) from analytics.fact_sales_transaction_document)<>5
-     or (select count(*) from analytics.fact_sales_transaction_line)<>5
-     or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>4
-     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>4 then
+  if (select count(*) from analytics.fact_sales_transaction_document)<>6
+     or (select count(*) from analytics.fact_sales_transaction_line)<>6
+     or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
+     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
     raise exception 'changed payload did not create exactly one new document and line version';
   end if;
 
@@ -345,8 +403,8 @@ begin
     raise exception 'malformed required numeric source did not fail the refresh';
   end if;
 
-  if (select count(*) from analytics.fact_sales_transaction_document)<>5
-     or (select count(*) from analytics.fact_sales_transaction_line)<>5
+  if (select count(*) from analytics.fact_sales_transaction_document)<>6
+     or (select count(*) from analytics.fact_sales_transaction_line)<>6
      or not exists(
        select 1 from analytics.fact_sales_transaction_document
        where document_number='INV-DISCOUNT' and is_current and source_subtotal=101
