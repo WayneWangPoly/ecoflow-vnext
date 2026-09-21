@@ -345,15 +345,136 @@ begin
 end;
 $first_refresh$;
 
+-- Reproduce the production failure mode: facts already exist for the same raw
+-- snapshot hashes, but they were materialised under a legacy transformation
+-- contract that did not persist InvoiceStatus. Raw payload hashes are untouched.
+update analytics.fact_sales_transaction_document
+set document_status=null,
+    source_version_hash=encode(
+      extensions.digest(
+        jsonb_build_array(
+          'legacy_without_transform_contract'::text,
+          source_snapshot_hash,
+          source_document_key
+        )::text,
+        'sha256'
+      ),
+      'hex'
+    )
+where is_current and transaction_kind='INVOICE';
+
+update analytics.fact_sales_transaction_line
+set document_status=null,
+    source_version_hash=encode(
+      extensions.digest(
+        jsonb_build_array(
+          'legacy_without_transform_contract'::text,
+          source_snapshot_hash,
+          source_line_key
+        )::text,
+        'sha256'
+      ),
+      'hex'
+    )
+where is_current and transaction_kind='INVOICE';
+
+do $legacy_same_source_hash_fixture$
+begin
+  if (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and transaction_kind='INVOICE' and document_status is null)<>4
+     or (select count(*) from analytics.fact_sales_transaction_line
+      where is_current and transaction_kind='INVOICE' and document_status is null)<>4 then
+    raise exception 'legacy transform fixture did not reproduce null invoice status';
+  end if;
+
+  if exists(
+    select 1
+    from analytics.fact_sales_transaction_document f
+    join public.unleashed_raw_snapshots r
+      on r.resource='sales_invoices' and r.external_key=f.source_document_key
+    where f.is_current and f.transaction_kind='INVOICE'
+      and f.source_snapshot_hash is distinct from r.payload_sha256
+  ) then
+    raise exception 'legacy transform fixture changed raw source snapshot identity';
+  end if;
+end;
+$legacy_same_source_hash_fixture$;
+
+select * from analytics.refresh_sales_transaction_facts('2026-01-10 00:30:00+00');
+
+do $transform_rematerialization$
+begin
+  if (select count(*) from analytics.fact_sales_transaction_document)<>9
+     or (select count(*) from analytics.fact_sales_transaction_line)<>9
+     or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
+     or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
+    raise exception 'transform-version refresh did not create exactly four invoice document/line versions';
+  end if;
+
+  if (select count(*) from analytics.fact_sales_transaction_document
+      where not is_current and transaction_kind='INVOICE'
+        and document_status is null
+        and effective_to='2026-01-10 00:30:00+00')<>4
+     or (select count(*) from analytics.fact_sales_transaction_line
+      where not is_current and transaction_kind='INVOICE'
+        and document_status is null
+        and effective_to='2026-01-10 00:30:00+00')<>4 then
+    raise exception 'legacy same-source-hash invoice versions were not SCD-closed';
+  end if;
+
+  if (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and transaction_kind='INVOICE' and document_status='Completed')<>3
+     or (select count(*) from analytics.fact_sales_transaction_document
+      where is_current and transaction_kind='INVOICE' and document_status='Parked')<>1
+     or exists(
+       select 1 from analytics.fact_sales_transaction_document
+       where is_current and transaction_kind='INVOICE' and document_status is null
+     ) then
+    raise exception 'transform-version refresh did not rematerialise InvoiceStatus';
+  end if;
+
+  if exists(
+    select 1
+    from analytics.fact_sales_transaction_document old
+    join analytics.fact_sales_transaction_document cur
+      on cur.source_system=old.source_system
+     and cur.source_resource=old.source_resource
+     and cur.source_document_key=old.source_document_key
+     and cur.is_current
+    where not old.is_current
+      and old.transaction_kind='INVOICE'
+      and (
+        old.source_snapshot_hash is distinct from cur.source_snapshot_hash
+        or old.source_version_hash=cur.source_version_hash
+      )
+  ) then
+    raise exception 'transform rematerialisation changed raw identity or reused legacy transform hash';
+  end if;
+
+  if not exists(
+    select 1
+    from analytics.reconcile_sales_transaction_metrics(date '2026-01-02',date '2026-01-03')
+    where revenue_base=220
+      and sales_orders=2
+      and average_revenue_per_order=110
+      and eligible_invoice_documents=3
+      and eligible_credit_documents=1
+      and parked_invoice_documents=1
+  ) then
+    raise exception 'metric reconciliation did not recover after transform rematerialisation';
+  end if;
+end;
+$transform_rematerialization$;
+
 select * from analytics.refresh_sales_transaction_facts('2026-01-10 01:00:00+00');
 
 do $replay$
 begin
-  if (select count(*) from analytics.fact_sales_transaction_document)<>5
-     or (select count(*) from analytics.fact_sales_transaction_line)<>5
+  if (select count(*) from analytics.fact_sales_transaction_document)<>9
+     or (select count(*) from analytics.fact_sales_transaction_line)<>9
      or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
      or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
-    raise exception 'same-hash replay created duplicate versions';
+    raise exception 'same-transform same-hash replay created duplicate versions';
   end if;
 end;
 $replay$;
@@ -371,8 +492,8 @@ select * from analytics.refresh_sales_transaction_facts('2026-01-11 01:00:00+00'
 
 do $version_change$
 begin
-  if (select count(*) from analytics.fact_sales_transaction_document)<>6
-     or (select count(*) from analytics.fact_sales_transaction_line)<>6
+  if (select count(*) from analytics.fact_sales_transaction_document)<>10
+     or (select count(*) from analytics.fact_sales_transaction_line)<>10
      or (select count(*) from analytics.fact_sales_transaction_document where is_current)<>5
      or (select count(*) from analytics.fact_sales_transaction_line where is_current)<>5 then
     raise exception 'changed payload did not create exactly one new document and line version';
@@ -403,8 +524,8 @@ begin
     raise exception 'malformed required numeric source did not fail the refresh';
   end if;
 
-  if (select count(*) from analytics.fact_sales_transaction_document)<>6
-     or (select count(*) from analytics.fact_sales_transaction_line)<>6
+  if (select count(*) from analytics.fact_sales_transaction_document)<>10
+     or (select count(*) from analytics.fact_sales_transaction_line)<>10
      or not exists(
        select 1 from analytics.fact_sales_transaction_document
        where document_number='INV-DISCOUNT' and is_current and source_subtotal=101
