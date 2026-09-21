@@ -1,4 +1,4 @@
-name: R5-007 provisional opening authority
+name: R5-007 provisional reference evidence
 
 on:
   pull_request:
@@ -40,7 +40,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: R5-007 provisional opening static authority contract
+      - name: R5-007 provisional reference evidence contract
         run: node --test scripts/r5-007-provisional-reference-opening-authority-contract.test.mjs
       - name: TypeScript
         run: npm run typecheck
