@@ -35,7 +35,7 @@ create table if not exists public.ecoflow_unleashed_inventory_provisional_refere
   units_per_package numeric not null check (units_per_package > 0),
   status text not null default 'PROVISIONAL_REFERENCE'
     check (status in ('PROVISIONAL_REFERENCE','RECONCILED')),
-  actor_user_id uuid not null references auth.users(id),
+  actor_user_id uuid not null,
   actor_role text not null,
   reason text not null check (btrim(reason) <> '' and length(reason) <= 2000),
   recorded_at timestamptz not null default clock_timestamp(),
