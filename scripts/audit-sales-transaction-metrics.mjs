@@ -30,10 +30,10 @@ const required = [
   ['distinct order denominator', /count\(distinct v\.completed_invoice_order_key\)/],
   ['zero denominator null', /nullif\([\s\S]{0,180}completed_invoice_order_key/],
   ['all candidates draft', /'DRAFT'\s*\)\s*,[\s\S]*'DRAFT'\s*\)\s*,[\s\S]*'DRAFT'\s*\)/],
-  ['workflow migration', workflow, /20260921015000_sales_transaction_metric_semantics\.sql/],
-  ['workflow audit', workflow, /audit-sales-transaction-metrics\.mjs/],
-  ['contract parked invoice', factContract, /InvoiceStatus":"Parked"/],
-  ['contract distinct order metric', factContract, /sales_orders=2/],
+  ['workflow migration', /20260921015000_sales_transaction_metric_semantics\.sql/, workflow],
+  ['workflow audit', /audit-sales-transaction-metrics\.mjs/, workflow],
+  ['contract parked invoice', /InvoiceStatus":"Parked"/, factContract],
+  ['contract distinct order metric', /sales_orders=2/, factContract],
 ];
 
 for (const [name, pattern, content = migration] of required) {
