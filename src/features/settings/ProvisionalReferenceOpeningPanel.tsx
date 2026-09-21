@@ -71,7 +71,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
   }
 
   const canApply = gate?.provisionalEligible === true
-    && !gate.provisionalOpeningId
+    && !gate.provisionalEvidenceId
     && gate.commissioningStatus === 'DRAFT'
     && gate.commissioningRevision === 0
     && reason.trim().length > 0
@@ -83,7 +83,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
     <div className="unleashed-r5-canary-carrier">
       <button type="button" aria-expanded={open} aria-controls="r5-007-provisional-opening" onClick={() => setOpen((v) => !v)} disabled={Boolean(running)}>
         <Database aria-hidden="true" size={17} />
-        {open ? '关闭 provisional opening' : 'R5-007 provisional opening'}
+        {open ? '关闭 provisional reference' : 'R5-007 provisional reference'}
       </button>
 
       {open ? (
@@ -105,7 +105,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
 
           <label>
             SKU
-            <select value={productCode} disabled={Boolean(running) || Boolean(gate?.provisionalOpeningId)} onChange={(event) => reset(event.target.value as R5007ProductCode)}>
+            <select value={productCode} disabled={Boolean(running) || Boolean(gate?.provisionalEvidenceId)} onChange={(event) => reset(event.target.value as R5007ProductCode)}>
               {codes.map((code) => (
                 <option key={code} value={code}>
                   {code} · reference {R5_007_PROVISIONAL_TARGETS[code].sourceQtyOnHand} · planned {R5_007_PROVISIONAL_TARGETS[code].plannedLocationCode}
@@ -149,7 +149,7 @@ export function ProvisionalReferenceOpeningPanel({ supabase }: { supabase: Supab
                 </div>
               ) : null}
 
-              {!gate.provisionalOpeningId ? (
+              {!gate.provisionalEvidenceId ? (
                 <>
                   <label>
                     执行原因
