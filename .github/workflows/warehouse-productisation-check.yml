@@ -300,6 +300,16 @@ jobs:
         run: |
           set -o pipefail
           psql -v ON_ERROR_STOP=1 -f scripts/metric-drill-access-contract-test.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Apply sales transaction metric readiness and drill migration
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20260921063000_sales_transaction_metric_readiness_drill.sql 2>&1 | tee -a operational-db-contract.log
+      - name: Execute sales transaction metric readiness and drill tests
+        shell: bash
+        run: |
+          set -o pipefail
+          psql -v ON_ERROR_STOP=1 -f scripts/sales-transaction-metric-readiness-drill-contract-test.sql 2>&1 | tee -a operational-db-contract.log
       - name: Apply initial KPI shadow drill evidence migration
         shell: bash
         run: |
