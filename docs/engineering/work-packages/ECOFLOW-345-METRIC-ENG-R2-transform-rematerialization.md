@@ -72,3 +72,11 @@ The sales-transaction DB contract must emulate the production failure mode:
 4. Require the legacy versions to close and new current versions to materialise
    Completed/Parked status.
 5. Require the subsequent same-transform replay to create no additional versions.
+
+
+## Exact-head verification boundary
+
+This PR is not merge-authorized by branch-push validation alone. The final exact
+head must also complete the repository's PR-level checks, required Supabase shadow
+gate, and Vercel verification. A successful engineering gate does not authorize
+merge, production deployment, or a second production fact refresh.
