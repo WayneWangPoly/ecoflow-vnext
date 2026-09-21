@@ -2,11 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   metricDrillAccessFailure,
+  metricDrillAccessMetricKeys,
   normaliseMetricDrillAccessRows,
 } from '../src/features/intelligence/crossFilter/metricDrillAccessContract.ts';
-import {
-  operationalPulseMetricKeys,
-} from '../src/features/intelligence/operationalPulse/operationalPulseContract.ts';
 
 const READ_AT = '2026-07-31T00:00:00Z';
 
@@ -30,17 +28,17 @@ function rawRow(metricKey, overrides = {}) {
 }
 
 function fullEnvelope(overridesByMetric = {}) {
-  return operationalPulseMetricKeys.map((metricKey) => rawRow(
+  return metricDrillAccessMetricKeys.map((metricKey) => rawRow(
     metricKey,
     overridesByMetric[metricKey] ?? {},
   ));
 }
 
-test('current ten-metric access envelope remains ready but fully unavailable', () => {
+test('current twelve-metric access envelope remains ready but fully unavailable', () => {
   const normalised = normaliseMetricDrillAccessRows(fullEnvelope());
   assert.equal(normalised.state, 'ready');
   assert.deepEqual(normalised.issues, []);
-  assert.deepEqual(normalised.rows.map((row) => row.metricKey), [...operationalPulseMetricKeys]);
+  assert.deepEqual(normalised.rows.map((row) => row.metricKey), [...metricDrillAccessMetricKeys]);
   assert.equal(normalised.rows.every((row) => row.drillCapability === 'UNAVAILABLE'), true);
   assert.equal(normalised.rows.every((row) => row.authorisedDimensionKeys.length === 0), true);
 });
@@ -146,7 +144,7 @@ test('missing duplicate and non-canonical metric rows remain partial and canonic
   const reordered = [source[1], source[0], ...source.slice(2, -1), source[0]];
   const normalised = normaliseMetricDrillAccessRows(reordered);
   assert.equal(normalised.state, 'partial');
-  assert.deepEqual(normalised.rows.map((row) => row.metricKey), operationalPulseMetricKeys.slice(0, -1));
+  assert.deepEqual(normalised.rows.map((row) => row.metricKey), metricDrillAccessMetricKeys.slice(0, -1));
   assert.equal(normalised.issues.some((issue) => issue.code === 'DUPLICATE_METRIC_KEY'), true);
   assert.equal(normalised.issues.some((issue) => issue.code === 'MISSING_METRIC_KEY'), true);
   assert.equal(normalised.issues.some((issue) => issue.code === 'NON_CANONICAL_ORDER'), true);
@@ -176,7 +174,7 @@ test('invalid access rows are omitted and never replaced with invented metrics',
   assert.deepEqual(normalised.rows, []);
   assert.equal(normalised.issues.some((issue) => issue.code === 'INVALID_ACCESS_ROW'), true);
   assert.equal(normalised.issues.some((issue) => issue.code === 'UNKNOWN_METRIC_KEY'), true);
-  assert.equal(normalised.issues.filter((issue) => issue.code === 'MISSING_METRIC_KEY').length, 10);
+  assert.equal(normalised.issues.filter((issue) => issue.code === 'MISSING_METRIC_KEY').length, 12);
 });
 
 test('metric drill permission errors classify as forbidden and never empty', () => {
