@@ -114,5 +114,5 @@ assert.equal(forbidden.length, 9);
 assert.equal(supportChecks.length, 5);
 assert.equal(namespaceRepairChecks.length, 6);
 console.log(
-  `Sales transaction fact static audit passed (${required.length + forbidden.length + supportChecks.length + namespaceRepairChecks.length + 3}/${required.length + forbidden.length + supportChecks.length + 1}).`,
+  `Sales transaction fact static audit passed (${required.length + forbidden.length + supportChecks.length + namespaceRepairChecks.length + 3}/${required.length + forbidden.length + supportChecks.length + namespaceRepairChecks.length + 3}).`,
 );
