@@ -16,28 +16,34 @@ concurrency:
 
 env:
   SUPABASE_CLI_VERSION: 2.107.0
-  EXPECTED_TRIGGER_HEAD: 5badf33d571898d8743910eec2958610323cf25e
+  EXPECTED_ENGINEERING_HEAD: 5badf33d571898d8743910eec2958610323cf25e
 
 jobs:
   materialise:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout exact engineering head
+      - name: Checkout materialisation trigger head
         uses: actions/checkout@v4
         with:
           ref: agent/inventory/339-provisional-reference-opening-r1
           fetch-depth: 0
 
-      - name: Verify exact trigger boundary
+      - name: Verify engineering-head ancestry and workflow-only delta
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_SHA" = "$EXPECTED_TRIGGER_HEAD" || {
-            echo "Unexpected trigger head: $GITHUB_SHA expected $EXPECTED_TRIGGER_HEAD"
+          git merge-base --is-ancestor "$EXPECTED_ENGINEERING_HEAD" HEAD
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_ENGINEERING_HEAD"..HEAD)
+          test "${#changed[@]}" = "1" || {
+            printf 'Unexpected materialisation preflight delta count: %s\n' "${#changed[@]}"
+            printf '%s\n' "${changed[@]}"
             exit 1
           }
-          test "$(git rev-parse HEAD)" = "$EXPECTED_TRIGGER_HEAD"
+          test "${changed[0]}" = '.github/workflows/r5-007-materialise-migration-once.yml' || {
+            printf 'Unexpected materialisation preflight file: %s\n' "${changed[0]}"
+            exit 1
+          }
 
       - name: Install repository-pinned Supabase CLI
         run: npm install --global supabase@"$SUPABASE_CLI_VERSION"
