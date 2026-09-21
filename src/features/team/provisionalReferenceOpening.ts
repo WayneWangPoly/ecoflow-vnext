@@ -50,9 +50,10 @@ export type R5007Gate = {
   plannedLocationId: string;
   provisionalEligible: boolean;
   provisionalOpeningId: string | null;
-  provisionalStatus: 'PROVISIONAL_HOLD' | 'RECONCILED' | null;
+  provisionalStatus: 'PROVISIONAL_REFERENCE' | 'RECONCILED' | null;
   provisionalAppliedAt: string | null;
   provisionalQuantity: number | null;
+  inventoryMutationCreated: boolean;
   operationalInventoryAuthorityCreated: boolean;
   physicalCountClaimed: boolean;
   requiresLaterPhysicalStocktake: boolean;
@@ -106,8 +107,8 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
   ) {
     throw new Error('R5_007_FROZEN_BINDING_MISMATCH');
   }
-  if (value.physicalCountClaimed === true || value.operationalInventoryAuthorityCreated === true) {
-    throw new Error('R5_007_PROVISIONAL_MUST_NOT_CLAIM_PHYSICAL_AUTHORITY');
+  if (value.inventoryMutationCreated === true || value.physicalCountClaimed === true || value.operationalInventoryAuthorityCreated === true) {
+    throw new Error('R5_007_PROVISIONAL_MUST_NOT_CREATE_INVENTORY_AUTHORITY');
   }
   return {
     actorRole: String(value.actorRole ?? ''),
@@ -135,6 +136,7 @@ function normalizeGate(productCode: R5007ProductCode, raw: unknown): R5007Gate {
     provisionalStatus: provisionalStatus as R5007Gate['provisionalStatus'],
     provisionalAppliedAt: value.provisionalAppliedAt == null ? null : String(value.provisionalAppliedAt),
     provisionalQuantity: value.provisionalQuantity == null ? null : asNumber(value.provisionalQuantity, 'R5_007_PROVISIONAL_QTY_INVALID'),
+    inventoryMutationCreated: false,
     operationalInventoryAuthorityCreated: false,
     physicalCountClaimed: false,
     requiresLaterPhysicalStocktake: value.requiresLaterPhysicalStocktake === true,
@@ -174,8 +176,9 @@ export async function applyR5007ProvisionalOpening(
 
   const after = await readR5007Gate(supabase, productCode);
   if (
-    after.provisionalStatus !== 'PROVISIONAL_HOLD'
+    after.provisionalStatus !== 'PROVISIONAL_REFERENCE'
     || after.provisionalQuantity !== before.sourceQtyOnHand
+    || after.inventoryMutationCreated
     || after.physicalCountClaimed
     || after.operationalInventoryAuthorityCreated
   ) {
