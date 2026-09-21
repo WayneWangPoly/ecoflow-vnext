@@ -13,6 +13,11 @@ const ReadyPositiveStockCommissioningPanel = lazy(async () => {
   return { default: module.ReadyPositiveStockCommissioningPanel };
 });
 
+const ProvisionalReferenceOpeningPanel = lazy(async () => {
+  const module = await import('./ProvisionalReferenceOpeningPanel');
+  return { default: module.ProvisionalReferenceOpeningPanel };
+});
+
 function tone(result: R5003StageResult | null, error: string) {
   if (result) return 'good';
   if (error) return 'danger';
@@ -124,6 +129,9 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
       <Bpb8InitialOpeningBalanceCanaryPanel supabase={supabase} />
       <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-005B commissioning carrier…</div>}>
         <ReadyPositiveStockCommissioningPanel supabase={supabase} />
+      </Suspense>
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-007 provisional opening carrier…</div>}>
+        <ProvisionalReferenceOpeningPanel supabase={supabase} />
       </Suspense>
     </div>
   );
