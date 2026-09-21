@@ -53,7 +53,7 @@ const required = [
   ['legacy same-source-hash regression', /legacy_without_transform_contract[\s\S]{0,4000}\$transform_rematerialization\$/, factContract],
   ['transaction readiness migration', /20260921063000_sales_transaction_metric_readiness_drill\.sql/, workflow],
   ['transaction readiness contract', /sales-transaction-metric-readiness-drill-contract-test\.sql/, workflow],
-  ['Revenue v2 READY readiness', /'revenue'::text[\s\S]{0,220}2::integer[\s\S]{0,220}'READY'/, readinessDrillMigration],
+  ['Revenue v2 READY readiness', /'READY'[\s\S]{0,1400}'revenue'::text[\s\S]{0,180}2::integer/, readinessDrillMigration],
   ['Sales Orders readiness', /'sales_orders'::text/, readinessDrillMigration],
   ['ARPO readiness', /'average_revenue_per_order'::text/, readinessDrillMigration],
   ['canonical lifecycle ranking', /row_number\(\) over[\s\S]{0,300}when 'ACTIVE' then 1[\s\S]{0,220}r\.metric_version desc/, readinessDrillMigration],
