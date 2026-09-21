@@ -31,6 +31,10 @@ test('R5-007 records reference planning evidence only and creates zero quantity 
   assert.match(panel, /不会创建 warehouse quantity、inventory movement 或可用库存/);
   assert.match(panel, /Inventory mutation <strong>NONE<\/strong>/);
   assert.match(client, /after\.inventoryMutationCreated/);
+  assert.match(client, /\['PROVISIONAL_REFERENCE', 'RECONCILED'\]/);
+  assert.doesNotMatch(client, /PROVISIONAL_HOLD/);
+  assert.match(client, /provisionalRecordedAt/);
+  assert.doesNotMatch(client, /provisionalAppliedAt/);
 
   const applyStart = sql.indexOf('create or replace function public.ecoflow_record_provisional_inventory_reference');
   const applyEnd = sql.indexOf('revoke all on function public.ecoflow_record_provisional_inventory_reference', applyStart);
@@ -78,6 +82,7 @@ test('R5-007 leaves the incumbent physical-count path untouched', () => {
   assert.doesNotMatch(sql, /ecoflow_materialize_ready_initial_stocktake\s*\(/i);
   assert.doesNotMatch(sql, /ecoflow_approve_stocktake_session\s*\(/i);
   assert.match(panel, /后续真实 stocktake 必须重新提供真实 location 与 counted cartons/);
+  assert.doesNotMatch(panel, /provisional HOLD/i);
 });
 
 test('R5-007 marks planning evidence reconciled only after a linked later stocktake reaches APPROVED', () => {
