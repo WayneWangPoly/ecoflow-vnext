@@ -11,7 +11,7 @@
 -- The existing R5-005B physical evidence path remains the only way to create
 -- INITIAL stocktake evidence and later inventory authority.
 
-create table if not exists public.ecoflow_unleashed_inventory_provisional_openings (
+create table if not exists public.ecoflow_unleashed_inventory_provisional_reference_evidence (
   id uuid primary key default gen_random_uuid(),
   command_id uuid not null unique,
   command_payload_sha256 text not null check (command_payload_sha256 ~ '^[0-9a-f]{64}$'),
@@ -44,11 +44,11 @@ create table if not exists public.ecoflow_unleashed_inventory_provisional_openin
   result jsonb not null default '{}'::jsonb
 );
 
-alter table public.ecoflow_unleashed_inventory_provisional_openings enable row level security;
-revoke all on table public.ecoflow_unleashed_inventory_provisional_openings
+alter table public.ecoflow_unleashed_inventory_provisional_reference_evidence enable row level security;
+revoke all on table public.ecoflow_unleashed_inventory_provisional_reference_evidence
   from public, anon, authenticated, service_role;
 
-create or replace function public.ecoflow_read_provisional_reference_opening_gate(
+create or replace function public.ecoflow_read_provisional_inventory_reference_gate(
   p_commissioning_id uuid
 )
 returns jsonb
@@ -64,7 +64,7 @@ declare
   v_phys public.ecoflow_physical_skus%rowtype;
   v_pkg public.ecoflow_physical_sku_packages%rowtype;
   v_location public.ecoflow_warehouse_locations%rowtype;
-  v_opening public.ecoflow_unleashed_inventory_provisional_openings%rowtype;
+  v_evidence public.ecoflow_unleashed_inventory_provisional_reference_evidence%rowtype;
   v_expected_code text;
   v_expected_location text;
   v_expected_qty numeric;
@@ -72,6 +72,7 @@ declare
   v_expected_physical uuid;
   v_expected_package uuid;
   v_expected_barcode text;
+  v_expected_source_row_sha text;
   v_latest_sealed_batch_id uuid;
   v_existing_location_count integer := 0;
   v_existing_movement_count integer := 0;
@@ -89,6 +90,7 @@ begin
     v_expected_physical:='8905b519-6418-4bb1-a2a4-bdd8d48157f7'::uuid;
     v_expected_package:='ff12d5f1-ba94-4960-bee6-c3c12aaf53ba'::uuid;
     v_expected_barcode:='19344062000652';
+    v_expected_source_row_sha:='bf95d275d9419dae66a29e10a2a1e4e4f4b57d83a1ae872f4626260cb1592e0d';
   elsif p_commissioning_id='2124ea46-765f-488a-8442-baf9dbd268d0'::uuid then
     v_expected_code:='SB24/32/40LBOX';
     v_expected_location:='A2-03-03A';
@@ -97,6 +99,7 @@ begin
     v_expected_physical:='d8d9a558-37e6-4a22-99a2-7f0caf7492ac'::uuid;
     v_expected_package:='203dedb0-3ab7-425d-85e2-ac646b1fa601'::uuid;
     v_expected_barcode:='19348045022914';
+    v_expected_source_row_sha:='afbf51ee85d8785036a4532f9ab5ba4f9334ceee6c87998ba09762ed82e9afb6';
   else
     raise exception 'R5_007_COMMISSIONING_OUTSIDE_FROZEN_SCOPE';
   end if;
@@ -130,8 +133,8 @@ begin
   where upper(location_code)=v_expected_location
     and status='ACTIVE';
 
-  select * into v_opening
-  from public.ecoflow_unleashed_inventory_provisional_openings
+  select * into v_evidence
+  from public.ecoflow_unleashed_inventory_provisional_reference_evidence
   where commissioning_id=p_commissioning_id;
 
   select count(*)::integer into v_existing_location_count
@@ -144,7 +147,7 @@ begin
   where upper(sku)=v_expected_code;
 
   v_eligible :=
-    v_opening.id is null
+    v_evidence.id is null
     and v_set.status='DRAFT'
     and v_set.revision=0
     and v_set.stocktake_session_id is null
@@ -152,6 +155,7 @@ begin
     and v_set.reference_batch_id='4cdb85d3-06d8-44bf-96bb-93660e10c3c9'::uuid
     and v_set.source_run_id='5cd0e73b-956d-4c80-9e70-6d841d27b163'::uuid
     and v_set.source_set_sha256='215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d'
+    and v_set.source_row_sha256=v_expected_source_row_sha
     and v_set.source_qty_on_hand=v_expected_qty
     and v_set.physical_sku_id=v_expected_physical
     and v_set.package_id=v_expected_package
@@ -160,6 +164,7 @@ begin
     and v_set.units_per_package=1
     and v_ref.batch_id=v_latest_sealed_batch_id
     and v_ref.batch_status='SEALED'
+    and v_ref.source_row_sha256=v_expected_source_row_sha
     and v_ref.source_product_code=v_expected_code
     and v_ref.source_warehouse_code='ADL1'
     and upper(coalesce(v_ref.warehouse_code,''))='MAIN'
@@ -190,7 +195,7 @@ begin
     'referenceRowId',v_set.reference_row_id,
     'sourceRunId',v_set.source_run_id,
     'sourceSetSha256',v_set.source_set_sha256,
-    'sourceRowSha256',v_set.source_row_sha256,
+    'sourceRowSha256',v_expected_source_row_sha,
     'sourceProductCode',v_expected_code,
     'sourceQtyOnHand',v_expected_qty,
     'physicalSkuId',v_expected_physical,
@@ -203,10 +208,10 @@ begin
     'plannedLocationCode',v_expected_location,
     'plannedLocationId',v_location.id,
     'provisionalEligible',v_eligible,
-    'provisionalOpeningId',v_opening.id,
-    'provisionalStatus',v_opening.status,
-    'provisionalRecordedAt',v_opening.recorded_at,
-    'provisionalQuantity',v_opening.source_qty_on_hand,
+    'provisionalEvidenceId',v_evidence.id,
+    'provisionalStatus',v_evidence.status,
+    'provisionalRecordedAt',v_evidence.recorded_at,
+    'provisionalQuantity',v_evidence.source_qty_on_hand,
     'inventoryMutationCreated',false,
     'operationalInventoryAuthorityCreated',false,
     'physicalCountClaimed',false,
@@ -217,12 +222,12 @@ begin
 end;
 $$;
 
-revoke all on function public.ecoflow_read_provisional_reference_opening_gate(uuid)
+revoke all on function public.ecoflow_read_provisional_inventory_reference_gate(uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.ecoflow_read_provisional_reference_opening_gate(uuid)
+grant execute on function public.ecoflow_read_provisional_inventory_reference_gate(uuid)
   to authenticated;
 
-create or replace function public.ecoflow_apply_provisional_reference_opening_balance(
+create or replace function public.ecoflow_record_provisional_inventory_reference(
   p_commissioning_id uuid,
   p_command_id uuid,
   p_reason text
@@ -235,7 +240,7 @@ as $$
 declare
   v_role text := public.ecoflow_require_warehouse_control_role(true);
   v_gate jsonb;
-  v_existing public.ecoflow_unleashed_inventory_provisional_openings%rowtype;
+  v_existing public.ecoflow_unleashed_inventory_provisional_reference_evidence%rowtype;
   v_set public.ecoflow_unleashed_inventory_commissioning_sets%rowtype;
   v_phys public.ecoflow_physical_skus%rowtype;
   v_payload jsonb;
@@ -248,7 +253,7 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('r5-007-provisional-opening:'||p_commissioning_id::text,0));
 
-  v_gate:=public.ecoflow_read_provisional_reference_opening_gate(p_commissioning_id);
+  v_gate:=public.ecoflow_read_provisional_inventory_reference_gate(p_commissioning_id);
 
   v_payload:=jsonb_build_object(
     'commissioningId',p_commissioning_id,
@@ -260,7 +265,7 @@ begin
   v_payload_hash:=public.ecoflow_r5_004a_payload_sha256(v_payload);
 
   select * into v_existing
-  from public.ecoflow_unleashed_inventory_provisional_openings
+  from public.ecoflow_unleashed_inventory_provisional_reference_evidence
   where command_id=p_command_id;
   if found then
     if v_existing.actor_user_id<>auth.uid()
@@ -284,7 +289,7 @@ begin
   where id=v_set.physical_sku_id;
 
   if exists (
-    select 1 from public.ecoflow_unleashed_inventory_provisional_openings
+    select 1 from public.ecoflow_unleashed_inventory_provisional_reference_evidence
     where commissioning_id=p_commissioning_id
   ) then raise exception 'R5_007_PROVISIONAL_OPENING_ALREADY_EXISTS'; end if;
 
@@ -311,7 +316,7 @@ begin
     'requiresLaterPhysicalStocktake',true
   );
 
-  insert into public.ecoflow_unleashed_inventory_provisional_openings(
+  insert into public.ecoflow_unleashed_inventory_provisional_reference_evidence(
     command_id,command_payload_sha256,commissioning_id,reference_batch_id,reference_row_id,
     source_run_id,source_set_sha256,source_row_sha256,source_product_code,physical_sku_id,
     package_id,operational_barcode,planned_location_id,planned_location_code,source_qty_on_hand,
@@ -328,9 +333,9 @@ begin
 end;
 $$;
 
-revoke all on function public.ecoflow_apply_provisional_reference_opening_balance(uuid,uuid,text)
+revoke all on function public.ecoflow_record_provisional_inventory_reference(uuid,uuid,text)
   from public, anon, authenticated, service_role;
-grant execute on function public.ecoflow_apply_provisional_reference_opening_balance(uuid,uuid,text)
+grant execute on function public.ecoflow_record_provisional_inventory_reference(uuid,uuid,text)
   to authenticated;
 
 create or replace function public.ecoflow_mark_provisional_opening_reconciled()
@@ -341,7 +346,7 @@ set search_path = pg_catalog, public
 as $$
 begin
   if old.session_status is distinct from 'APPROVED' and new.session_status='APPROVED' then
-    update public.ecoflow_unleashed_inventory_provisional_openings p
+    update public.ecoflow_unleashed_inventory_provisional_reference_evidence p
     set status='RECONCILED',
         reconciled_stocktake_session_id=new.id,
         reconciled_at=clock_timestamp()
@@ -363,9 +368,9 @@ create trigger ecoflow_mark_provisional_opening_reconciled
 after update on public.ecoflow_stocktake_sessions
 for each row execute function public.ecoflow_mark_provisional_opening_reconciled();
 
-comment on table public.ecoflow_unleashed_inventory_provisional_openings is
+comment on table public.ecoflow_unleashed_inventory_provisional_reference_evidence is
   'R5-007 immutable planning/reference evidence only. It records frozen Unleashed QtyOnHand plus planned placement during relocation and creates no warehouse/inventory quantity.';
-comment on function public.ecoflow_read_provisional_reference_opening_gate(uuid) is
+comment on function public.ecoflow_read_provisional_inventory_reference_gate(uuid) is
   'R5-007 read-only exact-scope gate for provisional reference planning evidence.';
-comment on function public.ecoflow_apply_provisional_reference_opening_balance(uuid,uuid,text) is
+comment on function public.ecoflow_record_provisional_inventory_reference(uuid,uuid,text) is
   'R5-007 bounded Owner/Admin recording of frozen Unleashed reference quantity plus planned location. No warehouse item, inventory movement, physical-count claim, stocktake approval or operational inventory authority is created.';
