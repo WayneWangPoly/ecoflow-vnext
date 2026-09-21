@@ -9,7 +9,6 @@ import {
 import { runUnleashedReadonlyProbe, type UnleashedProbeResult } from '../team/unleashedReadonlyProbe';
 import {
   runR5002R2Adl1StockOnHandAcquisition,
-  runR5008Adl1StockOnHandAcquisition,
   type R5002AcquisitionResult,
 } from '../team/unleashedAdl1StockOnHandAcquisition';
 import { InventoryReferenceStagePanel } from './InventoryReferenceStagePanel';
@@ -18,6 +17,11 @@ import './teamAccessSettings.css';
 const MappingPlanOnlyPanel = lazy(async () => {
   const module = await import('./MappingPlanOnlyPanel');
   return { default: module.MappingPlanOnlyPanel };
+});
+
+const FreshAdl1StockOnHandAcquisitionPanel = lazy(async () => {
+  const module = await import('./FreshAdl1StockOnHandAcquisitionPanel');
+  return { default: module.FreshAdl1StockOnHandAcquisitionPanel };
 });
 
 const ACCEPTANCE_RESOURCE_LABELS: Record<UnleashedAcceptanceResource, string> = {
@@ -64,15 +68,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
   const [acquisitionAttempted, setAcquisitionAttempted] = useState(false);
   const [acquisitionResult, setAcquisitionResult] = useState<R5002AcquisitionResult | null>(null);
   const [acquisitionError, setAcquisitionError] = useState('');
-  const [freshOpen, setFreshOpen] = useState(false);
-  const [freshAcknowledged, setFreshAcknowledged] = useState(false);
-  const [freshRunning, setFreshRunning] = useState(false);
-  const [freshAttempted, setFreshAttempted] = useState(false);
-  const [freshResult, setFreshResult] = useState<R5002AcquisitionResult | null>(null);
-  const [freshError, setFreshError] = useState('');
 
   async function runProbe() {
-    if (running || acceptanceRunning || acquisitionRunning || freshRunning) return;
+    if (running || acceptanceRunning || acquisitionRunning) return;
     setRunning(true);
     setResult(null);
     setError('');
@@ -107,7 +105,6 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       || acquisitionAttempted
       || running
       || acceptanceRunning
-      || freshRunning
     ) return;
     setAcquisitionAttempted(true);
     setAcquisitionRunning(true);
@@ -120,29 +117,6 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
     } finally {
       setAcquisitionRunning(false);
       setAcquisitionAcknowledged(false);
-    }
-  }
-
-  async function runFreshAcquisition() {
-    if (
-      !freshAcknowledged
-      || freshRunning
-      || freshAttempted
-      || running
-      || acceptanceRunning
-      || acquisitionRunning
-    ) return;
-    setFreshAttempted(true);
-    setFreshRunning(true);
-    setFreshResult(null);
-    setFreshError('');
-    try {
-      setFreshResult(await runR5008Adl1StockOnHandAcquisition(supabase));
-    } catch (runError) {
-      setFreshError(runError instanceof Error ? runError.message : String(runError));
-    } finally {
-      setFreshRunning(false);
-      setFreshAcknowledged(false);
     }
   }
 
@@ -164,7 +138,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
       </div>
 
       <div className="system-sync-actions unleashed-probe-actions">
-        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || acceptanceRunning || acquisitionRunning || freshRunning}>
+        <button type="button" className="primary" onClick={() => void runProbe()} disabled={running || acceptanceRunning || acquisitionRunning}>
           <RadioTower aria-hidden="true" size={17} />
           {running ? 'Testing…' : 'Run one-page test'}
         </button>
@@ -173,7 +147,7 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           aria-expanded={acceptanceOpen}
           aria-controls="unleashed-production-acceptance"
           onClick={() => setAcceptanceOpen((current) => !current)}
-          disabled={running || acceptanceRunning || acquisitionRunning || freshRunning}
+          disabled={running || acceptanceRunning || acquisitionRunning}
         >
           <ShieldCheck aria-hidden="true" size={17} />
           {acceptanceOpen ? 'Close acceptance' : 'Review production acceptance'}
@@ -183,20 +157,10 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           aria-expanded={acquisitionOpen}
           aria-controls="unleashed-r5-002-acquisition"
           onClick={() => setAcquisitionOpen((current) => !current)}
-          disabled={running || acceptanceRunning || acquisitionRunning || freshRunning}
+          disabled={running || acceptanceRunning || acquisitionRunning}
         >
           <Warehouse aria-hidden="true" size={17} />
           {acquisitionOpen ? 'Close ADL1 acquisition' : 'Review ADL1 acquisition'}
-        </button>
-        <button
-          type="button"
-          aria-expanded={freshOpen}
-          aria-controls="unleashed-r5-008-acquisition"
-          onClick={() => setFreshOpen((current) => !current)}
-          disabled={running || acceptanceRunning || acquisitionRunning || freshRunning}
-        >
-          <Warehouse aria-hidden="true" size={17} />
-          {freshOpen ? 'Close fresh ADL1 snapshot' : 'Review fresh ADL1 snapshot'}
         </button>
       </div>
 
@@ -323,67 +287,9 @@ export function UnleashedReadonlyProbePanel({ supabase }: { supabase: SupabaseCl
           </button>
         </div>
       ) : null}
-
-      {freshOpen ? (
-        <div className="unleashed-acceptance unleashed-r5-acquisition" id="unleashed-r5-008-acquisition">
-          <div className="unleashed-acceptance-head">
-            <div><h3>R5-008 fresh ADL1 StockOnHand pre-stocktake snapshot</h3><span>Fresh pre-stocktake evidence · one shot · pages 1–5 · 200 rows per page</span></div>
-            <b className={`pill pill-${acquisitionTone(freshResult, freshError)}`}>
-              {freshRunning ? 'RUNNING' : freshResult ? 'SUCCEEDED' : freshAttempted ? 'ATTEMPTED' : 'NOT RUN'}
-            </b>
-          </div>
-
-          <p className="unleashed-acceptance-note">
-            This sends GET-only StockOnHand requests scoped to warehouse ADL1 and stores fresh source evidence only.
-            No STAGE, opening balance, stocktake, inventory movement, or Product Identity mutation.
-          </p>
-          <ul className="unleashed-acceptance-scope">
-            <li>Resource: stock_on_hand</li>
-            <li>Warehouse: ADL1</li>
-            <li>Window: page 1, maximum 5 pages</li>
-            <li>Request key: ECOFLOW-R5-008</li>
-          </ul>
-
-          <label className="unleashed-acceptance-confirm">
-            <input
-              type="checkbox"
-              checked={freshAcknowledged}
-              disabled={freshRunning || freshAttempted}
-              onChange={(event) => setFreshAcknowledged(event.target.checked)}
-            />
-            <span>I confirm this fresh pre-stocktake ADL1 source acquisition and understand this request key allows one attempt only.</span>
-          </label>
-
-          {freshError ? <div className="error-message" role="alert">{freshError}</div> : null}
-          {freshResult ? (
-            <div className="unleashed-acceptance-result" role="status">
-              <div className="unleashed-acceptance-summary">
-                <span>Run <strong>{freshResult.runId.slice(0, 8)}</strong></span>
-                <span>Pages <strong>{freshResult.pages.length}</strong></span>
-                <span>Source rows <strong>{freshResult.recordsSeen}</strong></span>
-                <span>Window <strong>{freshResult.paginationWindows[0].windowComplete ? 'COMPLETE' : 'INCOMPLETE'}</strong></span>
-              </div>
-            </div>
-          ) : null}
-
-          {freshAttempted ? (
-            <div className="unleashed-acceptance-warning" role="status">
-              Do not retry. Verify the production ledger first.
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className="primary unleashed-acceptance-run"
-            disabled={!freshAcknowledged || freshRunning || freshAttempted || running || acceptanceRunning || acquisitionRunning}
-            onClick={() => void runFreshAcquisition()}
-          >
-            <Database aria-hidden="true" size={17} />
-            {freshRunning ? 'Acquiring fresh ADL1 evidence…' : freshAttempted ? 'Attempt locked' : 'Acquire fresh ADL1 snapshot once'}
-          </button>
-        </div>
-      ) : null}
-
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-008 fresh ADL1 acquisition gate…</div>}>
+        <FreshAdl1StockOnHandAcquisitionPanel supabase={supabase} />
+      </Suspense>
       <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-006 mapping PLAN…</div>}>
         <MappingPlanOnlyPanel supabase={supabase} />
       </Suspense>
