@@ -32,8 +32,8 @@ test('R5-007 records reference planning evidence only and creates zero quantity 
   assert.match(panel, /Inventory mutation <strong>NONE<\/strong>/);
   assert.match(client, /after\.inventoryMutationCreated/);
 
-  const applyStart = sql.indexOf('create or replace function public.ecoflow_apply_provisional_reference_opening_balance');
-  const applyEnd = sql.indexOf('revoke all on function public.ecoflow_apply_provisional_reference_opening_balance', applyStart);
+  const applyStart = sql.indexOf('create or replace function public.ecoflow_record_provisional_inventory_reference');
+  const applyEnd = sql.indexOf('revoke all on function public.ecoflow_record_provisional_inventory_reference', applyStart);
   assert.ok(applyStart >= 0 && applyEnd > applyStart);
   const applyBody = sql.slice(applyStart, applyEnd);
   assert.doesNotMatch(applyBody, /insert\s+into\s+public\.ecoflow_warehouse_location_items/i);
@@ -58,6 +58,9 @@ test('R5-007 binds exact immutable reference and physical identity evidence', ()
   assert.match(sql, /4cdb85d3-06d8-44bf-96bb-93660e10c3c9/);
   assert.match(sql, /5cd0e73b-956d-4c80-9e70-6d841d27b163/);
   assert.match(sql, /215e9abeef4f291ac4324c07e968bb6f6c6d065e34eaed726750ce61e312d77d/);
+  assert.match(sql, /bf95d275d9419dae66a29e10a2a1e4e4f4b57d83a1ae872f4626260cb1592e0d/);
+  assert.match(sql, /afbf51ee85d8785036a4532f9ab5ba4f9334ceee6c87998ba09762ed82e9afb6/);
+  assert.match(client, /value\.sourceRowSha256 !== frozen\.sourceRowSha256/);
   assert.match(sql, /v_set\.status='DRAFT'/);
   assert.match(sql, /v_set\.revision=0/);
   assert.match(sql, /v_ref\.batch_status='SEALED'/);
@@ -88,8 +91,8 @@ test('R5-007 marks planning evidence reconciled only after a linked later stockt
 
 test('R5-007 authority is authenticated-only, role-gated and trigger helper is not callable', () => {
   assert.match(sql, /ecoflow_require_warehouse_control_role\(true\)/);
-  assert.match(sql, /revoke all on function public\.ecoflow_apply_provisional_reference_opening_balance\(uuid,uuid,text\)[\s\S]*from public, anon, authenticated, service_role/);
-  assert.match(sql, /grant execute on function public\.ecoflow_apply_provisional_reference_opening_balance\(uuid,uuid,text\)[\s\S]*to authenticated/);
+  assert.match(sql, /revoke all on function public\.ecoflow_record_provisional_inventory_reference\(uuid,uuid,text\)[\s\S]*from public, anon, authenticated, service_role/);
+  assert.match(sql, /grant execute on function public\.ecoflow_record_provisional_inventory_reference\(uuid,uuid,text\)[\s\S]*to authenticated/);
   assert.match(sql, /revoke all on function public\.ecoflow_mark_provisional_opening_reconciled\(\)[\s\S]*from public, anon, authenticated, service_role/);
   assert.doesNotMatch(client, /service[_-]?role|access[_-]?token|refresh[_-]?token|jwt/i);
 });
