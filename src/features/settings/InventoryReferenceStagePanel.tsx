@@ -8,6 +8,11 @@ import {
 import { InventoryReferenceSealPanel } from './InventoryReferenceSealPanel';
 import { Bpb8InitialOpeningBalanceCanaryPanel } from './Bpb8InitialOpeningBalanceCanaryPanel';
 
+const FreshInventoryReferenceBridgePanel = lazy(async () => {
+  const module = await import('./FreshInventoryReferenceBridgePanel');
+  return { default: module.FreshInventoryReferenceBridgePanel };
+});
+
 const ReadyPositiveStockCommissioningPanel = lazy(async () => {
   const module = await import('./ReadyPositiveStockCommissioningPanel');
   return { default: module.ReadyPositiveStockCommissioningPanel };
@@ -125,6 +130,9 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
         </div>
       ) : null}
 
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-009 fresh reference bridge…</div>}>
+        <FreshInventoryReferenceBridgePanel supabase={supabase} />
+      </Suspense>
       <InventoryReferenceSealPanel supabase={supabase} />
       <Bpb8InitialOpeningBalanceCanaryPanel supabase={supabase} />
       <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-005B commissioning carrier…</div>}>
