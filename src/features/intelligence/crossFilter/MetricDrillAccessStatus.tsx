@@ -127,7 +127,7 @@ export function MetricDrillAccessStatus({
           <div className="ef-metric-drill-access__table-shell">
             <table className="ef-metric-drill-access__table">
               <caption className="ef-metric-drill-access__sr-only">
-                Governed drill capability for Operational Pulse metrics
+                Governed drill capability for current metric identities
               </caption>
               <thead>
                 <tr>
