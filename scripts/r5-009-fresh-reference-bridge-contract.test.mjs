@@ -114,6 +114,11 @@ test('browser surface freezes Phase A and keeps Phase B separately acknowledged'
   assert.match(panel, /stage !== 'NOT RUN'/);
   assert.match(panel, /activate !== 'READY'/);
   assert.match(panel, /safeToActivate === true/);
+  assert.match(panel, /useEffect\(\(\) =>/);
+  assert.match(panel, /useState\('CHECKING'\)/);
+  assert.match(panel, /freshBatchStatus/);
+  assert.match(panel, /setStage\(status \?\? 'NOT RUN'\)/);
+  assert.match(panel, /setStage\('UNKNOWN'\)/);
   assert.match(host, /FreshInventoryReferenceBridgePanel/);
   assert.match(host, /Loading R5-009 fresh reference bridge/);
 });
