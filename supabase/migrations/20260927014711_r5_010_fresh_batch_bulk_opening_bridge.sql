@@ -598,3 +598,203 @@ begin
       )::text,
       'sha256'
     ),
+    'hex'
+  );
+
+  return jsonb_build_object(
+    'referenceBatchId',v_batch.id,
+    'referenceBatchStatus',v_batch.batch_status,
+    'referenceBatchRevision',v_batch.revision,
+    'sourceRunId',v_batch.source_run_id,
+    'sourceSetSha256',v_batch.source_set_sha256,
+    'declaredSourceRowCount',v_batch.source_row_count,
+    'readyRowCount',v_ready_count,
+    'readyPositiveRowCount',v_ready_positive_count,
+    'readyZeroRowCount',v_ready_zero_count,
+    'pendingProductMappingCount',v_pending_product,
+    'ambiguousProductMappingCount',v_ambiguous_product,
+    'pendingWarehouseMappingCount',v_pending_warehouse,
+    'ambiguousWarehouseMappingCount',v_ambiguous_warehouse,
+    'pendingPhysicalIdentityCount',v_pending_identity,
+    'alreadyInitializedCount',v_already_initialized,
+    'requestedRowCount',v_requested_count,
+    'selectedRowCount',v_selected_count,
+    'executableRowCount',v_executable_count,
+    'positiveRowCount',v_positive_count,
+    'zeroRowCount',v_zero_count,
+    'positiveQtyOnHandTotal',v_positive_qty,
+    'locationCode',v_location.location_code,
+    'locationSemantics',v_location.location_semantics,
+    'manifestSha256',v_manifest,
+    'rows',v_rows,
+    'canApply',
+      v_executable_count>0
+      and v_executable_count=v_selected_count
+      and (v_requested_count is null or v_requested_count=v_selected_count),
+    'authorityEffect','NONE'
+  );
+end;
+$$;
+
+create or replace function public.ecoflow_apply_r5_010_bulk_opening(
+  p_reference_batch_id uuid,
+  p_manifest_sha256 text,
+  p_command_id uuid,
+  p_reason text,
+  p_acknowledged boolean,
+  p_reference_row_ids uuid[] default null,
+  p_location_code text default 'MIGRATION-UNASSIGNED'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_role text := public.ecoflow_active_app_role();
+  v_existing public.ecoflow_r5_010_opening_commands%rowtype;
+  v_preview jsonb;
+  v_preview_after_lock jsonb;
+  v_payload jsonb;
+  v_payload_hash text;
+  v_row jsonb;
+  v_session_id uuid;
+  v_session_status text;
+  v_session_revision bigint;
+  v_internal_command uuid;
+  v_location public.ecoflow_warehouse_locations%rowtype;
+  v_observation_id uuid;
+  v_adjustment_count integer;
+  v_approved_at timestamptz;
+  v_result jsonb;
+  v_inserted integer := 0;
+  v_positive integer := 0;
+  v_zero integer := 0;
+  v_positive_qty numeric := 0;
+begin
+  if v_actor is null then raise exception 'R5_010_AUTH_REQUIRED'; end if;
+  if v_role not in ('OWNER','ADMIN') then
+    raise exception using errcode='42501',message='R5_010_OWNER_OR_ADMIN_REQUIRED';
+  end if;
+  if p_command_id is null then raise exception 'R5_010_COMMAND_ID_REQUIRED'; end if;
+  if p_reference_batch_id is null then raise exception 'R5_010_REFERENCE_BATCH_REQUIRED'; end if;
+  if p_manifest_sha256 is null or p_manifest_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'R5_010_VALID_MANIFEST_REQUIRED';
+  end if;
+  if nullif(btrim(coalesce(p_reason,'')),'') is null then
+    raise exception 'R5_010_REASON_REQUIRED';
+  end if;
+  if coalesce(p_acknowledged,false) is not true then
+    raise exception 'R5_010_EXPLICIT_ACKNOWLEDGEMENT_REQUIRED';
+  end if;
+
+  v_payload := jsonb_build_object(
+    'referenceBatchId',p_reference_batch_id,
+    'manifestSha256',p_manifest_sha256,
+    'referenceRowIds',p_reference_row_ids,
+    'locationCode',upper(btrim(coalesce(p_location_code,''))),
+    'reason',left(btrim(p_reason),2000),
+    'acknowledged',true
+  );
+  v_payload_hash := pg_catalog.encode(extensions.digest(v_payload::text,'sha256'),'hex');
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('r5-010-command:'||p_command_id::text,0)
+  );
+
+  select * into v_existing
+  from public.ecoflow_r5_010_opening_commands
+  where command_id=p_command_id;
+  if found then
+    if v_existing.actor_user_id<>v_actor
+       or v_existing.reference_batch_id<>p_reference_batch_id
+       or v_existing.manifest_sha256<>p_manifest_sha256
+       or v_existing.request_payload_sha256<>v_payload_hash then
+      raise exception 'R5_010_COMMAND_REPLAY_MISMATCH';
+    end if;
+    return v_existing.result;
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('r5-010-batch:'||p_reference_batch_id::text,0)
+  );
+
+  v_preview := public.ecoflow_preview_r5_010_bulk_opening(
+    p_reference_batch_id,p_reference_row_ids,p_location_code
+  );
+
+  if coalesce((v_preview->>'canApply')::boolean,false) is not true
+     or v_preview->>'manifestSha256'<>p_manifest_sha256 then
+    raise exception 'R5_010_PREVIEW_MANIFEST_MISMATCH_OR_NOT_EXECUTABLE';
+  end if;
+
+  -- Lock all selected SKU/unit keys in canonical order before the final recheck.
+  for v_row in
+    select value
+    from jsonb_array_elements(v_preview->'rows')
+    where coalesce((value->>'executable')::boolean,false)
+    order by value->>'physicalSkuCode',value->>'referenceRowId'
+  loop
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended(
+        'warehouse-sku-write:'||upper(v_row->>'physicalSkuCode')||':carton',0
+      )
+    );
+  end loop;
+
+  v_preview_after_lock := public.ecoflow_preview_r5_010_bulk_opening(
+    p_reference_batch_id,p_reference_row_ids,p_location_code
+  );
+  if coalesce((v_preview_after_lock->>'canApply')::boolean,false) is not true
+     or v_preview_after_lock->>'manifestSha256'<>p_manifest_sha256
+     or v_preview_after_lock->'rows'<>v_preview->'rows' then
+    raise exception 'R5_010_STATE_CHANGED_AFTER_PREVIEW';
+  end if;
+
+  select * into v_location
+  from public.ecoflow_warehouse_locations
+  where upper(location_code)=upper(v_preview_after_lock->>'locationCode')
+    and status='ACTIVE'
+  for update;
+  if not found then raise exception 'R5_010_LOCATION_DISAPPEARED'; end if;
+
+  v_internal_command := extensions.gen_random_uuid();
+  select session_id,session_status,revision
+  into v_session_id,v_session_status,v_session_revision
+  from public.ecoflow_start_stocktake_session(
+    'INITIAL',
+    left('R5-010 Unleashed migration opening '||substring(p_manifest_sha256 from 1 for 12),160),
+    null,
+    v_actor,
+    false,
+    left(
+      'R5-010 UNLEASHED_MIGRATION_REFERENCE; batch='||p_reference_batch_id::text||
+      '; manifest='||p_manifest_sha256||'; '||btrim(p_reason),
+      2000
+    ),
+    v_internal_command
+  );
+
+  for v_row in
+    select value
+    from jsonb_array_elements(v_preview_after_lock->'rows')
+    where coalesce((value->>'executable')::boolean,false)
+    order by value->>'sourceProductCode',value->>'referenceRowId'
+  loop
+    v_internal_command := extensions.gen_random_uuid();
+    insert into public.ecoflow_stocktake_observations(
+      session_id,location_id,location_code,sku,product_name,barcode,
+      unit_level,units_per_package,quantity_packages,note,exception_codes,
+      review_status,command_id,observed_by,evidence_type,
+      source_reference_batch_id,source_reference_row_id,source_row_sha256,
+      source_manifest_sha256,source_command_id
+    ) values (
+      v_session_id,v_location.id,v_location.location_code,
+      v_row->>'physicalSkuCode',v_row->>'physicalSkuName',v_row->>'barcode',
+      'carton',(v_row->>'unitsPerPackage')::numeric,(v_row->>'sourceQtyOnHand')::numeric,
+      left(
+        'R5-010 UNLEASHED_MIGRATION_REFERENCE; sourceProduct='||
+        (v_row->>'sourceProductCode')||'; sourceQtyOnHand='||
+        (v_row->>'sourceQtyOnHand')||'; no physical count asserted.',
+        2000
