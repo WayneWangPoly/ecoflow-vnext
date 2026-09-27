@@ -13,9 +13,9 @@ const FreshInventoryReferenceBridgePanel = lazy(async () => {
   return { default: module.FreshInventoryReferenceBridgePanel };
 });
 
-const ReadyPositiveStockCommissioningPanel = lazy(async () => {
-  const module = await import('./ReadyPositiveStockCommissioningPanel');
-  return { default: module.ReadyPositiveStockCommissioningPanel };
+const FreshBatchBulkOpeningPanel = lazy(async () => {
+  const module = await import('./FreshBatchBulkOpeningPanel');
+  return { default: module.FreshBatchBulkOpeningPanel };
 });
 
 const ProvisionalReferenceOpeningPanel = lazy(async () => {
@@ -135,8 +135,8 @@ export function InventoryReferenceStagePanel({ supabase }: { supabase: SupabaseC
       </Suspense>
       <InventoryReferenceSealPanel supabase={supabase} />
       <Bpb8InitialOpeningBalanceCanaryPanel supabase={supabase} />
-      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-005B commissioning carrier…</div>}>
-        <ReadyPositiveStockCommissioningPanel supabase={supabase} />
+      <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-010 fresh batch opening…</div>}>
+        <FreshBatchBulkOpeningPanel supabase={supabase} />
       </Suspense>
       <Suspense fallback={<div className="unleashed-acceptance-note">Loading R5-007 provisional opening carrier…</div>}>
         <ProvisionalReferenceOpeningPanel supabase={supabase} />
