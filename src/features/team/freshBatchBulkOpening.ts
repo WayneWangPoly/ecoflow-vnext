@@ -35,6 +35,7 @@ export type R5010PreviewRow = {
   locationCode: string;
   locationSemantics: 'PHYSICAL' | 'MIGRATION_HOLDING';
   currentWarehouseCartonQty: number;
+  liveWarehouseBalanceRowCount: number;
   alreadyInitialized: boolean;
   executable: boolean;
   blockReason: string | null;
