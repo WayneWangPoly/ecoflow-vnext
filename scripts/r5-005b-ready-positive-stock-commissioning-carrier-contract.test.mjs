@@ -79,10 +79,11 @@ test('R5-005B preserves exact command ids across retry-capable actions', () => {
   assert.match(panel, /重试同一 MATERIALIZE command/);
 });
 
-test('R5-005B is lazy-wired into the existing inventory reference surface to preserve bundle budgets', () => {
-  assert.match(host, /lazy\(async \(\) =>/);
-  assert.match(host, /import\('\.\/ReadyPositiveStockCommissioningPanel'\)/);
-  assert.match(host, /default:\s*module\.ReadyPositiveStockCommissioningPanel/);
-  assert.match(host, /<Suspense[\s\S]*<ReadyPositiveStockCommissioningPanel supabase=\{supabase\} \/>[\s\S]*<\/Suspense>/);
-  assert.doesNotMatch(host, /import \{ ReadyPositiveStockCommissioningPanel \} from '\.\/ReadyPositiveStockCommissioningPanel'/);
+test('R5-005B historical carrier remains auditable but is retired from the current inventory reference surface', () => {
+  assert.match(adapter, /R5_005B_EXECUTABLE_CANDIDATES/);
+  assert.match(panel, /ReadyPositiveStockCommissioningPanel/);
+  assert.doesNotMatch(host, /import\('\.\/ReadyPositiveStockCommissioningPanel'\)/);
+  assert.doesNotMatch(host, /<ReadyPositiveStockCommissioningPanel supabase=\{supabase\} \/>/);
+  assert.match(host, /import\('\.\/FreshBatchBulkOpeningPanel'\)/);
+  assert.match(host, /<FreshBatchBulkOpeningPanel supabase=\{supabase\} \/>/);
 });
