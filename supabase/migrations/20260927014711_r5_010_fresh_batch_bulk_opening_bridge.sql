@@ -198,3 +198,203 @@ $$;
 drop trigger if exists ecoflow_r5_010_opening_commands_immutable on public.ecoflow_r5_010_opening_commands;
 create trigger ecoflow_r5_010_opening_commands_immutable
 before update or delete on public.ecoflow_r5_010_opening_commands
+for each row execute function public.ecoflow_r5_010_prevent_audit_mutation();
+
+drop trigger if exists ecoflow_r5_010_inventory_provenance_immutable on public.ecoflow_r5_010_inventory_movement_provenance;
+create trigger ecoflow_r5_010_inventory_provenance_immutable
+before update or delete on public.ecoflow_r5_010_inventory_movement_provenance
+for each row execute function public.ecoflow_r5_010_prevent_audit_mutation();
+
+drop trigger if exists ecoflow_r5_010_warehouse_provenance_immutable on public.ecoflow_r5_010_warehouse_movement_provenance;
+create trigger ecoflow_r5_010_warehouse_provenance_immutable
+before update or delete on public.ecoflow_r5_010_warehouse_movement_provenance
+for each row execute function public.ecoflow_r5_010_prevent_audit_mutation();
+
+-- One SKU/unit write lock shared by receiving, stocktake approval and transfer
+-- because all quantity authority converges on ecoflow_warehouse_location_items.
+create or replace function public.ecoflow_lock_warehouse_sku_write()
+returns trigger
+language plpgsql
+security invoker
+set search_path=pg_catalog,public
+as $$
+declare
+  v_new_key text;
+  v_old_key text;
+begin
+  v_new_key := 'warehouse-sku-write:'||upper(btrim(new.sku))||':'||lower(btrim(new.unit_level));
+  if tg_op='UPDATE' then
+    v_old_key := 'warehouse-sku-write:'||upper(btrim(old.sku))||':'||lower(btrim(old.unit_level));
+    if v_old_key<>v_new_key then
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(least(v_old_key,v_new_key),0));
+      perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(greatest(v_old_key,v_new_key),0));
+      return new;
+    end if;
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_new_key,0));
+  return new;
+end;
+$$;
+
+drop trigger if exists ecoflow_warehouse_location_items_sku_write_lock
+  on public.ecoflow_warehouse_location_items;
+create trigger ecoflow_warehouse_location_items_sku_write_lock
+before insert or update on public.ecoflow_warehouse_location_items
+for each row execute function public.ecoflow_lock_warehouse_sku_write();
+
+-- Attach immutable source provenance to every inventory movement produced by
+-- stocktake approval from R5-010 migration-reference observations.
+create or replace function public.ecoflow_r5_010_capture_inventory_movement_provenance()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_session_id uuid;
+  v_obs public.ecoflow_stocktake_observations%rowtype;
+  v_location text;
+begin
+  if new.reference_type<>'OPENING_STOCKTAKE'
+     or new.source<>'STOCKTAKE_APPROVAL'
+     or new.reference_id is null
+     or new.reference_id !~ '^STOCKTAKE:[0-9a-fA-F-]{36}$' then
+    return new;
+  end if;
+
+  v_session_id := substring(new.reference_id from 11)::uuid;
+  v_location := coalesce(new.to_location,new.from_location);
+
+  select o.* into v_obs
+  from public.ecoflow_stocktake_observations o
+  where o.session_id=v_session_id
+    and o.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
+    and upper(o.sku)=upper(new.sku)
+    and o.location_code=v_location
+  order by o.observed_at,o.id
+  limit 1;
+
+  if not found then return new; end if;
+
+  insert into public.ecoflow_r5_010_inventory_movement_provenance(
+    inventory_movement_id,reference_batch_id,reference_row_id,source_row_sha256,
+    manifest_sha256,command_id,actor_user_id,evidence_type
+  ) values (
+    new.id,v_obs.source_reference_batch_id,v_obs.source_reference_row_id,
+    v_obs.source_row_sha256,v_obs.source_manifest_sha256,v_obs.source_command_id,
+    coalesce(new.moved_by,v_obs.observed_by),'UNLEASHED_MIGRATION_REFERENCE'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists ecoflow_r5_010_inventory_movement_provenance_capture
+  on public.ecoflow_inventory_movements;
+create trigger ecoflow_r5_010_inventory_movement_provenance_capture
+after insert on public.ecoflow_inventory_movements
+for each row execute function public.ecoflow_r5_010_capture_inventory_movement_provenance();
+
+create or replace function public.ecoflow_r5_010_capture_warehouse_movement_provenance()
+returns trigger
+language plpgsql
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_session_id uuid;
+  v_obs public.ecoflow_stocktake_observations%rowtype;
+begin
+  if new.transfer_reference is null
+     or new.transfer_reference !~ '^STOCKTAKE:[0-9a-fA-F-]{36}$' then
+    return new;
+  end if;
+
+  v_session_id := substring(new.transfer_reference from 11)::uuid;
+  select o.* into v_obs
+  from public.ecoflow_stocktake_observations o
+  where o.session_id=v_session_id
+    and o.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
+    and upper(o.sku)=upper(new.sku)
+    and o.location_id=coalesce(new.to_location_id,new.location_id,new.from_location_id)
+  order by o.observed_at,o.id
+  limit 1;
+
+  if not found then return new; end if;
+
+  insert into public.ecoflow_r5_010_warehouse_movement_provenance(
+    warehouse_movement_id,reference_batch_id,reference_row_id,source_row_sha256,
+    manifest_sha256,command_id,actor_user_id,evidence_type
+  ) values (
+    new.id,v_obs.source_reference_batch_id,v_obs.source_reference_row_id,
+    v_obs.source_row_sha256,v_obs.source_manifest_sha256,v_obs.source_command_id,
+    coalesce(new.actor_user_id,v_obs.observed_by),'UNLEASHED_MIGRATION_REFERENCE'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists ecoflow_r5_010_warehouse_movement_provenance_capture
+  on public.ecoflow_warehouse_movements;
+create trigger ecoflow_r5_010_warehouse_movement_provenance_capture
+after insert on public.ecoflow_warehouse_movements
+for each row execute function public.ecoflow_r5_010_capture_warehouse_movement_provenance();
+
+create or replace function public.ecoflow_preview_r5_010_bulk_opening(
+  p_expected_reference_batch_id uuid,
+  p_reference_row_ids uuid[] default null,
+  p_location_code text default 'MIGRATION-UNASSIGNED'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path=pg_catalog,public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_role text := public.ecoflow_active_app_role();
+  v_batch public.ecoflow_unleashed_inventory_reference_batches%rowtype;
+  v_location public.ecoflow_warehouse_locations%rowtype;
+  v_rows jsonb;
+  v_manifest text;
+  v_requested_count integer;
+  v_selected_count integer;
+  v_executable_count integer;
+  v_positive_count integer;
+  v_zero_count integer;
+  v_positive_qty numeric;
+  v_ready_count integer;
+  v_ready_positive_count integer;
+  v_ready_zero_count integer;
+  v_pending_product integer;
+  v_ambiguous_product integer;
+  v_pending_warehouse integer;
+  v_ambiguous_warehouse integer;
+  v_pending_identity integer;
+  v_already_initialized integer;
+begin
+  if v_actor is null then raise exception 'R5_010_AUTH_REQUIRED'; end if;
+  if v_role not in ('OWNER','ADMIN') then
+    raise exception using errcode='42501',message='R5_010_OWNER_OR_ADMIN_REQUIRED';
+  end if;
+  if p_expected_reference_batch_id is null then
+    raise exception 'R5_010_EXPECTED_REFERENCE_BATCH_REQUIRED';
+  end if;
+
+  select * into v_batch
+  from public.ecoflow_unleashed_inventory_reference_batches
+  where batch_status='SEALED'
+  order by sealed_at desc nulls last,created_at desc,id desc
+  limit 1;
+  if not found
+     or p_expected_reference_batch_id<>'9a1b323c-46fb-4478-87d0-94573819fe1c'::uuid
+     or v_batch.id<>p_expected_reference_batch_id
+     or v_batch.source_row_count<>428 then
+    raise exception 'R5_010_LATEST_SEALED_REFERENCE_MISMATCH';
+  end if;
+
+  select * into v_location
+  from public.ecoflow_warehouse_locations
+  where upper(location_code)=upper(btrim(coalesce(p_location_code,'')))
+    and status='ACTIVE'
+  limit 1;
