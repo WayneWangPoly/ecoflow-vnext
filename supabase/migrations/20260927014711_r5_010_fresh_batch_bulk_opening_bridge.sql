@@ -398,3 +398,203 @@ begin
   where upper(location_code)=upper(btrim(coalesce(p_location_code,'')))
     and status='ACTIVE'
   limit 1;
+  if not found then raise exception 'R5_010_ACTIVE_LOCATION_REQUIRED'; end if;
+  if upper(v_location.location_code)='MIGRATION-UNASSIGNED'
+     and v_location.location_semantics<>'MIGRATION_HOLDING' then
+    raise exception 'R5_010_MIGRATION_LOCATION_SEMANTICS_MISMATCH';
+  end if;
+
+  v_requested_count := case
+    when p_reference_row_ids is null then null
+    else coalesce(cardinality(p_reference_row_ids),0)
+  end;
+
+  select
+    count(*) filter (where readiness_status='READY_FOR_LOCATION_EVIDENCE')::integer,
+    count(*) filter (where readiness_status='READY_FOR_LOCATION_EVIDENCE' and qty_on_hand>0)::integer,
+    count(*) filter (where readiness_status='READY_FOR_LOCATION_EVIDENCE' and qty_on_hand=0)::integer,
+    count(*) filter (where readiness_status='PENDING_PRODUCT_MAPPING')::integer,
+    count(*) filter (where readiness_status='AMBIGUOUS_PRODUCT_MAPPING')::integer,
+    count(*) filter (where readiness_status='PENDING_WAREHOUSE_MAPPING')::integer,
+    count(*) filter (where readiness_status='AMBIGUOUS_WAREHOUSE_MAPPING')::integer,
+    count(*) filter (where readiness_status='PENDING_PHYSICAL_IDENTITY')::integer
+  into v_ready_count,v_ready_positive_count,v_ready_zero_count,v_pending_product,v_ambiguous_product,
+       v_pending_warehouse,v_ambiguous_warehouse,v_pending_identity
+  from public.v_ecoflow_unleashed_inventory_reference_rows
+  where batch_id=v_batch.id
+    and source_warehouse_code='ADL1';
+
+  select count(*)::integer into v_already_initialized
+  from public.ecoflow_stocktake_observations o
+  where o.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
+    and o.source_reference_batch_id=v_batch.id;
+
+  with candidate as (
+    select
+      v.reference_row_id,
+      v.batch_id,
+      v.source_product_code,
+      v.source_warehouse_code,
+      v.qty_on_hand,
+      v.source_row_sha256,
+      v.source_set_sha256,
+      v.source_run_id,
+      v.commercial_sku_id,
+      v.commercial_sku_code,
+      v.preferred_physical_sku_context_id as physical_sku_id,
+      p.physical_sku_code,
+      p.display_name as physical_sku_name,
+      pkg.package_count,
+      pkg.package_id,
+      pkg.units_per_package,
+      bc.barcode_count,
+      bc.barcode,
+      coalesce(balance.current_qty,0) as current_qty,
+      not exists (
+        select 1 from public.ecoflow_stocktake_observations o
+        where o.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
+          and o.source_reference_row_id=v.reference_row_id
+      ) as not_initialized
+    from public.v_ecoflow_unleashed_inventory_reference_rows v
+    left join public.ecoflow_physical_skus p
+      on p.id=v.preferred_physical_sku_context_id
+     and p.identity_status='ACTIVE'
+    left join lateral (
+      select
+        count(*)::integer as package_count,
+        (array_agg(pp.id order by pp.id))[1] as package_id,
+        (array_agg(pp.units_in_base_unit order by pp.id))[1] as units_per_package
+      from public.ecoflow_physical_sku_packages pp
+      where pp.physical_sku_id=v.preferred_physical_sku_context_id
+        and pp.identity_status='ACTIVE'
+        and upper(pp.package_level)='CARTON'
+    ) pkg on true
+    left join lateral (
+      select
+        count(*)::integer as barcode_count,
+        (array_agg(b.barcode order by b.id))[1] as barcode
+      from public.ecoflow_physical_barcode_bindings b
+      where b.physical_sku_id=v.preferred_physical_sku_context_id
+        and b.package_id=pkg.package_id
+        and b.identity_status='ACTIVE'
+    ) bc on true
+    left join lateral (
+      select coalesce(sum(i.quantity),0) as current_qty
+      from public.ecoflow_warehouse_location_items i
+      where upper(i.sku)=upper(p.physical_sku_code)
+        and lower(i.unit_level)='carton'
+        and i.status<>'ZEROED'
+    ) balance on true
+    where v.batch_id=v_batch.id
+      and v.source_warehouse_code='ADL1'
+      and upper(coalesce(v.warehouse_code,''))='MAIN'
+      and v.reference_quantity_scope='UNLEASHED_WAREHOUSE_TOTAL'
+      and v.readiness_status='READY_FOR_LOCATION_EVIDENCE'
+      and v.product_mapping_count=1
+      and v.product_mapping_status='MATCHED'
+      and v.warehouse_mapping_count=1
+      and v.warehouse_mapping_status='MATCHED'
+      and v.physical_identity_link_count=1
+      and v.substitution_policy='PROHIBITED'
+      and v.qty_on_hand>=0
+      and v.qty_on_hand=trunc(v.qty_on_hand)
+      and coalesce(v.source_available_formula_delta,999999)=0
+      and (p_reference_row_ids is null or v.reference_row_id=any(p_reference_row_ids))
+      and (
+        p_reference_row_ids is not null
+        or not exists (
+          select 1 from public.ecoflow_stocktake_observations opened
+          where opened.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
+            and opened.source_reference_row_id=v.reference_row_id
+        )
+      )
+  ),
+  shaped_with_duplicates as (
+    select *,
+      count(*) over (partition by physical_sku_id) as selected_physical_sku_count
+    from candidate
+  ),
+  shaped as (
+    select *,
+      (
+        not_initialized
+        and physical_sku_id is not null
+        and nullif(btrim(coalesce(physical_sku_code,'')),'') is not null
+        and selected_physical_sku_count=1
+        and package_count=1
+        and package_id is not null
+        and units_per_package is not null
+        and units_per_package>0
+        and units_per_package=trunc(units_per_package)
+        and barcode_count=1
+        and nullif(btrim(coalesce(barcode,'')),'') is not null
+        and current_qty=0
+      ) as executable
+    from shaped_with_duplicates
+  ),
+  agg as (
+    select
+      count(*)::integer as selected_count,
+      count(*) filter (where executable)::integer as executable_count,
+      count(*) filter (where executable and qty_on_hand>0)::integer as positive_count,
+      count(*) filter (where executable and qty_on_hand=0)::integer as zero_count,
+      coalesce(sum(qty_on_hand) filter (where executable and qty_on_hand>0),0) as positive_qty,
+      coalesce(jsonb_agg(
+        jsonb_build_object(
+          'referenceRowId',reference_row_id,
+          'referenceBatchId',batch_id,
+          'sourceProductCode',source_product_code,
+          'sourceWarehouseCode',source_warehouse_code,
+          'sourceQtyOnHand',qty_on_hand,
+          'sourceRowSha256',source_row_sha256,
+          'sourceSetSha256',source_set_sha256,
+          'sourceRunId',source_run_id,
+          'commercialSkuId',commercial_sku_id,
+          'commercialSkuCode',commercial_sku_code,
+          'physicalSkuId',physical_sku_id,
+          'physicalSkuCode',physical_sku_code,
+          'physicalSkuName',physical_sku_name,
+          'packageId',package_id,
+          'packageLevel','CARTON',
+          'unitsPerPackage',units_per_package,
+          'barcode',barcode,
+          'locationCode',v_location.location_code,
+          'locationSemantics',v_location.location_semantics,
+          'currentWarehouseCartonQty',current_qty,
+          'alreadyInitialized',not not_initialized,
+          'executable',executable,
+          'blockReason',case
+            when not not_initialized then 'ALREADY_INITIALIZED'
+            when physical_sku_id is null or nullif(btrim(coalesce(physical_sku_code,'')),'') is null
+              then 'ACTIVE_PHYSICAL_SKU_REQUIRED'
+            when selected_physical_sku_count<>1 then 'DUPLICATE_SELECTED_PHYSICAL_SKU'
+            when package_count<>1 then 'CARTON_PACKAGE_IDENTITY_NOT_UNIQUE'
+            when barcode_count<>1 then 'CARTON_BARCODE_IDENTITY_NOT_UNIQUE'
+            when current_qty<>0 then 'LIVE_WAREHOUSE_BALANCE_ALREADY_EXISTS'
+            else null
+          end
+        )
+        order by source_product_code,reference_row_id
+      ),'[]'::jsonb) as rows
+    from shaped
+  )
+  select
+    selected_count,executable_count,positive_count,zero_count,positive_qty,rows
+  into
+    v_selected_count,v_executable_count,v_positive_count,v_zero_count,v_positive_qty,v_rows
+  from agg;
+
+  v_manifest := pg_catalog.encode(
+    extensions.digest(
+      pg_catalog.jsonb_build_object(
+        'referenceBatchId',v_batch.id,
+        'sourceSetSha256',v_batch.source_set_sha256,
+        'locationCode',v_location.location_code,
+        'rows',coalesce((
+          select jsonb_agg(x order by x->>'sourceProductCode',x->>'referenceRowId')
+          from jsonb_array_elements(v_rows) x
+          where coalesce((x->>'executable')::boolean,false)
+        ),'[]'::jsonb)
+      )::text,
+      'sha256'
+    ),
