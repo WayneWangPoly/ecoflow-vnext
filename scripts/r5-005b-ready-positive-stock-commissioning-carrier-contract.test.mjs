@@ -80,7 +80,7 @@ test('R5-005B preserves exact command ids across retry-capable actions', () => {
 });
 
 test('R5-005B historical carrier remains auditable but is retired from the current inventory reference surface', () => {
-  assert.match(adapter, /R5_005B_EXECUTABLE_CANDIDATES/);
+  assert.match(client, /R5_005B_EXECUTABLE_CANDIDATES/);
   assert.match(panel, /ReadyPositiveStockCommissioningPanel/);
   assert.doesNotMatch(host, /import\('\.\/ReadyPositiveStockCommissioningPanel'\)/);
   assert.doesNotMatch(host, /<ReadyPositiveStockCommissioningPanel supabase=\{supabase\} \/>/);
