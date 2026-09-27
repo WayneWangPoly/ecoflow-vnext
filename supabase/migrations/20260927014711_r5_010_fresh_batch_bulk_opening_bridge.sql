@@ -399,9 +399,9 @@ begin
     and status='ACTIVE'
   limit 1;
   if not found then raise exception 'R5_010_ACTIVE_LOCATION_REQUIRED'; end if;
-  if upper(v_location.location_code)='MIGRATION-UNASSIGNED'
-     and v_location.location_semantics<>'MIGRATION_HOLDING' then
-    raise exception 'R5_010_MIGRATION_LOCATION_SEMANTICS_MISMATCH';
+  if upper(v_location.location_code)<>'MIGRATION-UNASSIGNED'
+     or v_location.location_semantics<>'MIGRATION_HOLDING' then
+    raise exception 'R5_010_MIGRATION_HOLDING_LOCATION_REQUIRED';
   end if;
 
   v_requested_count := case
@@ -449,7 +449,9 @@ begin
       pkg.units_per_package,
       bc.barcode_count,
       bc.barcode,
-      coalesce(balance.current_qty,0) as current_qty,
+      coalesce(duplicate_guard.batch_physical_sku_count,0) as batch_physical_sku_count,
+      coalesce(balance.current_carton_qty,0) as current_qty,
+      coalesce(balance.live_balance_row_count,0) as live_balance_row_count,
       not exists (
         select 1 from public.ecoflow_stocktake_observations o
         where o.evidence_type='UNLEASHED_MIGRATION_REFERENCE'
@@ -479,10 +481,21 @@ begin
         and b.identity_status='ACTIVE'
     ) bc on true
     left join lateral (
-      select coalesce(sum(i.quantity),0) as current_qty
+      select count(*)::integer as batch_physical_sku_count
+      from public.v_ecoflow_unleashed_inventory_reference_rows d
+      where d.batch_id=v_batch.id
+        and d.source_warehouse_code='ADL1'
+        and upper(coalesce(d.warehouse_code,''))='MAIN'
+        and d.reference_quantity_scope='UNLEASHED_WAREHOUSE_TOTAL'
+        and d.readiness_status='READY_FOR_LOCATION_EVIDENCE'
+        and d.preferred_physical_sku_context_id=v.preferred_physical_sku_context_id
+    ) duplicate_guard on true
+    left join lateral (
+      select
+        coalesce(sum(i.quantity) filter (where lower(i.unit_level)='carton'),0) as current_carton_qty,
+        count(*) filter (where i.quantity<>0)::integer as live_balance_row_count
       from public.ecoflow_warehouse_location_items i
       where upper(i.sku)=upper(p.physical_sku_code)
-        and lower(i.unit_level)='carton'
         and i.status<>'ZEROED'
     ) balance on true
     where v.batch_id=v_batch.id
@@ -509,18 +522,13 @@ begin
         )
       )
   ),
-  shaped_with_duplicates as (
-    select *,
-      count(*) over (partition by physical_sku_id) as selected_physical_sku_count
-    from candidate
-  ),
   shaped as (
     select *,
       (
         not_initialized
         and physical_sku_id is not null
         and nullif(btrim(coalesce(physical_sku_code,'')),'') is not null
-        and selected_physical_sku_count=1
+        and batch_physical_sku_count=1
         and package_count=1
         and package_id is not null
         and units_per_package is not null
@@ -528,9 +536,9 @@ begin
         and units_per_package=trunc(units_per_package)
         and barcode_count=1
         and nullif(btrim(coalesce(barcode,'')),'') is not null
-        and current_qty=0
+        and live_balance_row_count=0
       ) as executable
-    from shaped_with_duplicates
+    from candidate
   ),
   agg as (
     select
@@ -561,16 +569,17 @@ begin
           'locationCode',v_location.location_code,
           'locationSemantics',v_location.location_semantics,
           'currentWarehouseCartonQty',current_qty,
+          'liveWarehouseBalanceRowCount',live_balance_row_count,
           'alreadyInitialized',not not_initialized,
           'executable',executable,
           'blockReason',case
             when not not_initialized then 'ALREADY_INITIALIZED'
             when physical_sku_id is null or nullif(btrim(coalesce(physical_sku_code,'')),'') is null
               then 'ACTIVE_PHYSICAL_SKU_REQUIRED'
-            when selected_physical_sku_count<>1 then 'DUPLICATE_SELECTED_PHYSICAL_SKU'
+            when batch_physical_sku_count<>1 then 'DUPLICATE_BATCH_PHYSICAL_SKU'
             when package_count<>1 then 'CARTON_PACKAGE_IDENTITY_NOT_UNIQUE'
             when barcode_count<>1 then 'CARTON_BARCODE_IDENTITY_NOT_UNIQUE'
-            when current_qty<>0 then 'LIVE_WAREHOUSE_BALANCE_ALREADY_EXISTS'
+            when live_balance_row_count<>0 then 'LIVE_WAREHOUSE_BALANCE_ALREADY_EXISTS'
             else null
           end
         )
