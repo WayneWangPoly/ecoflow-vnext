@@ -78,6 +78,9 @@ test('movement provenance is structured and immutable', () => {
 test('MIGRATION-UNASSIGNED is explicitly non-physical and normal transfer authority remains incumbent', () => {
   assert.match(migration, /'MIGRATION-UNASSIGNED'/);
   assert.match(migration, /'MIGRATION_HOLDING'/);
+  assert.match(migration, /R5_010_MIGRATION_HOLDING_LOCATION_REQUIRED/);
+  assert.match(migration, /batch_physical_sku_count=1/);
+  assert.match(migration, /live_balance_row_count=0/);
   assert.match(migration, /location_semantics in \('PHYSICAL','MIGRATION_HOLDING'\)/);
   assert.doesNotMatch(migration, /create or replace function public\.ecoflow_move_warehouse_sku/);
 });
@@ -95,6 +98,8 @@ test('browser uses only PREVIEW/APPLY RPCs, canaries are selectors rather than t
   assert.match(panel, /positive QtyOnHand/);
   assert.match(panel, /manifestSha256/);
   assert.match(panel, /UNLEASHED_MIGRATION_REFERENCE/);
+  assert.doesNotMatch(panel, /setLocationCode/);
+  assert.match(panel, /Opening location/);
   assert.match(host, /FreshBatchBulkOpeningPanel/);
   assert.doesNotMatch(host, /<ReadyPositiveStockCommissioningPanel/);
 });
