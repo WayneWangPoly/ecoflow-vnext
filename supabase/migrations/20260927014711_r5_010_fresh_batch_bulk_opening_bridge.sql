@@ -798,3 +798,162 @@ begin
         (v_row->>'sourceProductCode')||'; sourceQtyOnHand='||
         (v_row->>'sourceQtyOnHand')||'; no physical count asserted.',
         2000
+      ),
+      '{}'::text[],'ACCEPTED',v_internal_command,v_actor,
+      'UNLEASHED_MIGRATION_REFERENCE',
+      p_reference_batch_id,(v_row->>'referenceRowId')::uuid,
+      v_row->>'sourceRowSha256',p_manifest_sha256,p_command_id
+    )
+    returning id into v_observation_id;
+
+    v_inserted := v_inserted+1;
+    if (v_row->>'sourceQtyOnHand')::numeric>0 then
+      v_positive := v_positive+1;
+      v_positive_qty := v_positive_qty+(v_row->>'sourceQtyOnHand')::numeric;
+    else
+      v_zero := v_zero+1;
+    end if;
+  end loop;
+
+  if v_inserted=0 then raise exception 'R5_010_EMPTY_EXECUTION_WAVE'; end if;
+
+  insert into public.ecoflow_stocktake_location_progress(
+    session_id,location_id,location_code,progress_status,observation_count,
+    exception_count,completed_by,completed_at,revision,updated_at
+  ) values (
+    v_session_id,v_location.id,v_location.location_code,'COMPLETE',v_inserted,
+    0,v_actor,clock_timestamp(),1,clock_timestamp()
+  )
+  on conflict(session_id,location_id) do update set
+    progress_status='COMPLETE',
+    observation_count=excluded.observation_count,
+    exception_count=0,
+    completed_by=v_actor,
+    completed_at=clock_timestamp(),
+    revision=public.ecoflow_stocktake_location_progress.revision+1,
+    updated_at=clock_timestamp();
+
+  v_internal_command := extensions.gen_random_uuid();
+  select session_id,session_status,revision
+  into v_session_id,v_session_status,v_session_revision
+  from public.ecoflow_submit_stocktake_session(
+    v_session_id,
+    left('R5-010 manifest-bound migration reference wave ready for immediate governed approval.',2000),
+    v_internal_command
+  );
+  if v_session_status<>'REVIEW' then
+    raise exception 'R5_010_STOCKTAKE_REVIEW_REQUIRED';
+  end if;
+
+  v_internal_command := extensions.gen_random_uuid();
+  select session_id,session_status,revision,adjustment_count,approved_at
+  into v_session_id,v_session_status,v_session_revision,v_adjustment_count,v_approved_at
+  from public.ecoflow_approve_stocktake_session(
+    v_session_id,
+    v_session_revision,
+    left(
+      'R5-010 UNLEASHED_MIGRATION_REFERENCE; batch='||p_reference_batch_id::text||
+      '; manifest='||p_manifest_sha256||'; command='||p_command_id::text||
+      '; '||btrim(p_reason),
+      2000
+    ),
+    v_internal_command
+  );
+  if v_session_status<>'APPROVED' then
+    raise exception 'R5_010_STOCKTAKE_APPROVAL_FAILED';
+  end if;
+
+  if v_adjustment_count<>v_positive then
+    raise exception 'R5_010_OPENING_MOVEMENT_COUNT_MISMATCH';
+  end if;
+
+  if (
+    select count(*)
+    from public.ecoflow_r5_010_inventory_movement_provenance p
+    where p.command_id=p_command_id
+  )<>v_positive then
+    raise exception 'R5_010_INVENTORY_PROVENANCE_COUNT_MISMATCH';
+  end if;
+
+  if (
+    select count(*)
+    from public.ecoflow_r5_010_warehouse_movement_provenance p
+    where p.command_id=p_command_id
+  )<>v_positive then
+    raise exception 'R5_010_WAREHOUSE_PROVENANCE_COUNT_MISMATCH';
+  end if;
+
+  v_result := jsonb_build_object(
+    'commandId',p_command_id,
+    'referenceBatchId',p_reference_batch_id,
+    'manifestSha256',p_manifest_sha256,
+    'stocktakeSessionId',v_session_id,
+    'stocktakeSessionStatus',v_session_status,
+    'stocktakeSessionRevision',v_session_revision,
+    'selectedRowCount',v_inserted,
+    'positiveRowCount',v_positive,
+    'zeroRowCount',v_zero,
+    'positiveQtyOnHandTotal',v_positive_qty,
+    'openingMovementCount',v_adjustment_count,
+    'locationCode',v_location.location_code,
+    'locationSemantics',v_location.location_semantics,
+    'evidenceType','UNLEASHED_MIGRATION_REFERENCE',
+    'authorityEffect','OPENING_INVENTORY_CREATED',
+    'approvedAt',v_approved_at
+  );
+
+  insert into public.ecoflow_r5_010_opening_commands(
+    command_id,actor_user_id,actor_role,reference_batch_id,manifest_sha256,
+    request_payload_sha256,stocktake_session_id,selected_row_count,
+    positive_row_count,zero_row_count,positive_qty_total,result
+  ) values (
+    p_command_id,v_actor,v_role,p_reference_batch_id,p_manifest_sha256,
+    v_payload_hash,v_session_id,v_inserted,v_positive,v_zero,v_positive_qty,v_result
+  );
+
+  insert into public.app_security_audit_events(
+    actor_user_id,actor_role,action,target_type,target_id,before_data,after_data
+  ) values (
+    v_actor,v_role,'R5_010_BULK_OPENING_APPLIED',
+    'ecoflow_unleashed_inventory_reference_batches',p_reference_batch_id::text,
+    jsonb_build_object(
+      'manifestSha256',p_manifest_sha256,
+      'selectedRowCount',v_inserted,
+      'locationCode',v_location.location_code
+    ),
+    v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.ecoflow_r5_010_prevent_audit_mutation()
+  from public,anon,authenticated,service_role;
+revoke all on function public.ecoflow_lock_warehouse_sku_write()
+  from public,anon,authenticated,service_role;
+revoke all on function public.ecoflow_r5_010_capture_inventory_movement_provenance()
+  from public,anon,authenticated,service_role;
+revoke all on function public.ecoflow_r5_010_capture_warehouse_movement_provenance()
+  from public,anon,authenticated,service_role;
+revoke all on function public.ecoflow_preview_r5_010_bulk_opening(uuid,uuid[],text)
+  from public,anon,authenticated,service_role;
+revoke all on function public.ecoflow_apply_r5_010_bulk_opening(uuid,text,uuid,text,boolean,uuid[],text)
+  from public,anon,authenticated,service_role;
+
+grant execute on function public.ecoflow_preview_r5_010_bulk_opening(uuid,uuid[],text)
+  to authenticated;
+grant execute on function public.ecoflow_apply_r5_010_bulk_opening(uuid,text,uuid,text,boolean,uuid[],text)
+  to authenticated;
+
+comment on column public.ecoflow_warehouse_locations.location_semantics is
+  'PHYSICAL locations assert a real warehouse position. MIGRATION_HOLDING is governed non-physical holding authority and must not be presented as a physical bin.';
+comment on column public.ecoflow_stocktake_observations.evidence_type is
+  'PHYSICAL_COUNT for real counts; UNLEASHED_MIGRATION_REFERENCE for R5-010 reference-based opening evidence. The latter never asserts a physical count.';
+comment on function public.ecoflow_preview_r5_010_bulk_opening(uuid,uuid[],text) is
+  'Owner/Admin read-only latest-SEALED ADL1 opening preview. Returns a deterministic executable manifest and unresolved blockers without inventory mutation.';
+comment on function public.ecoflow_apply_r5_010_bulk_opening(uuid,text,uuid,text,boolean,uuid[],text) is
+  'Owner/Admin manifest-bound exactly-once opening APPLY. Revalidates after shared SKU locks, materializes UNLEASHED_MIGRATION_REFERENCE evidence, and reuses INITIAL stocktake approval for inventory authority.';
+
+notify pgrst,'reload schema';
+commit;
