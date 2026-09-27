@@ -30,7 +30,6 @@ export function FreshBatchBulkOpeningPanel({ supabase }: { supabase: SupabaseCli
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<Scope>('ALL');
   const [customRows, setCustomRows] = useState('');
-  const [locationCode, setLocationCode] = useState(R5_010_MIGRATION_LOCATION);
   const [preview, setPreview] = useState<R5010Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -65,7 +64,7 @@ export function FreshBatchBulkOpeningPanel({ supabase }: { supabase: SupabaseCli
     try {
       setPreview(await previewR5010BulkOpening(supabase, {
         referenceRowIds,
-        locationCode: locationCode.trim() || R5_010_MIGRATION_LOCATION,
+        locationCode: R5_010_MIGRATION_LOCATION,
       }));
     } catch (previewError) {
       setPreview(null);
@@ -162,16 +161,8 @@ export function FreshBatchBulkOpeningPanel({ supabase }: { supabase: SupabaseCli
                 />
               </label>
             ) : null}
-            <label>
-              Opening location
-              <input
-                value={locationCode}
-                disabled={previewing || applying}
-                onChange={(event) => { setLocationCode(event.target.value); invalidatePreview(); }}
-              />
-            </label>
             <span>
-              <strong>{R5_010_MIGRATION_LOCATION}</strong> is a governed non-physical migration holding location. Move stock to real bins later through normal audited transfer.
+              Opening location <strong>{R5_010_MIGRATION_LOCATION}</strong> · governed non-physical migration holding only. Move stock to real bins later through normal audited transfer.
             </span>
           </div>
 
