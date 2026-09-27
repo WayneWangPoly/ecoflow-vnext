@@ -1,0 +1,49 @@
+name: R5-010 fresh batch bulk opening
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260927014711_r5_010_fresh_batch_bulk_opening_bridge.sql'
+      - 'src/features/team/freshBatchBulkOpening.ts'
+      - 'src/features/settings/FreshBatchBulkOpeningPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-010-fresh-batch-bulk-opening-contract.test.mjs'
+      - '.github/workflows/r5-010-fresh-batch-bulk-opening-check.yml'
+  push:
+    branches:
+      - 'agent/inventory/339-r5-010-bulk-opening'
+    paths:
+      - 'supabase/migrations/20260927014711_r5_010_fresh_batch_bulk_opening_bridge.sql'
+      - 'src/features/team/freshBatchBulkOpening.ts'
+      - 'src/features/settings/FreshBatchBulkOpeningPanel.tsx'
+      - 'src/features/settings/InventoryReferenceStagePanel.tsx'
+      - 'scripts/r5-010-fresh-batch-bulk-opening-contract.test.mjs'
+      - '.github/workflows/r5-010-fresh-batch-bulk-opening-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: R5-010 authority contract
+        run: node --test scripts/r5-010-fresh-batch-bulk-opening-contract.test.mjs
+      - name: Preserve R5-005A kernel contract
+        run: node --test scripts/r5-005a-ready-row-commissioning-kernel-contract.test.mjs
+      - name: Preserve R5-005B historical carrier contract
+        run: node --test scripts/r5-005b-ready-positive-stock-commissioning-carrier-contract.test.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Repository hygiene
+        run: npm run audit:repository-hygiene
